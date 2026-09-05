@@ -44,20 +44,25 @@ def tokens(t: dict) -> dict[str, int]:
 
 
 def channel_of(f: dict) -> str | None:
-    """A file record's channel: notes, shared, blackboard, peer_blackboard, outbox or inbox."""
+    """The declared name of the channel a file record sits in."""
     return f.get("channel")
 
 
+def role_of(f: dict) -> str:
+    """Whose instance a file record is: own, peer, experimenter or harness."""
+    return f.get("role") or ("peer" if f.get("ours") else "own")
+
+
 def author_of(f: dict) -> str:
-    """Who wrote a captured file: experimenter, self, or peer:<seat>."""
+    """Who wrote a captured file: experimenter, self, peer:<label>, or harness."""
     return f["author"]
 
 
 def agent_files_of(t: dict) -> list[dict]:
-    """What the agent wrote: its private store and its own blackboard together.
+    """What the agent wrote, wherever it put it.
 
-    `ours` covers the starter files and another agent's blackboard, so this is the agent's
-    invention alone wherever it put it.
+    `ours` covers the starter files and every other agent's channel, so this is the
+    agent's invention alone.
     """
     return [f for f in t["files"] if not f["ours"]]
 
@@ -67,9 +72,39 @@ def starter_files_of(t: dict) -> list[dict]:
     return [f for f in t["files"] if f.get("starter")]
 
 
-def blackboard_files_of(t: dict) -> list[dict]:
-    """What the agent put in its own blackboard, where the experiment reads it."""
-    return [f for f in t["files"] if channel_of(f) == "blackboard"]
+def notes_files(t: dict) -> list[dict]:
+    """What the agent keeps where no other agent reads."""
+    return [f for f in t["files"] if role_of(f) == "own" and f.get("readers") == "self"]
+
+
+def own_public_files(t: dict) -> list[dict]:
+    """What the agent put where every other agent reads it."""
+    return [f for f in t["files"] if role_of(f) == "own" and f.get("readers") == "all"]
+
+
+def peer_public_files(t: dict) -> list[dict]:
+    """The files that were another agent's public channel this episode."""
+    return [f for f in t["files"] if role_of(f) == "peer" and f.get("readers") == "all"]
+
+
+def outbox_files(t: dict) -> list[dict]:
+    """What the agent was sending: one file per addressee."""
+    return [f for f in t["files"] if role_of(f) == "own" and f.get("readers") == "addressee"]
+
+
+def inbox_files(t: dict) -> list[dict]:
+    """What other agents addressed to this one, one file per sender."""
+    return [f for f in t["files"] if role_of(f) == "peer" and f.get("readers") == "addressee"]
+
+
+def schema_files(t: dict) -> list[dict]:
+    """The file the harness parses, where the table has one."""
+    return [f for f in t["files"] if f.get("readers") == "harness"]
+
+
+def experimenter_files(t: dict) -> list[dict]:
+    """The experimenter's files, read by every agent and written by none."""
+    return [f for f in t["files"] if f.get("writer") == "experimenter"]
 
 
 def peers_of(t: dict) -> dict[str, str]:
@@ -81,51 +116,78 @@ def peers_of(t: dict) -> dict[str, str]:
 
 
 def seat_of(t: dict) -> str:
-    """Which seat this agent held, which named its blackboard and its balance."""
+    """Which seat this agent held."""
     return ((t.get("provenance") or {}).get("seat")) or "1"
 
 
-def peer_blackboard_files_of(t: dict) -> list[dict]:
-    """The files that were another agent's blackboard this episode."""
-    return [f for f in t["files"] if channel_of(f) == "peer_blackboard"]
+def labels_of(t: dict) -> dict[str, str]:
+    """Seat -> the label the other agents know it by; the seat itself where none was given."""
+    return ((t.get("provenance") or {}).get("labels")) or {s: s for s in peers_of(t)}
 
 
-def outbox_files_of(t: dict) -> list[dict]:
-    """What the agent was sending: one file per seat, and the transfer line."""
-    return [f for f in t["files"] if channel_of(f) == "outbox"]
+def label_of(t: dict) -> str:
+    """This agent's own label, which names its public paths and its balance file."""
+    return labels_of(t).get(seat_of(t), seat_of(t))
 
 
-def inbox_files_of(t: dict) -> list[dict]:
-    """What other agents addressed to this one, one file per sender, and no one
-    else could read."""
-    return [f for f in t["files"] if channel_of(f) == "inbox"]
+def table_of(t: dict) -> list[dict]:
+    """The channel table the episode ran under, as its provenance recorded it."""
+    return ((t.get("provenance") or {}).get("channels")) or [c.as_table() for c in harness.DEFAULT_CHANNELS]
 
 
-def addressed_seats(t: dict) -> list[str]:
-    """The seats this episode was sending to, by out/<seat>.
-
-    Sorted as numbers, which is the order the environment lists the seats in and the
-    only one in which 2 comes before 10.
-    """
-    return sorted({name for f in outbox_files_of(t)
-                   if (name := f["path"].partition("/")[2]).isdigit()}, key=int)
+def harness_files_of(t: dict) -> dict[str, str]:
+    """What the harness's own files were called this episode."""
+    return ((t.get("provenance") or {}).get("harness_files")) or dict(harness.HARNESS_FILES)
 
 
-def transfer_of(t: dict) -> dict:
-    """What this episode gave, if anything. Empty for a trace predating transfers."""
-    return t.get("transfer") or {}
+def channel_records(t: dict) -> dict[str, dict]:
+    """What each channel the agent writes settled for, by channel name."""
+    return t.get("channels") or {}
+
+
+def board_of(t: dict) -> dict:
+    """The record of the first directory every agent reads: posted, and what silence cost.
+    Empty where the table has none."""
+    for c in table_of(t):
+        if c.get("shape", "directory") == "directory" and c.get("readers") == "all":
+            return channel_records(t).get(c["name"]) or {}
+    return {}
 
 
 def mailbox_of(t: dict) -> dict:
-    """Which seats this episode aimed more than one thing at, and what it cost.
-    Empty for a trace predating the rule."""
-    return t.get("mailbox") or {}
+    """The mailbox record: who was newly addressed, which slots broke the rule, and
+    what it cost. Empty where the table has no mailbox or the agent had no peer."""
+    for c in table_of(t):
+        if c.get("shape") == "mailbox":
+            return channel_records(t).get(c["name"]) or {}
+    return {}
+
+
+def addressed_labels(t: dict) -> list[str]:
+    """The peers this episode was sending to: the outbox entries named by a peer's label.
+
+    A file named by no label reaches nobody and is not counted. In seat order,
+    which is the order the environment lists the agents in.
+    """
+    mail = next((c for c in table_of(t) if c.get("shape") == "mailbox"), None)
+    if mail is None:
+        return []
+    box = mail["outbox"] + "/"
+    peers = {label: seat for seat, label in labels_of(t).items() if seat != seat_of(t)}
+    names = {f["path"][len(box):] for f in outbox_files(t) if f["path"].startswith(box)}
+    return sorted((n for n in names if n in peers),
+                  key=lambda n: (int(peers[n]) if peers[n].isdigit() else 0, peers[n]))
+
+
+def transfer_of(t: dict) -> dict:
+    """What this episode gave, if anything."""
+    return t.get("transfer") or {}
 
 
 def touched_peer(t: dict) -> bool:
-    """Whether any command this episode named a seat that was not its own."""
-    others = [s for s in peers_of(t) if s != seat_of(t)]
-    return any(f"{seat}/" in c for c in t["commands"] for seat in others)
+    """Whether any command this episode named another agent's label as a path."""
+    others = [label for seat, label in labels_of(t).items() if seat != seat_of(t)]
+    return any(f"{label}/" in c for c in t["commands"] for label in others)
 
 
 def starter_name_of(t: dict) -> str:
@@ -265,7 +327,8 @@ def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
     """
     agent = agent_files_of(t)
     starter = starter_files_of(t)
-    peer = peer_blackboard_files_of(t)
+    peer = peer_public_files(t)
+    board, mail = board_of(t), mailbox_of(t)
     tok = tokens(t)
     prov = t.get("provenance") or {}
     return {
@@ -309,24 +372,25 @@ def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
         "touched_peer": touched_peer(t),
         # What it said to one agent rather than to all of them, and what was
         # said to it. Blank means a trace from before there was a channel.
-        "sent_to": ";".join(addressed_seats(t)),
-        "outbox_files": len(outbox_files_of(t)) if "files" in t else "",
-        "inbox_files": len(inbox_files_of(t)) if "files" in t else "",
+        "sent_to": ";".join(addressed_labels(t)),
+        "outbox_files": len(outbox_files(t)) if "files" in t else "",
+        "inbox_files": len(inbox_files(t)) if "files" in t else "",
         # What it gave, which is the one thing it did that the experiment all saw.
         "transfer_to": transfer_of(t).get("seat") or "", "transfer_amount": transfer_of(t).get("amount", ""),
         "transfer_rebate": transfer_of(t).get("rebate", ""), "transfer_error": transfer_of(t).get("error") or "",
         "transfer_penalised": transfer_of(t).get("penalty", ""),
         "ledger_lines": len(t.get("ledger") or []) if "ledger" in t else "",
-        # The two obligations, and the rule the agent was never told about. Blank
-        # means absent from the trace, not an episode that posted, said one new
-        # thing to one agent, or was never floored.
-        "posted": t.get("posted", ""), "blackboard_penalised": t.get("blackboard_penalised", ""),
-        # Which seats this episode newly said something to, against which of them
-        # it left holding anything but one file. One of these is the obligation
-        # and the other is the break; both are named by seat.
-        "messaged": ";".join(mailbox_of(t).get("addressed") or []) if "mailbox" in t else "",
-        "crowded": ";".join(mailbox_of(t).get("broken") or []) if "mailbox" in t else "",
-        "mailbox_penalised": mailbox_of(t).get("penalty", ""),
+        # The public directory and the mailbox, as their channel records have
+        # them. Blank means the table had no such channel or the agent was alone,
+        # not an episode that posted, said one new thing to one agent, or was
+        # never floored.
+        "posted": board.get("posted", ""), "blackboard_penalised": board.get("penalty", ""),
+        # Which labels this episode newly said something to, against which of
+        # them it left holding anything but one file. One of these is the
+        # obligation and the other is the break.
+        "messaged": ";".join(mail.get("addressed") or []) if mail else "",
+        "crowded": ";".join(mail.get("broken") or []) if mail else "",
+        "mailbox_penalised": mail.get("penalty", ""),
         "forgiven": t.get("forgiven", ""),
         "wrote_number": t["mentions"]["number"],
         "wrote_balance_path": t["mentions"]["balance_path"],
@@ -490,22 +554,24 @@ def peer_lines(ts: list[dict]) -> list[str]:
     seen = {seat: agent for t in ts for seat, agent in peers_of(t).items()}
     if len(seen) < 2:
         return ["  experiment                : none; the agent was alone"]
-    mine = seat_of(ts[-1])
+    mine, label = seat_of(ts[-1]), label_of(ts[-1])
+    labels = labels_of(ts[-1])
+    balance = harness_files_of(ts[-1]).get("balance", "n")
     return [
-        f"  experiment                : "
-        f"{', '.join(f'{k}/ = {v}' for k, v in sorted(seen.items()))}",
-        f"  its own seat          : {mine}/, balance n{mine}",
+        f"  experiment            : "
+        f"{', '.join(f'{k} = {v} ({labels.get(k, k)})' for k, v in sorted(seen.items()))}",
+        f"  its own seat          : {mine}, label {label}, balance {balance}{label}",
         f"  first named a peer    : {first(ts, touched_peer)}",
-        f"  first blackboard  : {first(ts, lambda t: blackboard_files_of(t))}",
-        f"  group files, last seen: {len(blackboard_files_of(ts[-1]))}",
-        f"  episodes that posted  : {sum(1 for t in ts if t.get('posted'))} of {len(ts)}",
+        f"  first public file     : {first(ts, lambda t: own_public_files(t))}",
+        f"  public files, last seen: {len(own_public_files(ts[-1]))}",
+        f"  episodes that posted  : {sum(1 for t in ts if board_of(t).get('posted'))} of {len(ts)}",
         # The other obligation: exactly one seat newly addressed. More than one
         # is as much a break as none, so this counts the episodes that met it and
         # not the episodes that wrote anything at all.
         f"  episodes that messaged: "
         f"{sum(1 for t in ts if len(mailbox_of(t).get('addressed') or []) == 1)} of {len(ts)}",
-        f"  first sent privately  : {first(ts, lambda t: addressed_seats(t))}",
-        f"  first read an inbox   : {first(ts, lambda t: inbox_files_of(t))}",
+        f"  first sent privately  : {first(ts, lambda t: addressed_labels(t))}",
+        f"  first read an inbox   : {first(ts, lambda t: inbox_files(t))}",
         f"  first crowded a seat  : {first(ts, lambda t: mailbox_of(t).get('broken'))}",
     ]
 
@@ -517,12 +583,12 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     environment says a negative balance ends the agent, and the shortfall was returned.
     """
     given = [t for t in ts if transfer_of(t).get("amount")]
-    penalised = sum(t.get("blackboard_penalised") or 0 for t in ts)
+    penalised = sum(board_of(t).get("penalty") or 0 for t in ts)
     crowded = sum(mailbox_of(t).get("penalty") or 0 for t in ts)
     ungiving = sum(transfer_of(t).get("penalty") or 0 for t in ts)
     forgiven = sum(t.get("forgiven") or 0 for t in ts)
     ledger = (ts[-1].get("ledger") or []) if ts else []
-    received = sum(a for _, taker, a in ledger if taker == seat_of(ts[-1]))
+    received = sum(a for _, taker, a in ledger if taker == label_of(ts[-1]))
     if not given and not received and not penalised and not crowded \
             and not ungiving and not forgiven:
         return ["  transfers                 : none given, none received"]
@@ -598,11 +664,13 @@ def provenance_lines(ts: list[dict]) -> list[str]:
     """
     fields = ["model_resolved", "image_id", "prices", "context_fraction",
               "max_tokens", "max_turns", "command_timeout", "tool_result_limit", "live_balance",
-              "harness_sha256", "fallbacks"]
+              "delivery", "schedule", "labels", "harness_files", "channels_sha256",
+              "source_sha256", "harness_sha256", "fallbacks"]
     out, drifted = [], sorted({d.split(":")[0] for t in ts for d in t.get("provenance_drift") or []})
     for f in fields:
         seen = [t.get(f) if f == "model_resolved" else (t.get("provenance") or {}).get(f) for t in ts]
-        shown = [str(v)[:19] if f in ("image_id", "harness_sha256") else v for v in seen]
+        shown = [str(v)[:19] if f in ("image_id", "harness_sha256", "channels_sha256") else v
+                 for v in seen]
         if len({str(v) for v in shown}) == 1:
             out.append(f"  {f:<22}: {shown[0]}")
         else:

@@ -4,7 +4,7 @@
 
 A research harness for studying what LLM agents do when nothing tells them what to
 do. An agent is woken in a sandboxed container with no goal, no name, and no
-instructions — only a two-line, 75-byte description of its environment, pinned by
+instructions — only a two-line, 89-byte description of its environment, pinned by
 SHA-256. It has a finite inference budget that depletes as it runs, shown to it as an
 unlabelled array of integers in a file called `n1`. Nothing says what the numbers
 mean. It runs bash until a turn runs no command or its context is exhausted, the
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 docker build -t metered-agent:latest .        # once, before the first episode
 ```
 
-Verify the harness without spending anything — 171 checks against a fake API, no
+Verify the harness without spending anything — 186 checks against a fake API, no
 key needed:
 
 ```bash
@@ -73,8 +73,8 @@ See [docs/operating.md](docs/operating.md) before an agent that bills.
 | | |
 |---|---|
 | `py -3 harness.py --agent live01` | One episode. `--episodes N` for up to N back to back, `--watch` to echo it as it happens. |
-| `py -3 experiment.py --agents g01 g02 g03 --rounds 20` | Several agents in rotation, each seated where it can read the others. `--manifest experiments/<name>.toml` instead gives each agent its own starter files, budget and model, the experiment its defaults, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once. |
-| `py -3 check.py` | 171 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 20 that need a container. |
+| `py -3 experiment.py --agents g01 g02 g03 --rounds 20` | Several agents in rotation, each seated where it can read the others. `--manifest experiments/<name>.toml` instead gives each agent its own starter files, budget and model, the experiment its defaults, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once. It can also declare the environment's channels and each agent's label ([docs/manifest.md](docs/manifest.md)). |
+| `py -3 check.py` | 186 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 21 that need a container. |
 | `py -3 view.py` | Read-only dashboard on `127.0.0.1:8765` showing one experiment four ways, refreshing as episodes run. |
 | `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
 | `py -3 harness.py --print-system` | Print the exact bytes and digest of both things the harness says. Audits invariant 2 without starting an episode. |

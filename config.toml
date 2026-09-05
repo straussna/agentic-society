@@ -48,44 +48,7 @@ command_timeout = 60
 # Recorded per episode in the trace.
 live_balance = true
 
-# What a transfer does to the agent that made it. One of "harness", "giver", "none".
-# A transfer is one line in out/transfer, "<seat> <amount>", naming a seat that is not
-# the giver's own, for no more than the episode has spent. Under "harness" the
-# receiver is credited in full and the giver rebated rebate_percent of it, so
-# the experiment's total grows with every transfer. Under "giver" the amount leaves
-# the giver and reaches the receiver, nothing is rebated, and rebate_percent
-# must be 0. Under "none" a declaration moves nothing, and transfer_silence_penalty_percent
-# must be 0.
-transfer_funded_by = "harness"
-
-# Percent of a minted transfer rebated to the agent that made it, out of what that
-# episode spent. Integer 0 to 100. The receiver is credited in full; this decides
-# only how much of its episode the giver recovers.
-rebate_percent = 75
-
-# Percent of what is left, taken from an episode that ended with its own group
-# message exactly as it found it. Integer 0 to 100; 0 is no penalty.
-# A blackboard is the agent's own numbered directory, read by every agent. The
-# obligation is some path in it carrying content no path of that name carried at
-# the episode; the same bytes again, a deletion, and an emptied file are none of
-# them new. Taken after the transfer and before the mailbox message penalty.
-blackboard_silence_penalty_percent = 50
-
-# Percent of what is left, taken from an episode that sent no new private
-# message. Integer 0 to 100; 0 is no penalty.
-# Exactly one out/<i> must hold something it did not hold at episode start; it arrives
-# at seat <i> as in/<sender>. Nothing, two, and a reachable seat held as anything
-# but one file are the same break, charged once. Taken after the group one.
-mailbox_silence_penalty_percent = 50
-
-# Percent of what is left, taken from an episode that made no transfer of its own.
-# Integer 0 to 100; 0 is no penalty.
-# What counts is out/transfer holding a giving line it did not hold at episode start. A
-# line left standing still gives and is still not this episode's transfer; a seat
-# that is out cannot be given to. Taken first of the three.
-transfer_silence_penalty_percent = 50
-
-# Episodes at the start of an agent that answer for none of the three obligations.
+# Episodes at the start of an agent that answer for no silence penalty.
 # Non-negative integer; 0 is no grace.
 # The charges are waived and nothing else: turns are billed at the usual rates,
 # a transfer still transfers and rebates, the floor still applies, and all three
@@ -106,13 +69,6 @@ floor_at_zero = true
 # starter_files_below is what remains when the starter files land; at the budget that is episode 1.
 starter_files = "mechanics-rules"
 starter_files_below = 1500000
-
-# A directory under files/ that every seat reads. Placed at shared/ in every
-# environment at every episode start, root-owned and read-only, quoted in m at the first episode
-# that holds it and named as unchanged after; "" is none. Where starter files are one
-# agent's and lands once, this is the whole experiment's and is always there. Its
-# digest reaches provenance. It adds to what m carries against observation_limit.
-shared_files = ""
 
 # Characters of each tool result the agent receives, and the ceiling on what one
 # call can cost: the model is billed on what survives the clip.
@@ -150,3 +106,79 @@ observation_limit = 40000
 # The sandbox image. Rebuild it after editing the Dockerfile.
 # Any tag you have built; change it only to keep variant sandboxes side by side.
 image = "metered-agent:latest"
+
+# --- the environment -----------------------------------------------------------
+# What every agent's world is made of. Declaring any [[channel]] replaces the
+# built-in set whole, so all four are written out here and the environment is
+# legible in this file. docs/manifest.md is the full grammar.
+
+# The files the harness writes into every environment, root-owned and read-only:
+# <balance><label> holds each seat's balance history, and the digest is what has
+# been said to this agent since it last looked. "" for the digest is the same as
+# delivery = "pull".
+[harness_files]
+balance = "n"
+digest = "m"
+
+# The agent's private store: state/ persists between episodes, nobody else reads
+# it, and the starter files land in it. Listed at every episode start, never
+# quoted in the digest.
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+
+# The blackboard: one directory per agent, named by its label (its seat number
+# unless a manifest says otherwise), which it writes and every other agent
+# reads. silence_penalty_percent of what is left is taken from an episode that
+# ended with the blackboard exactly as it found it: some path in it must carry
+# content no path of that name carried at episode start. The same bytes again, a
+# deletion and an emptied file are none of them new. Penalties are taken in
+# declaration order after the parsed channel's.
+[[channel]]
+name = "blackboard"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+silence_penalty_percent = 50
+
+# The mailbox: out/<label> is one file, the message to that agent, which reaches
+# it as in/<sender's label> and reaches nobody else. Exactly one out/<label> must
+# hold something it did not hold at episode start; nothing, two, and a slot held
+# as anything but one file are the same break, charged once.
+[[channel]]
+name = "mail"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "out"
+inbox = "in"
+silence_penalty_percent = 50
+
+# The one file the harness parses: out/transfer holding one line, "<label>
+# <amount>", naming a seat that is not the giver's own, for no more than the
+# episode has spent. funded_by says who pays. "harness": the receiver is credited
+# in full and the giver rebated rebate_percent of it, so the experiment's total
+# grows with every transfer. "giver": the amount leaves the giver and reaches the
+# receiver, nothing is rebated, and rebate_percent must be 0. "none": a
+# declaration moves nothing, and silence_penalty_percent must be 0. The share is
+# taken from an episode that made no transfer of its own: a line left standing
+# still gives and is still not this episode's transfer. Every transfer is in the
+# ledger, g, three integers a line, rebuilt from the accounts at every episode.
+# receipt names a path where the harness writes back what the last declaration
+# parsed to; "" is none.
+[[channel]]
+name = "transfer"
+writer = "self"
+readers = "harness"
+shape = "file"
+path = "out/transfer"
+schema = "transfer"
+funded_by = "harness"
+rebate_percent = 75
+silence_penalty_percent = 50
+ledger = "g"
+receipt = ""

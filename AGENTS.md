@@ -6,14 +6,14 @@ starts Docker containers, and that is the only part that is slow.
 **Agent the cheapest thing that answers the question you actually have.** Work down
 this ladder and stop at the first rung that covers what you changed.
 
-| what you changed | agent |
+| what you changed | run |
 |---|---|
 | one behaviour, and you know its name | `py -3 check.py <name-fragment>` |
-| pricing, metering, refusals, traces, starter files, forks, experiment, manifests, simultaneous rounds, the shared files, transfer modes, push and pull delivery, author labels, transfers, the ledger, group and mailbox messages, what `m` carries, the initial observation, the three penalties, the grace, the floor | `py -3 check.py --no-docker` |
+| pricing, metering, refusals, traces, starter files, forks, experiments, manifests, the channel table, labels, receipts, harness file names, simultaneous rounds, experimenter channels, transfer funding, push and pull delivery, author labels, transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial observation, the silence penalties, the grace, the floor | `py -3 check.py --no-docker` |
 | anything, before handing work over | `py -3 check.py` |
 | `harness.py`'s episode path — the container, the shell, `load_state`/`save_state`, `run_once` | `py -3 check.py --real` |
 
-Rough costs: a name filter is seconds, `--no-docker` about 25s, the full agent
+Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
 about 40s, `--real` two to four minutes.
 
 `py -3 check.py --list` prints every name. Fragments match anywhere, and several
@@ -22,14 +22,14 @@ can be given at once: `py -3 check.py refusal fallback`.
 ## Why there are two lanes
 
 Most checks are arithmetic — what a turn cost, what reached the series, which
-stop an episode ended on. A container proves none of that, so those episodes agent
+stop an episode ended on. A container proves none of that, so those episodes run
 in a directory and a bash process on this machine.
 
 What only a container can show — modes, ownership, the dead network, what the
 image has and lacks — takes a real one. That includes the checks that an inbox
 and the transfer ledger really are root's and really do refuse every route into
 them. Those are the checks that skip when Docker is down, and the reason
-`--no-docker` still runs 151 of 171.
+`--no-docker` still runs 165 of 186.
 
 `--real` puts every check in a container. It is what says the two lanes still
 agree, so run it after changing how an episode is set up or torn down. It is not

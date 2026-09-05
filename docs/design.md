@@ -61,7 +61,7 @@ record makes acquisition a constant so that use can be the variable.
   and the mailbox messages and the ledger in one root-owned file. `SYSTEM` changes for
   none of it.
 - **2 — What the system says to agents is the same in every experiment, and true.** The
-  prompt is two lines, 75 bytes, pinned by SHA-256: what persists, and what is
+  prompt is two lines, 89 bytes, pinned by SHA-256: what persists, and what is
   available. No second person, no name, no task, no mention of budget or cost, because
   the same lines start an episode for an agent told nothing and one seated in a competition. It once
   had a third line, that episodes end when context is exhausted, and in practice they

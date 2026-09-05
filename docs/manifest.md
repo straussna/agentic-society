@@ -6,9 +6,8 @@ What an experimenter can declare, and the words the harness is described in.
 
 ---
 
-This is a specification. The code speaks this vocabulary; section 13 records the words
-it replaced. Parts marked **today** are implemented and checked; parts marked
-**proposed** are the generalization the design is heading for.
+This is a specification of what the code does. The code speaks this vocabulary; section
+13 records the words it replaced. Every part of it is implemented and checked.
 
 ## Vocabulary
 
@@ -44,7 +43,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Environment** | Everything under `/work` in an agent's sandbox: its channels and the harness files, nothing else |
 | **Seat** | An agent's numbered position, from 1. Names its balance to every reader alike |
 | **Channel** | One region of the environment with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
-| **Writer** | Who may put bytes in a channel: `self`, `experimenter`, or `harness` |
+| **Writer** | Who may put bytes in a channel: `self` or `experimenter`. The harness's own files are the `[harness_files]` table, not channels |
 | **Readers** | Who may read it: `self`, `all`, `addressee` (one named peer per file), or `harness` (the harness parses it) |
 | **Shape** | `directory` (any files, any layout), `mailbox` (one file per peer, an outbox on the writer's side and an inbox on each reader's), or `file` (one file at a fixed path) |
 | **Blackboard** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
@@ -112,13 +111,13 @@ Three principles bind the language:
 
 ## 2. Top level
 
-| Key | Type | Status | Meaning |
-|---|---|---|---|
-| `schedule` | `"sequential"` \| `"simultaneous"` | today | How a round is driven |
-| `[harness_files]` | table | proposed | Names of the files the harness writes. Section 5 |
-| `[[channel]]` | tables | proposed | The environment's regions. Declaring any replaces the default set whole |
-| `[[agent]]` | tables, two or more | today | The seats, in order; seat 1 is the first table |
-| any key of section 3 | | today | The experiment's default, applied after `config.toml` and held to the same rules |
+| Key | Type | Meaning |
+|---|---|---|
+| `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
+| `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
+| `[[channel]]` | tables | The environment's regions. Declaring any replaces the default set whole |
+| `[[agent]]` | tables, two or more | The seats, in order; seat 1 is the first table |
+| any key of section 3 | | The experiment's default, applied after `config.toml` and held to the same rules |
 
 Unknown keys are refused, naming the key. The file's digest is stamped in every
 episode's provenance.
@@ -154,7 +153,6 @@ integer widens to a float field and nothing else converts.
 |---|---|---|---|
 | `starter_files` | dir under `files/` | `""` | Copied once into the agent's private directory. Pinned |
 | `starter_files_below` | int ≥ 0 | 0 | The balance at or below which they land. At or above the budget, the first episode |
-| `shared_files` | dir under `files/` | `""` | Sugar for an experimenter channel named `shared`. Section 4.6 |
 
 `starter_files` and `starter_files_below` are set together or not at all. What lands is
 recorded in the account by name, digest, episode and paths, and lands once.
@@ -173,19 +171,19 @@ recorded in the account by name, digest, episode and paths, and lands once.
 |---|---|---|---|
 | `image` | tag | `metered-agent:latest` | The container image |
 
-### Retired by the channel object
+### Refused: keys that became channel fields
 
-These exist today as top-level keys and become fields of the channel they describe. They
-stay accepted while the default channel set is in force and are refused beside any
-`[[channel]]` declaration.
+These were top-level keys and are fields of the channel they describe. A manifest or
+`config.toml` naming one is refused, and the refusal names the field it became.
 
-| Today | Becomes |
+| Key | Now |
 |---|---|
-| `transfer_funded_by`, `rebate_percent`, `transfer_silence_penalty_percent` | `funded_by`, `rebate_percent`, `silence_penalty_percent` on the transfer channel |
+| `transfer_funded_by`, `rebate_percent`, `transfer_silence_penalty_percent` | `funded_by`, `rebate_percent`, `silence_penalty_percent` on the channel with `schema = "transfer"` |
 | `blackboard_silence_penalty_percent` | `silence_penalty_percent` on the blackboard channel |
 | `mailbox_silence_penalty_percent` | `silence_penalty_percent` on the mailbox channel |
+| `shared_files` | a `[[channel]]` with `writer = "experimenter"` and a `source` |
 
-## 4. The channel object (proposed)
+## 4. The channel object
 
 A channel is one region of every agent's environment. Six properties describe every
 region the harness has ever had.
@@ -193,7 +191,7 @@ region the harness has ever had.
 ```toml
 [[channel]]
 name = "blackboard"         # required; unique; how the manifest and the trace refer to it
-writer = "self"             # self | experimenter | harness
+writer = "self"             # self | experimenter
 readers = "all"             # self | all | addressee | harness
 shape = "directory"         # directory | mailbox | file
 path = "{label}"            # where it sits in /work; see 4.2
@@ -203,17 +201,16 @@ silence_penalty_percent = 50
 
 ### 4.1 Writer and readers
 
-| Writer | Readers | Meaning | Today |
+| Writer | Readers | Meaning | Default table |
 |---|---|---|---|
 | self | self | The agent's private store; nobody else ever sees it | `state/` |
-| self | all | A blackboard: one per agent, written by its owner, read by every seat | the numbered directories |
+| self | all | A blackboard: one per agent, written by its owner, read by every seat | the directories named by label |
 | self | addressee | A mailbox: one file per peer, each reaching that peer alone | `out/` and `in/` |
 | self | harness | One file the harness parses; a schema is required | `out/transfer` |
-| experimenter | all | Placed by the experimenter, identical in every seat, read-only | `shared/` |
-| harness | all | Rendered from the accounts, read-only | `n<i>`, `g`, `m` (section 5) |
+| experimenter | all | Placed by the experimenter, identical in every seat, read-only | none |
 
 Other combinations are refused. An experimenter channel takes `source = "<dir under
-files/>"` in place of `shape`; harness channels are named in section 5, not declared here.
+files/>"` and `path`, and nothing else. The harness's own files are section 5, not channels.
 
 ### 4.2 Shape and path
 
@@ -225,7 +222,8 @@ files/>"` in place of `shape`; harness channels are named in section 5, not decl
 
 A self-written, all-read directory has one instance per agent, and `{label}` names each.
 A self-written, self-read directory has one instance and no placeholder. Paths must not
-collide, must not name a harness file, and must not begin with `/` or `..`.
+collide, must not name a harness file, and must not begin with `/` or `..`. A file
+channel sits inside a directory the agent writes and comes and goes with it.
 
 ### 4.3 Pushed
 
@@ -250,15 +248,18 @@ that does not parse moves nothing and is recorded with why.
 
 | Schema | Form | Effect | Fields |
 |---|---|---|---|
-| `transfer` | one line, `<seat> <amount>` | Credits the seat, for no more than the episode spent | `funded_by` (`harness` \| `giver`), `rebate_percent` (0 to 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none) |
+| `transfer` | one line, `<label> <amount>` | Credits the peer, for no more than the episode spent | `funded_by` (`harness` \| `giver` \| `none`), `rebate_percent` (0 to 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none), `receipt` |
 
 Setting `funded_by = "none"` disables the schema: the file is recorded and moves
-nothing, and `silence_penalty_percent` must be 0. New schemas are code, with a check
-each, and are listed here when they land.
+nothing, and `silence_penalty_percent` must be 0. One schema channel per experiment. New
+schemas are code, with a check each, and are listed here when they land.
 
-A `receipt = "<path>"` on a schema channel asks the harness to write the parse result to
-that path in the writer's environment at the next episode: what parsed, what it moved, or
-why it did not. Off by default, since it is a third thing the harness says.
+A `receipt = "<path>"` on a schema channel asks the harness to plant its account of the
+last episode's declaration at that path at the next episode start: what parsed, what it
+moved and to whom, the rebate or debit, and any penalty; or that nothing moved, and why.
+It is a harness file like a balance: root-owned, quoted in the digest once and named as
+unchanged after, in no file record, and scrubbed before the next one is planted. Off by
+default, since it is a third thing the harness says.
 
 ### 4.6 Experimenter channels
 
@@ -270,16 +271,19 @@ source = "studio-brief"     # files/studio-brief/, copied root-owned into every 
 path = "brief"
 ```
 
-`shared_files = "<dir>"` at the top level is this declaration with `name = "shared"` and
-`path = "shared"`. The directory's digest is in provenance.
+The directory's digest is in provenance, per channel, and a directory that changes
+between one agent's episodes refuses the next: a brief that changed mid-flight is two
+experiments.
 
 ### 4.7 How many
 
-An experiment may declare as many channels of a kind as it likes: two blackboards, three
-mailboxes, a transfer channel and a pledge channel. Each is a `[[channel]]` table with
-its own name and path. There is no count field because the table is the count.
+An experiment may declare as many directories and mailboxes as it likes: two blackboards,
+three mailboxes, a journal and an identity file inside it. Each is a `[[channel]]` table
+with its own name and path, and each directory every agent reads is its own obligation,
+settled and charged apart. One schema channel. There is no count field because the table
+is the count.
 
-## 5. Harness files (proposed names; today fixed)
+## 5. Harness files
 
 The files the harness renders from the accounts and plants read-only in every seat.
 
@@ -305,10 +309,10 @@ budget = 2000000            # optional
 model = "claude-opus-5"     # optional
 ```
 
-| Key | Status |
-|---|---|
-| `id`, `budget`, `model`, `starter_files`, `starter_files_below` | today |
-| `label` | proposed |
+A label is how the agent is named to its peers: in `{label}` paths, in mailbox slots, in
+its balance file, in the transfer line and in `peer:<label>` authors. Seats stay the
+order. A label is letters, digits, `.`, `_` and `-`, distinct from every other after
+defaults, and a path too, so one that lands on a channel's path is refused.
 
 The four pinned settings are fixed in the agent's account when it is created. An agent
 that exists already must have been created on the same four, or the manifest is refused.
@@ -438,25 +442,54 @@ identity file is its own channel so the trace and the analysis can name it.
 
 Every refusal is a `SystemExit` naming the file and the key.
 
-- Unknown keys anywhere; wrong types; values out of range as section 3 states.
-- Fewer than two agents; a duplicate, empty, or bare-number `id`; a duplicate `label`.
+- Unknown keys anywhere; wrong types; values out of range as section 3 states; any key of
+  the refused table in section 3, naming the channel field it became.
+- Fewer than two agents; a duplicate, empty, or bare-number `id`; a `label` outside its
+  grammar or held by another agent after defaults.
 - `starter_files` without `starter_files_below` or the reverse; a directory that does
   not exist.
-- A `[[channel]]` set beside any retired top-level key.
-- Duplicate channel names or paths; a path colliding with a harness file; a placeholder
-  in a path whose shape does not take one; `outbox`/`inbox` on anything but a mailbox.
-- An unknown writer, readers, shape or schema; a schema on a channel not written by
-  self and read by the harness; schema fields on a channel with no schema.
-- Under `transfer`: giver funding with a nonzero rebate; `none` with a nonzero penalty.
+- A channel name that is not one path segment, is declared twice, or ends in `.modes`,
+  `.incoming` or `.previous`; an unknown channel key; a wrong type.
+- A writer other than `self` or `experimenter`; a writer and readers pair outside 4.1.
+- An experimenter channel with anything but `source` (a directory under `files/`) and
+  `path`.
+- A shape outside `directory`, `mailbox`, `file`; a mailbox with a `path` or without
+  distinct `outbox` and `inbox`; `outbox` or `inbox` on anything else; `addressee`
+  readers on anything but a mailbox.
+- A path with a segment outside letters, digits, `.`, `_`, `-` and `{label}`; a leading
+  `/`; `..`; a first segment ending in a sidecar suffix; `{label}` missing from a
+  directory every agent writes, present anywhere else, or present twice.
+- A file channel outside every directory the agent writes.
+- A schema on anything but a self-written, harness-read file; a schema outside the
+  menu; schema fields on a channel with no schema; a second schema channel.
+- Under `transfer`: a funding outside `harness`, `giver`, `none`; a rebate outside 0 to
+  100; giver funding with a nonzero rebate; `none` with a nonzero penalty; a `ledger`
+  that is not one segment; a `receipt` outside the path grammar.
+- `pushed = true` on a channel only its writer reads.
+- A silence penalty outside 0 to 100, or on a channel only its writer reads.
+- Two channels, expanded over every label, at one path; a path that is a harness file
+  or a label's balance file.
+- `[harness_files]` with a key other than `balance` and `digest`, a value that is not a
+  string, an empty or multi-segment `balance`, or a multi-segment `digest`.
 - Settings' own ranges are checked once, by `apply_config`, wherever they came from.
 
 ## 11. What reaches the trace
 
 Every episode's provenance stamps: the harness digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
-channel's source digest, the seating and labels, the schedule, the manifest's digest, and
-the digest of the channel table in force. Every file record carries `channel`, `author`
-(`experimenter`, `self`, `peer:<label>`), and `path`.
+channel's source digest, the seating and labels, the schedule, the manifest's digest, the
+harness files' names, and the channel table in force, whole and by digest.
+
+Every file record carries `path`, `size`, `text`, `channel` (the declared name),
+`writer`, `readers`, `role` (`own`, `peer`, `experimenter`), `author` (`experimenter`,
+`self`, `peer:<label>`), `ours` and `starter`. The harness's own files, the receipt
+among them, are in the observation and in no file record.
+
+Every episode record carries `transfer`, what the schema channel parsed and moved, and
+`channels`: one record per channel the agent writes and is held to, by name. A directory
+every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
+and `penalty`; the schema channel records its declaration, what moved, and `penalty`. The
+account keeps `penalised`, the running total per channel. `trace_version` is 2.
 
 ## 12. Invariants, restated in this vocabulary
 
@@ -510,3 +543,6 @@ the environment did not change, except `out/gift`, which is `out/transfer`.
 | `cohorts/` | `experiments/` | Where manifests live | Follows the experiment rename |
 | `--run-id`, `--print-seed` | `--agent`, `--print-files` | CLI flags | Follow the renames |
 | wake | episode start | The moment an episode begins | A verb dressed as a noun; no term needed |
+| `notes`, `shared`, `blackboard`, `peer_blackboard`, `outbox`, `inbox` (record kinds) | the channel's declared name, and `role` | How a file record says where a file sat | The record names the channel the manifest declared; the role says whose instance it was |
+| `posted`, `blackboard_penalised`, `mailbox` (flat trace keys) | `channels[<name>]` | What each channel settled for | One record per channel, under its declared name |
+| `blackboard_penalised`, `mailbox_penalised`, `transfer_penalised` (account) | `penalised[<name>]` | The running penalty total | Same rule |

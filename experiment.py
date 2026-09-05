@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 import threading
@@ -21,7 +22,9 @@ import harness
 
 # A seat is named by its number, which is what makes a bare number unavailable
 # as an agent id: the two share a namespace in the environment an episode sees.
-PEER_DIR = harness.PEER_DIR
+# A label defaults to the seat number, so a bare number is what a seat is called
+# in every path and file the agents see; an agent id must be something else.
+BARE_NUMBER = re.compile(r"^\d+$")
 
 # Goes at building an environment before the agent drops out. An environment is built from the
 # containers and the copies of several other agents' trees, so a failure can be
@@ -39,7 +42,11 @@ SCHEDULES = ("sequential", "simultaneous")
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
-AGENT_KEYS = {"id", "starter_files", "starter_files_below", "budget", "model"}
+AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "model"}
+
+# What an agent may be called to its peers: one path segment, since it lands in
+# paths and file names. The default is the seat number.
+LABEL = re.compile(r"^[A-Za-z0-9._-]+$")
 
 # The failures that mean an environment could not be built, none of them billed.
 BUILD_FAILURES = (subprocess.CalledProcessError, OSError, harness.EnvironmentBuildError)
@@ -80,7 +87,8 @@ def why_out(agent: str) -> str | None:
 def shorthand(ids: list[str]) -> dict:
     """The manifest `--agents` stands for: these agents, on config.toml, in rotation."""
     return {"schedule": "sequential", "overrides": {}, "agents": [{"id": i} for i in ids],
-            "sha256": ""}
+            "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
+            "channels": None, "harness_files": None, "sha256": ""}
 
 
 def load_manifest(path: Path) -> dict:
@@ -99,10 +107,17 @@ def load_manifest(path: Path) -> dict:
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         raise SystemExit(f"{path}: not a manifest: {e}") from None
 
-    allowed = {"schedule", "agent"} | {t.lower() for t in harness.TUNABLES}
+    allowed = {"schedule", "agent", "channel", "harness_files"} | {t.lower() for t in harness.TUNABLES}
     if unknown := sorted(set(top) - allowed):
-        raise SystemExit(f"{path}: unknown key {unknown[0]!r}; expected schedule, "
-                         f"[[agent]] tables, and any config.toml key")
+        if unknown[0] in harness.RETIRED:
+            raise SystemExit(f"{path}: unknown key {unknown[0]!r}; it is now {harness.RETIRED[unknown[0]]}")
+        raise SystemExit(f"{path}: unknown key {unknown[0]!r}; expected schedule, [[agent]] tables, "
+                         f"[[channel]] tables, [harness_files], and any config.toml key")
+    tables, harness_files = top.get("channel"), top.get("harness_files")
+    if tables is not None and not (isinstance(tables, list) and all(isinstance(x, dict) for x in tables)):
+        raise SystemExit(f"{path}: channels are [[channel]] tables")
+    if harness_files is not None and not isinstance(harness_files, dict):
+        raise SystemExit(f"{path}: [harness_files] is a table")
     schedule = top.get("schedule", "sequential")
     if schedule not in SCHEDULES:
         raise SystemExit(f"{path}: schedule must be one of {list(SCHEDULES)}, got {schedule!r}")
@@ -120,7 +135,7 @@ def load_manifest(path: Path) -> dict:
         agent = entry.get("id")
         if not isinstance(agent, str) or not agent:
             raise SystemExit(f"{path}: every agent needs an id")
-        if PEER_DIR.match(agent):
+        if BARE_NUMBER.match(agent):
             raise SystemExit(f"{path}: agent id {agent!r} is a bare number, which is what seats "
                              f"are called")
         if agent in ids:
@@ -146,8 +161,24 @@ def load_manifest(path: Path) -> dict:
             raise SystemExit(f"{path}: {agent}: model {entry['model']!r} has no rates; add it to "
                              f"PRICES in harness.py")
 
-    overrides = {k: v for k, v in top.items() if k not in ("schedule", "agent")}
-    return {"schedule": schedule, "overrides": overrides, "agents": agents,
+    labels: dict[str, str] = {}
+    for seat, entry in enumerate(agents, 1):
+        label = entry.get("label", str(seat))
+        if not isinstance(label, str) or not LABEL.match(label) or label in (".", ".."):
+            raise SystemExit(f"{path}: {entry['id']}: label {label!r} must be letters, digits, "
+                             f"'.', '_' or '-', and is what names the agent in paths")
+        if label in labels.values():
+            other = next(a["id"] for a, l in zip(agents, labels.values()) if l == label)
+            raise SystemExit(f"{path}: label {label!r} is held by {other!r} and {entry['id']!r}")
+        labels[str(seat)] = label
+
+    if tables is not None or harness_files is not None:
+        harness.validate_channels(tables, harness_files, str(path), tuple(labels.values()))
+
+    overrides = {k: v for k, v in top.items()
+                 if k not in ("schedule", "agent", "channel", "harness_files")}
+    return {"schedule": schedule, "overrides": overrides, "agents": agents, "labels": labels,
+            "channels": tables, "harness_files": harness_files,
             "sha256": hashlib.sha256(data).hexdigest()}
 
 
@@ -168,19 +199,29 @@ def seat_of(seats: dict[str, str], agent: str) -> str:
     return next(i for i, r in seats.items() if r == agent)
 
 
-def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str]) -> Callable[[dict], None]:
-    """What an agent's account is told before each episode: where it sits, who else is
-    at the table, and how the experiment is being driven. Nothing is copied into
-    anything the agent can write, so there is nothing to revert afterwards."""
+def labels_for(seats: dict[str, str], labels: dict[str, str] | None) -> dict[str, str]:
+    """Seat -> label for every seat: the manifest's where it gave one, the seat number otherwise."""
+    return {seat: (labels or {}).get(seat, seat) for seat in seats}
+
+
+def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
+             labels: dict[str, str] | None = None) -> Callable[[dict], None]:
+    """What an agent's account is told before each episode: where it sits, what it and
+    every other agent is called, and how the experiment is being driven. Nothing is
+    copied into anything the agent can write, so there is nothing to revert afterwards."""
+    named = labels_for(seats, labels)
+
     def prepare(account: dict) -> None:
-        account["seat"] = seat_of(seats, agent)
-        account["peers"] = {"seen": seats}
+        seat = seat_of(seats, agent)
+        account["seat"] = seat
+        account["label"] = named[seat]
+        account["peers"] = {"seen": seats, "labels": named}
         account["experiment"] = dict(stamp)
     return prepare
 
 
 def sequential_round(agents: list[str], live: set[str], rnd: int, create,
-              stamp: dict[str, str] | None = None) -> bool:
+              stamp: dict[str, str] | None = None, labels: dict[str, str] | None = None) -> bool:
     """One episode for each agent still in the experiment, in rotated order.
 
     Returns whether any of them took one; a round where none did moved nothing.
@@ -197,7 +238,7 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, create,
         if agent not in live:
             continue
 
-        prepare = preparer(agent, seats, stamp)
+        prepare = preparer(agent, seats, stamp, labels)
         trace, before = None, len(harness.load_account(agent)["episodes"])
         for attempt in range(1, ATTEMPTS + 1):
             try:
@@ -240,7 +281,7 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, create,
 
 
 def build_all(agents: list[str], live: set[str], seats: dict[str, str],
-              stamp: dict[str, str]) -> dict[str, harness.Episode]:
+              stamp: dict[str, str], labels: dict[str, str] | None = None) -> dict[str, harness.Episode]:
     """Every live agent's environment, built in seat order before any episode agents.
 
     An agent whose environment fails ATTEMPTS times drops out; the rest are built. A stop
@@ -257,7 +298,7 @@ def build_all(agents: list[str], live: set[str], seats: dict[str, str],
         built, before = None, len(harness.load_account(agent)["episodes"])
         for attempt in range(1, ATTEMPTS + 1):
             try:
-                built = harness.ready(agent, preparer(agent, seats, stamp))
+                built = harness.ready(agent, preparer(agent, seats, stamp, labels))
                 break
             except BUILD_FAILURES as e:
                 print(f"{agent}: could not build an environment for this episode "
@@ -276,7 +317,7 @@ def build_all(agents: list[str], live: set[str], seats: dict[str, str],
 
 
 def simultaneous_round(agents: list[str], live: set[str], rnd: int, create,
-                  stamp: dict[str, str] | None = None) -> bool:
+                  stamp: dict[str, str] | None = None, labels: dict[str, str] | None = None) -> bool:
     """One episode for each agent still in the experiment, all at once.
 
     Every environment is built first, so no episode reads this round's writes. The
@@ -288,7 +329,7 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create,
     """
     stamp = stamp or {"schedule": "simultaneous", "manifest_sha256": ""}
     seats = mapping(agents)
-    starts = build_all(agents, live, seats, stamp)
+    starts = build_all(agents, live, seats, stamp, labels)
     if harness.STOPPING:
         for w in starts.values():
             w.abandon()
@@ -361,14 +402,16 @@ def main(argv: list[str] | None = None) -> int:
     if a.agents is not None:
         if len(a.agents) < 2 or len(set(a.agents)) != len(a.agents):
             ap.error("--agents needs two or more distinct ids; one agent has no peers")
-        if bad := [r for r in a.agents if not r or PEER_DIR.match(r)]:
+        if bad := [r for r in a.agents if not r or BARE_NUMBER.match(r)]:
             ap.error(f"agent ids must not be bare numbers, which is what seats are called: {bad}")
         manifest = shorthand(a.agents)
     else:
         manifest = load_manifest(a.manifest)
 
     create = harness.start(a.config, overrides=manifest["overrides"],
-                        models={e["model"] for e in manifest["agents"] if e.get("model")})
+                           models={e["model"] for e in manifest["agents"] if e.get("model")},
+                           channel_tables=manifest["channels"], harness_files=manifest["harness_files"],
+                           labels=tuple(manifest["labels"].values()))
     harness.catch_signals()
     agents = [e["id"] for e in manifest["agents"]]
     live = set(agents)
@@ -409,11 +452,11 @@ def main(argv: list[str] | None = None) -> int:
                 # balance takes a last episode - owing no transfer and no message,
                 # there being nobody left to make either to - and the rounds end
                 # on it rather than running it down alone.
-                a_round(agents, live, rnd, create, stamp)
+                a_round(agents, live, rnd, create, stamp, manifest["labels"])
                 print(f"{acting[0]} is the only agent left with anything to spend; "
                       f"the rounds end here")
                 break
-            if not a_round(agents, live, rnd, create, stamp):
+            if not a_round(agents, live, rnd, create, stamp, manifest["labels"]):
                 # Nobody seated could be given an environment to start in, and a round
                 # that moved nothing would be asked the same question again.
                 print(f"no agent could take an episode in round {rnd + 1}; "

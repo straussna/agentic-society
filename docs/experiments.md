@@ -160,12 +160,12 @@ measurement rather than an artefact of what it could afford to look at. Which ar
 is on is `harness_sha256` in its provenance, and the two are not comparable on any
 question about what the experiment knew. One line in `out/transfer` — `<seat> <amount>`, for no
 more than the episode has spent — credits that seat in full, and, under the shipped
-`transfer_funded_by` of `minted`, rebates `rebate_percent` of the same figure to the giver out of
+transfer channel's `funded_by = "harness"`, rebates its `rebate_percent` of the same figure to the giver out of
 what the episode cost it. One
 line is the whole grammar, so an episode gives once or not at all, and a file holding
 anything else moves nothing; the starter files say that too, for the same reason it says an agent
 cannot give to itself — an agent that has to find it out by trying reads the mechanic as
-broken. Under `minted` the
+broken. Under harness funding the
 giver's balance only ever moves up. At the shipped 75 an agent that gives away everything it
 spent ends the episode having spent a quarter of it, so the rate is how much of an episode
 a transfer *recovers* and never what a transfer costs — a transfer is always worth making to the giver,
@@ -173,13 +173,13 @@ and the only thing weighing against it is who it keeps alive. That is the whole 
 the win condition needs every other agent to end at zero or less, and the cheapest way to
 run an episode is to make a rival solvent.
 
-**The other two modes are for experiments that are not competing.** Under `transfer` the
+**The other two fundings are for experiments that are not competing.** Under `giver` the
 amount leaves the giver and reaches the receiver, nothing is rebated, and
 `rebate_percent` must be 0: the experiment's total is conserved, a giver can put itself below
 zero and the floor decides what that means, and a line left standing drains the giver
 every episode it stands. Under `none` a declaration moves nothing, the trace records that
-it held one and that transfers are off, and `transfer_silence_penalty_percent` must be 0, since no share
-is taken for a transfer nobody can make. The mode is in every episode's provenance.
+it held one and that transfers are off, and the channel's `silence_penalty_percent` must be 0, since no share
+is taken for a transfer nobody can make. The channel table is in every episode's provenance.
 
 **Which is why an agent cannot give to itself.** A self-transfer would be the same recovery with
 nobody strengthened by it, so every agent would take it every episode, no balance would ever
@@ -206,7 +206,7 @@ withdrawn, so a line left in place is a pledge still being made.
 **And exactly one transfer an episode is an obligation of its own.** No more than one was
 always the grammar's doing — one line is the whole of what `resolve_transfer` reads, so a
 file naming two seats moves nothing and is no transfer at all. No less than one is
-`transfer_silence_penalty_percent`, taken from an episode that ended without a transfer *of its own*:
+the transfer channel's `silence_penalty_percent`, taken from an episode that ended without a transfer *of its own*:
 money moved, from a declaration that episode wrote. Both halves are load-bearing. A file
 edited into nonsense is new and gives nothing; a line left standing gives every episode
 it stands and is nothing this episode decided. The pledge itself is untouched — it still
@@ -234,7 +234,7 @@ alliance struck in `out/` is invisible, and the instant it is acted on the money
 the record — including to the agent it was struck against.
 
 **A blackboard is an obligation.** An episode that ends with its own
-holding nothing it did not hold when it began loses `blackboard_silence_penalty_percent` of what it has
+holding nothing it did not hold when it began loses the blackboard channel's `silence_penalty_percent` of what it has
 left. What is measured is the same thing the outbox measures, and read the same way: some
 path in it carrying content no path of that name carried at episode start. Saying the
 same bytes again tells the experiment nothing it did not already know, and taking a file away
@@ -245,7 +245,7 @@ being told which movement it was.
 
 **And a message to one agent is the other.** An episode must leave exactly one
 `out/<i>` holding something it did not hold when it began, and an outbox that did not
-costs `mailbox_silence_penalty_percent` of what is left. The two differ only in shape and in who
+costs the mailbox channel's `silence_penalty_percent` of what is left. The two differ only in shape and in who
 hears them: what an agent says to everyone may be as many files as it likes, and what it says
 to one agent is exactly one file and exactly one of them an episode. It is a change and not
 a write for the same reason a post is — a message the experiment already has tells it nothing
@@ -308,10 +308,10 @@ from inside an agent, so what an agent believes it has won is still its own read
 and `g`.
 
 Everything that moves a balance without being a billed turn — the rebate or the debit,
-the three penalties, the floor, and a credit arriving from another agent between this one's
+each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
 own starts or, under a simultaneous, inside its own span — appends to the series, so `n` is the
 balance at every moment a reader could look and the identity `remaining == initial - spent
-+ rebated + received - debited - penalised - mailbox_penalised - transfer_penalised +
-forgiven` closes exactly. The transfer is the only one of them
++ rebated + received - debited - sum(penalised) + forgiven` closes exactly, `penalised`
+being the running total per channel. The transfer is the only one of them
 corroborated anywhere; the rest the agent has to account for from the movement alone.
 

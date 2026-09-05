@@ -1,4 +1,4 @@
-# Seeding
+# Starter files
 
 Material an agent may be given, when it arrives, and how a turn is billed.
 
@@ -9,28 +9,30 @@ Material an agent may be given, when it arrives, and how a turn is billed.
 An empty environment and an account that only falls make inaction correct, and a pilot agent duly
 proved it: the agent verified there was no task, wrote that finding down, and organised
 every later instance around not spending. Adding a goal to the prompt would answer the
-question from outside and cost invariant 2. `starter files` and `starter_files_below` change the environment instead.
+question from outside and cost invariant 2. `starter_files` and `starter_files_below` change the environment instead.
 
-At the first episode whose balance is at or below `starter_files_below`, the tree under `files/<starter files>`
-is copied into `state/` before the container starts, so the agent meets it in the listing
-`ls -la . ./state` prints and not in anything the harness says. Set both or neither; a
-starter files that never land and a threshold with nothing to land are both refused at startup, as
-is starter files that is not a directory. It lands once — the record in `account.json` is the guard,
-so re-running an episode cannot starter files twice, and a path the agent has since written to stops the
+At the first episode whose balance is at or below `starter_files_below`, the tree under `files/<starter_files>`
+is copied into the agent's private store (`state/` under the default table) before the
+container starts, so the agent meets it in the listing the episode opens on and not in
+anything the harness says. Set both or neither; starter files that never land and a
+threshold with nothing to land are both refused at startup, as are starter files that are
+not a directory. They land once — the record in `account.json` is the guard, so
+re-running an episode cannot plant them twice, and a path the agent has since written to stops the
 agent rather than being overwritten, because clobbering the agent's own file would destroy
 the only record of it.
 
-The starter files's name and threshold are pinned in `account.json` when the agent is created, beside
+The starter files' name and threshold are pinned in `account.json` when the agent is created, beside
 its budget and model, and that is what every later episode reads: editing `config.toml` does
-not reseed an agent in flight, and an experiment manifest may give each agent its own. An agent from
+not re-plant an agent in flight, and an experiment manifest may give each agent its own. An agent from
 before the terms were recorded takes the config's at its next episode and records them.
 
-`shared` is the other way material reaches an agent. A directory under `files/` named by
-it is placed at `shared/` in every seat's environment at every episode start, root-owned and read-only,
-and quoted in `m` at the first episode that holds it and named as unchanged after. The starter files
-is one agent's, private, writable, and lands once at a balance; the shared files is the
-whole experiment's, the experimenter's to change between agents and nobody's to change within one.
-Both reach provenance by digest.
+An experimenter channel is the other way material reaches an agent. A `[[channel]]` with
+`writer = "experimenter"` names a directory under `files/` as its `source` and a `path`; the
+directory is placed there in every seat's environment at every episode start, root-owned
+and read-only, and quoted in the digest at the first episode that holds it and named as
+unchanged after. Starter files are one agent's, private, writable, and land once at a
+balance; an experimenter channel is the whole experiment's, the experimenter's to change
+between agents and nobody's to change within one. Both reach provenance by digest.
 
 **The threshold is a balance, not an episode number,** because an episode number does not mean the
 same thing twice. Episodes have cost anywhere from 8022 to 729851, so episode 6 has been 29%
@@ -44,7 +46,7 @@ What to put there is the experiment. The starter files are as much prompt surfac
 is, and a filename that names what a file is for is an instruction; the digest exists so
 that whatever you chose is stated rather than assumed.
 
-Seeding a **fork** of a finished agent is the sharper form: the fork carries the doctrine its
+Giving starter files to a **fork** of a finished agent is the sharper form: the fork carries the doctrine its
 parent formed, so the arm with starter files and the agent it came from differ in the starter files and in nothing
 else. Two forks of different parents are still not comparable to each other — but a matched
 pair does not need them to be. A fork of an episode the starter files had already landed on carries the
@@ -67,7 +69,7 @@ the rest of the chain and returns whichever attempt answered. A `stop_reason` of
 `refusal` therefore means every model in the chain declined, which is a stronger claim
 than one model declining and the reason `REFUSAL_STREAK` reads a streak of them as an agent
 the classifier will not let start. `check.py` ignores `config.toml` and verifies against
-the pinned defaults, so a check agent means the same thing whatever you are currently
+the pinned defaults, so a check run means the same thing whatever you are currently
 trying.
 
 No `thinking` parameter is sent with it. A request under `fallbacks` must be valid as a

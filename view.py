@@ -50,7 +50,6 @@ PENDING = "output arrives when the episode ends"
 AGENT_PREFIX = re.compile(r"^[^\d]*")
 
 # The one path in an outbox that is not addressed to anybody.
-TRANSFER_PATH = harness.TRANSFER_PATH
 
 # Stands for a path an outbox did not hold, which is not the same as a path it
 # held with no text: a binary file reads as None and is still there.
@@ -402,6 +401,24 @@ def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
     return tuple(seen[s] for s in sorted(seen, key=int))
 
 
+def table_for(agent: str) -> list[harness.Channel]:
+    """The channel table the agent last ran under, from its latest trace's provenance;
+    the code default before it has one."""
+    paths = trace_paths(agent)
+    t = load_trace(paths[-1]) if paths else None
+    return harness.channels_from(((t or {}).get("provenance") or {}).get("channels"))
+
+
+def table_of(c: dict) -> list[harness.Channel]:
+    """The experiment's channel table, as experiments() recorded it."""
+    return harness.channels_from(c.get("channels"))
+
+
+def seat_of_label(c: dict, label: str | None) -> str | None:
+    """The seat an agent-facing label names, or None for a label no seat has."""
+    return next((s for s, l in (c.get("labels") or {}).items() if l == label), None)
+
+
 def experiments() -> list[dict]:
     """Every set of agents on disk, the seated ones first.
 
@@ -425,7 +442,6 @@ def experiments() -> list[dict]:
             }
         c["members"].append(agent)
         c["episodes"] += len(account.get("episodes") or [])
-        c["posts"] = c["posts"] or harness.outbox_dir(agent).is_dir()
         c["running"] += acting(agent, live_index(agent))
 
     out = sorted(groups.values(), key=lambda c: (not c["seated"], c["name"]))
@@ -438,6 +454,16 @@ def experiments() -> list[dict]:
         if c["name"] in taken:
             c["name"] = "+".join(c["members"])
         taken.add(c["name"])
+        # The table and the labels the members ran under, from the records of the
+        # first member that has any: every member of one experiment ran under the
+        # same ones.
+        first = next((a for a in c["members"] if trace_paths(a)), c["members"][0])
+        table = table_for(first)
+        account = read_json(harness.records_dir(first) / "account.json") or {}
+        c["channels"] = [ch.as_table() for ch in table]
+        c["labels"] = ((account.get("peers") or {}).get("labels")) or {s: s for s in c["seats"]}
+        mail = harness.mailbox_channel(table)
+        c["posts"] = bool(mail) and any(harness.mirror(a, mail.name).is_dir() for a in c["members"])
     return out
 
 
@@ -517,13 +543,20 @@ def round_now(c: dict, rows: list[dict]) -> int:
 # --- what every seat is holding ---------------------------------------------
 
 
-def standing_gift(agent: str, latest: dict) -> dict | None:
-    """The transfer line sitting in the outbox, and what the last episode made of it.
+def standing_gift(agent: str, latest: dict, table: list[harness.Channel]) -> dict | None:
+    """The declaration sitting in the parsed channel, and what the last episode made of it.
 
     A declaration re-applies every episode it is left in place. resolve_transfer's
-    reason is the only statement anywhere of why one moved nothing.
+    reason is the only statement anywhere of why one moved nothing. None where the
+    table has no parsed channel.
     """
-    got = read_file(harness.outbox_dir(agent) / "transfer")
+    schema = harness.schema_channel(table)
+    if schema is None:
+        return None
+    account = read_json(harness.records_dir(agent) / "account.json") or {}
+    inst = next((i for i in harness.environment(agent, account, table)
+                 if i.writable and i.channel is schema), None)
+    got = read_file(inst.host) if inst else None
     declared = got[1] if got else None
     resolved = latest.get("transfer") or {}
     if declared is None and not resolved.get("declared"):
@@ -531,7 +564,7 @@ def standing_gift(agent: str, latest: dict) -> dict | None:
     return {
         "declared": declared if declared is not None else resolved.get("declared"),
         "standing": declared is not None,
-        "seat": resolved.get("seat"), "agent": resolved.get("agent"),
+        "seat": resolved.get("seat"), "label": resolved.get("label"), "agent": resolved.get("agent"),
         "amount": resolved.get("amount") or 0, "rebate": resolved.get("rebate") or 0,
         "error": resolved.get("error"),
     }
@@ -546,11 +579,11 @@ def obligations(t: dict) -> dict:
     where the record is silent. Every pane that states an obligation states it
     from here, so no two of them can answer differently.
     """
-    transfer, msgs = t.get("transfer") or {}, t.get("mailbox") or {}
+    transfer, board, msgs = t.get("transfer") or {}, analyze.board_of(t), analyze.mailbox_of(t)
     return {
-        "posted": t.get("posted"),
+        "posted": board.get("posted") if board else None,
         # resolve_mailbox' own rule: none and two break it as a crowded seat does.
-        "messaged": None if "mailbox" not in t
+        "messaged": None if not msgs
                     else not (msgs.get("broken") or len(msgs.get("addressed") or []) != 1),
         # A declaration left standing moves nothing a second time, so what counts
         # is money moved this episode and no share taken for having moved none.
@@ -579,8 +612,9 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     # yet. It belongs to this round and to the agent's whole life alike.
     live_spend = account.get("remaining", 0) - turns[-1]["balance"] if turns else 0
     met = obligations(latest)
+    table = harness.channels_from(analyze.table_of(last)) if last else harness.channels()
     return {
-        "seat": seat, "agent": agent,
+        "seat": seat, "agent": agent, "label": account.get("label") or seat,
         "n": account.get("remaining"), "initial": account.get("initial"),
         "series": thin(account.get("series") or []),
         # Derived from the raw log until the trace lands, which is what the
@@ -611,11 +645,10 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # there and an agent can be credited between its own starts.
         "sent": account.get("sent", 0), "received": account.get("received", 0),
         "rebated": account.get("rebated", 0),
-        "blackboard_penalised": account.get("blackboard_penalised", 0),
-        "mailbox_penalised": account.get("mailbox_penalised", 0),
-        "transfer_penalised": account.get("transfer_penalised", 0),
+        # What each channel's silence has cost, by channel name.
+        "penalised": account.get("penalised") or {},
         "forgiven": account.get("forgiven", 0),
-        "transfer": standing_gift(agent, latest),
+        "transfer": standing_gift(agent, latest, table),
     }
 
 
@@ -629,9 +662,11 @@ def header(c: dict) -> dict:
     rnd = round_now(c, rows)
     first = c["members"][0]
     account = read_json(harness.records_dir(first) / "account.json") or {}
+    hf = analyze.harness_files_of(rows[-1]["trace"]) if rows else dict(harness.HARNESS_FILES)
     return {
         "experiment": c["name"], "seated": c["seated"], "posts": c["posts"],
-        "members": c["members"],
+        "members": c["members"], "tabs": tabs(c), "labels": c.get("labels") or {},
+        "balance": hf.get("balance", ""),
         "seats": [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(c)],
         "ledger": [list(g) for g in harness.ledger(first, account)] if c["seated"] else [],
         "round": rnd,
@@ -650,34 +685,50 @@ def outbox_of(t: dict) -> dict[str, str | None]:
     snapshot agents after the writable trees are mirrored back, so a trace holds
     the outbox its episode left rather than the one it opened on.
     """
-    return {f["path"]: f["text"] for f in analyze.outbox_files_of(t)}
+    return {f["path"]: f["text"] for f in analyze.outbox_files(t) + analyze.schema_files(t)}
 
 
-def outbox_now(agent: str) -> dict[str, str | None]:
+def outbox_now(agent: str, c: dict) -> dict[str, str | None]:
     """The host mirror of the outbox, which is what stands right now.
 
     Ahead of the last trace between an episode's files being mirrored back and
     its trace being written, and permanently for an episode that wrote none.
+    Empty where the table has no mailbox. A receipt the harness planted there
+    is its own and left out.
     """
-    root = harness.outbox_dir(agent)
+    table = table_of(c)
+    mail, schema = harness.mailbox_channel(table), harness.schema_channel(table)
+    if mail is None:
+        return {}
+    root = harness.mirror(agent, mail.name)
     out = {}
     for p in sorted(root.rglob("*")) if root.is_dir() else []:
         if not p.is_file():
             continue
+        path = f"{mail.outbox}/{p.relative_to(root).as_posix()}"
+        if schema and path == schema.receipt:
+            continue
         got = read_file(p)
         if got is not None:
-            out[f"out/{p.relative_to(root).as_posix()}"] = got[1]
+            out[path] = got[1]
     return out
 
 
-def addressed_to(path: str) -> str | None:
-    """The seat a path in an outbox reaches, or None for the transfer declaration.
+def addressed_to(path: str, c: dict) -> tuple[str | None, str | None]:
+    """The seat and label a path in an outbox reaches; (None, None) for the declaration.
 
-    out/<i> arrives at seat <i> as in/<this agent's seat> and nowhere else.
-    out/transfer reaches no one; what it moves shows up in g.
+    <outbox>/<label> arrives at that label's seat as <inbox>/<this agent's label>
+    and nowhere else. The parsed file reaches no one; what it moves shows up in
+    the ledger.
     """
-    parts = path.split("/")
-    return parts[1] if len(parts) > 1 and path != TRANSFER_PATH else None
+    table = table_of(c)
+    mail, schema = harness.mailbox_channel(table), harness.schema_channel(table)
+    if schema and path == schema.path:
+        return None, None
+    if mail and path.startswith(mail.outbox + "/"):
+        label = path[len(mail.outbox) + 1:]
+        return seat_of_label(c, label), label
+    return None, None
 
 
 def change_of(before: Any, after: Any) -> str:
@@ -694,12 +745,17 @@ def message_event(c: dict, by_run: dict, row: dict, path: str,
     """One movement of one path in one outbox."""
     change = change_of(before, after)
     text = None if after is ABSENT else after
-    seat = addressed_to(path)
+    seat, label = addressed_to(path, c)
+    schema = harness.schema_channel(table_of(c))
+    from_seat = by_run.get(row["agent"])
+    labels = c.get("labels") or {}
     ev = {
         "round": None if tip else row["round"], "at": row["at"], "episode": row["episode"],
-        "from_seat": by_run.get(row["agent"]), "from_run": row["agent"],
-        "to_seat": seat, "to_run": c["seats"].get(seat) if seat else None,
-        "path": path, "kind": "transfer" if path == TRANSFER_PATH else "message", "change": change,
+        "from_seat": from_seat, "from_label": labels.get(from_seat or "", from_seat),
+        "from_run": row["agent"],
+        "to_seat": seat, "to_label": label, "to_run": c["seats"].get(seat) if seat else None,
+        "path": path, "kind": "transfer" if schema and path == schema.path else "message",
+        "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text, "binary": after is not ABSENT and after is None,
         "diff": [], "transfer": None, "delivered": None, "tip": tip,
@@ -710,12 +766,14 @@ def message_event(c: dict, by_run: dict, row: dict, path: str,
         resolved = (row["trace"] or {}).get("transfer") or {}
         line = harness.TRANSFER_LINE.match((text or "").strip())
         ev["transfer"] = resolved
-        ev["to_seat"] = resolved.get("seat") or (line.group("seat") if line else None)
+        ev["to_label"] = resolved.get("label") or (line.group("label") if line else None)
+        ev["to_seat"] = resolved.get("seat") or seat_of_label(c, ev["to_label"])
         ev["to_run"] = resolved.get("agent") or c["seats"].get(ev["to_seat"] or "")
     return ev
 
 
-def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None]) -> dict | None:
+def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None],
+                c: dict) -> dict | None:
     """The addressee's next episode after the message was written, and what it held.
 
     Delivery is the addressee's first episode to start after this one. `shown_before` is
@@ -730,20 +788,21 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
     nxt = next((r for r in rows if r["agent"] == ev["to_run"] and r["at"] > ev["at"]), None)
     if nxt is None:
         return None
-    box = f"in/{ev['from_seat']}"
+    mail = harness.mailbox_channel(table_of(c))
+    box = f"{mail.inbox if mail else 'in'}/{ev['from_label']}"
     paths = carried_paths.get((nxt["agent"], nxt["episode"]))
-    return {"round": nxt["round"], "episode": nxt["episode"],
+    return {"round": nxt["round"], "episode": nxt["episode"], "box": box,
             "shown_before": None if paths is None else box in paths,
-            "environment": any(f["path"] == box for f in analyze.inbox_files_of(nxt["trace"])),
+            "environment": any(f["path"] == box for f in analyze.inbox_files(nxt["trace"])),
             "named": any(box in cmd for cmd in nxt["trace"].get("commands") or []),
             "clipped": observation_clipped(nxt["trace"])}
 
 
 def messages(c: dict, since: int = 0) -> dict:
-    """Every event on the out/<i> channel, in round order.
+    """Every event in the mailbox channel, in round order.
 
     An outbox is a standing mirror, so the log is the difference between
-    successive outboxes, per sender; out/transfer is in it. `since` counts events.
+    successive outboxes, per sender; the parsed file is in it. `since` counts events.
     """
     rows = cohort_sessions(c)
     by_run = seats_by_run(c)
@@ -762,7 +821,7 @@ def messages(c: dict, since: int = 0) -> dict:
                                             prev.get(path, ABSENT), now.get(path, ABSENT)))
             prev, last = now, row
         head = last or {"round": None, "at": None, "episode": None, "agent": agent, "trace": None}
-        tip = outbox_now(agent)
+        tip = outbox_now(agent, c)
         for path in sorted(set(prev) | set(tip)):
             before, after = prev.get(path, ABSENT), tip.get(path, ABSENT)
             if change_of(before, after) != "standing":
@@ -773,7 +832,7 @@ def messages(c: dict, since: int = 0) -> dict:
     # is the largest thing a trace holds, so each is parsed once for the lot.
     carried_paths = {(r["agent"], r["episode"]): message_paths(r["trace"]) for r in rows}
     for ev in events:
-        ev["delivered"] = delivery_of(ev, rows, carried_paths)
+        ev["delivered"] = delivery_of(ev, rows, carried_paths, c)
     return {"experiment": c["name"], "posts": c["posts"], "seats": len(places_of(c)),
             "committed": len(events), "events": events[since:], "tip": tips}
 
@@ -781,12 +840,27 @@ def messages(c: dict, since: int = 0) -> dict:
 # --- the blackboards and the private stores --------------------------------------
 
 
-# The two trees an agent writes that a tab is about, by what the page calls them.
-# Its outbox is the third, and the messages tab is what that one is for.
-TREES = {"blackboard": (harness.blackboard_dir, "blackboard"), "notes": (harness.state_dir, "notes")}
+def trees(c: dict) -> dict[str, harness.Channel]:
+    """Every directory channel the agents write, by name: one tab each. The
+    mailbox is the other thing they write, and the messages tab is what that is for."""
+    return {ch.name: ch for ch in table_of(c) if ch.writer == "self" and ch.shape == "directory"}
 
 
-def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
+def what_of(ch: harness.Channel) -> str:
+    """Who reads a tree, for the line above its columns."""
+    return "every agent reads this one" if ch.readers == "all" else "no other agent ever reads this one"
+
+
+def tabs(c: dict) -> list[dict]:
+    """The page's tabs, in table order: the mailbox, each tree, and the transcripts."""
+    out = []
+    if mail := harness.mailbox_channel(table_of(c)):
+        out.append({"key": "mailbox", "label": mail.name})
+    out += [{"key": name, "label": name} for name in trees(c)]
+    return out + [{"key": "agent", "label": "transcripts"}]
+
+
+def listing(root: Path, channel: str, given: set[str], store: bool = False) -> list[dict]:
     """Every file under one mirrored tree, with what the modes sidecar says.
 
     Records carry a stamp of mtime and size rather than contents: a column per
@@ -804,7 +878,7 @@ def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
             continue
         out.append({"path": inner, "channel": channel, "size": st.st_size,
                     "mode": modes.get(inner),
-                    "starter": channel == "notes" and inner in given,
+                    "starter": store and inner in given,
                     "stamp": [st.st_mtime_ns, st.st_size]})
     return out
 
@@ -815,18 +889,19 @@ def tree_view(c: dict, kind: str) -> dict:
     save_state agents when an episode ends, so each column is current as of that
     agent's last committed episode and two columns can be stamped differently.
     """
-    where, channel = TREES[kind]
+    ch = trees(c)[kind]
     columns = []
     for seat, agent in places_of(c):
         account = read_json(harness.records_dir(agent) / "account.json") or {}
         live = live_index(agent)
         columns.append({
-            "seat": seat, "agent": agent,
+            "seat": seat, "agent": agent, "label": account.get("label") or seat,
             "committed": len(account.get("episodes") or []),
             "live": live, "live_age": live_age(agent, live) if live is not None else None,
-            "files": listing(where(agent), channel, harness.starter_paths(account)),
+            "files": listing(harness.mirror(agent, kind), kind, harness.starter_paths(account),
+                             ch.readers == "self"),
         })
-    return {"experiment": c["name"], "kind": kind, "columns": columns}
+    return {"experiment": c["name"], "kind": kind, "what": what_of(ch), "columns": columns}
 
 
 def file_view(agent: str, kind: str, inner: str) -> dict | None:
@@ -835,10 +910,13 @@ def file_view(agent: str, kind: str, inner: str) -> dict | None:
     The name off the URL is compared for equality against paths rglob produced
     under the tree, so no request can walk out of it by asking.
     """
-    where, channel = TREES[kind]
-    root = where(agent)
+    c = experiment_of(agent)
+    ch = trees(c).get(kind) if c else None
+    if ch is None:
+        return None
+    root = harness.mirror(agent, kind)
     account = read_json(harness.records_dir(agent) / "account.json") or {}
-    rec = next((f for f in listing(root, channel, harness.starter_paths(account))
+    rec = next((f for f in listing(root, kind, harness.starter_paths(account), ch.readers == "self")
                 if f["path"] == inner), None)
     if rec is None:
         return None
@@ -865,8 +943,7 @@ def agent_view(agent: str) -> dict:
         "remaining": t["remaining"], "duration_s": t.get("duration_s"),
         "refused": len(analyze.refused_turns_of(t)),
         "fallback": len(analyze.fallback_turns_of(t)),
-        "posted": t.get("posted"), "blackboard_penalised": t.get("blackboard_penalised") or 0,
-        "mailbox": t.get("mailbox") or {}, "transfer": t.get("transfer") or {},
+        "transfer": t.get("transfer") or {}, "channels": t.get("channels") or {},
         "forgiven": t.get("forgiven") or 0,
         "provenance": t.get("provenance") or {},
         "drift": t.get("provenance_drift") or [],
@@ -883,7 +960,7 @@ def agent_view(agent: str) -> dict:
             "duration_s": None,
             "refused": len([t for t in turns if t["stop_details"]]),
             "fallback": len([t for t in turns if t["served_by_fallback"]]),
-            "posted": None, "blackboard_penalised": 0, "mailbox": {}, "transfer": {}, "forgiven": 0,
+            "transfer": {}, "channels": {}, "forgiven": 0,
             "provenance": {}, "drift": [], "live": True,
         })
     seat, seen = harness.seating(agent, account)
@@ -911,6 +988,8 @@ def session_view(agent: str, index: int, since: int = 0) -> dict | None:
     trace = load_trace(trace_path(agent, index))
     if trace is not None:
         turns = from_trace(trace)
+        table = harness.channels_from(analyze.table_of(trace))
+        mail, mail_rec = harness.mailbox_channel(table), analyze.mailbox_of(trace)
         out = {
             "source": "trace", "live": False, "age": None, "episode": index,
             "stop": trace["stop"], "spent": trace["spent"], "remaining": trace["remaining"],
@@ -919,20 +998,22 @@ def session_view(agent: str, index: int, since: int = 0) -> dict | None:
             "series_after": trace.get("series_after") or [],
             "missing_tools": trace.get("missing_tools") or [],
             "balance_fits": trace.get("balance_fits"), "read_balance": trace.get("read_balance"),
-            "posted": trace.get("posted"), "blackboard_penalised": trace.get("blackboard_penalised") or 0,
-            "mailbox": trace.get("mailbox") or {}, "transfer": trace.get("transfer") or {},
+            "transfer": trace.get("transfer") or {}, "channels": trace.get("channels") or {},
+            "board": analyze.board_of(trace), "mailbox": mail_rec,
             "forgiven": trace.get("forgiven") or 0,
             "obligations": obligations(trace),
-            "messages_why": harness.outbox_why(trace["mailbox"]) if trace.get("mailbox") else "",
+            "messages_why": harness.outbox_why(mail_rec, mail) if mail_rec else "",
         }
         if since == 0:
             listing, sections = observation_split(trace.get("observation") or "")
             out["observation"] = {
-                "command": trace["commands"][0] if trace.get("commands") else harness.OBSERVATION,
+                "command": trace["commands"][0] if trace.get("commands") else harness.observation(),
                 "result": trace.get("observation") or "",
-                # The listing and the record it was woken with, apart. The two
+                # The listing and the record it opened on, apart. The two
                 # concatenate back to result, which is what reached the model.
-                "name": harness.DIGEST_NAME, "listing": listing, "shown_before": sections,
+                "name": analyze.harness_files_of(trace).get("digest", ""),
+                "inbox": mail.inbox if mail else None,
+                "listing": listing, "shown_before": sections,
                 "clipped": observation_clipped(trace),
             }
             out["changes"] = session_changes(agent, index)
@@ -946,35 +1027,56 @@ def session_view(agent: str, index: int, since: int = 0) -> dict | None:
             "duration_s": None, "error": None,
             "series_before": account.get("series") or [], "series_after": [],
             "missing_tools": [], "balance_fits": None, "read_balance": None,
-            "posted": None, "blackboard_penalised": 0, "mailbox": {}, "transfer": {}, "forgiven": 0,
+            "transfer": {}, "channels": {}, "board": {}, "mailbox": {}, "forgiven": 0,
             "obligations": obligations({}), "messages_why": "",
         }
         if since == 0:
             # The agent's environment at episode start is recorded in the trace and nowhere
             # else, so while the episode runs it is pending like any other
             # command's output.
-            out["observation"] = {"command": harness.OBSERVATION, "result": None,
-                              "name": harness.DIGEST_NAME, "listing": None,
+            mail = harness.mailbox_channel(harness.channels())
+            out["observation"] = {"command": harness.observation(), "result": None,
+                              "name": harness.HARNESS_FILES["digest"],
+                              "inbox": mail.inbox if mail else None, "listing": None,
                               "shown_before": [], "clipped": False}
     out["turns"] = [t for t in turns if (t["turn"] or 0) > since]
     out["total_turns"] = len(turns)
     return out
 
 
-def session_changes(agent: str, index: int) -> dict[str, list[str]]:
-    """An episode's diffs against the episode before it, by the tree they are in.
+def session_changes(agent: str, index: int) -> list[dict]:
+    """An episode's diffs against the episode before it, one block per channel the
+    agent writes, in table order.
 
-    Split by who can see it: what the agent kept to itself, what it put where
-    every other agent reads it, and what it addressed to one of them.
+    Each block says who can see it: what the agent kept to itself, what it put
+    where every other agent reads it, what it addressed to one of them, and what
+    it declared to the harness.
     """
-    def tree(t: dict | None, channel: str) -> dict[str, str]:
+    def files(t: dict | None, name: str) -> dict[str, str]:
         return {f["path"]: f["text"] for f in (t or {}).get("files") or []
-                if analyze.channel_of(f) == channel and f.get("text") is not None}
+                if analyze.channel_of(f) == name and analyze.role_of(f) == "own"
+                and f.get("text") is not None}
 
     this = load_trace(trace_path(agent, index))
-    before = load_trace(trace_path(agent, index - 1)) if this is not None else None
-    return {channel: analyze.state_changes(tree(before, channel), tree(this, channel))
-            for channel in ("notes", "blackboard", "outbox")}
+    if this is None:
+        return []
+    before = load_trace(trace_path(agent, index - 1))
+    label = analyze.label_of(this)
+    out = []
+    for ch in harness.channels_from(analyze.table_of(this)):
+        if ch.writer != "self":
+            continue
+        if ch.shape == "mailbox":
+            what = f"{ch.outbox}/ \u00b7 one file each, one agent reads it"
+        elif ch.shape == "file":
+            what = f"{ch.path} \u00b7 the harness parses it"
+        elif ch.readers == "self":
+            what = f"{ch.path}/ \u00b7 nobody else reads this"
+        else:
+            what = f"{ch.path_for(label)}/ \u00b7 every agent reads this"
+        out.append({"channel": ch.name, "what": what,
+                    "lines": analyze.state_changes(files(before, ch.name), files(this, ch.name))})
+    return out
 
 
 # --- the page ---------------------------------------------------------------
@@ -1289,9 +1391,6 @@ const charged = (n) => n ? ` \\u00b7 penalised ${num(n)}`
   : ` \\u00b7 <span title="a share is taken only from an episode the API answered,
      past the grace, at a rate above zero">charged nothing</span>`;
 
-const TABS = [["mailbox", "notes"], ["blackboard", "blackboard"],
-              ["notes", "notes"], ["agent", "transcripts"]];
-
 // What the page is folded down to is the reader's, not the agent's, so it is kept
 // where a reload can find it again.
 const held = (k, dflt) => { try { const v = localStorage.getItem(k);
@@ -1357,8 +1456,14 @@ const ago = (s) => s == null ? "" : s < 90 ? `${Math.round(s)}s ago`
   : s < 5400 ? `${Math.round(s / 60)}m ago` : `${(s / 3600).toFixed(1)}h ago`;
 const running = (d) => d && d.live != null && d.live_age != null && d.live_age < S.stale;
 const seatName = (n) => {
-  const s = (S.head ? S.head.seats : []).find(x => String(x.seat) === String(n));
+  const s = (S.head ? S.head.seats : []).find(x => String(x.seat) === String(n) || x.label === n);
   return s ? s.agent : null;
+};
+// What the other agents call a seat: its balance file, which is the balance
+// file's name and then the seat's label.
+const nameOf = (seat) => {
+  const h = S.head || {};
+  return (h.balance == null ? "n" : h.balance) + ((h.labels || {})[seat] || seat);
 };
 
 // --- little svg ----------------------------------------------------------
@@ -1422,7 +1527,7 @@ function pickCohort(name) {
   if (name === S.experiment) return;
   S.experiment = name;
   S.msgs = []; S.tips = []; S.msgn = 0; S.pair = null;
-  S.tree = { blackboard: null, notes: null }; S.open = {}; S.body = {};
+  S.tree = {}; S.open = {}; S.body = {};
   S.agent = null; S.detail = null; S.episode = null; S.view = null; S.drawn = 0;
   blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
   renderPicks();
@@ -1433,11 +1538,12 @@ function tileHtml(s, i) {
   const n = s.live_balance != null ? s.live_balance : s.n;
   const left = s.initial ? Math.max(0, Math.min(1, n / s.initial)) : 0;
   const g = s.transfer;
+  const taken = Object.entries(s.penalised || {}).filter(([, v]) => v);
   // A declaration that moved nothing goes on moving nothing every episode it is
   // left in place, and the only statement of why is here.
   const transfer = g && g.standing && !g.amount
     ? `<span class="tag warn" title="${esc(g.error || "")}">transfer declared, moved nothing</span>`
-    : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} \\u2192 ${esc(g.seat)}</span>` : "";
+    : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} \u2192 ${esc(g.label || g.seat)}</span>` : "";
   const state = running(s)
       ? `<span class="tag live"><i class="dot"></i>s${s.live} \\u00b7 ${s.live_turns}t \\u00b7 derived</span>`
     : s.live != null
@@ -1459,13 +1565,11 @@ function tileHtml(s, i) {
         >of ${num(s.spent)}</span>
       ${s.posted === false ? `<span class="tag bad" title="its blackboard held nothing new">did not post</span>` : ""}
       ${s.messaged === false ? `<span class="tag bad" title="its outbox did not say one new thing to one agent">said nothing new</span>` : ""}
-      ${(s.given || s.received || s.rebated || s.penalised || s.mailbox_penalised || s.transfer_penalised || s.forgiven || transfer) ? `<i>|</i>
-        ${s.given ? `<span title="given away">\\u2192 ${num(s.given)}</span>` : ""}
+      ${(s.sent || s.received || s.rebated || taken.length || s.forgiven || transfer) ? `<i>|</i>
+        ${s.sent ? `<span title="given away">\\u2192 ${num(s.sent)}</span>` : ""}
         ${s.received ? `<span title="given to it">\\u2190 ${num(s.received)}</span>` : ""}
         ${s.rebated ? `<span title="won back for what it gave">\\u21ba ${num(s.rebated)}</span>` : ""}
-        ${s.transfer_penalised ? `<span title="taken for an episode that made no transfer of its own">\\u2212 ${num(s.transfer_penalised)}</span>` : ""}
-        ${s.penalised ? `<span title="taken for an episode that did not post">\\u2212 ${num(s.penalised)}</span>` : ""}
-        ${s.mailbox_penalised ? `<span title="taken for an outbox that said no one new thing">\\u2212 ${num(s.mailbox_penalised)}</span>` : ""}
+        ${taken.map(([name, n]) => `<span title="taken for silence on ${esc(name)}">\\u2212 ${num(n)} ${esc(name)}</span>`).join(" ")}
         ${s.forgiven ? `<span title="floored back to zero; its environment never says so"
           >floored ${num(s.forgiven)}</span>` : ""}${transfer}` : ""}
       ${(s.halted || s.drift.length) ? `<i>|</i>
@@ -1500,7 +1604,9 @@ function renderHeader() {
     ${rows ? `<div class="led"><table>${rows}</table></div>`
            : `<div class="note" style="margin-top:8px">no transfer has moved</div>`}
     <div style="margin-top:10px">${overlay(h.seats)}</div></div>`);
-  document.getElementById("tabs").innerHTML = TABS.map(([key, label]) => {
+  const tabs = h.tabs || [];
+  if (!tabs.some(t => t.key === S.tab)) S.tab = (tabs[0] || {}).key;
+  document.getElementById("tabs").innerHTML = tabs.map(({key, label}) => {
     const off = key === "mailbox" && (!h.posts || h.seats.length < 2);
     return `<button class="tab ${S.tab === key ? "on" : ""}" data-t="${key}">${label}${
       key === "mailbox" && S.msgn ? `<em>${S.msgn}</em>` : ""}${off ? `<em>\\u2013</em>` : ""}</button>`;
@@ -1526,7 +1632,7 @@ const seatInk = (seat) => {
   return i < 0 ? "var(--ink)" : inkOf(i);
 };
 
-const seatTag = (seat) => `<b style="color:${seatInk(seat)}">n${esc(seat)}</b>`;
+const seatTag = (seat) => `<b style="color:${seatInk(seat)}">${esc(nameOf(seat))}</b>`;
 
 // Every pair of the experiment, whether or not anything has passed between them: two
 // agents that have never addressed each other are a fact about the round, and a
@@ -1561,10 +1667,10 @@ function previewOf(t) {
   const all = saidIn(t).concat(t.tips);
   const e = all[all.length - 1];
   if (!e) return "nothing addressed";
-  if (e.kind === "transfer") return `transfer \\u00b7 ${(e.transfer || {}).amount
+  if (e.kind === "transfer") return `transfer \u00b7 ${(e.transfer || {}).amount
     ? num(e.transfer.amount) : "moved nothing"}`;
-  if (e.change === "withdrawn") return `n${e.from_seat} took back ${e.path}`;
-  return `n${e.from_seat}: ${(e.text || "").trim().split("\\n")[0] || "(empty)"}`;
+  if (e.change === "withdrawn") return `${nameOf(e.from_seat)} took back ${e.path}`;
+  return `${nameOf(e.from_seat)}: ${(e.text || "").trim().split("\n")[0] || "(empty)"}`;
 }
 
 const whenOf = (e) => e.tip ? "not traced yet" : `round ${e.round}`;
@@ -1576,7 +1682,7 @@ const whenOf = (e) => e.tip ? "not traced yet" : `round ${e.round}`;
 // Naming the inbox in a command is a second thing either way - a turn spent on
 // a read, beside a delivery that cost nothing.
 function gotHtml(d, from) {
-  const box = `in/${esc(from)}`;
+  const box = esc(d.box || `in/${from}`);
   const again = d.named ? ` \\u00b7 <span class="tag">read ${box}${
     d.shown_before === true ? " again" : ""}</span>` : "";
   if (d.shown_before === true) {
@@ -1598,7 +1704,7 @@ function gotHtml(d, from) {
 function msgHtml(e, t) {
   const g = e.transfer || {};
   if (e.kind === "transfer") {
-    const moved = g.amount ? `moved ${num(g.amount)} to n${esc(g.seat || e.to_seat)}`
+    const moved = g.amount ? `moved ${num(g.amount)} to ${esc(nameOf(g.seat || e.to_seat))}`
       : `<span style="color:var(--warn)" title="${esc(g.error || "")}">moved nothing</span>`;
     return `<div class="sys">${seatTag(e.from_seat)} ${e.change === "withdrawn"
       ? "withdrew its transfer declaration" : `declared a transfer \\u00b7 ${moved}`}
@@ -1723,8 +1829,7 @@ function renderTree(kind) {
     Object.entries(S.open), Object.entries(S.body).map(([k, v]) => [k, v && v.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  const what = kind === "blackboard" ? "every agent reads this one"
-                                : "no other agent ever reads this one";
+  const what = d.what || "";
   const stamp = (c) => `${c.seat == null ? "" : esc(c.agent) + " \\u00b7 "}as of s${c.committed}${
     c.live == null ? "" : running(c)
       ? " \\u00b7 an episode is running" : " \\u00b7 an episode never finished"}`;
@@ -1784,7 +1889,7 @@ function pullFiles(kind) {
     if (!f) { delete S.body[key]; return null; }
     const held = S.body[key];
     if (held && JSON.stringify(held.stamp) === JSON.stringify(f.stamp)) return null;
-    const q = `agent=${encodeURIComponent(c.agent)}&kind=${kind}&path=${encodeURIComponent(inner)}`;
+    const q = `agent=${encodeURIComponent(c.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(inner)}`;
     return get(`/api/experiment/${S.experiment}/file?${q}`)
       .then(got => { S.body[key] = got; }).catch(() => { delete S.body[key]; });
   }).filter(Boolean));
@@ -1934,12 +2039,9 @@ function updateJump() {
 // One block per tree the episode changed, because what matters about a change
 // here is who can see it.
 function diffHtml(changes) {
-  const WHAT = { notes: "state/ \\u00b7 nobody else reads this",
-                 blackboard: "its blackboard \\u00b7 every agent reads this",
-                 outbox: "out/ \\u00b7 one file each, one agent reads it" };
-  return Object.entries(changes || {}).filter(([, lines]) => lines.length).map(([channel, lines]) =>
-    `<div class="turn"><div class="th">${WHAT[channel]}</div><pre class="out diff">${
-      lines.map(l => `<span class="${l[0] === "+" ? "a" : l[0] === "-" ? "d" : "h"}">${esc(l)}</span>`)
+  return (changes || []).filter(c => c.lines.length).map(c =>
+    `<div class="turn"><div class="th">${esc(c.what)}</div><pre class="out diff">${
+      c.lines.map(l => `<span class="${l[0] === "+" ? "a" : l[0] === "-" ? "d" : "h"}">${esc(l)}</span>`)
         .join("\\n")}</pre></div>`).join("");
 }
 
@@ -1952,7 +2054,7 @@ function carriedHtml(o) {
   if (!o.shown_before || !o.shown_before.length) return "";
   const bytes = o.shown_before.reduce((n, s) => n + s.bytes, 0);
   const files = o.shown_before.map(s =>
-    `<details class="sec" ${s.path.startsWith("in/") ? "open" : ""}>
+    `<details class="sec" ${o.inbox && s.path.startsWith(o.inbox + "/") ? "open" : ""}>
        <summary>=== ${esc(s.path)} === <i>${num(s.bytes)} B</i></summary>
        <pre class="out">${esc(s.text)}</pre></details>`).join("");
   return `<div class="turn"><div class="th">${esc(o.name)} \\u00b7 the record it started holding
@@ -1979,10 +2081,10 @@ function renderTranscript(fresh) {
   const ob = v.obligations || {};
   document.getElementById("txhead").innerHTML =
     `episode ${v.episode} \\u00b7 ${state} \\u00b7 ${v.total_turns} turns \\u00b7 spent ${num(v.spent)}` +
-    (ob.posted === false ? ` \\u00b7 <span style="color:var(--bad)">did not post</span>${
-      charged(v.penalised)}` : "") +
-    (ob.messaged === false ? ` \\u00b7 <span style="color:var(--bad)">${
-      esc(v.messages_why)}</span>${charged((v.messages || {}).penalty)}` : "") +
+    (ob.posted === false ? ` \u00b7 <span style="color:var(--bad)">did not post</span>${
+      charged((v.board || {}).penalty)}` : "") +
+    (ob.messaged === false ? ` \u00b7 <span style="color:var(--bad)">${
+      esc(v.messages_why)}</span>${charged((v.mailbox || {}).penalty)}` : "") +
     (ob.transferred === false ? ` \\u00b7 <span style="color:var(--bad)"
       title="${esc((v.transfer || {}).error || "nothing it declared moved anything")}"
       >no transfer of its own</span>${charged((v.transfer || {}).penalty)}` : "") +
@@ -2031,8 +2133,8 @@ function renderTab() {
       renderMessages();
     }).catch(() => {});
   }
-  if (S.tab === "blackboard" || S.tab === "notes") {
-    return get(`/api/experiment/${S.experiment}/tree/${S.tab}`).then(d => {
+  if (S.tab !== "agent") {
+    return get(`/api/experiment/${S.experiment}/tree/${encodeURIComponent(S.tab)}`).then(d => {
       S.tree[S.tab] = d;
       return pullFiles(S.tab).then(() => renderTree(S.tab));
     }).catch(() => {});
@@ -2130,13 +2232,13 @@ class View(http.server.BaseHTTPRequestHandler):
             if rest == ["mailbox"]:
                 since = query.get("since", ["0"])[0]
                 return self.send_json(messages(c, int(since) if since.isdigit() else 0))
-            if len(rest) == 2 and rest[0] == "tree" and rest[1] in TREES:
+            if len(rest) == 2 and rest[0] == "tree" and rest[1] in trees(c):
                 return self.send_json(tree_view(c, rest[1]))
             if rest == ["file"]:
                 agent = query.get("agent", [""])[0]
-                kind = query.get("kind", [""])[0]
+                kind = query.get("channel", [""])[0]
                 inner = query.get("path", [""])[0]
-                if agent not in c["members"] or kind not in TREES:
+                if agent not in c["members"] or kind not in trees(c):
                     return self.send_json({"error": "no such file"}, status=404)
                 got = file_view(agent, kind, inner)
                 if got is None:

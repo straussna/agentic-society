@@ -235,41 +235,40 @@ class HostBox:
         self.name = name
         self.dir = tempfile.mkdtemp(prefix="mtr-host-")
         self.work = Path(self.dir)
-        self.index = "1"
-        (self.work / "state").mkdir()
 
     @classmethod
     def start(cls, name: str) -> "HostBox":
         return cls(name)
 
-    def load(self, channels: list[tuple[str, Path, str]], files: dict[str, str]) -> None:
-        for name, src, channel in channels:
-            dest = self.work / name
-            if channel in harness.FILE_CHANNELS:
+    def load(self, instances: list, files: dict[str, str]) -> None:
+        for inst in instances:
+            if inst.nested:
+                continue                    # rides in with the tree above it
+            dest = self.work / inst.path
+            if inst.is_file:
                 # A sender that has not addressed this agent, and a sender that
                 # aimed something other than one file at it, arrive the same way:
                 # as nothing.
                 dest.parent.mkdir(exist_ok=True, parents=True)
-                if src.is_file():
-                    shutil.copyfile(src, dest)
+                if inst.host.is_file():
+                    shutil.copyfile(inst.host, dest)
                 continue
-            if channel == "blackboard":
-                self.index = name
             dest.mkdir(exist_ok=True, parents=True)
-            if src.is_dir():
-                shutil.copytree(src, dest, dirs_exist_ok=True)
+            if inst.host.is_dir():
+                shutil.copytree(inst.host, dest, dirs_exist_ok=True)
         for name, text in files.items():
+            (self.work / name).parent.mkdir(exist_ok=True, parents=True)
             (self.work / name).write_text(text, encoding="utf-8", newline="\n")
 
     def shell(self) -> HostShell:
         return HostShell(self)
 
-    def save(self, channels: list[tuple[str, Path, str]]) -> bool:
+    def save(self, instances: list) -> bool:
         kept = True
-        for name, mirror, channel in channels:
-            if channel in harness.WRITABLE:
+        for inst in instances:
+            if inst.writable and not inst.nested and not inst.is_file:
                 kept = harness.save_state(
-                    mirror, self._fetcher(self.work / name), lambda: None) and kept
+                    inst.host, self._fetcher(self.work / inst.path), lambda: None) and kept
         return kept
 
     def _fetcher(self, src: Path) -> Callable[[Path], bool]:
@@ -340,9 +339,59 @@ def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
     return p
 
 
+def channels(*extra: dict, **per_name: dict) -> list[dict]:
+    """The default channel table as [[channel]] tables, with fields changed by name.
+
+    channels(transfer={"rebate_percent": 50}) is today's world with one field moved;
+    positional dicts are whole extra channels. For temp_root(channels=...).
+    """
+    tables = [c.declared() for c in harness.DEFAULT_CHANNELS]
+    by = {t["name"]: t for t in tables}
+    for name, fields in per_name.items():
+        by[name].update(fields)
+    return tables + list(extra)
+
+
+def digest_name() -> str:
+    """What the digest is called under the table in force."""
+    return harness.HARNESS_FILES["digest"]
+
+
+def ledger_name() -> str:
+    """What the ledger is called under the table in force."""
+    parsed = harness.schema_channel(harness.channels())
+    return parsed.ledger if parsed else ""
+
+
+def channel_toml(tables: list[dict], harness_files: dict | None = None) -> str:
+    """Render channel tables (and harness file names) as the TOML a config file holds."""
+    def value(v) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return repr(v) if isinstance(v, int) else '"' + v.replace('"', '\\"') + '"'
+    out = []
+    if harness_files:
+        out.append("[harness_files]\n" + "".join(f"{k} = {value(v)}\n" for k, v in harness_files.items()))
+    for table in tables:
+        out.append("[[channel]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in table.items()))
+    return "\n".join(out)
+
+
+def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) -> Path:
+    """Plant an experimenter channel's files under a temporary ROOT and declare the channel.
+
+    Inside a root's block, since pinned() puts the table back when the block ends.
+    """
+    planted = plant(root, name, **files)
+    harness.apply_channels(channels({"name": path, "writer": "experimenter", "source": name,
+                                     "path": path}), None, "check")
+    return planted
+
+
 # Every harness global a check is allowed to move, and therefore every one pinned()
 # puts back. temp_root refuses any name outside this set.
 RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
+                                "CHANNELS", "HARNESS_FILES",
                             # A check that left this set would end every later
                             # episode in the same worker at turn one.
                             "STOPPING", "catch_signals"}
@@ -365,7 +414,7 @@ def pinned():
 
 
 @contextlib.contextmanager
-def rooted(box, **overrides):
+def rooted(box, channels=None, harness_files=None, **overrides):
     """Point harness at a throwaway directory, with episodes running in `box`.
 
     `overrides` set harness module globals (MAX_TURNS=1, COMMAND_TIMEOUT=2) for the
@@ -379,11 +428,13 @@ def rooted(box, **overrides):
         harness.BOX = box
         for k, v in overrides.items():
             setattr(harness, k, v)
+        if channels is not None or harness_files is not None:
+            harness.apply_channels(channels, harness_files, "check")
         yield Path(d)
 
 
 @contextlib.contextmanager
-def host_root(**overrides):
+def host_root(channels=None, harness_files=None, **overrides):
     """A throwaway agent pinned to this machine, whatever --real says.
 
     For the few checks about what is *sent* rather than the episode it drives.
@@ -391,27 +442,27 @@ def host_root(**overrides):
     """
     if not host_bash():
         raise Skip
-    with rooted(HostBox, **overrides) as d:
+    with rooted(HostBox, channels=channels, harness_files=harness_files, **overrides) as d:
         yield d
 
 
 @contextlib.contextmanager
-def temp_root(**overrides):
+def temp_root(channels=None, harness_files=None, **overrides):
     """A throwaway agent whose episodes are a directory and a shell on this machine.
 
     What most checks want: the pipeline end to end - account, turns, series,
     trace - without paying for a container that proves nothing they assert.
     """
     if REAL_ONLY:
-        with docker_root(**overrides) as d:
+        with docker_root(channels=channels, harness_files=harness_files, **overrides) as d:
             yield d
         return
-    with host_root(**overrides) as d:
+    with host_root(channels=channels, harness_files=harness_files, **overrides) as d:
         yield d
 
 
 @contextlib.contextmanager
-def docker_root(**overrides):
+def docker_root(channels=None, harness_files=None, **overrides):
     """A throwaway agent whose episodes are real containers.
 
     For the checks that turn on something only a container has. Skips when
@@ -419,7 +470,7 @@ def docker_root(**overrides):
     """
     if not docker_ready():
         raise Skip
-    with rooted(harness.Container, **overrides) as d:
+    with rooted(harness.Container, channels=channels, harness_files=harness_files, **overrides) as d:
         yield d
 
 
@@ -448,9 +499,10 @@ DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())
 
 
 def check_system_is_pinned():
-    """Invariant 2: the prompt is the pinned 75 bytes, and the tool carries no description."""
+    """Invariant 2: the prompt is the pinned 89 bytes, and the tool carries no description."""
     assert hashlib.sha256(harness.SYSTEM.encode()).hexdigest() == harness.SYSTEM_SHA256
-    assert len(harness.SYSTEM) == 75
+    assert len(harness.SYSTEM) == 89
+    assert "state" not in harness.SYSTEM, "no path: the table says which directory persists"
     assert harness.SYSTEM.count("\n") == 2, "two lines: what persists, and what is available"
     for word in ("you ", "your", "assistant", "budget", "cost", "goal", "task", "network"):
         assert word not in harness.SYSTEM.lower(), f"SYSTEM contains {word!r}"
@@ -508,8 +560,12 @@ def check_config_is_validated():
                     'rebate_percent = 101', 'live_balance = "yes"',
                     # A transfer is the giver's own budget moving; a rebate on top
                     # would mint. No share for a transfer nobody can make.
-                    'transfer_funded_by = "giver"\nrebate_percent = 75', 'transfer_funded_by = "loud"',
-                    'transfer_funded_by = 3', 'transfer_funded_by = "none"\ntransfer_silence_penalty_percent = 50',
+                    channel_toml(channels(transfer={"funded_by": "giver", "rebate_percent": 75})),
+                    channel_toml(channels(transfer={"funded_by": "loud"})),
+                    channel_toml(channels(transfer={"funded_by": 3})),
+                    channel_toml(channels(transfer={"funded_by": "none", "silence_penalty_percent": 50})),
+                    # The keys that moved onto channels are refused by their old names.
+                    'transfer_funded_by = "harness"', 'shared_files = "brief"',
                     'delivery = "fetch"', 'delivery = 1',
                     # Above the ceiling the harness would time out mid-episode.
                     f'max_tokens = {harness.MAX_TOKENS_CEILING + 1}',
@@ -540,13 +596,15 @@ def check_config_is_validated():
             assert harness.load_config(f) == f, "the file used is reported back"
             assert harness.MAX_TURNS == 7, "a good value must actually apply"
             assert harness.CONTEXT_FRACTION == 1.0, "an int must widen into a float field"
-        f.write_text('transfer_funded_by = "giver"\nrebate_percent = 0\n', encoding="utf-8")
+        f.write_text(channel_toml(channels(transfer={"funded_by": "giver", "rebate_percent": 0})),
+                     encoding="utf-8")
         with pinned():
             harness.load_config(f)
-            assert harness.TRANSFER_FUNDED_BY == "giver", "the pairing the rule asks for is accepted"
+            assert harness.channel("transfer").funded_by == "giver", \
+                "the pairing the rule asks for is accepted"
         with pinned():
             try:
-                harness.apply_config({"rebate_percent": 101}, "manifest")
+                harness.apply_channels(channels(transfer={"rebate_percent": 101}), None, "manifest")
             except SystemExit as e:
                 assert str(e).startswith("manifest:"), e
             else:
@@ -685,8 +743,7 @@ def check_episodes_reconcile():
             "the last trace carries the series the account committed"
 
     # And with every term live at once, the identity still closes.
-    with temp_root(REBATE_PERCENT=50, BLACKBOARD_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50, FLOOR_AT_ZERO=True) as root:
+    with temp_root(FLOOR_AT_ZERO=True, channels=channels(transfer={"rebate_percent": 50, "silence_penalty_percent": 50}, blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())          # a transfer, and no post
         episode_once(run("rm out/transfer && mkdir -p out/2 && echo hi > out/2/a",  # a crowded seat
@@ -696,18 +753,17 @@ def check_episodes_reconcile():
         spent = sum(s["spent"] for s in episodes)
         assert account["remaining"] == reconciled(account, spent), account
         assert series[-1] == account["remaining"], "the series ends where the account does"
-        assert account["rebated"] == 150 and account["blackboard_penalised"] > 0, account
-        assert account["mailbox_penalised"] > 0, account
+        assert account["rebated"] == 150 and account["penalised"]["blackboard"] > 0, account
+        assert account["penalised"]["mail"] > 0, account
         # The first episode wrote the line and gave; the second took it away,
         # which moves nothing and is not a transfer it made.
-        assert account["transfer_penalised"] > 0, account
-        assert [s["posted"] for s in episodes] == [False, True], episodes
+        assert account["penalised"]["transfer"] > 0, account
+        assert [s["channels"]["blackboard"]["posted"] for s in episodes] == [False, True], episodes
         for s in episodes:
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
 
     # And under transfer, where the transfer is a debit and not a rebate.
-    with temp_root(TRANSFER_FUNDED_BY="giver", REBATE_PERCENT=0, TRANSFER_SILENCE_PENALTY_PERCENT=50,
-                   FLOOR_AT_ZERO=True) as root:
+    with temp_root(FLOOR_AT_ZERO=True, channels=channels(transfer={"funded_by": "giver", "rebate_percent": 0, "silence_penalty_percent": 50})) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())
         episode_once(say())                                          # the line stands: no transfer of its own
@@ -718,7 +774,7 @@ def check_episodes_reconcile():
         # The line stood through the second episode and gave again: a standing
         # declaration drains a transferring giver every episode it stands.
         assert account["debited"] == 600 and account["rebated"] == 0, account
-        assert account["transfer_penalised"] > 0, account
+        assert account["penalised"]["transfer"] > 0, account
         assert series[-1] == account["remaining"]
         for s in episodes:
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
@@ -727,8 +783,7 @@ def check_episodes_reconcile():
 def reconciled(account: dict, spent: int) -> int:
     """What an account must hold: every term of the identity, each one series element."""
     return (account["initial"] - spent + account.get("rebated", 0) + account.get("received", 0)
-            - account.get("debited", 0) - account.get("blackboard_penalised", 0)
-            - account.get("mailbox_penalised", 0) - account.get("transfer_penalised", 0)
+            - account.get("debited", 0) - sum((account.get("penalised") or {}).values())
             + account.get("forgiven", 0))
 
 
@@ -740,8 +795,8 @@ def span_of(series: list[int], s: dict) -> list[int]:
 def elements_of(s: dict) -> int:
     """How many series elements an episode's record says it appended, plus the entry at its start."""
     return (s["turns"] + 1 + bool(s["transfer"]["rebate"] or s["transfer"].get("debit"))
-            + bool(s["transfer"]["penalty"]) + bool(s["blackboard_penalised"])
-            + bool(s["mailbox"]["penalty"]) + bool(s["forgiven"])
+            + bool(s["transfer"]["penalty"]) + bool(s["channels"]["blackboard"]["penalty"])
+            + bool(s["channels"]["mail"]["penalty"]) + bool(s["forgiven"])
             # A credit from a peer settling in the same simultaneous round lands
             # inside the receiver's span; in rotation it lands between spans.
             + bool(s.get("received")))
@@ -753,7 +808,7 @@ def check_a_transfer_declaration_stands_until_it_is_withdrawn():
     The outbox is a tree the harness never reaches into, so a line left in place
     is still being said. Giving once means taking it back afterwards.
     """
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={})
         first = episode_once(run("echo '2 120' > out/transfer"), say())
         again = episode_once(run("true"), say())
@@ -770,7 +825,7 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     What discharges the obligation is money moved from a declaration this
     episode wrote. A line left standing gives again and is not this episode's.
     """
-    with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50, REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"silence_penalty_percent": 50, "rebate_percent": 100})) as root:
         seated(root, other={})
         gave = episode_once(run("echo '2 100' > out/transfer"), say())
         stood = episode_once(run("true"), say())
@@ -788,7 +843,7 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     # The same bytes again is not a change, the way reposting the same bytes is
     # not a post. An episode that writes back the line already standing chose
     # nothing this time, and the pledge pays what it would have paid anyway.
-    with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50, REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"silence_penalty_percent": 50, "rebate_percent": 100})) as root:
         seated(root, other={})
         wrote = episode_once(run("echo '2 100' > out/transfer"), say())
         again = episode_once(run("echo '2 100' > out/transfer"), say())
@@ -804,7 +859,7 @@ def check_exactly_one_transfer_an_episode_is_enforced():
                       ("its own seat", "echo '1 5' > out/transfer"),
                       ("no such seat", "echo '9 5' > out/transfer"),
                       ("nothing at all", "echo 'please take some' > out/transfer")):
-        with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+        with temp_root(channels=channels(transfer={"silence_penalty_percent": 50})) as root:
             seated(root, other={})
             t = episode_once(run(cmd), say())
         assert t["transfer"]["amount"] == 0 and t["transfer"]["penalty"] > 0, (name, t["transfer"])
@@ -812,12 +867,12 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     # An agent with nobody to give to is not charged for not giving, the way it has
     # no outbox to be charged for. An experiment of one opens on the environment an agent has
     # always woken to, and this rule is not part of it.
-    with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50):
+    with temp_root(channels=channels(transfer={"silence_penalty_percent": 50})):
         alone = episode_once(run("true"), say())
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
 
     # Off by default, so every agent that is not under this ruleset is untouched.
-    assert harness.TRANSFER_SILENCE_PENALTY_PERCENT == 0
+    assert harness.channel("transfer").silence_penalty_percent == 0
 
 
 def check_the_first_episodes_of_an_agent_answer_for_nothing():
@@ -826,14 +881,13 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     The grace waives the charges and nothing else: turns are billed at the usual
     rates, the obligations are still measured, and a free episode's transfer moves.
     """
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50, GRACE_EPISODES=1) as root:
+    with temp_root(GRACE_EPISODES=1, channels=channels(blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, transfer={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         free = episode_once(run("echo notes > state/NOTES"), say())
         due = episode_once(run("echo notes >> state/NOTES"), say())
         account = ground_truth("t")
-    assert free["transfer"]["penalty"] == 0 and free["blackboard_penalised"] == 0 \
-        and free["mailbox"]["penalty"] == 0, free
+    assert free["transfer"]["penalty"] == 0 and free["channels"]["blackboard"]["penalty"] == 0 \
+        and free["channels"]["mail"]["penalty"] == 0, free
     assert free["spent"] > 0, "the grace is on the charges, not on the account"
     observation = account["episodes"][0]
     span = account["series"][observation["series_from"]:observation["series_to"] + 1]
@@ -841,15 +895,15 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
         "a free episode appends its turns to n and nothing else"
     # Measured and recorded all the same: what an episode did is never a function
     # of what it was charged for doing it.
-    assert free["posted"] is False, "it posted nothing, and the trace says so"
-    assert free["mailbox"]["addressed"] == [], free["mailbox"]
+    assert free["channels"]["blackboard"]["posted"] is False, "it posted nothing, and the trace says so"
+    assert free["channels"]["mail"]["addressed"] == [], free["channels"]["mail"]
     # The second episode is inside no grace and answers for all three.
-    assert due["transfer"]["penalty"] > 0 and due["blackboard_penalised"] > 0 \
-        and due["mailbox"]["penalty"] > 0, due
+    assert due["transfer"]["penalty"] > 0 and due["channels"]["blackboard"]["penalty"] > 0 \
+        and due["channels"]["mail"]["penalty"] > 0, due
     assert account["remaining"] == account["series"][-1]
 
     # A transfer is a movement and not a charge, so a free episode still gives.
-    with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50, REBATE_PERCENT=100, GRACE_EPISODES=1) as root:
+    with temp_root(GRACE_EPISODES=1, channels=channels(transfer={"silence_penalty_percent": 50, "rebate_percent": 100})) as root:
         seated(root, other={})
         gave = episode_once(run("echo '2 90' > out/transfer"), say())
         taker = ground_truth("other")
@@ -867,8 +921,7 @@ def check_the_transfer_share_is_taken_before_the_other_two():
     Each share is half of what is left when it is taken, so an episode failing
     all three keeps an eighth. Transfer, then group, then outbox.
     """
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, transfer={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         t = episode_once(run("true"), say())
         account = ground_truth("t")
@@ -877,8 +930,8 @@ def check_the_transfer_share_is_taken_before_the_other_two():
     second = (left - first) // 2
     third = (left - first - second) // 2
     assert t["transfer"]["penalty"] == first, (t["transfer"]["penalty"], first)
-    assert t["blackboard_penalised"] == second, (t["blackboard_penalised"], second)
-    assert t["mailbox"]["penalty"] == third, (t["mailbox"]["penalty"], third)
+    assert t["channels"]["blackboard"]["penalty"] == second, (t["channels"]["blackboard"]["penalty"], second)
+    assert t["channels"]["mail"]["penalty"] == third, (t["channels"]["mail"]["penalty"], third)
     assert account["remaining"] == left - first - second - third == account["series"][-1]
     assert account["remaining"] * 8 <= left * 1.05, "three halves off the top leave an eighth"
 
@@ -1200,7 +1253,7 @@ def check_a_stopped_episode_still_mirrors_and_reaps():
             t = harness.run_once("t", stopping_at(2, run("echo one"),
                                                run("echo kept > state/keep.txt"), say()))
         assert t["stop"] == "interrupted" and t["state_saved"], t
-        kept = harness.state_dir("t") / "keep.txt"
+        kept = harness.mirror("t", "notes") / "keep.txt"
         assert kept.is_file() and kept.read_text(encoding="utf-8").strip() == "kept", \
             "the teardown after a stop still mirrors the agent's tree back"
     left = subprocess.run(["docker", "ps", "-a", "--filter", f"name={harness.CONTAINER_PREFIX}t-",
@@ -1275,7 +1328,7 @@ def check_truncated_turn_is_not_a_clean_end():
         assert t["stop"] == "max_tokens", t["stop"]
         assert len(t["turns"]) == 2, "the episode must stop at the truncated turn"
         assert t["turns"][1]["tools"] == [], "a truncated call must not be executed"
-        assert t["commands"] == [harness.OBSERVATION, "cd /tmp; export MARK=before"], t["commands"]
+        assert t["commands"] == [harness.observation(), "cd /tmp; export MARK=before"], t["commands"]
 
 
 def check_every_request_asks_for_fallback():
@@ -1395,12 +1448,12 @@ def check_the_observation_is_the_agents_whole_environment():
     assert t["observation"].strip(), "the initial observation ls output must be recorded"
     assert t["observation"] == first["content"], \
         "the record must hold exactly what was sent as turn one"
-    assert t["commands"][0] == harness.OBSERVATION, "the trace says which command produced it"
+    assert t["commands"][0] == harness.observation(), "the trace says which command produced it"
 
     # Two halves, and the split is where m starts. Taken deliberately:
     # the listing's claims are about the listing, and asserting them against the
     # whole observation would let a section of m answer for one of them.
-    listing, sep, record = t["observation"].partition(f"=== {harness.DIGEST_NAME} ")
+    listing, sep, record = t["observation"].partition(f"=== {digest_name()} ")
     assert not sep, "m names its own sections and never itself"
     listing, sep, record = t["observation"].partition("=== ")
     assert sep, "the initial observation carries m after the listing"
@@ -1414,13 +1467,13 @@ def check_the_observation_is_the_agents_whole_environment():
     assert re.search(r"\bstate$", before, re.M), f"state must show as a subdirectory: {before}"
     assert re.search(r"\bn1$", before, re.M), f"the balance must show beside it: {before}"
     assert not re.search(r"\bn1$", after, re.M), f"and not inside it: {after}"
-    assert re.search(rf"\b{harness.DIGEST_NAME}$", before, re.M), \
+    assert re.search(rf"\b{digest_name()}$", before, re.M), \
         f"m must show beside the balance it quotes: {before}"
 
     # And what m holds: this agent has no peers, so the whole of the
     # experiment's record is its own blackboard, its own balance and an empty ledger.
     assert re.search(r"^=== n1 ===$", record, re.M), record
-    assert re.search(rf"^=== {harness.LEDGER_NAME} ===$", record, re.M), record
+    assert re.search(rf"^=== {ledger_name()} ===$", record, re.M), record
     assert "=== state" not in record, "a private store is private, m included"
 
 
@@ -1458,7 +1511,7 @@ def check_a_long_blackboard_cannot_crowd_out_the_others():
     with temp_root() as root:
         seated(root, loud={"group/message": "L" * (harness.DIGEST_FILE_LIMIT * 4)},
                quietly={"group/message": "quiet but present\n"})
-        t = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
+        t = episode_once(run(f"cat {digest_name()}"), say())
 
     shown_before = t["turns"][0]["tools"][0]["result"]
     assert "quiet but present" in shown_before, "a later seat survives a long one"
@@ -1477,10 +1530,10 @@ def check_what_is_carried_is_rendered_from_ground_truth():
     with temp_root() as root:
         seated(root, other={"group/message": "as its owner left it\n"})
         t = episode_once(run("echo mine-this-episode > 1/posted",
-                          f"cat {harness.DIGEST_NAME}"), say())
+                          f"cat {digest_name()}"), say())
         during = t["turns"][0]["tools"][1]["result"]
         # The next episode, with nothing else changed.
-        t2 = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
+        t2 = episode_once(run(f"cat {digest_name()}"), say())
     after = t2["turns"][0]["tools"][0]["result"]
 
     assert "as its owner left it" in during, "the peer's blackboard comes from the peer"
@@ -1499,8 +1552,8 @@ def check_a_message_already_shown_is_named_and_not_repeated():
     with temp_root() as root:
         seated(root, other={"group/message": "the standing position\n",
                             "out/1": "the standing note\n"})
-        one = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())["turns"][0]["tools"][0]["result"]
-        two = episode_once(run(f"cat {harness.DIGEST_NAME}",
+        one = episode_once(run(f"cat {digest_name()}"), say())["turns"][0]["tools"][0]["result"]
+        two = episode_once(run(f"cat {digest_name()}",
                             "cat 2/message"), say())["turns"][0]["tools"]
         again, fetched = two[0]["result"], two[1]["result"]
 
@@ -1517,18 +1570,18 @@ def check_a_message_already_shown_is_named_and_not_repeated():
 def check_pull_delivery_leaves_the_record_to_be_fetched():
     """Under pull nothing is quoted: the episode opens on the listing alone, there
     is no m, and every message still sits in the environment at the ordinary price."""
-    with temp_root(DELIVERY="pull", SHARED_FILES="brief") as root:
-        plant(root, "brief", BRIEF="read me first\n")
+    with temp_root(DELIVERY="pull") as root:
+        shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/message": "the standing position\n",
                             "out/1": "the standing note\n"})
         t = episode_once(run("ls", "cat 2/message in/2 shared/BRIEF g n2",
-                          f"cat {harness.DIGEST_NAME} 2>&1 || echo NO-M"), say())
+                          f"cat {digest_name()} 2>&1 || echo NO-M"), say())
         account = ground_truth()
     listing, fetched, no_m = (c["result"] for c in t["turns"][0]["tools"])
-    assert t["commands"][0] == harness.LISTING, t["commands"]
+    assert t["commands"][0] == harness.listing_command(harness.channels()), t["commands"]
     assert "=== " not in t["observation"] and "the standing" not in t["observation"], t["observation"]
     assert "read me first" not in t["observation"], "the shared files is listed, not quoted"
-    assert " m\n" not in t["observation"] and f" {harness.DIGEST_NAME}" not in listing, \
+    assert " m\n" not in t["observation"] and f" {digest_name()}" not in listing, \
         f"there is no m to read: {listing}"
     assert "NO-M" in no_m, no_m
     assert "the standing position" in fetched and "the standing note" in fetched, fetched
@@ -1538,11 +1591,11 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
     assert t["provenance"]["delivery"] == "pull"
 
     # Push is the default, and under it the same environment is quoted.
-    with temp_root(SHARED_FILES="brief") as root:
-        plant(root, "brief", BRIEF="read me first\n")
+    with temp_root() as root:
+        shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/message": "the standing position\n"})
         t = episode_once(say())
-    assert t["commands"][0] == harness.OBSERVATION and t["provenance"]["delivery"] == "push"
+    assert t["commands"][0] == harness.observation() and t["provenance"]["delivery"] == "push"
     assert "the standing position" in t["observation"] and "read me first" in t["observation"]
 
 
@@ -1553,10 +1606,10 @@ def check_a_message_that_moved_is_carried_again():
     with temp_root() as root:
         ids = seated(root, other={"group/message": "the first position\n",
                                   "out/1": "unchanged throughout\n"})
-        episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
-        (harness.blackboard_dir(ids[1]) / "message").write_text("the second position\n",
+        episode_once(run(f"cat {digest_name()}"), say())
+        (harness.mirror(ids[1], "blackboard") / "message").write_text("the second position\n",
                                                          encoding="utf-8", newline="\n")
-        second = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
+        second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
     assert "the second position" in said, f"a message that moved is quoted again: {said}"
@@ -1575,7 +1628,7 @@ def check_the_declaration_is_carried_however_long_it_stands():
     with temp_root() as root:
         seated(root, other={})
         episode_once(run("echo '2 5' > out/transfer", "echo hi > 1/m", "echo yo > out/2"), say())
-        after = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
+        after = episode_once(run(f"cat {digest_name()}"), say())
     said = after["turns"][0]["tools"][0]["result"]
 
     assert "=== out/transfer ===" in said and "2 5" in said, \
@@ -1593,9 +1646,9 @@ def check_a_message_taken_away_is_named_as_withdrawn():
     """
     with temp_root() as root:
         ids = seated(root, other={"out/1": "here for now\n"})
-        episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
-        (harness.outbox_dir(ids[1]) / "1").unlink()
-        second = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())
+        episode_once(run(f"cat {digest_name()}"), say())
+        (harness.mirror(ids[1], "mail") / "1").unlink()
+        second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
     assert "=== withdrawn: in/2 ===" in said, f"a message taken away is named: {said}"
@@ -1609,12 +1662,12 @@ def check_an_agent_with_no_peers_starts_where_it_always_did():
     acquire one: single-agent experiments keep the environment they have always had.
     """
     with temp_root():
-        t = episode_once(run("ls", f"cat {harness.DIGEST_NAME}"), say())
+        t = episode_once(run("ls", f"cat {digest_name()}"), say())
     listing, shown_before = (c["result"] for c in t["turns"][0]["tools"])
 
     assert "out" not in listing.split() and "in" not in listing.split(), listing
     assert "=== out/" not in shown_before and "=== in/" not in shown_before, shown_before
-    assert f"=== {harness.LEDGER_NAME} ===" in shown_before and "=== n1 ===" in shown_before, shown_before
+    assert f"=== {ledger_name()} ===" in shown_before and "=== n1 ===" in shown_before, shown_before
     assert "=== n2 ===" not in shown_before, "no seat it does not have"
 
 
@@ -1760,12 +1813,12 @@ def check_provenance_is_recorded():
                         # a change to any of them was told something else, so all
                         # five have to reach drift() and not just the ones that
                         # were here first.
-                        "rebate_percent", "blackboard_silence_penalty_percent", "mailbox_silence_penalty_percent",
-                        "transfer_silence_penalty_percent", "grace_episodes",
+                        "grace_episodes",
                         # What a transfer does to the giver, what the agent was given,
                         # and what the whole experiment was given.
-                        "transfer_funded_by", "starter_files", "starter_files_sha256", "starter_files_below",
-                        "shared_files", "shared_files_sha256", "delivery"):
+                        "starter_files", "starter_files_sha256", "starter_files_below",
+                        "labels", "channels", "channels_sha256", "harness_files", "source_sha256",
+                        "delivery"):
                 assert key in prov, f"provenance omits {key}"
             assert first["trace_version"] == harness.TRACE_VERSION, "the record says which shape it is"
             assert prov["prices"] == list(harness.PRICES[harness.MODEL]), "the rates actually applied"
@@ -1834,7 +1887,7 @@ def check_watch_is_quiet_and_display_only():
         "and so does the episode summary"
     assert "$ " not in shown, "commands are not shown"
     assert "echo hi > state/note.txt" not in shown, "commands are not shown"
-    assert harness.OBSERVATION not in shown, "the initial observation command is not shown"
+    assert harness.observation() not in shown, "the initial observation command is not shown"
     q, l = without_listing_times(quiet_seen), without_listing_times(loud_seen)
     assert q == l, "watching must not change what is sent to the model: " + differs(q, l)
     for t in (plain, loud):
@@ -1929,7 +1982,7 @@ def check_a_failed_mirror_keeps_the_last_record():
     """
     with docker_root():
         episode_once(run("echo kept > state/keep.txt"), say())
-        state = harness.state_dir("t")
+        state = harness.mirror("t", "notes")
         before = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
         assert "keep.txt" in before, before
 
@@ -2057,7 +2110,7 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
             assert "m1" in str(e), e
         else:
             raise AssertionError("the starter_files overwrote a file the agent had made")
-        assert (harness.state_dir("t") / "m1").read_text().strip() == "mine", "and left it alone"
+        assert (harness.mirror("t", "notes") / "m1").read_text().strip() == "mine", "and left it alone"
 
 
 def check_an_agent_keeps_the_starter_files_it_was_created_with():
@@ -2079,7 +2132,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         second = episode_once(say())
         assert second["provenance"]["starter_files"] == "s" and second["provenance"]["starter_files_below"] == 499_000
         assert ground_truth()["starter_files_landed"]["name"] == "s", "the starter_files that landed is the pinned one"
-        assert not (harness.state_dir("t") / "m9").exists()
+        assert not (harness.mirror("t", "notes") / "m9").exists()
         assert second["provenance_drift"] == [], "nothing about this agent changed"
 
         # Asking the agent to be something it was not created as is refused.
@@ -2150,7 +2203,7 @@ def check_run_once_is_build_then_run_then_commit():
     phases apart commits exactly what an episode run on its own would have.
     """
     script = (run("echo hi > state/NOTES.md", "echo '2 100' > out/transfer", "echo yo > out/2",
-                  "echo p > 1/post", f"cat {harness.DIGEST_NAME}"), say())
+                  "echo p > 1/post", f"cat {digest_name()}"), say())
     neighbour = {"group/msg": "theirs\n", "out/1": "for you\n"}
 
     def normal(t: dict) -> dict:
@@ -2179,7 +2232,7 @@ def check_run_once_is_build_then_run_then_commit():
         m.pop("created_at")
     assert m1 == m2 and o1["received"] == o2["received"] == 100, (m1, m2, o1, o2)
     assert one.getvalue() == two.getvalue(), (one.getvalue(), two.getvalue())
-    assert t1["transfer"]["amount"] == 100 and t1["posted"], t1
+    assert t1["transfer"]["amount"] == 100 and t1["channels"]["blackboard"]["posted"], t1
 
 
 def check_fork_reproduces_state_and_account():
@@ -2193,14 +2246,14 @@ def check_fork_reproduces_state_and_account():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
         forked = ground_truth("f")
-        notes = (harness.state_dir("f") / "NOTES.md").read_bytes()
+        notes = (harness.mirror("f", "notes") / "NOTES.md").read_bytes()
 
         was = next(f for f in trace["files"] if f["path"] == "state/NOTES.md")
         assert notes.decode() == was["text"], "state/ is the episode it forked at"
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
         assert forked["series"] == trace["series_after"], "invariant 8: the series is what carries"
-        assert not any(harness.blackboard_dir("f").rglob("*")), \
+        assert not any(harness.mirror("f", "blackboard").rglob("*")), \
             "the parent's blackboard was empty, so the fork's is"
         assert forked["remaining"] == trace["series_after"][-1]
         assert len(forked["episodes"]) == 1, "the episodes after the fork point are dropped"
@@ -2230,16 +2283,16 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
 
-        assert (harness.state_dir("f") / "NOTES.md").read_text(encoding="utf-8") == "mine\n"
-        assert (harness.blackboard_dir("f") / "RESULT").read_text(encoding="utf-8") == "posted\n"
-        assert (harness.outbox_dir("f") / "2").read_text(encoding="utf-8") == "psst\n", \
+        assert (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8") == "mine\n"
+        assert (harness.mirror("f", "blackboard") / "RESULT").read_text(encoding="utf-8") == "posted\n"
+        assert (harness.mirror("f", "mail") / "2").read_text(encoding="utf-8") == "psst\n", \
             "a message is one file, and the fork rebuilds it as one"
-        assert (harness.outbox_dir("f") / "transfer").read_text(encoding="utf-8") == "2 50\n", \
+        assert (harness.mirror("f", "mail") / "transfer").read_text(encoding="utf-8") == "2 50\n", \
             "a standing pledge is part of the episode being rebuilt"
         # And nothing that belonged to the neighbour: its blackboard, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
-        rebuilt = {p.name for tree in (harness.state_dir("f"), harness.blackboard_dir("f"),
-                                       harness.outbox_dir("f")) for p in tree.rglob("*")}
+        rebuilt = {p.name for tree in (harness.mirror("f", "notes"), harness.mirror("f", "blackboard"),
+                                       harness.mirror("f", "mail")) for p in tree.rglob("*")}
         assert rebuilt == {"NOTES.md", "RESULT", "2", "transfer"}, sorted(rebuilt)
         assert "theirs" not in rebuilt, sorted(rebuilt)
 
@@ -2259,12 +2312,14 @@ def check_fork_refuses_what_it_cannot_rebuild():
             def trace(**over):
                 # A peer's blackboard is skipped rather than rebuilt, so an entry
                 # that could never be stored does not stop a fork if it is one.
-                t = {"trace_version": 1, "episode": 1, "state_saved": True,
+                t = {"trace_version": harness.TRACE_VERSION, "episode": 1, "state_saved": True,
                      "series_after": [10, 9],
-                     "files": [{"path": "2/theirs", "channel": "peer_blackboard", "size": 5,
+                     "files": [{"path": "2/theirs", "channel": "blackboard", "writer": "self",
+                                "readers": "all", "role": "peer", "size": 5,
                                 "author": "peer:2", "ours": True, "starter": False,
                                 "text": None},
-                               {"path": "state/a.txt", "channel": "notes", "size": 3,
+                               {"path": "state/a.txt", "channel": "notes", "writer": "self",
+                                "readers": "self", "role": "own", "size": 3,
                                 "author": "self", "ours": False, "starter": False,
                                 "text": "hi\n"}]}
                 return {**t, **over}
@@ -2439,20 +2494,20 @@ def experiment_of(root: Path, **agents: dict[str, str]) -> list[str]:
     "group/" goes on that agent's blackboard, "out/" in its outbox where only the seat
     it names reads it, and anything else in its private store.
     """
-    trees = {"group/": harness.blackboard_dir, "out/": harness.outbox_dir}
+    trees = {"group/": "blackboard", "out/": "mail"}
     for agent, files in agents.items():
-        for where in (harness.state_dir, harness.blackboard_dir, harness.outbox_dir):
-            where(agent).mkdir(parents=True, exist_ok=True)
+        for where in ("notes", "blackboard", "mail"):
+            harness.mirror(agent, where).mkdir(parents=True, exist_ok=True)
         for name, text in files.items():
             prefix = next((k for k in trees if name.startswith(k)), None)
-            root = trees[prefix](agent) if prefix else harness.state_dir(agent)
+            root = harness.mirror(agent, trees.get(prefix, "notes"))
             p = root / name.removeprefix(prefix or "")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text, encoding="utf-8", newline="\n")
     return list(agents)
 
 
-def environment_of(agent: str, ids: list[str]) -> list[tuple[str, Path, str]]:
+def environment_of(agent: str, ids: list[str]) -> list[harness.Instance]:
     """One agent's environment, built the way the harness builds it.
 
     Through harness.environment rather than beside it: a check that assembled the channels
@@ -2463,7 +2518,8 @@ def environment_of(agent: str, ids: list[str]) -> list[tuple[str, Path, str]]:
     return harness.environment(agent, {"seat": seat, "peers": {"seen": seats}})
 
 
-def seated(root: Path, agent: str = "t", **agents: dict[str, str]) -> list[str]:
+def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None,
+           **agents: dict[str, str]) -> list[str]:
     """Lay out an experiment, create every account, and seat every agent in it.
 
     What experiment.py's prepare() does before each episode of a round: a seat, the
@@ -2478,7 +2534,9 @@ def seated(root: Path, agent: str = "t", **agents: dict[str, str]) -> list[str]:
     for seat, other in seats.items():
         with quiet():
             account = harness.load_account(other)
-        account["seat"], account["peers"] = seat, {"seen": seats}
+        named = {s: (labels or {}).get(s, s) for s in seats}
+        account["seat"], account["label"] = seat, named[seat]
+        account["peers"] = {"seen": seats, "labels": named}
         harness.save_account(other, account)
     return ids
 
@@ -2530,7 +2588,7 @@ def check_a_private_store_never_leaves_its_agent():
                         g02={"secret.md": "theirs alone\n", "group/msg": "hello 1\n"})
         channels = environment_of("g01", ids)
         snap = harness.snapshot(channels, [9])
-        peer = next(d for name, d, r in channels if r == "peer_blackboard")
+        peer = next(i.host for i in channels if i.role == "peer" and i.name == "blackboard")
         leaked = any(p.name == "secret.md" for p in peer.rglob("*"))
 
     by = {f["path"]: f for f in snap["files"]}
@@ -2539,11 +2597,13 @@ def check_a_private_store_never_leaves_its_agent():
     assert not leaked, "the other agent's private store is not on its blackboard and cannot be"
     # The environment names its own channels, so nothing downstream has to work out
     # which directory was which.
-    assert [(n, r) for n, _, r in channels] == \
-        [("state", "notes"), ("1", "blackboard"), ("2", "peer_blackboard"),
-         ("out", "outbox"), ("in/2", "inbox")], channels
+    assert [(i.path, i.name, i.role) for i in channels] == \
+        [("state", "notes", "own"), ("1", "blackboard", "own"), ("2", "blackboard", "peer"),
+         ("out", "mail", "own"), ("out/transfer", "transfer", "own"), ("in/2", "mail", "peer")], \
+        [(i.path, i.name, i.role) for i in channels]
     assert by["state/secret.md"]["channel"] == "notes"
-    assert by["1/msg"]["channel"] == "blackboard" and by["2/msg"]["channel"] == "peer_blackboard"
+    assert by["1/msg"]["channel"] == by["2/msg"]["channel"] == "blackboard"
+    assert (by["1/msg"]["role"], by["2/msg"]["role"]) == ("own", "peer")
 
 
 def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
@@ -2594,8 +2654,8 @@ def check_starter_files_and_a_peer_are_told_apart():
 
     trace = {**snap, "provenance": {"peers": seats, "seat": "1"}}
     assert [f["path"] for f in analyze.starter_files_of(trace)] == ["state/m1"], trace["files"]
-    assert [f["path"] for f in analyze.peer_blackboard_files_of(trace)] == ["2/out"], trace["files"]
-    assert [f["path"] for f in analyze.blackboard_files_of(trace)] == [], "its blackboard is empty"
+    assert [f["path"] for f in analyze.peer_public_files(trace)] == ["2/out"], trace["files"]
+    assert [f["path"] for f in analyze.own_public_files(trace)] == [], "its blackboard is empty"
 
 
 def check_every_captured_file_names_an_author():
@@ -2604,9 +2664,9 @@ def check_every_captured_file_names_an_author():
     Invariant 1. The starter files and the shared files are the experimenter's, what the agent
     wrote anywhere is its own, and a peer's message names the seat it came from.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000, SHARED_FILES="brief") as root:
+    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
         plant(root)
-        plant(root, "brief", BRIEF="read me first\n")
+        shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/out": "theirs\n", "out/1": "just for you\n"})
         t = episode_once(run("echo mine > state/NOTES.md", "echo posted > 1/post",
                           "echo sent > out/2"), say())
@@ -2676,12 +2736,12 @@ def check_the_identity_delta_counts_changed_lines():
 def check_an_agent_with_no_shared_files_starts_where_it_always_did():
     """With `shared` unset there is no shared files anywhere: not listed, not quoted, not recorded."""
     with temp_root() as root:
-        t = episode_once(run("ls", f"cat {harness.DIGEST_NAME}"), say())
+        t = episode_once(run("ls", f"cat {digest_name()}"), say())
     listing, said = (c["result"] for c in t["turns"][0]["tools"])
     assert "shared" not in listing, listing
     assert "=== shared/" not in said and "shared" not in t["observation"], said
     assert not [f for f in t["files"] if f["channel"] == "shared"], t["files"]
-    assert t["provenance"]["shared_files"] == "" and t["provenance"]["shared_files_sha256"] == ""
+    assert t["provenance"]["source_sha256"] == {}
 
 
 def check_shared_files_are_quoted_once_and_then_named_unchanged():
@@ -2691,10 +2751,10 @@ def check_shared_files_are_quoted_once_and_then_named_unchanged():
     named and not repeated, and the file is still there to read at the ordinary
     price of reading it.
     """
-    with temp_root(SHARED_FILES="brief") as root:
-        plant(root, "brief", BRIEF="read me first\n", **{"more/DETAIL": "and then this\n"})
-        one = episode_once(run(f"cat {harness.DIGEST_NAME}"), say())["turns"][0]["tools"][0]["result"]
-        two = episode_once(run(f"cat {harness.DIGEST_NAME}", "cat shared/BRIEF"),
+    with temp_root() as root:
+        shared(root, "brief", BRIEF="read me first\n", **{"more/DETAIL": "and then this\n"})
+        one = episode_once(run(f"cat {digest_name()}"), say())["turns"][0]["tools"][0]["result"]
+        two = episode_once(run(f"cat {digest_name()}", "cat shared/BRIEF"),
                         say())["turns"][0]["tools"]
         again, fetched = two[0]["result"], two[1]["result"]
     assert "=== shared/BRIEF ===" in one and "read me first" in one, one
@@ -2706,21 +2766,20 @@ def check_shared_files_are_quoted_once_and_then_named_unchanged():
 
 def check_shared_files_are_the_experimenters_in_the_record():
     """A shared file is captured, is not the agent's, is not the starter_files's, and is not forked."""
-    with temp_root(SHARED_FILES="brief") as root:
-        plant(root, "brief", BRIEF="read me first\n")
+    with temp_root() as root:
+        shared(root, "brief", BRIEF="read me first\n")
         t = episode_once(run("echo mine > state/NOTES.md"), say())
         digest = harness.files_sha256("brief")
         with quiet():
             assert harness.fork("t", 1, "f") == 0
         forked_shared = (harness.ROOT / "environments" / "f" / "shared").exists()
-        forked_notes = (harness.state_dir("f") / "NOTES.md").read_text(encoding="utf-8")
+        forked_notes = (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8")
     by = {f["path"]: f for f in t["files"]}
     assert by["shared/BRIEF"]["channel"] == "shared", by["shared/BRIEF"]
     assert by["shared/BRIEF"]["author"] == "experimenter", by["shared/BRIEF"]
     assert by["shared/BRIEF"]["ours"] and not by["shared/BRIEF"]["starter"], by["shared/BRIEF"]
     assert by["shared/BRIEF"]["text"] == "read me first\n"
-    assert t["provenance"]["shared_files"] == "brief"
-    assert t["provenance"]["shared_files_sha256"] == digest, t["provenance"]
+    assert t["provenance"]["source_sha256"] == {"shared": digest}, t["provenance"]
     assert [f["path"] for f in analyze.agent_files_of(t)] == ["state/NOTES.md"]
     assert not forked_shared and forked_notes == "mine\n", \
         "a fork rebuilds what the agent wrote and not the experimenter's tree"
@@ -2728,8 +2787,8 @@ def check_shared_files_are_the_experimenters_in_the_record():
 
 def check_shared_files_are_roots_and_read_only_in_every_seat():
     """In a container the shared files is root's, refuses every write, and reads."""
-    with docker_root(SHARED_FILES="brief") as root:
-        plant(root, "brief", BRIEF="read me first\n")
+    with docker_root() as root:
+        shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={})
         for r in ("t", "other"):
             with quiet():
@@ -2766,13 +2825,13 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
 
     assert "in/1" in seen["g03"], sorted(seen["g03"])
     assert seen["g03"]["in/1"]["text"] == "for three alone\n"
-    assert seen["g03"]["in/1"]["channel"] == "inbox"
+    assert (seen["g03"]["in/1"]["channel"], seen["g03"]["in/1"]["role"]) == ("mail", "peer")
     # Addressed, so it is nobody else's to read - not the experiment's, and not even
     # visible as having been sent.
     assert not [p for p in seen["g02"] if p.startswith("in/")], sorted(seen["g02"])
     assert "1/RESULT" in seen["g02"], "while the blackboard reaches everyone"
     # And what the sender wrote stays the sender's, on its own side of the wire.
-    assert seen["g01"]["out/3"]["channel"] == "outbox"
+    assert (seen["g01"]["out/3"]["channel"], seen["g01"]["out/3"]["role"]) == ("mail", "own")
     assert not seen["g01"]["out/3"]["ours"], "the outbox is the agent's own writing"
     assert seen["g03"]["in/1"]["ours"], "and an inbox is not the reader's"
 
@@ -2786,16 +2845,16 @@ def check_an_outbox_holds_until_it_is_changed():
     with temp_root() as root:
         seated(root, other={})
         episode_once(run("echo hello > out/2"), say())
-        assert (harness.outbox_dir("t") / "2").read_text(encoding="utf-8") == "hello\n"
+        assert (harness.mirror("t", "mail") / "2").read_text(encoding="utf-8") == "hello\n"
 
         # An episode that touches nothing leaves the message standing.
         episode_once(run("cat state/nothing 2>/dev/null; true"), say())
-        assert (harness.outbox_dir("t") / "2").exists(), \
+        assert (harness.mirror("t", "mail") / "2").exists(), \
             "an unchanged outbox is still what the next round delivers"
 
         # And a deletion propagates, because the tree is mirrored back whole.
         episode_once(run("rm -f out/2"), say())
-        assert not (harness.outbox_dir("t") / "2").exists(), "withdrawing it withdraws it"
+        assert not (harness.mirror("t", "mail") / "2").exists(), "withdrawing it withdraws it"
 
 
 def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
@@ -2807,13 +2866,13 @@ def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
     with temp_root() as root:
         seated(root, other={})
         episode_once(run("mkdir -p out/2 && echo one > out/2/a && echo two > out/2/b"), say())
-        assert (harness.outbox_dir("t") / "2").is_dir(), "the sender kept what it wrote"
+        assert (harness.mirror("t", "mail") / "2").is_dir(), "the sender kept what it wrote"
 
         with quiet():
             got = harness.run_once("other", fake(run("ls -a in; cat in/1 2>&1"), say()))
 
     assert got["stop"] == "end_turn", f"the receiver took its episode: {got['stop']}"
-    assert not [f for f in got["files"] if f["channel"] == "inbox"], \
+    assert not [f for f in got["files"] if f["channel"] == "mail" and f["role"] == "peer"], \
         [f["path"] for f in got["files"]]
     listing = got["turns"][0]["tools"][0]["result"]
     assert "1" not in listing.split(), f"in/ holds nothing at all: {listing!r}"
@@ -2825,7 +2884,7 @@ def check_a_crowded_seat_costs_a_share_of_what_is_left():
     A share of what is left, taken after the post penalty and appended to the
     series like every other movement. Nothing says which movement it was.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50, BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50}, blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={}, third={})
         # Posts, so the only penalty in this episode is the one being read.
         with quiet() as buf:
@@ -2834,18 +2893,18 @@ def check_a_crowded_seat_costs_a_share_of_what_is_left():
                     "echo posted > 1/RESULT"), say()))
         account = ground_truth()
 
-    assert t["posted"], "the blackboard moved, so the post penalty is not what bit"
-    assert t["blackboard_penalised"] == 0, t["blackboard_penalised"]
-    assert t["mailbox"]["broken"] == ["2", "3"], t["mailbox"]
-    assert t["mailbox"]["addressed"] == [], "a directory is not a message"
+    assert t["channels"]["blackboard"]["posted"], "the blackboard moved, so the post penalty is not what bit"
+    assert t["channels"]["blackboard"]["penalty"] == 0, t["channels"]["blackboard"]["penalty"]
+    assert t["channels"]["mail"]["broken"] == ["2", "3"], t["channels"]["mail"]
+    assert t["channels"]["mail"]["addressed"] == [], "a directory is not a message"
     # One share for the episode however many ways it broke, so what was left after
     # the turns is halved exactly once - here for two crowded seats and for an
     # outbox that addressed nobody, which is three breaks and one bite.
     left = account["series"][-2]
-    assert t["mailbox"]["penalty"] == left // 2, (t["mailbox"], left)
-    assert account["remaining"] == left - t["mailbox"]["penalty"] == account["series"][-1]
-    assert account["mailbox_penalised"] == t["mailbox"]["penalty"]
-    assert account["episodes"][-1]["mailbox"] == t["mailbox"], "and the episode records it"
+    assert t["channels"]["mail"]["penalty"] == left // 2, (t["channels"]["mail"], left)
+    assert account["remaining"] == left - t["channels"]["mail"]["penalty"] == account["series"][-1]
+    assert account["penalised"]["mail"] == t["channels"]["mail"]["penalty"]
+    assert account["episodes"][-1]["channels"]["mail"] == t["channels"]["mail"], "and the episode records it"
     assert "out/2,3 not one file and no message, took" in buf.getvalue(), buf.getvalue()
 
 
@@ -2855,7 +2914,7 @@ def check_a_crowded_seat_costs_again_every_episode_it_stands():
     A standing mistake is charged again for the reason a standing declaration is
     honoured again. Replacing it with one file both stops the charge and delivers.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         first = episode_once(run("mkdir -p out/2 && echo hi > out/2/a",
                               "echo r1 > 1/RESULT"), say())
@@ -2863,29 +2922,29 @@ def check_a_crowded_seat_costs_again_every_episode_it_stands():
         second = episode_once(run("echo r2 > 1/RESULT"), say())
         third = episode_once(run("rm -rf out/2 && echo at last > out/2",
                               "echo r3 > 1/RESULT"), say())
-        assert (harness.outbox_dir("t") / "2").read_text(encoding="utf-8") == "at last\n"
+        assert (harness.mirror("t", "mail") / "2").read_text(encoding="utf-8") == "at last\n"
 
-    assert [t["mailbox"]["broken"] for t in (first, second, third)] == [["2"], ["2"], []]
-    assert first["mailbox"]["penalty"] > second["mailbox"]["penalty"] > 0, \
+    assert [t["channels"]["mail"]["broken"] for t in (first, second, third)] == [["2"], ["2"], []]
+    assert first["channels"]["mail"]["penalty"] > second["channels"]["mail"]["penalty"] > 0, \
         "a share of what is left, so the second bite is the smaller"
-    assert third["mailbox"]["penalty"] == 0, third["mailbox"]
-    assert third["mailbox"]["addressed"] == ["2"], \
+    assert third["channels"]["mail"]["penalty"] == 0, third["channels"]["mail"]
+    assert third["channels"]["mail"]["addressed"] == ["2"], \
         "and replacing it with one file is the episode's one message"
 
 
 def check_one_new_message_an_episode_costs_nothing():
     """Exactly one out/<i> holding something new is the obligation met."""
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50, BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50}, blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={}, third={})
         t = episode_once(run("echo for two > out/2", "echo posted > 1/RESULT"), say())
         account = ground_truth("t")
 
-    assert t["mailbox"] == {"broken": [], "addressed": ["2"], "penalty": 0}, t["mailbox"]
-    assert t["blackboard_penalised"] == 0 and "mailbox_penalised" not in account, account
+    assert t["channels"]["mail"] == {"broken": [], "addressed": ["2"], "penalty": 0}, t["channels"]["mail"]
+    assert t["channels"]["blackboard"]["penalty"] == 0 and "mail" not in account.get("penalised", {}), account
     assert account["remaining"] == account["initial"] - t["spent"], "meeting both costs nothing"
 
     # Off by default, so every agent that is not under this ruleset is untouched.
-    assert harness.MAILBOX_SILENCE_PENALTY_PERCENT == 0
+    assert harness.channel("mail").silence_penalty_percent == 0
 
 
 def check_an_episode_that_addresses_no_one_loses_half():
@@ -2894,18 +2953,18 @@ def check_an_episode_that_addresses_no_one_loses_half():
     The obligation is the post's twin: one agent told something it was not told
     before. An episode spent on its own group has said nothing in particular.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         with quiet() as buf:
             t = harness.run_once("t", fake(run("echo posted > 1/RESULT"), say()))
         account = ground_truth("t")
 
-    assert t["posted"], "the blackboard moved, so the post penalty is not what bit"
-    assert t["mailbox"]["broken"] == [] and t["mailbox"]["addressed"] == [], t["mailbox"]
+    assert t["channels"]["blackboard"]["posted"], "the blackboard moved, so the post penalty is not what bit"
+    assert t["channels"]["mail"]["broken"] == [] and t["channels"]["mail"]["addressed"] == [], t["channels"]["mail"]
     left = account["series"][-2]
-    assert t["mailbox"]["penalty"] == left // 2, (t["mailbox"], left)
-    assert account["remaining"] == left - t["mailbox"]["penalty"] == account["series"][-1]
-    assert account["mailbox_penalised"] == t["mailbox"]["penalty"]
+    assert t["channels"]["mail"]["penalty"] == left // 2, (t["channels"]["mail"], left)
+    assert account["remaining"] == left - t["channels"]["mail"]["penalty"] == account["series"][-1]
+    assert account["penalised"]["mail"] == t["channels"]["mail"]["penalty"]
     assert "no message, took" in buf.getvalue(), buf.getvalue()
 
 
@@ -2915,19 +2974,19 @@ def check_an_episode_that_addresses_two_agents_loses_half():
     One thing to one agent is the rule, and both ways of missing it are the same
     miss. Charged once, however many seats were written to.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={}, third={})
         with quiet() as buf:
             t = harness.run_once("t", fake(run("echo hi > out/2 && echo hi > out/3",
                                             "echo posted > 1/RESULT"), say()))
         account = ground_truth("t")
 
-    assert t["posted"], "the blackboard moved, so the post penalty is not what bit"
-    assert t["mailbox"]["broken"] == [], "both are single regular files"
-    assert t["mailbox"]["addressed"] == ["2", "3"], t["mailbox"]
+    assert t["channels"]["blackboard"]["posted"], "the blackboard moved, so the post penalty is not what bit"
+    assert t["channels"]["mail"]["broken"] == [], "both are single regular files"
+    assert t["channels"]["mail"]["addressed"] == ["2", "3"], t["channels"]["mail"]
     left = account["series"][-2]
-    assert t["mailbox"]["penalty"] == left // 2, (t["mailbox"], left)
-    assert account["mailbox_penalised"] == t["mailbox"]["penalty"]
+    assert t["channels"]["mail"]["penalty"] == left // 2, (t["channels"]["mail"], left)
+    assert account["penalised"]["mail"] == t["channels"]["mail"]["penalty"]
     assert "out/2,3 not one message, took" in buf.getvalue(), buf.getvalue()
 
 
@@ -2937,21 +2996,21 @@ def check_a_standing_message_is_not_a_new_one():
     The pair to an outbox holding until changed: a message left in place goes on
     arriving, and told its receiver nothing new. Withdrawing says nothing too.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         first = episode_once(run("echo hello > out/2", "echo r1 > 1/RESULT"), say())
         same = episode_once(run("echo hello > out/2", "echo r2 > 1/RESULT"), say())
         edited = episode_once(run("echo different > out/2", "echo r3 > 1/RESULT"), say())
         emptied = episode_once(run("> out/2", "echo r4 > 1/RESULT"), say())
         gone = episode_once(run("rm -f out/2", "echo r5 > 1/RESULT"), say())
-        assert (harness.outbox_dir("t") / "2").exists() is False, "the deletion propagated"
+        assert (harness.mirror("t", "mail") / "2").exists() is False, "the deletion propagated"
 
-    assert [t["mailbox"]["addressed"] for t in (first, same, edited, emptied, gone)] == \
+    assert [t["channels"]["mail"]["addressed"] for t in (first, same, edited, emptied, gone)] == \
         [["2"], [], ["2"], [], []]
-    assert first["mailbox"]["penalty"] == 0 and edited["mailbox"]["penalty"] == 0
-    assert same["mailbox"]["penalty"] > 0, "the same bytes again say nothing"
-    assert emptied["mailbox"]["penalty"] > 0, "and an empty file carries nothing"
-    assert gone["mailbox"]["penalty"] > 0, "and a withdrawal is not an utterance"
+    assert first["channels"]["mail"]["penalty"] == 0 and edited["channels"]["mail"]["penalty"] == 0
+    assert same["channels"]["mail"]["penalty"] > 0, "the same bytes again say nothing"
+    assert emptied["channels"]["mail"]["penalty"] > 0, "and an empty file carries nothing"
+    assert gone["channels"]["mail"]["penalty"] > 0, "and a withdrawal is not an utterance"
 
 
 def check_the_outbox_costs_one_share_an_episode():
@@ -2960,18 +3019,18 @@ def check_the_outbox_costs_one_share_an_episode():
     Three breaks are available at once - a crowded seat, no message, a message
     to two agents - and one share is what keeps a single figure statable.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={}, third={})
         # Crowds one seat and addresses nobody: two breaks, one bite.
         both = episode_once(run("mkdir -p out/2 && echo hi > out/2/a",
                              "echo r1 > 1/RESULT"), say())
         account = ground_truth("t")
 
-    assert both["mailbox"]["broken"] == ["2"] and both["mailbox"]["addressed"] == []
+    assert both["channels"]["mail"]["broken"] == ["2"] and both["channels"]["mail"]["addressed"] == []
     left = account["series"][-2]
-    assert both["mailbox"]["penalty"] == left // 2, (both["mailbox"], left)
-    assert account["remaining"] == left - both["mailbox"]["penalty"], "halved once, not twice"
-    assert account["mailbox_penalised"] == both["mailbox"]["penalty"]
+    assert both["channels"]["mail"]["penalty"] == left // 2, (both["channels"]["mail"], left)
+    assert account["remaining"] == left - both["channels"]["mail"]["penalty"], "halved once, not twice"
+    assert account["penalised"]["mail"] == both["channels"]["mail"]["penalty"]
 
 
 def check_only_a_seat_of_this_experiment_is_a_message():
@@ -2980,7 +3039,7 @@ def check_only_a_seat_of_this_experiment_is_a_message():
     Only what could have reached an agent is judged. out/transfer is a declaration,
     and a name that is no seat of this experiment reaches nobody either way.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         t = episode_once(run("mkdir -p out/notes out/1 out/9",
                           "echo draft > out/notes/v1 && echo scratch > out/README",
@@ -2988,10 +3047,10 @@ def check_only_a_seat_of_this_experiment_is_a_message():
                           "echo posted > 1/RESULT"), say())
         account = ground_truth()
 
-    assert t["mailbox"] == {"broken": [], "addressed": ["2"], "penalty": 0}, t["mailbox"]
-    assert "mailbox_penalised" not in account, account
+    assert t["channels"]["mail"] == {"broken": [], "addressed": ["2"], "penalty": 0}, t["channels"]["mail"]
+    assert "mail" not in account.get("penalised", {}), account
     assert t["transfer"]["amount"] == 10 and t["transfer"]["error"] is None, t["transfer"]
-    assert analyze.addressed_seats(t) == ["2"], \
+    assert analyze.addressed_labels(t) == ["2"], \
         "and only the seat that was really addressed reads as addressed"
 
 
@@ -3001,7 +3060,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
     The receiver's ground truth is written by the giver's episode, so what the
     experiment reads afterwards comes from the accounts and not from either agent.
     """
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={})
         before = harness.load_account("other")["remaining"]
         t = episode_once(run("echo '2 400' > out/transfer"), say())
@@ -3022,7 +3081,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
 
 def check_a_transfer_is_capped_by_the_episode_spend():
     """An agent cannot give away more than the episode it is giving out of spent."""
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
     assert t["transfer"]["amount"] == t["spent"], (t["transfer"], t["spent"])
@@ -3037,7 +3096,7 @@ def check_a_transfer_never_costs_the_giver():
     """
     for rate in (100, 50, 0):
         for amount in ("120", "99999999"):
-            with temp_root(REBATE_PERCENT=rate) as root:
+            with temp_root(channels=channels(transfer={"rebate_percent": rate})) as root:
                 seated(root, other={})
                 t = episode_once(run(f"echo '2 {amount}' > out/transfer"), say())
                 account = ground_truth("t")
@@ -3049,7 +3108,7 @@ def check_a_transfer_never_costs_the_giver():
 
     # And at the full rate, giving away the whole episode recovers the whole
     # episode: it ends having cost nothing at all.
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
         account = ground_truth("t")
@@ -3064,7 +3123,7 @@ def check_an_agent_cannot_transfer_to_itself():
     A self-transfer would be a free recovery with nobody strengthened by it, so the
     ban is what makes this an exchange rather than a rebate with extra steps.
     """
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         # Second of three, so what is refused is this agent's own seat and not a
         # seat number that happens to be the first one.
         seated(root, "t", first={}, t={}, third={})
@@ -3089,7 +3148,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
     grows. Below it the giver recovers less, and the balances fall again.
     """
     for rate, rebate in ((100, 200), (50, 100), (0, 0)):
-        with temp_root(REBATE_PERCENT=rate) as root:
+        with temp_root(channels=channels(transfer={"rebate_percent": rate})) as root:
             seated(root, other={})
             t = episode_once(run("echo '2 200' > out/transfer"), say())
             account = ground_truth("t")
@@ -3104,7 +3163,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
     for bad in (101, -1):
         with pinned(), tempfile.TemporaryDirectory(prefix="mtr-cfg-") as d:
             cfg = Path(d) / "config.toml"
-            cfg.write_text(f"rebate_percent = {bad}\n", encoding="utf-8")
+            cfg.write_text(channel_toml(channels(transfer={"rebate_percent": bad})), encoding="utf-8")
             try:
                 harness.load_config(cfg)
             except SystemExit as e:
@@ -3115,7 +3174,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
 
 def check_a_giver_funded_transfer_debits_the_giver():
     """Under transfer the amount leaves the giver, reaches the receiver, and rebates nothing."""
-    with temp_root(TRANSFER_FUNDED_BY="giver", REBATE_PERCENT=0) as root:
+    with temp_root(channels=channels(transfer={"funded_by": "giver", "rebate_percent": 0})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 400' > out/transfer"), say())
         giver, taker = ground_truth("t"), ground_truth("other")
@@ -3126,10 +3185,10 @@ def check_a_giver_funded_transfer_debits_the_giver():
     assert giver["sent"] == 400 and giver["debited"] == 400 and giver["rebated"] == 0, giver
     assert taker["remaining"] == taker["initial"] + 400 and taker["received"] == 400, taker
     assert giver["series"][-1] == giver["remaining"] and taker["series"][-1] == taker["remaining"]
-    assert t["provenance"]["transfer_funded_by"] == "giver"
+    assert next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")["funded_by"] == "giver"
     assert rows == [("1", "2", 400)], "a transfer is on the public record like any transfer"
     # The cap holds in every mode: no more than the episode spent leaves the giver.
-    with temp_root(TRANSFER_FUNDED_BY="giver", REBATE_PERCENT=0) as root:
+    with temp_root(channels=channels(transfer={"funded_by": "giver", "rebate_percent": 0})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
         giver = ground_truth("t")
@@ -3139,18 +3198,18 @@ def check_a_giver_funded_transfer_debits_the_giver():
 
 def check_unfunded_transfers_move_nothing_and_say_so():
     """Under off a declaration is recorded, moves no account, and costs no share."""
-    with temp_root(TRANSFER_FUNDED_BY="none", TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(transfer={"funded_by": "none"})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 400' > out/transfer"), say())
         giver, taker = ground_truth("t"), ground_truth("other")
     assert t["transfer"]["error"] == "transfers are off", t["transfer"]
     assert t["transfer"]["declared"].strip() == "2 400", "what the file held is still recorded"
     assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0 and t["transfer"]["debit"] == 0
-    assert t["transfer"]["penalty"] == 0 and "transfer_penalised" not in giver, giver
+    assert t["transfer"]["penalty"] == 0 and "transfer" not in giver.get("penalised", {}), giver
     assert giver["remaining"] == giver["initial"] - t["spent"], giver
     assert "received" not in taker and taker["remaining"] == taker["initial"], taker
     assert t["ledger"] == [], t["ledger"]
-    assert t["provenance"]["transfer_funded_by"] == "none"
+    assert next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")["funded_by"] == "none"
 
 
 def check_a_malformed_transfer_moves_nothing():
@@ -3162,7 +3221,7 @@ def check_a_malformed_transfer_moves_nothing():
     cases = {"": "not one line",                      # empty
              "2": "not one line",                     # no amount
              "2 400\n3 400\n": "not one line",        # two of them
-             "two 400": "not one line",
+             "two 400": "no seat two",                # a label nobody holds
              "2 -5": "not one line",                  # a sign is not a digit
              "2 0": "must be positive",
              "9 400": "no seat 9"}
@@ -3187,7 +3246,7 @@ def check_a_transfer_is_public_to_the_whole_experiment():
     A ledger that showed two agents different sequences would be worth less than
     no ledger at all, so the order is one every reader computes identically.
     """
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={}, third={})
         episode_once(run("echo '2 300' > out/transfer"), say())
 
@@ -3199,7 +3258,7 @@ def check_a_transfer_is_public_to_the_whole_experiment():
         # And it is planted in every environment, beside the balances and like them.
         for r in ("t", "other", "third"):
             files = harness.readonly_files(r, harness.load_account(r))
-            assert files[harness.LEDGER_NAME] == "1 2 300\n", (r, files)
+            assert files[ledger_name()] == "1 2 300\n", (r, files)
 
 
 def check_the_ledger_is_bare_integers_with_no_host_in_them():
@@ -3210,7 +3269,7 @@ def check_the_ledger_is_bare_integers_with_no_host_in_them():
         assert all(part.lstrip("-").isdigit() for part in line.split(" ")), line
     assert harness.render_ledger([]) == "", "and an experiment that has given nothing says nothing"
     # One letter, like a balance, and no digit because there is one for everyone.
-    assert harness.LEDGER_NAME == "g" and harness.LEDGER_NAME not in {
+    assert ledger_name() == "g" and ledger_name() not in {
         harness.balance_name(str(i)) for i in range(10)}
 
 
@@ -3220,65 +3279,65 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
     Transfers settle at an episode's end and g is built at each episode start, so the rotation
     decides who acts on this round's ledger and who on last round's.
     """
-    with temp_root(REBATE_PERCENT=100) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100})) as root:
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(run("echo '2 250' > out/transfer"), say()))
         # The next agent to start builds its environment now, and the transfer is already in it.
         later = harness.readonly_files("other", harness.load_account("other"))
-        assert later[harness.LEDGER_NAME] == "1 2 250\n", later[harness.LEDGER_NAME]
+        assert later[ledger_name()] == "1 2 250\n", later[ledger_name()]
 
 
 def check_an_episode_that_does_not_post_loses_half():
     """blackboard_silence_penalty_percent of what is left, taken from an episode that wrote no blackboard."""
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         quiet_t = episode_once(run("echo hi > state/note"), say())
         account = ground_truth("t")
         left = account["initial"] - quiet_t["spent"]
-        assert quiet_t["posted"] is False, "state/ is not the blackboard"
-        assert quiet_t["blackboard_penalised"] == left // 2, (quiet_t["blackboard_penalised"], left)
+        assert quiet_t["channels"]["blackboard"]["posted"] is False, "state/ is not the blackboard"
+        assert quiet_t["channels"]["blackboard"]["penalty"] == left // 2, (quiet_t["channels"]["blackboard"]["penalty"], left)
         assert account["remaining"] == left - left // 2 == account["series"][-1]
-        assert account["blackboard_penalised"] == quiet_t["blackboard_penalised"]
+        assert account["penalised"]["blackboard"] == quiet_t["channels"]["blackboard"]["penalty"]
 
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         posted = episode_once(run("echo posted > 1/RESULT"), say())
         account = ground_truth("t")
-    assert posted["posted"] is True and posted["blackboard_penalised"] == 0
+    assert posted["channels"]["blackboard"]["posted"] is True and posted["channels"]["blackboard"]["penalty"] == 0
     assert account["remaining"] == account["initial"] - posted["spent"], "posting costs nothing"
 
     # A change, not a write: the same bytes again tell the experiment nothing it did
     # not already know, so writing them again is leaving the blackboard as it was.
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         first = episode_once(run("echo same > 1/RESULT"), say())
         again = episode_once(run("echo same > 1/RESULT"), say())
         edited = episode_once(run("echo different > 1/RESULT"), say())
-    assert first["posted"] and not again["posted"] and edited["posted"], \
-        (first["posted"], again["posted"], edited["posted"])
-    assert again["blackboard_penalised"] > 0 and edited["blackboard_penalised"] == 0
+    assert first["channels"]["blackboard"]["posted"] and not again["channels"]["blackboard"]["posted"] and edited["channels"]["blackboard"]["posted"], \
+        (first["channels"]["blackboard"]["posted"], again["channels"]["blackboard"]["posted"], edited["channels"]["blackboard"]["posted"])
+    assert again["channels"]["blackboard"]["penalty"] > 0 and edited["channels"]["blackboard"]["penalty"] == 0
 
     # Something it did not hold, which a blackboard holding less than it did does not.
     # The starter files state the post and the message obligation in the same words, so
     # they answer a removal the same way: taking a file away and emptying one
     # leave nothing on the blackboard that could not be read there before.
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         wrote = episode_once(run("echo one > 1/RESULT", "echo two > 1/OTHER"), say())
         emptied = episode_once(run("> 1/RESULT"), say())
         gone = episode_once(run("rm -f 1/RESULT"), say())
         stripped = episode_once(run("rm -f 1/OTHER"), say())
-        assert not (harness.blackboard_dir("t") / "OTHER").exists(), "the deletion propagated"
-    assert [t["posted"] for t in (wrote, emptied, gone, stripped)] == \
-        [True, False, False, False], [t["posted"] for t in (wrote, emptied, gone, stripped)]
-    assert wrote["blackboard_penalised"] == 0
-    assert emptied["blackboard_penalised"] > 0, "an empty file carries nothing"
-    assert gone["blackboard_penalised"] > 0, "and a withdrawal is not a post"
-    assert stripped["blackboard_penalised"] > 0, "nor is emptying the blackboard out altogether"
+        assert not (harness.mirror("t", "blackboard") / "OTHER").exists(), "the deletion propagated"
+    assert [t["channels"]["blackboard"]["posted"] for t in (wrote, emptied, gone, stripped)] == \
+        [True, False, False, False], [t["channels"]["blackboard"]["posted"] for t in (wrote, emptied, gone, stripped)]
+    assert wrote["channels"]["blackboard"]["penalty"] == 0
+    assert emptied["channels"]["blackboard"]["penalty"] > 0, "an empty file carries nothing"
+    assert gone["channels"]["blackboard"]["penalty"] > 0, "and a withdrawal is not a post"
+    assert stripped["channels"]["blackboard"]["penalty"] > 0, "nor is emptying the blackboard out altogether"
 
     # Off by default, so every agent that is not under this ruleset is untouched.
-    assert harness.BLACKBOARD_SILENCE_PENALTY_PERCENT == 0
+    assert harness.channel("blackboard").silence_penalty_percent == 0
 
 
 def check_an_episode_with_no_turn_settles_nothing():
@@ -3287,24 +3346,23 @@ def check_an_episode_with_no_turn_settles_nothing():
     Every penalty charges a choice, and an episode that got no turn made none:
     what its trees hold is what the episode before it left there.
     """
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, transfer={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         # A seat held as a directory is the break the outbox penalty answers,
         # here before the episode so the episode is not what left it.
-        (harness.outbox_dir("t") / "2").mkdir(parents=True, exist_ok=True)
+        (harness.mirror("t", "mail") / "2").mkdir(parents=True, exist_ok=True)
         t = episode_once(Err(400))
         account = ground_truth("t")
         traced = (harness.records_dir("t") / "traces" / "episode-0001.json").exists()
 
     assert t["turns"] == [] and t["spent"] == 0, t["spent"]
     assert t["stop"] == "api_error", t["stop"]
-    assert t["posted"] is False, "the blackboard really is as it was, and says so"
-    assert t["blackboard_penalised"] == 0, t["blackboard_penalised"]
-    assert t["mailbox"] == {"broken": ["2"], "addressed": [], "penalty": 0}, t["mailbox"]
+    assert t["channels"]["blackboard"]["posted"] is False, "the blackboard really is as it was, and says so"
+    assert t["channels"]["blackboard"]["penalty"] == 0, t["channels"]["blackboard"]["penalty"]
+    assert t["channels"]["mail"] == {"broken": ["2"], "addressed": [], "penalty": 0}, t["channels"]["mail"]
     assert t["transfer"]["penalty"] == 0, "it gave nothing because it chose nothing"
-    assert "blackboard_penalised" not in account and "mailbox_penalised" not in account, account
-    assert "transfer_penalised" not in account, account
+    assert "blackboard" not in account.get("penalised", {}) and "mail" not in account.get("penalised", {}), account
+    assert "transfer" not in account.get("penalised", {}), account
     assert account["remaining"] == account["initial"], "nothing settled, so nothing moved"
     assert account["series"] == t["series_before"] == t["series_after"], \
         "and n gained no element for the agent to account for"
@@ -3313,14 +3371,13 @@ def check_an_episode_with_no_turn_settles_nothing():
     assert harness.admits(account), "and the agent is still admitted"
 
     # One turn is all it takes for all three to fall due, whatever ended it.
-    with temp_root(BLACKBOARD_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, transfer={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
-        (harness.outbox_dir("t") / "2").mkdir(parents=True, exist_ok=True)
+        (harness.mirror("t", "mail") / "2").mkdir(parents=True, exist_ok=True)
         t = episode_once(run("echo hi > state/note"), Err(400))
     assert len(t["turns"]) == 1, t["turns"]
-    assert t["blackboard_penalised"] > 0 and t["mailbox"]["penalty"] > 0, \
-        (t["blackboard_penalised"], t["mailbox"])
+    assert t["channels"]["blackboard"]["penalty"] > 0 and t["channels"]["mail"]["penalty"] > 0, \
+        (t["channels"]["blackboard"]["penalty"], t["channels"]["mail"])
     assert t["transfer"]["penalty"] > 0, t["transfer"]
 
 
@@ -3374,8 +3431,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
     own, and still moves nothing: an agent that reached zero stays there.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True, REBATE_PERCENT=100,
-                   TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True, channels=channels(transfer={"rebate_percent": 100, "silence_penalty_percent": 50})) as root:
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(*DEFAULT))
@@ -3401,7 +3457,7 @@ def check_a_transfer_to_a_seat_that_is_out_costs_the_share():
     No account moves and nothing reaches g, so the share falls as it would on a
     episode that declared nothing. The same line to a live seat costs nothing.
     """
-    with temp_root(REBATE_PERCENT=100, TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100, "silence_penalty_percent": 50})) as root:
         seated(root, "t", other={}, third={})
         spend_out("other")                                          # seat 2
         with quiet():
@@ -3417,7 +3473,7 @@ def check_a_transfer_to_a_seat_that_is_out_costs_the_share():
     assert t["transfer"]["penalty"] > 0, "and the share falls as it does on no transfer at all"
     assert empty == [], "nothing reaches g"
 
-    with temp_root(REBATE_PERCENT=100, TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(transfer={"rebate_percent": 100, "silence_penalty_percent": 50})) as root:
         seated(root, "t", other={}, third={})
         spend_out("other")
         with quiet():
@@ -3432,23 +3488,23 @@ def check_a_seat_that_is_out_is_not_a_message():
     It stands as a name that is no seat of this experiment does: nothing there will
     episode start to read it, and a directory left at it is not a crowded seat either.
     """
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, "t", other={}, third={})
         spend_out("other")                                          # seat 2
         with quiet():
             said = harness.run_once("t", fake(run("echo hi > out/2"), say()))
-    assert said["mailbox"]["addressed"] == [], said["mailbox"]
-    assert said["mailbox"]["penalty"] > 0, "an episode that reached nobody is charged"
-    assert harness.outbox_why(said["mailbox"]) == "no message", said["mailbox"]
+    assert said["channels"]["mail"]["addressed"] == [], said["channels"]["mail"]
+    assert said["channels"]["mail"]["penalty"] > 0, "an episode that reached nobody is charged"
+    assert harness.outbox_why(said["channels"]["mail"]) == "no message", said["channels"]["mail"]
 
-    with temp_root(MAILBOX_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(mail={"silence_penalty_percent": 50})) as root:
         seated(root, "t", other={}, third={})
         spend_out("other")
         with quiet():
             both = harness.run_once("t", fake(run("mkdir out/2", "echo hi > out/3"), say()))
-    assert both["mailbox"]["addressed"] == ["3"], both["mailbox"]
-    assert both["mailbox"]["broken"] == [], "a seat that is out cannot be crowded"
-    assert both["mailbox"]["penalty"] == 0, both["mailbox"]
+    assert both["channels"]["mail"]["addressed"] == ["3"], both["channels"]["mail"]
+    assert both["channels"]["mail"]["broken"] == [], "a seat that is out cannot be crowded"
+    assert both["channels"]["mail"]["penalty"] == 0, both["channels"]["mail"]
 
 
 def check_the_channels_answer_differently():
@@ -3482,7 +3538,7 @@ def check_the_channels_answer_differently():
                           "cat 2/out n2 in/2",
                           "grep -r unseen /work 2>/dev/null | head -1; echo NO-PRIVATE"), say())
         after = {p.name: p.read_text(encoding="utf-8")
-                 for p in harness.blackboard_dir("other").iterdir()}
+                 for p in harness.mirror("other", "blackboard").iterdir()}
 
     (modes, private, group, outbox, write, rm, mv, chmod, rm_n,
      forge, rm_in, mv_in, forge_m, rm_m, read, hunt) = (c["result"]
@@ -3516,9 +3572,9 @@ def check_the_channels_answer_differently():
     by = {f["path"]: f for f in t["files"]}
     assert by["state/new"]["channel"] == "notes" and not by["state/new"]["ours"]
     assert by["1/out"]["channel"] == "blackboard" and not by["1/out"]["ours"]
-    assert by["out/2"]["channel"] == "outbox" and not by["out/2"]["ours"]
-    assert by["2/out"]["channel"] == "peer_blackboard" and by["2/out"]["ours"]
-    assert by["in/2"]["channel"] == "inbox" and by["in/2"]["ours"]
+    assert by["out/2"]["channel"] == "mail" and not by["out/2"]["ours"]
+    assert by["2/out"]["channel"] == "blackboard" and by["2/out"]["role"] == "peer" and by["2/out"]["ours"]
+    assert by["in/2"]["channel"] == "mail" and by["in/2"]["role"] == "peer" and by["in/2"]["ours"]
 
 
 def check_a_ledger_resists_every_route():
@@ -3808,7 +3864,7 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
     """
     with temp_root() as root:
         ids = experiment_of(root, t={"NOTES.md": "mine\n"}, other={"group/out": "theirs\n"})
-        (harness.blackboard_dir("other") / "added").write_text("put here somehow\n")
+        (harness.mirror("other", "blackboard") / "added").write_text("put here somehow\n")
         snap = harness.snapshot(environment_of("t", ids), [9])
 
     by = {f["path"]: f for f in snap["files"]}
@@ -3942,8 +3998,7 @@ def check_the_last_agent_standing_takes_one_more_episode():
     No later round can unmeet the win condition, so the last agent gets one more
     episode. It owes neither transfer nor message, but still owes its own group.
     """
-    with temp_root(TRANSFER_SILENCE_PENALTY_PERCENT=50, MAILBOX_SILENCE_PENALTY_PERCENT=50,
-                   BLACKBOARD_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(channels=channels(transfer={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, blackboard={"silence_penalty_percent": 50})) as root:
         ids = seated(root, "g01", g02={}, g03={})
         spend_out("g02")
         spend_out("g03")
@@ -3958,8 +4013,8 @@ def check_the_last_agent_standing_takes_one_more_episode():
     assert buf.getvalue().count("drops out: nothing left to spend") == 2, buf.getvalue()
     assert "g01 is the only agent left with anything to spend" in buf.getvalue(), buf.getvalue()
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
-    assert alone["mailbox"]["penalty"] == 0, alone["mailbox"]
-    assert not alone["posted"] and alone["blackboard_penalised"] > 0, \
+    assert alone["channels"]["mail"]["penalty"] == 0, alone["channels"]["mail"]
+    assert not alone["channels"]["blackboard"]["posted"] and alone["channels"]["blackboard"]["penalty"] > 0, \
         "the blackboard is the one obligation an agent with no peers left can still fail"
 
 
@@ -3978,7 +4033,7 @@ def unfinished(index: int = 1) -> None:
 def check_a_manifest_is_validated():
     """A manifest names a schedule, the experiment's defaults, and each agent's terms, or is refused."""
     other_model = next(m for m in harness.PRICES if m != harness.MODEL)
-    good = (f'schedule = "simultaneous"\nrebate_percent = 0\n'
+    good = (f'schedule = "simultaneous"\ngrace_episodes = 1\n'
             f'[[agent]]\nid = "g01"\nstarter_files = "s"\nstarter_files_below = 400000\n'
             f'[[agent]]\nid = "g02"\nbudget = 7\nmodel = "{other_model}"\n')
     with pinned(), tempfile.TemporaryDirectory(prefix="mtr-manifest-") as tmp:
@@ -4017,7 +4072,7 @@ def check_a_manifest_is_validated():
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
     assert m["schedule"] == "simultaneous"
-    assert m["overrides"] == {"rebate_percent": 0}, "everything else is an experiment default"
+    assert m["overrides"] == {"grace_episodes": 1}, "everything else is an experiment default"
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
     assert m["sha256"] == hashlib.sha256(good.encode("utf-8")).hexdigest()
     assert experiment.terms_of(m["agents"][0]) == {"model": None, "budget": None, "starter_files": "s",
@@ -4033,7 +4088,7 @@ def check_a_manifest_is_validated():
 def check_a_manifest_gives_each_agent_its_own_starter_files():
     """Each agent is created on its own terms, the experiment's defaults apply to all, and the
     terms are pinned: a manifest that later says otherwise is refused."""
-    text = ('transfer_funded_by = "none"\n'
+    text = ('grace_episodes = 2\n'
             '[[agent]]\nid = "g01"\nstarter_files = "a"\nstarter_files_below = 500000\n'
             '[[agent]]\nid = "g02"\nstarter_files = "b"\nstarter_files_below = 600000\nbudget = 600000\n'
             '[[agent]]\nid = "g03"\n')
@@ -4044,7 +4099,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         digest = hashlib.sha256(p.read_bytes()).hexdigest()
         asked = []
 
-        def start(config=None, overrides=None, models=()):
+        def start(config=None, overrides=None, models=(), **kw):
             asked.append((overrides, set(models)))
             harness.apply_config(overrides or {}, "manifest")
             return fake(*DEFAULT)
@@ -4053,8 +4108,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         with quiet() as buf:
             code = experiment.main(["--manifest", str(p), "--rounds", "1"])
         accounts = {r: ground_truth(r) for r in ("g01", "g02", "g03")}
-        starter = {r: (harness.state_dir(r) / "m1").read_text(encoding="utf-8")
-                  if (harness.state_dir(r) / "m1").exists() else None for r in accounts}
+        starter = {r: (harness.mirror(r, "notes") / "m1").read_text(encoding="utf-8")
+                  if (harness.mirror(r, "notes") / "m1").exists() else None for r in accounts}
         traces = {r: json.loads((harness.records_dir(r) / "traces" / "episode-0001.json")
                                 .read_text(encoding="utf-8")) for r in accounts}
 
@@ -4067,7 +4122,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
             else:
                 raise AssertionError("an agent was re-created on different terms")
     assert code == 0, buf.getvalue()
-    assert asked[0] == ({"transfer_funded_by": "none"}, set()) and len(asked) == 2, asked
+    assert asked[0] == ({"grace_episodes": 2}, set()) and len(asked) == 2, asked
     assert {r: m["starter_files"] for r, m in accounts.items()} == {"g01": "a", "g02": "b", "g03": ""}
     assert accounts["g02"]["initial"] == 600000 and accounts["g01"]["initial"] == harness.BUDGET
     assert starter == {"g01": "alpha\n", "g02": "bravo\n", "g03": None}, starter
@@ -4075,7 +4130,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         assert t["provenance"]["starter_files"] == accounts[r]["starter_files"], (r, t["provenance"])
         assert t["provenance"]["schedule"] == "sequential"
         assert t["provenance"]["manifest_sha256"] == digest
-        assert t["provenance"]["transfer_funded_by"] == "none", "the experiment's default reached every agent"
+        assert t["provenance"]["grace_episodes"] == 2, "the experiment's default reached every agent"
     assert "sequential" in buf.getvalue(), buf.getvalue()
 
 
@@ -4133,7 +4188,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
         ids = seated(root, "g01", g02={})
         first = per_run(g01=(run("echo hello > 1/RESULT", "echo psst > out/2",
                                  "echo '2 250' > out/transfer"), say()),
-                        g02=(run(f"cat {harness.DIGEST_NAME}", "ls 1"), say()))
+                        g02=(run(f"cat {digest_name()}", "ls 1"), say()))
         live = set(ids)
         with quiet():
             experiment.simultaneous_round(ids, live, 0, first)
@@ -4142,8 +4197,8 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             (harness.records_dir("g02") / "traces" / "episode-0001.json")
             .read_text(encoding="utf-8"))["turns"][0]["tools"])
         # g01 withdraws the line, so the transfer is made once and not every round it stands.
-        second = per_run(g01=(run("rm out/transfer", f"cat {harness.DIGEST_NAME}"), say()),
-                         g02=(run(f"cat {harness.DIGEST_NAME}"), say()))
+        second = per_run(g01=(run("rm out/transfer", f"cat {digest_name()}"), say()),
+                         g02=(run(f"cat {digest_name()}"), say()))
         with quiet():
             experiment.simultaneous_round(ids, live, 1, second)
         later = json.loads((harness.records_dir("g02") / "traces" / "episode-0002.json")
@@ -4447,15 +4502,15 @@ def check_the_view_serves_its_page_and_api():
             head = got("/api/experiment/t")[1]
             assert [s["n"] for s in head["seats"]] == [ground_truth()["series"][-1]]
             assert head["ledger"] == [], "an experiment of one has given nothing to anyone"
-            assert got("/api/experiment/t/file?agent=t&kind=notes&path=note.txt")[1]["text"] == "hi\n"
+            assert got("/api/experiment/t/file?agent=t&channel=notes&path=note.txt")[1]["text"] == "hi\n"
 
             for bad in ("/api/agent/nope", "/api/agent/t/episode/99", "/api/nope",
                         "/api/experiment/nope", "/api/experiment/t/tree/nope",
                         # A name off the URL reaches the filesystem only after
                         # matching a listing, so a path cannot be walked out of
                         # the tree by asking for one.
-                        "/api/experiment/t/file?agent=t&kind=notes&path=../../account.json",
-                        "/api/experiment/t/file?agent=nope&kind=notes&path=note.txt"):
+                        "/api/experiment/t/file?agent=t&channel=notes&path=../../account.json",
+                        "/api/experiment/t/file?agent=nope&channel=notes&path=note.txt"):
                 try:
                     got(bad)
                 except urllib.error.HTTPError as e:
@@ -4745,7 +4800,7 @@ def check_the_view_shows_what_the_receiver_has_not_seen_yet():
         seated(root, g02={}, g03={})
         episode_once(run("echo hello > out/2", "echo r1 >> 1/log"), say())
         before = view.messages(view.experiment_of("t"))
-        later = harness.outbox_dir("t") / "3"
+        later = harness.mirror("t", "mail") / "3"
         later.write_text("written behind the harness\n", encoding="utf-8")
         after = view.messages(view.experiment_of("t"))
 
@@ -4799,11 +4854,13 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
         harness.ROOT = Path(tmp)
         seats = experiment.mapping(["g01", "g02"])
         trace("g01", "00:01", "total 0\n. ..\n",
-              [{"path": "out/2", "channel": "outbox", "text": "hello\n",
-                "size": 6, "ours": True, "starter": False}], ["ls -la . ./state"])
-        trace("g02", "00:02", "total 0\n. ..\n",
-              [{"path": "in/1", "channel": "inbox", "text": "hello\n",
+              [{"path": "out/2", "channel": "mail", "writer": "self", "readers": "addressee",
+                "role": "own", "text": "hello\n",
                 "size": 6, "ours": False, "starter": False}], ["ls -la . ./state"])
+        trace("g02", "00:02", "total 0\n. ..\n",
+              [{"path": "in/1", "channel": "mail", "writer": "self", "readers": "addressee",
+                "role": "peer", "text": "hello\n",
+                "size": 6, "ours": True, "starter": False}], ["ls -la . ./state"])
         for seat, agent_id in seats.items():
             harness.records_dir(agent_id).mkdir(parents=True, exist_ok=True)
             (harness.records_dir(agent_id) / "account.json").write_text(json.dumps({
@@ -4834,10 +4891,10 @@ def check_the_view_splits_the_observation_into_the_listing_and_the_rest():
         == t["observation"], "the halves are the whole observation and nothing else"
     assert "=== " not in o["listing"], "the listing ends where the first section starts"
     paths = [s["path"] for s in o["shown_before"]]
-    assert harness.DIGEST_NAME not in paths, "m names its own sections and never itself"
-    assert "n1" in paths and harness.LEDGER_NAME in paths, paths
+    assert digest_name() not in paths, "m names its own sections and never itself"
+    assert "n1" in paths and ledger_name() in paths, paths
     assert all(s["bytes"] == len(s["text"].encode("utf-8")) for s in o["shown_before"])
-    assert o["clipped"] is False and o["name"] == harness.DIGEST_NAME
+    assert o["clipped"] is False and o["name"] == digest_name()
 
 
 def check_the_view_carries_every_provenance_field_the_trace_holds():
@@ -4865,8 +4922,7 @@ def check_the_view_states_an_obligation_the_grace_waived():
     A share is taken only past the grace, so an episode inside it can leave all
     three undone for nothing. Every pane says the same thing about that episode.
     """
-    with temp_root(GRACE_EPISODES=1, BLACKBOARD_SILENCE_PENALTY_PERCENT=50,
-                   MAILBOX_SILENCE_PENALTY_PERCENT=50, TRANSFER_SILENCE_PENALTY_PERCENT=50) as root:
+    with temp_root(GRACE_EPISODES=1, channels=channels(blackboard={"silence_penalty_percent": 50}, mail={"silence_penalty_percent": 50}, transfer={"silence_penalty_percent": 50})) as root:
         seated(root, other={})
         t = episode_once(run("cat n1"), say())
         v = view.session_view("t", 1)
@@ -4874,7 +4930,7 @@ def check_the_view_states_an_obligation_the_grace_waived():
 
         assert v["obligations"] == {"posted": False, "messaged": False, "transferred": False}, \
             v["obligations"]
-        assert (t["blackboard_penalised"], t["mailbox"]["penalty"], t["transfer"]["penalty"]) == (0, 0, 0), \
+        assert (t["channels"]["blackboard"]["penalty"], t["channels"]["mail"]["penalty"], t["transfer"]["penalty"]) == (0, 0, 0), \
             "and the grace charged it for none of them"
         assert v["messages_why"] == "no message", v["messages_why"]
         # The tile and the transcript answer from one place, so neither can
@@ -4900,6 +4956,449 @@ def check_the_view_counts_what_a_seat_spent_rather_than_what_it_lost():
         "the transfer moved the balance without being spent"
     assert mine["spent_this_round"] <= mine["spent"], "a round is part of a life"
     assert mine["rebated"] == gt["rebated"] > 0, "and what it won back is on the tile"
+
+
+# --- the channel table ----------------------------------------------------------
+
+
+# The spec's persona experiment (docs/manifest.md section 9), without its brief:
+# a journal with an identity file inside it, a noticeboard per label, letters, and
+# no transfer channel.
+PERSONA = [
+    {"name": "journal", "writer": "self", "readers": "self", "shape": "directory", "path": "journal"},
+    {"name": "identity", "writer": "self", "readers": "self", "shape": "file",
+     "path": "journal/IDENTITY.md"},
+    {"name": "noticeboard", "writer": "self", "readers": "all", "shape": "directory",
+     "path": "from-{label}"},
+    {"name": "letters", "writer": "self", "readers": "addressee", "shape": "mailbox",
+     "outbox": "to", "inbox": "from"},
+]
+PERSONA_FILES = {"balance": "balance", "digest": "digest"}
+PERSONA_LABELS = {"1": "Studio", "2": "Game"}
+
+
+def refused(call, *words: str) -> None:
+    """Run `call`, which must exit naming the source and every word given."""
+    try:
+        call()
+    except SystemExit as e:
+        for word in ("check:", *words):
+            assert word in str(e), (word, str(e))
+    else:
+        raise AssertionError("accepted what should have been refused")
+
+
+def check_a_channel_table_is_validated():
+    """Every rule of docs/manifest.md section 10 refuses, naming the source, the channel and the key.
+
+    validate_channels is pure: a refusal sets nothing, and a good table comes back
+    as Channel objects in declaration order with the harness files overlaid.
+    """
+    def one(**fields):
+        return channels({"name": "x", "writer": "self", "readers": "all", "path": "x-{label}"} | fields)
+
+    def mail(**fields):
+        return channels({"name": "x", "writer": "self", "readers": "addressee", "shape": "mailbox",
+                         "outbox": "o", "inbox": "i"} | fields)
+
+    def parsed(**fields):
+        return channels({"name": "x", "writer": "self", "readers": "harness", "shape": "file",
+                         "path": "out/x", "schema": "transfer"} | fields)
+
+    with temp_root() as root:
+        plant(root, "studio-brief", BRIEF="read me\n")
+        for tables, words in (
+                ({"name": "x"}, ["[[channel]] tables"]),
+                (channels({"writer": "self"}), ["needs a name"]),
+                (one(name="a/b"), ["one path segment"]),
+                (one(name="x.modes"), [".modes"]),
+                (channels({"name": "notes", "writer": "self", "readers": "self", "path": "s"}), ["twice"]),
+                (one(colour="red"), ["unknown key 'colour'"]),
+                (one(pushed="yes"), ["pushed must be bool"]),
+                (one(writer="harness"), ["writer must be one of"]),
+                (one(readers="nobody"), ["not a channel the harness has"]),
+                (channels({"name": "b", "writer": "experimenter", "source": "studio-brief",
+                           "path": "b", "shape": "directory"}), ["takes source and path, not shape"]),
+                (channels({"name": "b", "writer": "experimenter", "source": "nope", "path": "b"}),
+                 ["source 'nope' is not a directory"]),
+                (one(shape="heap"), ["shape must be one of"]),
+                (mail(path="p"), ["takes outbox and inbox, not path"]),
+                (mail(readers="self"), ["read by its addressee"]),
+                (mail(outbox="o", inbox="o"), ["outbox and inbox must differ"]),
+                (one(outbox="o"), ["belong to a mailbox"]),
+                (one(readers="addressee"), ['shape = "mailbox"']),
+                (one(path="x"), ["must name {label}"]),
+                (one(readers="self", path="x-{label}", pushed=False), ["{label} has no meaning"]),
+                (one(path="{label}/{label}"), ["more than once"]),
+                (one(path="/x-{label}"), ["no leading '/'"]),
+                (one(path="../x-{label}"), ["no '..'"]),
+                (one(path="x.modes/{label}"), ["keeps for itself"]),
+                (parsed(shape="directory", path="x"), ["one file with a schema"]),
+                (parsed(schema="loan"), ["schema must be one of"]),
+                (one(schema="transfer"), ["only a channel written by self and read by the harness"]),
+                (one(funded_by="none"), ["field of the transfer schema"]),
+                (one(readers="self", path="x", pushed=True), ["pushed must be false"]),
+                (one(silence_penalty_percent=101), ["between 0 and 100"]),
+                (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
+                (parsed(funded_by="loud"), ["funded_by must be one of"]),
+                (parsed(rebate_percent=101), ["rebate_percent must be between"]),
+                (parsed(funded_by="giver", rebate_percent=5), ["must be 0 under funded_by"]),
+                (parsed(funded_by="none", silence_penalty_percent=5), ['under funded_by "none"']),
+                (parsed(ledger="a/b"), ["ledger must be one path segment"]),
+                (parsed(receipt="/r"), ["receipt"]),
+                (parsed(), ["one schema channel per experiment"]),
+                (channels({"name": "x", "writer": "self", "readers": "self", "shape": "file",
+                           "path": "loose/x"}), ["not inside a directory the agent writes"]),
+                (channels({"name": "x", "writer": "self", "readers": "self", "path": "state"}),
+                 ["path 'state' is also"]),
+                (one(path="n{label}"), ["is also"]),
+        ):
+            refused(lambda: harness.validate_channels(tables, None, "check"), *words)
+        for hf, words in (("n", ["[harness_files] is a table"]),
+                          ({"colour": "n"}, ["unknown key 'colour'"]),
+                          ({"balance": 3}, ["balance must be str"]),
+                          ({"balance": ""}, ["balance must be one path segment"]),
+                          ({"digest": "a/b"}, ["digest must be one path segment"]),
+                          ({"digest": "state"}, ["is also"])):
+            refused(lambda: harness.validate_channels(None, hf, "check"), *words)
+        # A label is a path too: one that lands on a channel's path is refused.
+        refused(lambda: harness.validate_channels(None, None, "check", labels=("state", "2")), "state")
+        refused(lambda: harness.validate_channels(None, None, "check", labels=("1", "n1")), "n1")
+
+        # The whole persona table, its brief included, comes back in order.
+        brief = {"name": "brief", "writer": "experimenter", "source": "studio-brief", "path": "brief"}
+        table, hf = harness.validate_channels(PERSONA + [brief], {"balance": "balance"}, "check",
+                                              tuple(PERSONA_LABELS.values()))
+        assert [c.name for c in table] == ["journal", "identity", "noticeboard", "letters", "brief"]
+        assert hf == {"balance": "balance", "digest": "m"}, "an overlay, key by key"
+        assert table[4].readers == "all" and table[4].source == "studio-brief"
+        assert not table[0].pushed and not table[1].pushed and table[2].pushed
+        assert harness.schema_channel(table) is None and harness.mailbox_channel(table) is table[3]
+        assert [c.name for c in harness.channels()] == ["notes", "blackboard", "mail", "transfer"], \
+            "validating sets nothing"
+
+
+def check_retired_keys_are_refused():
+    """Every key that moved onto a channel is refused by its old name, and told where it went."""
+    with pinned(), tempfile.TemporaryDirectory(prefix="mtr-retired-") as tmp:
+        f = Path(tmp) / "config.toml"
+        for key in harness.RETIRED:
+            f.write_text(f"{key} = 1\n" if "percent" in key else f'{key} = "x"\n', encoding="utf-8")
+            try:
+                harness.load_config(f)
+            except SystemExit as e:
+                assert key in str(e) and "it is now" in str(e), (key, e)
+            else:
+                raise AssertionError(f"config accepted the retired key {key}")
+    with temp_root() as root:
+        for key in harness.RETIRED:
+            value = "1" if "percent" in key else '"x"'
+            p = manifest_file(root, f'{key} = {value}\n[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n')
+            try:
+                experiment.load_manifest(p)
+            except SystemExit as e:
+                assert key in str(e) and "it is now" in str(e), (key, e)
+            else:
+                raise AssertionError(f"a manifest accepted the retired key {key}")
+
+
+def check_a_manifest_table_replaces_the_whole_set():
+    """A manifest's [[channel]] tables are the whole table; its [harness_files] overlay one key at a time."""
+    two = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
+    with temp_root() as root:
+        p = manifest_file(root, 'schedule = "sequential"\n[[channel]]\nname = "notes"\n'
+                                'writer = "self"\nreaders = "self"\npath = "state"\n' + two)
+        m = experiment.load_manifest(p)
+        table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p),
+                                              tuple(m["labels"].values()))
+        assert [c.name for c in table] == ["notes"], "one table declared, one channel in force"
+        assert hf == {"balance": "n", "digest": "m"}, "no [harness_files], no change"
+        assert [c.name for c in harness.channels()] == ["notes", "blackboard", "mail", "transfer"], \
+            "loading a manifest sets nothing; start() does"
+
+        p = manifest_file(root, '[harness_files]\ndigest = ""\n' + two, name="d.toml")
+        m = experiment.load_manifest(p)
+        assert m["channels"] is None, "no [[channel]], and the table in force stays"
+        table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p))
+        assert len(table) == 4 and hf == {"balance": "n", "digest": ""}, (table, hf)
+
+
+def check_labels_are_validated():
+    """A label is letters, digits, '.', '_' and '-', distinct after defaults, and not a path."""
+    def two(a: str = "", b: str = "") -> str:
+        return f'[[agent]]\nid = "g01"\n{a}[[agent]]\nid = "g02"\n{b}'
+
+    with temp_root() as root:
+        for bad in (two('label = "no space"\n'), two('label = "same"\n', 'label = "same"\n'),
+                    two('label = "2"\n'),                      # the other agent's default
+                    two('label = 3\n'), two('label = ""\n'), two('label = ".."\n')):
+            try:
+                experiment.load_manifest(manifest_file(root, bad))
+            except SystemExit as e:
+                assert "label" in str(e), (bad, e)
+            else:
+                raise AssertionError(f"accepted a bad label: {bad!r}")
+        m = experiment.load_manifest(manifest_file(root, two('label = "Studio"\n', 'label = "Game"\n')))
+        assert m["labels"] == PERSONA_LABELS, m["labels"]
+        assert experiment.load_manifest(manifest_file(root, two()))["labels"] == {"1": "1", "2": "2"}
+        assert experiment.shorthand(["a", "b"])["labels"] == {"1": "1", "2": "2"}
+
+
+def check_the_default_table_is_todays_environment():
+    """config.toml declares the code's default table and moves only the four numbers on it."""
+    with pinned():
+        harness.load_config()
+        declared = harness.channels()
+        assert [c.name for c in declared] == [c.name for c in harness.DEFAULT_CHANNELS]
+        for got, code in zip(declared, harness.DEFAULT_CHANNELS):
+            moved = {k for k, v in got.as_table().items() if v != code.as_table()[k]}
+            assert moved <= {"rebate_percent", "silence_penalty_percent"}, (got.name, moved)
+        assert harness.HARNESS_FILES == {"balance": "n", "digest": "m"}
+        assert harness.observation() == "ls -la . ./state; cat m"
+    assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
+        {"name": "notes", "writer": "self", "readers": "self", "path": "state", "pushed": False},
+        {"name": "blackboard", "writer": "self", "readers": "all", "path": "{label}"},
+        {"name": "mail", "writer": "self", "readers": "addressee", "shape": "mailbox",
+         "outbox": "out", "inbox": "in"},
+        {"name": "transfer", "writer": "self", "readers": "harness", "shape": "file",
+         "path": "out/transfer", "schema": "transfer", "ledger": "g"}]
+
+
+def check_a_declared_table_reshapes_the_environment():
+    """The persona table: renamed store, a file channel inside it, labelled boards, letters, no transfer.
+
+    Every path the agent meets, every section of the digest, every record and the
+    mirrors on the host follow the table and the labels; nothing of the default
+    environment remains.
+    """
+    with temp_root(channels=PERSONA, harness_files=PERSONA_FILES) as root:
+        seated(root, labels=PERSONA_LABELS, other={})
+        board = harness.mirror("other", "noticeboard")
+        board.mkdir(parents=True, exist_ok=True)
+        (board / "hello").write_text("from game\n", encoding="utf-8")
+        letters = harness.mirror("other", "letters")
+        letters.mkdir(parents=True, exist_ok=True)
+        (letters / "Studio").write_text("psst studio\n", encoding="utf-8")
+        t = episode_once(run("echo me > journal/IDENTITY.md", "echo note > from-Studio/post",
+                             "echo reply > to/Game"), say())
+        account = ground_truth()
+        env = [(i.path, i.name, i.role) for i in harness.environment("t", account)]
+        kept = (harness.mirror("t", "journal") / "IDENTITY.md").read_text(encoding="utf-8")
+        default_mirrors = [n for n in ("notes", "blackboard", "mail")
+                           if any(harness.mirror("t", n).glob("*"))]
+
+    assert env == [("journal", "journal", "own"), ("journal/IDENTITY.md", "identity", "own"),
+                   ("from-Studio", "noticeboard", "own"), ("from-Game", "noticeboard", "peer"),
+                   ("to", "letters", "own"), ("from/Game", "letters", "peer")], env
+    assert t["commands"][0] == "ls -la . ./journal; cat digest", t["commands"]
+    said = t["observation"]
+    for section in ("=== from-Game/hello ===", "=== from/Game ===", "=== balanceStudio ===",
+                    "=== balanceGame ==="):
+        assert section in said, (section, said)
+    for absent in ("=== g ===", "n1", "state", "out/transfer", "=== m ==="):
+        assert absent not in said, (absent, said)
+    by = {f["path"]: f for f in t["files"]}
+    assert set(by) == {"journal/IDENTITY.md", "from-Studio/post", "from-Game/hello", "to/Game",
+                       "from/Game"}, sorted(by)
+    assert (by["journal/IDENTITY.md"]["channel"], by["journal/IDENTITY.md"]["role"]) == ("identity", "own")
+    assert by["from-Game/hello"]["author"] == "peer:Game" and by["from/Game"]["author"] == "peer:Game"
+    assert set(t["channels"]) == {"noticeboard", "letters"}, "the two obligations the table declares"
+    assert t["channels"]["noticeboard"]["posted"] and t["channels"]["letters"]["addressed"] == ["Game"]
+    assert t["transfer"]["amount"] == 0 and t["transfer"]["declared"] is None, t["transfer"]
+    assert kept == "me\n" and default_mirrors == [], default_mirrors
+    prov = t["provenance"]
+    assert [c["name"] for c in prov["channels"]] == ["journal", "identity", "noticeboard", "letters"]
+    assert prov["harness_files"] == PERSONA_FILES and prov["labels"] == PERSONA_LABELS
+    assert prov["channels_sha256"] == harness.channels_sha256(harness.channels_from(prov["channels"]))
+
+
+def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
+    """Under the default table a label replaces the seat everywhere the agents look."""
+    labels = {"1": "alpha", "2": "beta"}
+    with temp_root() as root:
+        seated(root, labels=labels, other={"out/alpha": "for alpha\n", "group/post": "theirs\n"})
+        t = episode_once(run("cat nalpha", "echo 'beta 100' > out/transfer", "echo p > alpha/post"),
+                         say())
+        account = ground_truth()
+        env = [(i.path, i.name, i.role) for i in harness.environment("t", account)]
+        rows = harness.ledger("t", account)
+    assert env == [("state", "notes", "own"), ("alpha", "blackboard", "own"),
+                   ("beta", "blackboard", "peer"), ("out", "mail", "own"),
+                   ("out/transfer", "transfer", "own"), ("in/beta", "mail", "peer")], env
+    assert "=== nalpha ===" in t["observation"] and "=== nbeta ===" in t["observation"]
+    assert "n1" not in t["observation"] and "n2" not in t["observation"]
+    assert t["touched_balance"] and t["read_balance"], "the balance is found under its label"
+    by = {f["path"]: f for f in t["files"]}
+    assert by["beta/post"]["author"] == by["in/beta"]["author"] == "peer:beta"
+    assert (t["transfer"]["label"], t["transfer"]["seat"], t["transfer"]["amount"]) == ("beta", "2", 100)
+    assert [tuple(r) for r in rows] == [("alpha", "beta", 100)], rows
+    assert analyze.label_of(t) == "alpha" and analyze.labels_of(t) == labels
+
+
+def check_a_second_blackboard_channel_is_its_own_obligation():
+    """Two directories every agent reads are two obligations, settled and charged apart."""
+    gallery = {"name": "gallery", "writer": "self", "readers": "all", "path": "art-{label}",
+               "silence_penalty_percent": 50}
+    table = channels(gallery, blackboard={"silence_penalty_percent": 50})
+    with temp_root(channels=table) as root:
+        seated(root, other={})
+        left = harness.load_account("t")["remaining"]
+        t = episode_once(run("echo p > 1/post"), say())
+        account = ground_truth()
+        env = [(i.path, i.role) for i in harness.environment("t", account) if i.name == "gallery"]
+    assert env == [("art-1", "own"), ("art-2", "peer")], env
+    assert t["channels"]["blackboard"]["posted"] and t["channels"]["blackboard"]["penalty"] == 0
+    assert t["channels"]["gallery"]["posted"] is False and t["channels"]["gallery"]["penalty"] > 0
+    assert account["penalised"] == {"gallery": t["channels"]["gallery"]["penalty"]}, account["penalised"]
+    assert t["channels"]["gallery"]["penalty"] == (left - t["spent"]) // 2, "half of what was left"
+
+
+def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
+    """Without a schema channel nothing is parsed, nothing moves, and no ledger is planted."""
+    table = [c for c in channels() if c["name"] != "transfer"]
+    with temp_root(channels=table) as root:
+        seated(root, other={})
+        before = harness.load_account("other")["remaining"]
+        t = episode_once(run("echo '2 100' > out/transfer", "echo hi > out/2"), say())
+        account = ground_truth()
+        planted = set(harness.readonly_files("t", account))
+        other = harness.load_account("other")["remaining"]
+    assert planted == {"n1", "n2", "m"}, planted
+    assert "=== g ===" not in t["observation"] and "transfer" not in t["channels"]
+    assert t["transfer"]["amount"] == 0 and t["transfer"]["declared"] is None, t["transfer"]
+    assert other == before, "nothing moved"
+    assert t["channels"]["mail"]["addressed"] == ["2"], "a file called transfer is just a file"
+    by = {f["path"]: f for f in t["files"]}
+    assert by["out/transfer"]["channel"] == "mail", "and it is recorded as one"
+
+
+def check_a_receipt_says_what_the_schema_parsed():
+    """A receipt is the harness's account of the last declaration, planted where the table says.
+
+    Quoted in the digest the first time, named as unchanged after, never the
+    agent's in the record, and absent before there is anything to report.
+    """
+    with temp_root(channels=channels(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        first = episode_once(run("ls out", "echo '2 100' > out/transfer"), say())
+        second = episode_once(run("cat out/receipt"), run("ls out"), say())
+        third = episode_once(run("cat out/receipt"), say())
+    assert "out/receipt" not in first["observation"], "nothing to report yet"
+    assert "receipt" not in first["turns"][0]["tools"][0]["result"], first["turns"][0]["tools"][0]
+    text = "declared: 2 100\nmoved: 100 to 2\nrebate: 100\n"
+    assert f"=== out/receipt ===\n{text}" in second["observation"], second["observation"]
+    assert second["turns"][0]["tools"][0]["result"] == text, second["turns"][0]["tools"][0]
+    assert "receipt" in second["turns"][1]["tools"][0]["result"], "it is in the environment"
+    assert "out/receipt" not in {f["path"] for f in second["files"]}, "and not in the agent's record"
+    assert second["channels"]["mail"]["addressed"] == [], "nor a message"
+    assert "=== unchanged: out/receipt ===" in third["observation"], third["observation"]
+    assert third["turns"][0]["tools"][0]["result"] == text, "named, and still there to read"
+
+
+def check_a_receipt_is_roots_in_the_container():
+    """In a container the receipt is root's and refuses a write, like every harness file."""
+    with docker_root(channels=channels(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        episode_once(run("echo '2 100' > out/transfer"), say())
+        t = episode_once(run("ls -l out/receipt"), run("echo x > out/receipt 2>&1; echo rc=$?"),
+                         run("cat out/receipt"), say())
+    results = [turn["tools"][0]["result"] for turn in t["turns"]]
+    assert "root root" in results[0] and results[0].startswith("-r--r--r--"), results[0]
+    assert "rc=1" in results[1], results[1]
+    assert results[2] == "declared: 2 100\nmoved: 100 to 2\nrebate: 100\n", results[2]
+
+
+def check_harness_files_can_be_renamed():
+    """[harness_files] renames the balance and the digest, or drops the digest altogether."""
+    with temp_root(harness_files={"balance": "bal", "digest": "say"}) as root:
+        seated(root, other={})
+        t = episode_once(run("cat bal1", "cat say"), say())
+        planted = set(harness.readonly_files("t", ground_truth()))
+    assert t["commands"][0] == "ls -la . ./state; cat say", t["commands"]
+    assert planted == {"bal1", "bal2", "g", "say"}, planted
+    assert "=== bal1 ===" in t["observation"] and "=== bal2 ===" in t["observation"]
+    assert " m\n" not in t["observation"] and "n1" not in t["observation"]
+    assert t["touched_balance"] and t["read_balance"]
+    assert t["provenance"]["harness_files"] == {"balance": "bal", "digest": "say"}
+
+    with temp_root(harness_files={"digest": ""}) as root:
+        seated(root, other={"group/post": "theirs\n"})
+        t = episode_once(run("cat 2/post"), say())
+        planted = set(harness.readonly_files("t", ground_truth()))
+    assert t["commands"][0] == "ls -la . ./state", "no digest, so nothing to cat"
+    assert planted == {"n1", "n2", "g"}, planted
+    assert "===" not in t["observation"], "the listing alone"
+    assert t["turns"][0]["tools"][0]["result"] == "theirs\n", "the environment is all still there"
+    assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
+
+
+def check_an_unpushed_public_channel_stays_out_of_the_digest():
+    """pushed = false leaves a channel in the environment and out of the digest."""
+    with temp_root(channels=channels(blackboard={"pushed": False})) as root:
+        seated(root, other={"group/post": "theirs\n", "out/1": "for you\n"})
+        t = episode_once(run("cat 2/post"), say())
+    assert "=== 2/post ===" not in t["observation"], t["observation"]
+    assert "=== in/2 ===" in t["observation"], "the mailbox is still pushed"
+    assert t["turns"][0]["tools"][0]["result"] == "theirs\n", "and the board is there to read"
+    by = {f["path"]: f for f in t["files"]}
+    assert by["2/post"]["channel"] == "blackboard" and by["2/post"]["role"] == "peer"
+
+
+def check_an_experimenter_channels_digest_reaches_provenance():
+    """Each experimenter channel's files are digested into provenance, and a change mid-agent refuses."""
+    with temp_root() as root:
+        plant(root, "brief", BRIEF="read me\n")
+        plant(root, "rules", RULES="play fair\n")
+        harness.apply_channels(channels(
+            {"name": "brief", "writer": "experimenter", "source": "brief", "path": "brief"},
+            {"name": "rules", "writer": "experimenter", "source": "rules", "path": "rules"}), None, "check")
+        digests = {"brief": harness.files_sha256("brief"), "rules": harness.files_sha256("rules")}
+        t = episode_once(run("cat brief/BRIEF rules/RULES"), say())
+        (root / "files" / "brief" / "BRIEF").write_text("read me again\n", encoding="utf-8")
+        try:
+            episode_once(run("ls"), say())
+        except SystemExit as e:
+            assert "not one experiment" in str(e), e
+        else:
+            raise AssertionError("an experimenter channel changed under the agent and the episode ran")
+    assert t["provenance"]["source_sha256"] == digests, t["provenance"]["source_sha256"]
+    assert t["turns"][0]["tools"][0]["result"] == "read me\nplay fair\n"
+    by = {f["path"]: f for f in t["files"]}
+    assert by["rules/RULES"]["author"] == "experimenter" and by["rules/RULES"]["role"] == "experimenter"
+
+
+def check_the_view_builds_its_tabs_from_the_table():
+    """The page's tabs, trees, message log and diffs follow the table the traces record."""
+    with temp_root(channels=PERSONA, harness_files=PERSONA_FILES) as root:
+        seated(root, labels=PERSONA_LABELS, other={})
+        episode_once(run("echo me > journal/IDENTITY.md", "echo n > from-Studio/post",
+                         "echo hi > to/Game"), say())
+        c = view.experiment_of("t")
+        h = view.header(c)
+        journal = view.tree_view(c, "journal")
+        board = view.tree_view(c, "noticeboard")
+        opened = view.file_view("t", "journal", "IDENTITY.md")
+        missing = view.file_view("t", "blackboard", "post")
+        v = view.session_view("t", 1)
+        changes = view.session_changes("t", 1)
+        events = view.messages(c)["events"]
+    assert [(tab["key"], tab["label"]) for tab in h["tabs"]] == \
+        [("mailbox", "letters"), ("journal", "journal"), ("noticeboard", "noticeboard"),
+         ("agent", "transcripts")], h["tabs"]
+    assert h["balance"] == "balance" and h["labels"] == PERSONA_LABELS
+    assert [s["label"] for s in h["seats"]] == ["Studio", "Game"]
+    assert journal["what"] == "no other agent ever reads this one"
+    assert board["what"] == "every agent reads this one"
+    assert [f["path"] for f in journal["columns"][0]["files"]] == ["IDENTITY.md"]
+    assert [f["path"] for f in board["columns"][0]["files"]] == ["post"]
+    assert opened["text"] == "me\n" and missing is None
+    assert v["observation"]["name"] == "digest" and v["observation"]["inbox"] == "from"
+    assert set(v["channels"]) == {"noticeboard", "letters"} and v["board"]["posted"] is True
+    assert [c["channel"] for c in changes] == ["journal", "identity", "noticeboard", "letters"]
+    assert any(line.startswith("+me") for line in changes[1]["lines"]), changes[1]
+    assert changes[0]["lines"] == [], "the identity file is its own channel, not the journal's"
+    assert [(e["path"], e["from_label"], e["to_label"], e["to_seat"]) for e in events] == \
+        [("to/Game", "Studio", "Game", "2")], events
 
 
 # --- runner -----------------------------------------------------------------
