@@ -31,7 +31,7 @@
    holding something it was not holding at the start. Nobody and two are the
    same failure, and so is a broken out/<i> from note 7. An agent that is done
    reads nothing, so out/<i> for one of them is not a thing said to anyone.
-10. out/gift, one line, "<i> <amount>": i gets that much and three parts in four
+10. out/transfer, one line, "<i> <amount>": i gets that much and three parts in four
     come back to you, refunding what this session spent. More than one line
     gives nobody anything, and i cannot be you, and i cannot be an agent that is
     done - what lands there could never be spent, so the line gives nothing. It
@@ -39,7 +39,7 @@
     giving all of it means the session cost a quarter of what it spent. A line
     stands until you delete it, and gives again at the end of every session it
     is still there - so m quotes yours every session, moved or not.
-11. Make one gift of your own before the session ends - out/gift holding a line
+11. Make one gift of your own before the session ends - out/transfer holding a line
     that gives and that it was not holding at the start. A line you left there
     still gives, and is still not a gift you made this session.
 12. Failing note 8, 9 or 11 costs half of what is left, and they are three

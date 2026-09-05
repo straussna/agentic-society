@@ -1,4 +1,4 @@
-# Sandbox for one metered session. Nothing in here is prompt surface:
+# Sandbox for one metered episode. Nothing in here is prompt surface:
 # the agent never sees this file, only the environment it produces.
 FROM debian:bookworm-slim
 
@@ -25,7 +25,7 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/docker \
  && updatedb
 
 # Non-root. State is copied in and owned by this user, never bind-mounted;
-# wake.py probes /work/state for writability before spending anything. /work
+# harness.py probes /work/state for writability before spending anything. /work
 # itself is root's and only state/ below it is the agent's: rm and mv ask the
 # directory rather than the file, so the balances written into /work are
 # read-only only because they sit somewhere the agent cannot write.
@@ -37,5 +37,5 @@ USER agent
 WORKDIR /work
 
 # The harness drives everything via `docker exec`; the container just needs
-# to stay up for the length of one session.
+# to stay up for the length of one episode.
 CMD ["sleep", "infinity"]

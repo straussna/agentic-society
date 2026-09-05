@@ -1,10 +1,10 @@
 # Ground truth and traces. Never commit; never mount.
-private/
+records/
 
-# Per-run agent-visible state.
-runs/
+# Per-agent agent-visible state.
+environments/
 
-# Console output of parallel runs. The trace is the record; these are scrollback.
+# Console output of parallel processes. The trace is the record; these are scrollback.
 *.log
 
 __pycache__/

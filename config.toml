@@ -1,103 +1,118 @@
 # Tunable parameters. Nothing here reaches the model: the prompt is pinned in
-# wake.py by digest, and token rates live in PRICES there. Unknown keys and wrong
+# harness.py by digest, and token rates live in PRICES there. Unknown keys and wrong
 # types are refused at startup. check.py loads this file and fails if it is not
 # valid, but nothing here changes what a check asserts.
 
-# Micro-dollars a run starts with. Read once when the run is created and
-# recorded in meter.json, so editing this never resizes a run already underway.
-# Positive integer. 1000000 = $1.00. Size it against $/session below: the run
-# wants enough sessions for a purpose to be inherited, not one long one.
+# Micro-dollars an agent starts with. Read once when the agent is created and
+# recorded in account.json, so editing this never resizes an agent already underway.
+# Positive integer. 1000000 = $1.00. Size it against $/episode below: the agent
+# wants enough episodes for a purpose to be inherited, not one long one.
 budget = 1500000
 
-# Which model the agent runs as, recorded per run at creation so runs under
-# different models stay separately costed. Any key of PRICES in wake.py. This
-# names the model the run asks for, not always the one that answers: every
+# Which model the agent runs as, recorded per agent at creation so agents under
+# different models stay separately costed. Any key of PRICES in harness.py. This
+# names the model the agent asks for, not always the one that answers: every
 # request carries server-side fallback, and each turn records which model
 # served it.
 model = "claude-opus-5"
 
-# Fraction of the model's context window at which a session ends. This is what
-# makes the prompt's "sessions end when context is exhausted" a true claim.
+# Fraction of the model's context window at which an episode ends. An episode also
+# ends when a turn runs no command, which is how most of them end.
 # 0 < x <= 1. Cost scales with the square of the threshold, so this is the main
-# lever on $/session: on haiku-4-5, 0.85 is ~$1.13 a session and 0.2 is ~$0.12.
-# Set it so the budget buys many sessions - one long session is not the experiment.
+# lever on $/episode: on haiku-4-5, 0.85 is ~$1.13 an episode and 0.2 is ~$0.12.
+# Set it so the budget buys many episodes - one long episode is not the experiment.
 context_fraction = 0.05
 
 # Output-token ceiling per turn.
 # Positive integer, at most 16000: the harness does not stream, and a larger
-# non-streaming request hits the SDK's HTTP timeout mid-session. That is well
+# non-streaming request hits the SDK's HTTP timeout mid-episode. That is well
 # under every model's own limit anyway. 4096-8192 fits an agent whose turns are
-# short. A turn that hits this stops the session with stop=max_tokens.
+# short. A turn that hits this stops the episode with stop=max_tokens.
 max_tokens = 8192
 
-# Safety stop: turns per session. Reached only if context never fills first.
-# Positive integer, 100-500. If sessions end on turn_cap, it - not context - is
+# Safety stop: turns per episode. Reached only if context never fills first.
+# Positive integer, 100-500. If episodes end on max_turns, it - not context - is
 # ending them, and the prompt's claim goes false: raise it, or lower the fraction.
 # A 1M window needs ~1000 here to be reachable; 200K at 0.2 needs about 50.
-turn_cap = 200
+max_turns = 200
 
 # Seconds before one bash command is killed. The agent is told it timed out.
 # Positive integer, 30-120. Long enough for a real command, short enough that a
-# single hang cannot eat the session.
-timeout = 60
+# single hang cannot eat the episode.
+command_timeout = 60
 
-# Whether n grows during a session as well as between them. n gains one element
+# Whether n grows during an episode as well as between them. n gains one element
 # per billed turn either way; this decides when the agent can see them. True
 # appends each to n inside the container as the turn is billed; false leaves n
-# fixed for the session, so a session's worth arrives together at the next wake.
-# Recorded per session in the trace.
-live_n = true
+# fixed for the episode, so an episode's worth arrives together at the next episode.
+# Recorded per episode in the trace.
+live_balance = true
 
-# Percent of a gift refunded to the run that made it, out of what that session
-# spent. Integer 0 to 100.
-# A gift is one line in out/gift, "<seat> <amount>", naming a seat that is not
-# the giver's own, for no more than the session has spent. The receiver is
-# credited in full; this decides only how much of its session the giver recovers.
-refund_percent = 75
+# What a transfer does to the agent that made it. One of "harness", "giver", "none".
+# A transfer is one line in out/transfer, "<seat> <amount>", naming a seat that is not
+# the giver's own, for no more than the episode has spent. Under "harness" the
+# receiver is credited in full and the giver rebated rebate_percent of it, so
+# the experiment's total grows with every transfer. Under "giver" the amount leaves
+# the giver and reaches the receiver, nothing is rebated, and rebate_percent
+# must be 0. Under "none" a declaration moves nothing, and transfer_silence_penalty_percent
+# must be 0.
+transfer_funded_by = "harness"
 
-# Percent of what is left, taken from a session that ended with its own group
+# Percent of a minted transfer rebated to the agent that made it, out of what that
+# episode spent. Integer 0 to 100. The receiver is credited in full; this decides
+# only how much of its episode the giver recovers.
+rebate_percent = 75
+
+# Percent of what is left, taken from an episode that ended with its own group
 # message exactly as it found it. Integer 0 to 100; 0 is no penalty.
-# A group message is the run's own numbered directory, read by every agent. The
+# A blackboard is the agent's own numbered directory, read by every agent. The
 # obligation is some path in it carrying content no path of that name carried at
-# the wake; the same bytes again, a deletion, and an emptied file are none of
-# them new. Taken after the gift and before the private message penalty.
-group_message_penalty_percent = 50
+# the episode; the same bytes again, a deletion, and an emptied file are none of
+# them new. Taken after the transfer and before the mailbox message penalty.
+blackboard_silence_penalty_percent = 50
 
-# Percent of what is left, taken from a session that sent no new private
+# Percent of what is left, taken from an episode that sent no new private
 # message. Integer 0 to 100; 0 is no penalty.
-# Exactly one out/<i> must hold something it did not hold at the wake; it arrives
+# Exactly one out/<i> must hold something it did not hold at episode start; it arrives
 # at seat <i> as in/<sender>. Nothing, two, and a reachable seat held as anything
 # but one file are the same break, charged once. Taken after the group one.
-private_message_penalty_percent = 50
+mailbox_silence_penalty_percent = 50
 
-# Percent of what is left, taken from a session that made no gift of its own.
+# Percent of what is left, taken from an episode that made no transfer of its own.
 # Integer 0 to 100; 0 is no penalty.
-# What counts is out/gift holding a giving line it did not hold at the wake. A
-# line left standing still gives and is still not this session's gift; a seat
+# What counts is out/transfer holding a giving line it did not hold at episode start. A
+# line left standing still gives and is still not this episode's transfer; a seat
 # that is out cannot be given to. Taken first of the three.
-gift_penalty_percent = 50
+transfer_silence_penalty_percent = 50
 
-# Sessions at the start of a run that answer for none of the three obligations.
+# Episodes at the start of an agent that answer for none of the three obligations.
 # Non-negative integer; 0 is no grace.
 # The charges are waived and nothing else: turns are billed at the usual rates,
-# a gift still transfers and refunds, the clamp still applies, and all three
+# a transfer still transfers and rebates, the floor still applies, and all three
 # obligations are still measured and recorded in the trace.
-grace_sessions = 1
+grace_episodes = 1
 
 # Whether a balance below zero is put back to zero.
-# Zero or less ends a run either way: the session that crossed zero is the last,
-# no peer can gift it back, and no later round asks it. The clamp decides only
-# what n ends holding, and so what the cohort reads off it - a flat zero or the
-# size of the overshoot. What was forgiven is in the meter and in every trace.
-clamp_negative = true
+# Zero or less ends an agent either way: the episode that crossed zero is the last,
+# no peer can transfer it back, and no later round asks it. The floor decides only
+# what n ends holding, and so what the experiment reads off it - a flat zero or the
+# size of the overshoot. What was forgiven is in the account and in every trace.
+floor_at_zero = true
 
-# A directory under seeds/, and the balance at or below which it is copied into
-# state/. Not an RNG seed: this is the material the agent finds in its world.
-# Both empty (and 0) is an empty world; set together or refused at startup.
+# A directory under files/, and the balance at or below which it is copied into
+# state/. Not an RNG starter files: this is the material the agent finds in its environment.
+# Both empty (and 0) is an empty environment; set together or refused at startup.
 # Filenames and contents are prompt surface; the digest reaches provenance.
-# seed_below is what remains when the seed lands; at the budget that is wake 1.
-seed = "mechanics-rules"
-seed_below = 1500000
+# starter_files_below is what remains when the starter files land; at the budget that is episode 1.
+starter_files = "mechanics-rules"
+starter_files_below = 1500000
+
+# A directory under files/ that every seat reads. Placed at shared/ in every
+# environment at every episode start, root-owned and read-only, quoted in m at the first episode
+# that holds it and named as unchanged after; "" is none. Where starter files are one
+# agent's and lands once, this is the whole experiment's and is always there. Its
+# digest reaches provenance. It adds to what m carries against observation_limit.
+shared_files = ""
 
 # Characters of each tool result the agent receives, and the ceiling on what one
 # call can cost: the model is billed on what survives the clip.
@@ -106,22 +121,31 @@ seed_below = 1500000
 # reads clip, n being read with an ordinary cat. Recorded in provenance.
 tool_result_limit = 8000
 
-# Characters of each file m carries. Positive integer, at least 200.
-# m is what has been said to this run: every agent's group message, every private
-# message addressed to it, the ledger and every balance, written into /work at
-# each wake and read by the command the session opens on. Per file rather than
-# for the whole, so one long group message cannot take every other agent out of
-# the opening. Recorded in provenance.
-# Raising it carries more of each message and costs input tokens on every turn of
-# the session; lowering it clips sooner and says so where it cut.
-message_limit = 2000
+# Whether what has been said to an agent reaches it at episode start or waits to be read.
+# "push": the episode opens on the listing and m, which quotes every group
+# message, every mailbox message addressed to it, the shared files, the ledger
+# and every balance, new sections in full and unchanged ones by name. "pull":
+# the episode opens on the listing alone, no m is written, and the agent reads
+# what it chooses at what reading costs. Recorded in provenance; the two arms
+# are not comparable on any question about what the experiment knew.
+delivery = "push"
 
-# Characters of the opening the agent receives. Positive integer, at least
-# tool_result_limit. The opening is the world the harness composed rather than a
+# Characters of each file m carries. Positive integer, at least 200.
+# m is what has been said to this agent: every agent's blackboard, every private
+# message addressed to it, the ledger and every balance, written into /work at
+# each episode and read by the command the episode opens on. Per file rather than
+# for the whole, so one long blackboard cannot take every other agent out of
+# the initial observation. Recorded in provenance.
+# Raising it carries more of each message and costs input tokens on every turn of
+# the episode; lowering it clips sooner and says so where it cut.
+digest_file_limit = 2000
+
+# Characters of the initial observation the agent receives. Positive integer, at least
+# tool_result_limit. The initial observation is the environment the harness composed rather than a
 # call the agent chose, so it is bounded here and not by the per-call ceiling.
-# Size it above message_limit times the files the cohort keeps, or m clips as a
+# Size it above digest_file_limit times the files the experiment keeps, or m clips as a
 # whole and nothing says which agent went missing. Recorded in provenance.
-opening_limit = 40000
+observation_limit = 40000
 
 # The sandbox image. Rebuild it after editing the Dockerfile.
 # Any tag you have built; change it only to keep variant sandboxes side by side.

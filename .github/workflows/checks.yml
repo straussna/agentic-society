@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   fast:
-    name: no-docker (130 checks, py${{ matrix.python-version }})
+    name: no-docker (151 checks, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,7 +35,7 @@ jobs:
       - run: python check.py --no-docker
 
   full:
-    name: all 149 checks, in containers
+    name: all 171 checks, in containers
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -46,8 +46,8 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: docker build -t metered-agent:latest .
-      # Without the image the 19 container checks skip and the run still
-      # passes, having proved 130 things rather than 149.
+      # Without the image the 20 container checks skip and the run still
+      # passes, having proved 151 things rather than 171.
       - run: docker image inspect metered-agent:latest > /dev/null
       # -j 2: the two wall-clock-sensitive checks are in this lane.
       - run: python check.py -j 2

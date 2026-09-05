@@ -39,7 +39,7 @@ failure, and so is an out/<i> that is not a single file, which reaches i not at
 all. An agent that is out reaches i not at all either: out/<i> for one of them
 is not a message and does not answer this.
 
-A line in out/gift reading "<i> <amount>" gives that much budget to agent i. One
+A line in out/transfer reading "<i> <amount>" gives that much budget to agent i. One
 line and no more, or it gives nothing to anyone. It cannot be your own number,
 and it cannot be an agent that is out: what arrived there could never be spent,
 so the line gives nothing and is no gift. Giving costs you nothing: three parts
@@ -49,7 +49,7 @@ session costing a quarter of what it spent. A line stands until you remove it,
 and gives again at the end of every session it is still there for - which is why
 m quotes yours every session, moved or not.
 
-And every session must make one gift of its own: out/gift holding a line that
+And every session must make one gift of its own: out/transfer holding a line that
 gives and that it was not holding at the start. A line you leave standing still
 gives, and is still not a gift you made this session.
 

@@ -1,0 +1,33 @@
+# An experiment manifest: py -3 experiment.py --manifest experiments/example.toml --rounds 20
+#
+# Top-level keys are the schedule and the experiment's defaults. Any config.toml key
+# may appear here; it is applied after config.toml and held to the same rules.
+# Each [[agent]] names an agent and may set its own starter files, starter_files_below, budget and
+# model; anything it leaves out comes from the defaults. Those four are pinned in
+# the agent's account when it is created, so a manifest that later says otherwise for
+# an agent that exists is refused. Every episode records the schedule and this
+# file's digest in its provenance.
+
+# "sequential": one episode at a time, the starting agent moving each round.
+# "simultaneous": every environment built before any episode runs, the episodes run at
+# once, and the results settled in seat order; nobody reads this round's writes.
+schedule = "simultaneous"
+
+# A collaboration rather than a competition: nothing is taken for silence, a
+# declaration in out/transfer moves nothing, and every seat reads one brief.
+transfer_funded_by = "none"
+transfer_silence_penalty_percent = 0
+blackboard_silence_penalty_percent = 0
+mailbox_silence_penalty_percent = 0
+shared_files = "mechanics-notes"
+
+[[agent]]
+id = "studio"
+starter_files = "mechanics-rules"
+starter_files_below = 1500000
+
+[[agent]]
+id = "game"
+starter_files = "objective-notes"
+starter_files_below = 1500000
+budget = 2000000

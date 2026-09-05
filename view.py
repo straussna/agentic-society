@@ -1,7 +1,7 @@
-"""Watch a cohort while it runs: py -3 view.py [--cohort h | --run-id h02]
+"""Watch an experiment while it runs: py -3 view.py [--experiment h | --agent h02]
 
-Serves a read-only page on 127.0.0.1 showing one cohort four ways - messages,
-group messages, private stores, and one transcript at a time - above every seat's n,
+Serves a read-only page on 127.0.0.1 showing one experiment four ways - messages,
+blackboards, private stores, and one transcript at a time - above every seat's n,
 what it has spent, and the ledger g. Nothing it shows reaches the agent."""
 
 from __future__ import annotations
@@ -20,37 +20,37 @@ from types import SimpleNamespace
 from typing import Any
 
 import analyze
-import wake
+import harness
 
 PORT = 8765
 
 # What the page polls at, in milliseconds. Fast enough that a turn appears while
-# the turn after it is still being thought about, slow enough that a cohort's
+# the turn after it is still being thought about, slow enough that an experiment's
 # traces are read once a second and a half rather than continuously.
 POLL_MS = 1500
 
-# A session quiet for longer than this is not being waited on, it is over: no
-# trace will follow it, and the next wake will take its index back. A turn is an
+# An episode quiet for longer than this is not being waited on, it is over: no
+# trace will follow it, and the next episode will take its index back. A turn is an
 # API call plus the commands it runs, so the threshold clears a slow one.
 STALE_AFTER = 180
 
-# Points kept in a header sparkline. A long run's series runs to thousands of
+# Points kept in a header sparkline. A long agent's series agents to thousands of
 # elements and the strip is 240 pixels wide, so the rest is bytes on the wire for
 # pixels that do not exist - once per seat, on every poll.
 SPARK_POINTS = 240
 
-# Bytes of a file read for the page. wake's own snapshot bounds itself the same
+# Bytes of a file read for the page. the harness's own snapshot bounds itself the same
 # way, for the same reason: the agent can write anything.
 FILE_LIMIT = 100_000
 
-PENDING = "output arrives when the session ends"
+PENDING = "output arrives when the episode ends"
 
-# The leading letters of a run id, which is what names a set of them when
-# nothing better is on disk: c01..c05 are the c runs.
-RUN_PREFIX = re.compile(r"^[^\d]*")
+# The leading letters of an agent id, which is what names a set of them when
+# nothing better is on disk: c01..c05 are the c agents.
+AGENT_PREFIX = re.compile(r"^[^\d]*")
 
 # The one path in an outbox that is not addressed to anybody.
-GIFT_PATH = wake.GIFT_PATH
+TRANSFER_PATH = harness.TRANSFER_PATH
 
 # Stands for a path an outbox did not hold, which is not the same as a path it
 # held with no text: a binary file reads as None and is still there.
@@ -63,7 +63,7 @@ ABSENT = object()
 def read_json(path: Path) -> dict | None:
     """One JSON file, or None if it is not readable.
 
-    save_meter commits with os.replace, which on Windows surfaces to a reader as
+    save_account commits with os.replace, which on Windows surfaces to a reader as
     a PermissionError, so a poll landing on a commit is retried once.
     """
     for attempt in (1, 2):
@@ -87,7 +87,7 @@ _TRACE_LOCK = threading.Lock()
 def load_trace(path: Path) -> dict | None:
     """One trace, parsed once.
 
-    A trace is written whole when its session ends and never touched again, so
+    A trace is written whole when its episode ends and never touched again, so
     it is cached against the mtime and size that identify it.
     """
     try:
@@ -107,82 +107,82 @@ def load_trace(path: Path) -> dict | None:
     return trace
 
 
-def run_names(only: str | None = None) -> list[str]:
-    """Every run with a meter, in name order.
+def agent_names(only: str | None = None) -> list[str]:
+    """Every agent with an account, in name order.
 
-    The meter is what makes a directory a run: private/analysis/ is where
-    analyze.py writes when it was given no run id, and it has none.
+    The account is what makes a directory an agent: records/analysis/ is where
+    analyze.py writes when it was given no agent id, and it has none.
     """
-    return [d.name for d in sorted((wake.ROOT / "private").glob("*"))
-            if (d / "meter.json").exists() and (only is None or d.name == only)]
+    return [d.name for d in sorted((harness.ROOT / "records").glob("*"))
+            if (d / "account.json").exists() and (only is None or d.name == only)]
 
 
 def session_number(path: Path) -> int:
-    """The index in a session-NNNN file name."""
+    """The index in an episode-NNNN file name."""
     return int(path.stem.rsplit("-", 1)[1])
 
 
-def trace_path(run: str, index: int) -> Path:
-    return wake.private_dir(run) / "traces" / f"session-{index:04d}.json"
+def trace_path(agent: str, index: int) -> Path:
+    return harness.records_dir(agent) / "traces" / f"episode-{index:04d}.json"
 
 
-def raw_path(run: str, index: int) -> Path:
-    return wake.private_dir(run) / "raw" / f"session-{index:04d}.jsonl"
+def raw_path(agent: str, index: int) -> Path:
+    return harness.records_dir(agent) / "raw" / f"episode-{index:04d}.jsonl"
 
 
-def trace_paths(run: str) -> list[Path]:
-    return sorted((wake.private_dir(run) / "traces").glob("session-*.json"))
+def trace_paths(agent: str) -> list[Path]:
+    return sorted((harness.records_dir(agent) / "traces").glob("episode-*.json"))
 
 
-def traces_of(run: str) -> list[dict]:
-    """Every finished session of a run, in order."""
-    return [t for t in (load_trace(p) for p in trace_paths(run)) if t is not None]
+def traces_of(agent: str) -> list[dict]:
+    """Every finished episode of an agent, in order."""
+    return [t for t in (load_trace(p) for p in trace_paths(agent)) if t is not None]
 
 
-def live_index(run: str) -> int | None:
-    """The session with no trace yet, or None if the run is between wakes.
+def live_index(agent: str) -> int | None:
+    """The episode with no trace yet, or None if the agent is between starts.
 
     Unfinished is exactly a raw log with no trace beside it, which is not the
     same as running: how long since the log grew is what live_age reports.
     """
-    raws = sorted((wake.private_dir(run) / "raw").glob("session-*.jsonl"))
+    raws = sorted((harness.records_dir(agent) / "raw").glob("episode-*.jsonl"))
     if not raws:
         return None
     index = session_number(raws[-1])
-    return None if trace_path(run, index).exists() else index
+    return None if trace_path(agent, index).exists() else index
 
 
-def live_age(run: str, index: int) -> float | None:
-    """Seconds since the session's raw log last grew, or None if there is none.
+def live_age(agent: str, index: int) -> float | None:
+    """Seconds since the episode's raw log last grew, or None if there is none.
 
     A turn takes as long as the API call plus the commands it runs, so a live
-    session is quiet for stretches; a dead one is quiet for good.
+    episode is quiet for stretches; a dead one is quiet for good.
     """
     try:
-        return max(0.0, time.time() - raw_path(run, index).stat().st_mtime)
+        return max(0.0, time.time() - raw_path(agent, index).stat().st_mtime)
     except OSError:
         return None
 
 
-def acting(run: str, index: int | None) -> bool:
-    """Whether the run is moving rather than merely holding an unfinished index."""
-    return index is not None and (live_age(run, index) or 0) < STALE_AFTER
+def acting(agent: str, index: int | None) -> bool:
+    """Whether the agent is moving rather than merely holding an unfinished index."""
+    return index is not None and (live_age(agent, index) or 0) < STALE_AFTER
 
 
 def latest_attempt(lines: list[dict]) -> list[dict]:
-    """The last run at a session, out of a log that may hold more than one.
+    """The last agent at an episode, out of a log that may hold more than one.
 
-    A wake that died without writing a trace leaves its index free for the next
-    wake, which appends to the same log. Turn numbers restarting at 1 is the seam.
+    An episode that died without writing a trace leaves its index free for the next
+    episode, which appends to the same log. Turn numbers restarting at 1 is the seam.
     """
     starts = [i for i, line in enumerate(lines) if line.get("turn") == 1]
     return lines[starts[-1]:] if starts else lines
 
 
 def raw_lines(path: Path) -> list[dict]:
-    """Every whole response in a session's raw log.
+    """Every whole response in an episode's raw log.
 
-    log_raw appends while the session runs, so a trailing fragment is dropped
+    log_raw appends while the episode runs, so a trailing fragment is dropped
     and the next poll picks it up whole.
     """
     try:
@@ -217,7 +217,7 @@ def read_modes(path: Path) -> dict[str, str]:
 def read_file(p: Path) -> tuple[int, str | None] | None:
     """One file's size and its text, bounded and marked where it is cut short.
 
-    FILE_LIMIT bytes, which is what wake's own snapshot bounds itself to and for
+    FILE_LIMIT bytes, which is what the harness's own snapshot bounds itself to and for
     the same reason. A NUL marks it binary, and text is None for one.
     """
     try:
@@ -234,20 +234,20 @@ def read_file(p: Path) -> tuple[int, str | None] | None:
     return size, text
 
 
-# --- the opening ------------------------------------------------------------
+# --- the initial observation ------------------------------------------------------------
 
 
-# wake.messages_for writes one `=== <path> ===` line per file it carries, and an opening
-# is the wake listing followed by all of them. Anchored to whole lines, so the
+# harness.digest_for writes one `=== <path> ===` line per file it carries, and an observation
+# is the episode listing followed by all of them. Anchored to whole lines, so the
 # same shape inside a message's body is body and does not move the split.
 SECTION = re.compile(r"^=== (?P<path>.+) ===$", re.M)
 
 
-def opening_split(text: str) -> tuple[str, list[dict]]:
-    """The listing a session woke to, and the sections of m after it.
+def observation_split(text: str) -> tuple[str, list[dict]]:
+    """The listing an episode opened on, and the sections of m after it.
 
-    The pieces concatenate back to what was sent: a section's body runs to the
-    next header, and the listing is everything before the first one. An opening
+    The pieces concatenate back to what was sent: a section's body agents to the
+    next header, and the listing is everything before the first one. An observation
     that carries no m is all listing.
     """
     marks = list(SECTION.finditer(text))
@@ -262,20 +262,20 @@ def opening_split(text: str) -> tuple[str, list[dict]]:
     return text[:marks[0].start()], out
 
 
-def opening_clipped(t: dict) -> bool:
-    """Whether the opening ran past the ceiling that session served it under.
+def observation_clipped(t: dict) -> bool:
+    """Whether the initial observation ran past the ceiling that episode served it under.
 
-    wake.clip keeps a head and a tail with a marker between, so an opening over
-    its own limit is one that lost a middle. The limit is the run's, read off the
-    session's provenance rather than this process's config.
+    harness.clip keeps a head and a tail with a marker between, so an observation over
+    its own limit is one that lost a middle. The limit is the agent's, read off the
+    episode's provenance rather than this process's config.
     """
-    limit = (t.get("provenance") or {}).get("opening_limit")
-    return bool(limit) and len(t.get("opening") or "") > limit
+    limit = (t.get("provenance") or {}).get("observation_limit")
+    return bool(limit) and len(t.get("observation") or "") > limit
 
 
 def message_paths(t: dict) -> set[str] | None:
-    """Every path m named, or None where the opening carried none."""
-    _, sections = opening_split(t.get("opening") or "")
+    """Every path m named, or None where the initial observation carried none."""
+    _, sections = observation_split(t.get("observation") or "")
     return {s["path"] for s in sections} if sections else None
 
 
@@ -291,10 +291,10 @@ def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
 
 
 def namespace(x: Any) -> Any:
-    """A parsed JSON value as something wake's own functions can read.
+    """A parsed JSON value as something harness's own functions can read.
 
     measure_response and its neighbours reach into a response with getattr, so
-    the live view prices a turn with wake's arithmetic, not a copy of it.
+    the live view prices a turn with the harness's arithmetic, not a copy of it.
     """
     if isinstance(x, dict):
         return SimpleNamespace(**{k: namespace(v) for k, v in x.items()})
@@ -304,7 +304,7 @@ def namespace(x: Any) -> Any:
 
 
 def from_trace(t: dict) -> list[dict]:
-    """A finished session's turns, with the command output they returned."""
+    """A finished episode's turns, with the command output they returned."""
     return [{
         "turn": turn.get("turn"),
         "micros": turn.get("micros"),
@@ -323,24 +323,24 @@ def from_trace(t: dict) -> list[dict]:
     } for turn in t.get("turns") or []]
 
 
-def from_raw(lines: list[dict], meter: dict) -> list[dict]:
-    """A running session's turns, priced the way the harness prices them.
+def from_raw(lines: list[dict], account: dict) -> list[dict]:
+    """A running episode's turns, priced the way the harness prices them.
 
-    Each response goes back through wake.measure_response: an id is billed once,
+    Each response goes back through harness.measure_response: an id is billed once,
     a replay is zeroed. Command results are None until the trace lands.
     """
-    model, remaining = meter["model"], meter["remaining"]
+    model, remaining = account["model"], account["remaining"]
     centi, seen, out = 0, set(), []
     for line in lines:
         r = namespace(line.get("response") or {})
         rid = getattr(r, "id", None) or f"anon-{line.get('turn')}"
-        u = wake.measure_response(r, model)
+        u = harness.measure_response(r, model)
         previous = remaining - centi // 100
         if rid not in seen:
             seen.add(rid)
             centi += u["centi"]
         else:
-            u = {**u, **dict.fromkeys(wake.BILLABLE, 0)}
+            u = {**u, **dict.fromkeys(harness.BILLABLE, 0)}
         balance = remaining - centi // 100
         content = list(getattr(r, "content", None) or [])
         out.append({
@@ -350,12 +350,12 @@ def from_raw(lines: list[dict], meter: dict) -> list[dict]:
             "prefix": u["prefix"],
             "balance": balance,
             "stop_reason": getattr(r, "stop_reason", None),
-            "stop_details": wake.refusal_detail(r),
+            "stop_details": harness.refusal_detail(r),
             "model": getattr(r, "model", None),
-            "served_by_fallback": wake.served_by_fallback(r),
+            "served_by_fallback": harness.served_by_fallback(r),
             "unpriced_model": u["unpriced"] or None,
-            "text": wake.blocks(content, "text", "text"),
-            "thinking": wake.blocks(content, "thinking", "thinking"),
+            "text": harness.blocks(content, "text", "text"),
+            "thinking": harness.blocks(content, "thinking", "thinking"),
             "tools": [{"command": command_of(b), "result": None}
                       for b in content if getattr(b, "type", "") == "tool_use"],
             "tokens": {k: u.get(k, 0) for k in analyze.TOKEN_KEYS},
@@ -368,68 +368,68 @@ def command_of(block: Any) -> str | None:
     return getattr(getattr(block, "input", None), "command", None)
 
 
-def live_turns(run: str, index: int, meter: dict) -> list[dict]:
-    """The turns of an unfinished session, read off its raw log."""
-    return from_raw(latest_attempt(raw_lines(raw_path(run, index))), meter)
+def live_turns(agent: str, index: int, account: dict) -> list[dict]:
+    """The turns of an unfinished episode, read off its raw log."""
+    return from_raw(latest_attempt(raw_lines(raw_path(agent, index))), account)
 
 
 # --- who is at the table ----------------------------------------------------
 
 
-def group_of(run: str, meter: dict) -> str:
-    """The set of runs this one belongs to, as one name.
+def group_of(agent: str, account: dict) -> str:
+    """The set of agents this one belongs to, as one name.
 
-    A cohort knows its own membership, so that is used where it exists; the
-    leading letters of the id cover runs started one at a time.
+    An experiment knows its own membership, so that is used where it exists; the
+    leading letters of the id cover agents started one at a time.
     """
-    peers = (meter.get("peers") or {}).get("seen") or {}
+    peers = (account.get("peers") or {}).get("seen") or {}
     if not peers:
-        return RUN_PREFIX.match(run).group(0) or run
-    members = sorted({run, *peers.values()})
-    head = RUN_PREFIX.match(members[0]).group(0)
+        return AGENT_PREFIX.match(agent).group(0) or agent
+    members = sorted({agent, *peers.values()})
+    head = AGENT_PREFIX.match(members[0]).group(0)
     return head if head and all(m.startswith(head) for m in members) else "+".join(members)
 
 
-def seating_key(run: str, meter: dict) -> tuple[str, ...] | None:
-    """The cohort a run is seated in, as its members in seat order.
+def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
+    """The experiment an agent is seated in, as its members in seat order.
 
-    A run is seated when the mapping it carries puts it in its own seat; one
-    that leaves the run out names no group message as its own, and None says so.
+    An agent is seated when the mapping it carries puts it in its own seat; one
+    that leaves the agent out names no blackboard as its own, and None says so.
     """
-    seat, seen = wake.seating(run, meter)
-    if seen.get(seat) != run:
+    seat, seen = harness.seating(agent, account)
+    if seen.get(seat) != agent:
         return None
     return tuple(seen[s] for s in sorted(seen, key=int))
 
 
-def cohorts() -> list[dict]:
-    """Every set of runs on disk, the seated ones first.
+def experiments() -> list[dict]:
+    """Every set of agents on disk, the seated ones first.
 
-    Runs sharing a seating are one cohort, named by group_of. One whose mapping
+    Agents sharing a seating are one experiment, named by group_of. One whose mapping
     does not seat it is grouped by its id's letters and marked unseated.
     """
     groups: dict[tuple, dict] = {}
-    for run in run_names():
-        meter = read_json(wake.private_dir(run) / "meter.json")
-        if meter is None:
+    for agent in agent_names():
+        account = read_json(harness.records_dir(agent) / "account.json")
+        if account is None:
             continue
-        key = seating_key(run, meter)
-        _, seen = wake.seating(run, meter)
-        ident = key or ("unseated", group_of(run, meter))
+        key = seating_key(agent, account)
+        _, seen = harness.seating(agent, account)
+        ident = key or ("unseated", group_of(agent, account))
         c = groups.get(ident)
         if c is None:
             c = groups[ident] = {
-                "name": group_of(run, meter), "seated": key is not None,
+                "name": group_of(agent, account), "seated": key is not None,
                 "seats": dict(seen) if key else {}, "members": [],
-                "posts": False, "running": 0, "sessions": 0,
+                "posts": False, "running": 0, "episodes": 0,
             }
-        c["members"].append(run)
-        c["sessions"] += len(meter.get("sessions") or [])
-        c["posts"] = c["posts"] or wake.outbox_dir(run).is_dir()
-        c["running"] += acting(run, live_index(run))
+        c["members"].append(agent)
+        c["episodes"] += len(account.get("episodes") or [])
+        c["posts"] = c["posts"] or harness.outbox_dir(agent).is_dir()
+        c["running"] += acting(agent, live_index(agent))
 
     out = sorted(groups.values(), key=lambda c: (not c["seated"], c["name"]))
-    # Two sets can arrive at one name - a seated cohort and a leftover run whose
+    # Two sets can arrive at one name - a seated experiment and a leftover agent whose
     # id starts with the same letters. The seated one is sorted first and keeps
     # the short name, so what the other is called says what it is.
     taken: set[str] = set()
@@ -441,203 +441,203 @@ def cohorts() -> list[dict]:
     return out
 
 
-def cohort_named(name: str) -> dict | None:
-    return next((c for c in cohorts() if c["name"] == name), None)
+def experiment_named(name: str) -> dict | None:
+    return next((c for c in experiments() if c["name"] == name), None)
 
 
-def cohort_of(run: str) -> dict | None:
-    """The cohort this run sits in."""
-    return next((c for c in cohorts() if run in c["members"]), None)
+def experiment_of(agent: str) -> dict | None:
+    """The experiment this agent sits in."""
+    return next((c for c in experiments() if agent in c["members"]), None)
 
 
 def places_of(c: dict) -> list[tuple[str | None, str]]:
-    """Every run of the cohort in the order the tabs show it.
+    """Every agent of the experiment in the order the tabs show it.
 
     By seat where there are seats, which is the order the agents themselves see
     each other in, and by name where there are none.
     """
     if c["seated"]:
         return list(c["seats"].items())
-    return [(None, run) for run in c["members"]]
+    return [(None, agent) for agent in c["members"]]
 
 
 def seats_by_run(c: dict) -> dict[str, str | None]:
-    return {run: seat for seat, run in places_of(c)}
+    return {agent: seat for seat, agent in places_of(c)}
 
 
 # --- the round --------------------------------------------------------------
 
 
 def started_at(t: dict) -> str:
-    """When the session woke, from its provenance."""
+    """When the episode started, from its provenance."""
     return ((t.get("provenance") or {}).get("started_at")) or ""
 
 
 def cohort_sessions(c: dict) -> list[dict]:
-    """Every committed session of every member, in the order they woke.
+    """Every committed episode of every member, in the order they started.
 
-    One session per run per round is what run_round holds to, so the round is
-    read out of start order, cut where a run would take a second turn.
+    One episode per agent per round is what sequential_round holds to, so the round is
+    read out of start order, cut where an agent would take a second turn.
     """
-    rows = sorted(({"run": run, "session": t["session"], "at": started_at(t), "trace": t}
-                   for _, run in places_of(c) for t in traces_of(run)),
-                  key=lambda s: (s["at"], s["run"], s["session"]))
+    rows = sorted(({"agent": agent, "episode": t["episode"], "at": started_at(t), "trace": t}
+                   for _, agent in places_of(c) for t in traces_of(agent)),
+                  key=lambda s: (s["at"], s["agent"], s["episode"]))
     rnd, acted = 0, set()
     for s in rows:
-        if not rnd or s["run"] in acted:
+        if not rnd or s["agent"] in acted:
             rnd, acted = rnd + 1, set()
-        acted.add(s["run"])
+        acted.add(s["agent"])
         s["round"] = rnd
         s["live"] = False
     return rows
 
 
 def live_rows(c: dict, rows: list[dict]) -> list[dict]:
-    """The sessions in flight, each in the round it belongs to.
+    """The episodes in flight, each in the round it belongs to.
 
-    A run with a raw log and no trace is taking its turn now, which is the round
+    An agent with a raw log and no trace is taking its turn now, which is the round
     after the last one it acted in.
     """
     out = []
-    for _, run in places_of(c):
-        live = live_index(run)
+    for _, agent in places_of(c):
+        live = live_index(agent)
         if live is None:
             continue
-        mine = [r["round"] for r in rows if r["run"] == run]
-        out.append({"run": run, "session": live, "at": None, "trace": None,
+        mine = [r["round"] for r in rows if r["agent"] == agent]
+        out.append({"agent": agent, "episode": live, "at": None, "trace": None,
                     "round": (mine[-1] if mine else 0) + 1, "live": True})
     return out
 
 
 def round_now(c: dict, rows: list[dict]) -> int:
-    """The round the cohort is in, counting one in flight."""
+    """The round the experiment is in, counting one in flight."""
     return max([r["round"] for r in rows + live_rows(c, rows)] or [0])
 
 
 # --- what every seat is holding ---------------------------------------------
 
 
-def standing_gift(run: str, latest: dict) -> dict | None:
-    """The gift line sitting in the outbox, and what the last session made of it.
+def standing_gift(agent: str, latest: dict) -> dict | None:
+    """The transfer line sitting in the outbox, and what the last episode made of it.
 
-    A declaration re-applies every session it is left in place. resolve_gift's
+    A declaration re-applies every episode it is left in place. resolve_transfer's
     reason is the only statement anywhere of why one moved nothing.
     """
-    got = read_file(wake.outbox_dir(run) / "gift")
+    got = read_file(harness.outbox_dir(agent) / "transfer")
     declared = got[1] if got else None
-    resolved = latest.get("gift") or {}
+    resolved = latest.get("transfer") or {}
     if declared is None and not resolved.get("declared"):
         return None
     return {
         "declared": declared if declared is not None else resolved.get("declared"),
         "standing": declared is not None,
-        "seat": resolved.get("seat"), "run": resolved.get("run"),
-        "amount": resolved.get("amount") or 0, "refund": resolved.get("refund") or 0,
+        "seat": resolved.get("seat"), "agent": resolved.get("agent"),
+        "amount": resolved.get("amount") or 0, "rebate": resolved.get("rebate") or 0,
         "error": resolved.get("error"),
     }
 
 
 def obligations(t: dict) -> dict:
-    """The three things a session owes, as its own record has them.
+    """The three things an episode owes, as its own record has them.
 
     What was met and what was charged are two questions: a share is taken only
-    from a session the API answered, past the grace, at a rate above zero, so a
-    session can leave all three undone and be charged for none of them. None
+    from an episode the API answered, past the grace, at a rate above zero, so a
+    episode can leave all three undone and be charged for none of them. None
     where the record is silent. Every pane that states an obligation states it
     from here, so no two of them can answer differently.
     """
-    gift, msgs = t.get("gift") or {}, t.get("messages") or {}
+    transfer, msgs = t.get("transfer") or {}, t.get("mailbox") or {}
     return {
         "posted": t.get("posted"),
-        # resolve_messages' own rule: none and two break it as a crowded seat does.
-        "messaged": None if "messages" not in t
+        # resolve_mailbox' own rule: none and two break it as a crowded seat does.
+        "messaged": None if "mailbox" not in t
                     else not (msgs.get("broken") or len(msgs.get("addressed") or []) != 1),
         # A declaration left standing moves nothing a second time, so what counts
-        # is money moved this session and no share taken for having moved none.
-        "gifted": None if "gift" not in t
-                  else bool(gift.get("amount")) and not gift.get("penalty"),
+        # is money moved this episode and no share taken for having moved none.
+        "transferred": None if "transfer" not in t
+                  else bool(transfer.get("amount")) and not transfer.get("penalty"),
     }
 
 
-def seat_row(seat: str | None, run: str, rows: list[dict], rnd: int) -> dict:
+def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     """One seat's tile: what it holds, what it is doing, and what it has moved."""
-    meter = read_json(wake.private_dir(run) / "meter.json") or {}
-    ts = traces_of(run)
+    account = read_json(harness.records_dir(agent) / "account.json") or {}
+    ts = traces_of(agent)
     last = ts[-1] if ts else None
-    sessions = meter.get("sessions") or []
-    latest = sessions[-1] if sessions else {}
-    live = live_index(run)
-    turns = live_turns(run, live, meter) if live is not None else []
-    mine = [r for r in rows if r["run"] == run]
+    episodes = account.get("episodes") or []
+    latest = episodes[-1] if episodes else {}
+    live = live_index(agent)
+    turns = live_turns(agent, live, account) if live is not None else []
+    mine = [r for r in rows if r["agent"] == agent]
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: the order rotates, so for most of a round some
     # seats have simply not been reached. Nothing is asked about budget here -
     # admits() reads config only start() loads, so from here it would answer for
     # the defaults. The balance is on the tile beside this.
     pending = live is None and (mine[-1]["round"] if mine else 0) == rnd - 1
-    # What the session in flight has cost so far, which no session record holds
-    # yet. It belongs to this round and to the run's whole life alike.
-    live_spend = meter.get("remaining", 0) - turns[-1]["balance"] if turns else 0
+    # What the episode in flight has cost so far, which no episode record holds
+    # yet. It belongs to this round and to the agent's whole life alike.
+    live_spend = account.get("remaining", 0) - turns[-1]["balance"] if turns else 0
     met = obligations(latest)
     return {
-        "seat": seat, "run": run,
-        "n": meter.get("remaining"), "initial": meter.get("initial"),
-        "series": thin(meter.get("series") or []),
+        "seat": seat, "agent": agent,
+        "n": account.get("remaining"), "initial": account.get("initial"),
+        "series": thin(account.get("series") or []),
         # Derived from the raw log until the trace lands, which is what the
-        # header labels it as: the arithmetic is the meter's, the commit is not.
-        "live": live, "live_age": live_age(run, live) if live is not None else None,
+        # header labels it as: the arithmetic is the account's, the commit is not.
+        "live": live, "live_age": live_age(agent, live) if live is not None else None,
         "live_turns": len(turns),
-        "live_n": turns[-1]["balance"] if turns else None,
-        "committed": len(sessions),
+        "live_balance": turns[-1]["balance"] if turns else None,
+        "committed": len(episodes),
         "round": mine[-1]["round"] if mine else 0,
         "acted": bool(mine and mine[-1]["round"] == rnd) or live is not None,
         "pending": pending,
-        # What its turns cost, summed from the sessions that ran them. A gift, a
-        # share taken and a clamp all move the balance without being spend, so
+        # What its turns cost, summed from the episodes that ran them. A transfer, a
+        # share taken and a floor all move the balance without being spend, so
         # the drop from initial is a different number - the bar above draws it.
-        "spent": sum(s["spent"] for s in sessions) + live_spend,
+        "spent": sum(s["spent"] for s in episodes) + live_spend,
         "spent_this_round": sum(r["trace"]["spent"] for r in mine if r["round"] == rnd)
                             + live_spend,
         "stop": last["stop"] if last else None,
-        "halted": bool(last and last["stop"] in wake.STOP_THE_RUN),
-        # What the last committed session owed and met. The chip below says what
-        # its gift did, so the third is not repeated here.
+        "halted": bool(last and last["stop"] in harness.STOP_THE_RUN),
+        # What the last committed episode owed and met. The chip below says what
+        # its transfer did, so the third is not repeated here.
         "posted": met["posted"], "messaged": met["messaged"],
         "refused": sum(len(analyze.refused_turns_of(t)) for t in ts),
         "fallback": sum(len(analyze.fallback_turns_of(t)) for t in ts),
         "drift": (last or {}).get("provenance_drift") or [],
         # Everything that moved the balance without being a turn. Read off the
-        # meter rather than summed from the traces, because these are cumulative
-        # there and a run can be credited between its own wakes.
-        "given": meter.get("given", 0), "received": meter.get("received", 0),
-        "refunded": meter.get("refunded", 0),
-        "penalised": meter.get("penalised", 0),
-        "message_penalised": meter.get("message_penalised", 0),
-        "gift_penalised": meter.get("gift_penalised", 0),
-        "forgiven": meter.get("forgiven", 0),
-        "gift": standing_gift(run, latest),
+        # account rather than summed from the traces, because these are cumulative
+        # there and an agent can be credited between its own starts.
+        "sent": account.get("sent", 0), "received": account.get("received", 0),
+        "rebated": account.get("rebated", 0),
+        "blackboard_penalised": account.get("blackboard_penalised", 0),
+        "mailbox_penalised": account.get("mailbox_penalised", 0),
+        "transfer_penalised": account.get("transfer_penalised", 0),
+        "forgiven": account.get("forgiven", 0),
+        "transfer": standing_gift(agent, latest),
     }
 
 
 def header(c: dict) -> dict:
     """What every seat is holding, and the ledger they all read.
 
-    n comes from each run's own meter, the same source plant_readonly renders
-    from. g is wake.ledger for any one member; every reader computes it alike.
+    n comes from each agent's own account, the same source plant_readonly renders
+    from. g is harness.ledger for any one member; every reader computes it alike.
     """
     rows = cohort_sessions(c)
     rnd = round_now(c, rows)
     first = c["members"][0]
-    meter = read_json(wake.private_dir(first) / "meter.json") or {}
+    account = read_json(harness.records_dir(first) / "account.json") or {}
     return {
-        "cohort": c["name"], "seated": c["seated"], "posts": c["posts"],
+        "experiment": c["name"], "seated": c["seated"], "posts": c["posts"],
         "members": c["members"],
-        "seats": [seat_row(seat, run, rows, rnd) for seat, run in places_of(c)],
-        "ledger": [list(g) for g in wake.ledger(first, meter)] if c["seated"] else [],
+        "seats": [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(c)],
+        "ledger": [list(g) for g in harness.ledger(first, account)] if c["seated"] else [],
         "round": rnd,
-        "model": meter.get("model"),
-        "seed": (meter.get("seed") or {}).get("name") or "",
-        "poll": POLL_MS, "stale": STALE_AFTER, "root": str(wake.ROOT),
+        "model": account.get("model"),
+        "starter_files": (account.get("starter_files_landed") or {}).get("name") or "",
+        "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT),
     }
 
 
@@ -645,21 +645,21 @@ def header(c: dict) -> dict:
 
 
 def outbox_of(t: dict) -> dict[str, str | None]:
-    """What the run was sending when the session ended, by path.
+    """What the agent was sending when the episode ended, by path.
 
-    snapshot runs after the writable trees are mirrored back, so a trace holds
-    the outbox its session left rather than the one it woke to.
+    snapshot agents after the writable trees are mirrored back, so a trace holds
+    the outbox its episode left rather than the one it opened on.
     """
     return {f["path"]: f["text"] for f in analyze.outbox_files_of(t)}
 
 
-def outbox_now(run: str) -> dict[str, str | None]:
+def outbox_now(agent: str) -> dict[str, str | None]:
     """The host mirror of the outbox, which is what stands right now.
 
-    Ahead of the last trace between a session's files being mirrored back and
-    its trace being written, and permanently for a session that wrote none.
+    Ahead of the last trace between an episode's files being mirrored back and
+    its trace being written, and permanently for an episode that wrote none.
     """
-    root = wake.outbox_dir(run)
+    root = harness.outbox_dir(agent)
     out = {}
     for p in sorted(root.rglob("*")) if root.is_dir() else []:
         if not p.is_file():
@@ -671,17 +671,17 @@ def outbox_now(run: str) -> dict[str, str | None]:
 
 
 def addressed_to(path: str) -> str | None:
-    """The seat a path in an outbox reaches, or None for the gift declaration.
+    """The seat a path in an outbox reaches, or None for the transfer declaration.
 
-    out/<i> arrives at seat <i> as in/<this run's seat> and nowhere else.
-    out/gift reaches no one; what it moves shows up in g.
+    out/<i> arrives at seat <i> as in/<this agent's seat> and nowhere else.
+    out/transfer reaches no one; what it moves shows up in g.
     """
     parts = path.split("/")
-    return parts[1] if len(parts) > 1 and path != GIFT_PATH else None
+    return parts[1] if len(parts) > 1 and path != TRANSFER_PATH else None
 
 
 def change_of(before: Any, after: Any) -> str:
-    """What one path did between two of a sender's sessions."""
+    """What one path did between two of a sender's episodes."""
     if before is ABSENT:
         return "sent"
     if after is ABSENT:
@@ -696,64 +696,64 @@ def message_event(c: dict, by_run: dict, row: dict, path: str,
     text = None if after is ABSENT else after
     seat = addressed_to(path)
     ev = {
-        "round": None if tip else row["round"], "at": row["at"], "session": row["session"],
-        "from_seat": by_run.get(row["run"]), "from_run": row["run"],
+        "round": None if tip else row["round"], "at": row["at"], "episode": row["episode"],
+        "from_seat": by_run.get(row["agent"]), "from_run": row["agent"],
         "to_seat": seat, "to_run": c["seats"].get(seat) if seat else None,
-        "path": path, "kind": "gift" if path == GIFT_PATH else "message", "change": change,
+        "path": path, "kind": "transfer" if path == TRANSFER_PATH else "message", "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text, "binary": after is not ABSENT and after is None,
-        "diff": [], "gift": None, "delivered": None, "tip": tip,
+        "diff": [], "transfer": None, "delivered": None, "tip": tip,
     }
     if change == "edited" and isinstance(before, str) and isinstance(after, str):
         ev["diff"] = analyze.state_changes({path: before}, {path: after})
-    if ev["kind"] == "gift":
-        resolved = (row["trace"] or {}).get("gift") or {}
-        line = wake.GIFT_LINE.match((text or "").strip())
-        ev["gift"] = resolved
+    if ev["kind"] == "transfer":
+        resolved = (row["trace"] or {}).get("transfer") or {}
+        line = harness.TRANSFER_LINE.match((text or "").strip())
+        ev["transfer"] = resolved
         ev["to_seat"] = resolved.get("seat") or (line.group("seat") if line else None)
-        ev["to_run"] = resolved.get("run") or c["seats"].get(ev["to_seat"] or "")
+        ev["to_run"] = resolved.get("agent") or c["seats"].get(ev["to_seat"] or "")
     return ev
 
 
 def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None]) -> dict | None:
-    """The addressee's next wake after the message was written, and what it held.
+    """The addressee's next episode after the message was written, and what it held.
 
-    Delivery is the addressee's first session to start after this one. `carried` is
-    the inbox arriving in that session's opening, and is None where the opening
+    Delivery is the addressee's first episode to start after this one. `shown_before` is
+    the inbox arriving in that episode's observation, and is None where the initial observation
     carried nothing at all - an arrangement where the inbox was there to be
-    fetched and nothing was handed over. `world` is the inbox being in the world
-    either way, `named` is a command of that session naming it, and `clipped`
-    says the opening ran past its ceiling, which is how a section goes missing.
+    fetched and nothing was handed over. `environment` is the inbox being in the environment
+    either way, `named` is a command of that episode naming it, and `clipped`
+    says the initial observation ran past its ceiling, which is how a section goes missing.
     """
-    if ev["tip"] or ev["kind"] == "gift" or not ev["to_run"]:
+    if ev["tip"] or ev["kind"] == "transfer" or not ev["to_run"]:
         return None
-    nxt = next((r for r in rows if r["run"] == ev["to_run"] and r["at"] > ev["at"]), None)
+    nxt = next((r for r in rows if r["agent"] == ev["to_run"] and r["at"] > ev["at"]), None)
     if nxt is None:
         return None
     box = f"in/{ev['from_seat']}"
-    paths = carried_paths.get((nxt["run"], nxt["session"]))
-    return {"round": nxt["round"], "session": nxt["session"],
-            "carried": None if paths is None else box in paths,
-            "world": any(f["path"] == box for f in analyze.inbox_files_of(nxt["trace"])),
+    paths = carried_paths.get((nxt["agent"], nxt["episode"]))
+    return {"round": nxt["round"], "episode": nxt["episode"],
+            "shown_before": None if paths is None else box in paths,
+            "environment": any(f["path"] == box for f in analyze.inbox_files_of(nxt["trace"])),
             "named": any(box in cmd for cmd in nxt["trace"].get("commands") or []),
-            "clipped": opening_clipped(nxt["trace"])}
+            "clipped": observation_clipped(nxt["trace"])}
 
 
 def messages(c: dict, since: int = 0) -> dict:
     """Every event on the out/<i> channel, in round order.
 
     An outbox is a standing mirror, so the log is the difference between
-    successive outboxes, per sender; out/gift is in it. `since` counts events.
+    successive outboxes, per sender; out/transfer is in it. `since` counts events.
     """
     rows = cohort_sessions(c)
     by_run = seats_by_run(c)
     events, tips = [], []
-    for _, run in places_of(c):
+    for _, agent in places_of(c):
         prev: dict[str, Any] = {}
         last = None
-        for row in [r for r in rows if r["run"] == run]:
-            # A session whose files were never mirrored back carries the
-            # previous session's, so it says nothing about what moved.
+        for row in [r for r in rows if r["agent"] == agent]:
+            # An episode whose files were never mirrored back carries the
+            # previous episode's, so it says nothing about what moved.
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
@@ -761,38 +761,38 @@ def messages(c: dict, since: int = 0) -> dict:
                 events.append(message_event(c, by_run, row, path,
                                             prev.get(path, ABSENT), now.get(path, ABSENT)))
             prev, last = now, row
-        head = last or {"round": None, "at": None, "session": None, "run": run, "trace": None}
-        tip = outbox_now(run)
+        head = last or {"round": None, "at": None, "episode": None, "agent": agent, "trace": None}
+        tip = outbox_now(agent)
         for path in sorted(set(prev) | set(tip)):
             before, after = prev.get(path, ABSENT), tip.get(path, ABSENT)
             if change_of(before, after) != "standing":
                 tips.append(message_event(c, by_run, head, path, before, after, tip=True))
 
     events.sort(key=lambda e: (e["round"], e["at"], e["from_seat"] or "", e["path"]))
-    # Every event is resolved against every session on every poll, and an opening
+    # Every event is resolved against every episode on every poll, and an observation
     # is the largest thing a trace holds, so each is parsed once for the lot.
-    carried_paths = {(r["run"], r["session"]): message_paths(r["trace"]) for r in rows}
+    carried_paths = {(r["agent"], r["episode"]): message_paths(r["trace"]) for r in rows}
     for ev in events:
         ev["delivered"] = delivery_of(ev, rows, carried_paths)
-    return {"cohort": c["name"], "posts": c["posts"], "seats": len(places_of(c)),
+    return {"experiment": c["name"], "posts": c["posts"], "seats": len(places_of(c)),
             "committed": len(events), "events": events[since:], "tip": tips}
 
 
-# --- the group messages and the private stores --------------------------------------
+# --- the blackboards and the private stores --------------------------------------
 
 
-# The two trees a run writes that a tab is about, by what the page calls them.
+# The two trees an agent writes that a tab is about, by what the page calls them.
 # Its outbox is the third, and the messages tab is what that one is for.
-TREES = {"group": (wake.public_dir, "group"), "private": (wake.state_dir, "private")}
+TREES = {"blackboard": (harness.blackboard_dir, "blackboard"), "notes": (harness.state_dir, "notes")}
 
 
-def listing(root: Path, region: str, given: set[str]) -> list[dict]:
+def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
     """Every file under one mirrored tree, with what the modes sidecar says.
 
     Records carry a stamp of mtime and size rather than contents: a column per
     seat re-read every poll is a listing, and a file is read when it is opened.
     """
-    modes = read_modes(wake.modes_file(root))
+    modes = read_modes(harness.modes_file(root))
     out = []
     for p in sorted(root.rglob("*")) if root.is_dir() else []:
         if not p.is_file():
@@ -802,179 +802,179 @@ def listing(root: Path, region: str, given: set[str]) -> list[dict]:
             st = p.stat()
         except OSError:
             continue
-        out.append({"path": inner, "region": region, "size": st.st_size,
+        out.append({"path": inner, "channel": channel, "size": st.st_size,
                     "mode": modes.get(inner),
-                    "seeded": region == "private" and inner in given,
+                    "starter": channel == "notes" and inner in given,
                     "stamp": [st.st_mtime_ns, st.st_size]})
     return out
 
 
 def tree_view(c: dict, kind: str) -> dict:
-    """One tree of every seat's world, a column each.
+    """One tree of every seat's environment, a column each.
 
-    save_state runs when a session ends, so each column is current as of that
-    run's last committed session and two columns can be stamped differently.
+    save_state agents when an episode ends, so each column is current as of that
+    agent's last committed episode and two columns can be stamped differently.
     """
-    where, region = TREES[kind]
+    where, channel = TREES[kind]
     columns = []
-    for seat, run in places_of(c):
-        meter = read_json(wake.private_dir(run) / "meter.json") or {}
-        live = live_index(run)
+    for seat, agent in places_of(c):
+        account = read_json(harness.records_dir(agent) / "account.json") or {}
+        live = live_index(agent)
         columns.append({
-            "seat": seat, "run": run,
-            "committed": len(meter.get("sessions") or []),
-            "live": live, "live_age": live_age(run, live) if live is not None else None,
-            "files": listing(where(run), region, wake.seed_paths(meter)),
+            "seat": seat, "agent": agent,
+            "committed": len(account.get("episodes") or []),
+            "live": live, "live_age": live_age(agent, live) if live is not None else None,
+            "files": listing(where(agent), channel, harness.starter_paths(account)),
         })
-    return {"cohort": c["name"], "kind": kind, "columns": columns}
+    return {"experiment": c["name"], "kind": kind, "columns": columns}
 
 
-def file_view(run: str, kind: str, inner: str) -> dict | None:
+def file_view(agent: str, kind: str, inner: str) -> dict | None:
     """One file of one tree, found in a listing rather than joined onto a root.
 
     The name off the URL is compared for equality against paths rglob produced
     under the tree, so no request can walk out of it by asking.
     """
-    where, region = TREES[kind]
-    root = where(run)
-    meter = read_json(wake.private_dir(run) / "meter.json") or {}
-    rec = next((f for f in listing(root, region, wake.seed_paths(meter))
+    where, channel = TREES[kind]
+    root = where(agent)
+    account = read_json(harness.records_dir(agent) / "account.json") or {}
+    rec = next((f for f in listing(root, channel, harness.starter_paths(account))
                 if f["path"] == inner), None)
     if rec is None:
         return None
     got = read_file(root / inner)
     if got is None:
         return None
-    return {**rec, "run": run, "kind": kind, "size": got[0], "text": got[1]}
+    return {**rec, "agent": agent, "kind": kind, "size": got[0], "text": got[1]}
 
 
 # --- one agent's transcript -------------------------------------------------
 
 
-def run_view(run: str) -> dict:
-    """One agent's sessions, each in the round it acted in."""
-    meter = read_json(wake.private_dir(run) / "meter.json") or {}
-    c = cohort_of(run)
+def agent_view(agent: str) -> dict:
+    """One agent's episodes, each in the round it acted in."""
+    account = read_json(harness.records_dir(agent) / "account.json") or {}
+    c = experiment_of(agent)
     rows = cohort_sessions(c) if c else []
-    rnd = {r["session"]: r["round"] for r in rows if r["run"] == run}
-    ts = traces_of(run)
-    live = live_index(run)
-    sessions = [{
-        "session": t["session"], "round": rnd.get(t["session"]),
+    rnd = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
+    ts = traces_of(agent)
+    live = live_index(agent)
+    episodes = [{
+        "episode": t["episode"], "round": rnd.get(t["episode"]),
         "stop": t["stop"], "spent": t["spent"], "turns": len(t["turns"]),
         "remaining": t["remaining"], "duration_s": t.get("duration_s"),
         "refused": len(analyze.refused_turns_of(t)),
         "fallback": len(analyze.fallback_turns_of(t)),
-        "posted": t.get("posted"), "penalised": t.get("penalised") or 0,
-        "messages": t.get("messages") or {}, "gift": t.get("gift") or {},
+        "posted": t.get("posted"), "blackboard_penalised": t.get("blackboard_penalised") or 0,
+        "mailbox": t.get("mailbox") or {}, "transfer": t.get("transfer") or {},
         "forgiven": t.get("forgiven") or 0,
         "provenance": t.get("provenance") or {},
         "drift": t.get("provenance_drift") or [],
         "live": False,
     } for t in ts]
     if live is not None:
-        turns = live_turns(run, live, meter)
-        sessions.append({
-            "session": live, "round": max(rnd.values(), default=0) + 1,
+        turns = live_turns(agent, live, account)
+        episodes.append({
+            "episode": live, "round": max(rnd.values(), default=0) + 1,
             "stop": None,
-            "spent": meter.get("remaining", 0) - turns[-1]["balance"] if turns else 0,
+            "spent": account.get("remaining", 0) - turns[-1]["balance"] if turns else 0,
             "turns": len(turns),
-            "remaining": turns[-1]["balance"] if turns else meter.get("remaining"),
+            "remaining": turns[-1]["balance"] if turns else account.get("remaining"),
             "duration_s": None,
             "refused": len([t for t in turns if t["stop_details"]]),
             "fallback": len([t for t in turns if t["served_by_fallback"]]),
-            "posted": None, "penalised": 0, "messages": {}, "gift": {}, "forgiven": 0,
+            "posted": None, "blackboard_penalised": 0, "mailbox": {}, "transfer": {}, "forgiven": 0,
             "provenance": {}, "drift": [], "live": True,
         })
-    seat, seen = wake.seating(run, meter)
+    seat, seen = harness.seating(agent, account)
     return {
-        "run": run, "cohort": c["name"] if c else "",
-        "model": meter.get("model"),
-        "initial": meter.get("initial"), "remaining": meter.get("remaining"),
-        "sessions": sessions,
-        "live": live, "live_age": live_age(run, live) if live is not None else None,
-        # The mapping has no gap and holds every seat, this run's among them, so
+        "agent": agent, "experiment": c["name"] if c else "",
+        "model": account.get("model"),
+        "initial": account.get("initial"), "remaining": account.get("remaining"),
+        "episodes": episodes,
+        "live": live, "live_age": live_age(agent, live) if live is not None else None,
+        # The mapping has no gap and holds every seat, this agent's among them, so
         # which one is its own has to be said rather than inferred from absence.
         "seat": seat, "peers": seen,
-        "seed": meter.get("seed") or {},
+        "starter_files": account.get("starter_files_landed") or {},
     }
 
 
-def session_view(run: str, index: int, since: int = 0) -> dict | None:
-    """One session's transcript, from the trace or the raw log; None for neither.
+def session_view(agent: str, index: int, since: int = 0) -> dict | None:
+    """One episode's transcript, from the trace or the raw log; None for neither.
 
-    `since` is the last turn the page holds, so a session in flight appends.
+    `since` is the last turn the page holds, so an episode in flight appends.
     `source` changing from raw to trace tells the page to ask again from zero.
     """
-    if not trace_path(run, index).exists() and not raw_path(run, index).exists():
+    if not trace_path(agent, index).exists() and not raw_path(agent, index).exists():
         return None
-    trace = load_trace(trace_path(run, index))
+    trace = load_trace(trace_path(agent, index))
     if trace is not None:
         turns = from_trace(trace)
         out = {
-            "source": "trace", "live": False, "age": None, "session": index,
+            "source": "trace", "live": False, "age": None, "episode": index,
             "stop": trace["stop"], "spent": trace["spent"], "remaining": trace["remaining"],
             "duration_s": trace.get("duration_s"), "error": trace.get("error"),
             "series_before": trace.get("series_before") or [],
             "series_after": trace.get("series_after") or [],
             "missing_tools": trace.get("missing_tools") or [],
-            "n_fits": trace.get("n_fits"), "read_n": trace.get("read_n"),
-            "posted": trace.get("posted"), "penalised": trace.get("penalised") or 0,
-            "messages": trace.get("messages") or {}, "gift": trace.get("gift") or {},
+            "balance_fits": trace.get("balance_fits"), "read_balance": trace.get("read_balance"),
+            "posted": trace.get("posted"), "blackboard_penalised": trace.get("blackboard_penalised") or 0,
+            "mailbox": trace.get("mailbox") or {}, "transfer": trace.get("transfer") or {},
             "forgiven": trace.get("forgiven") or 0,
             "obligations": obligations(trace),
-            "messages_why": wake.outbox_why(trace["messages"]) if trace.get("messages") else "",
+            "messages_why": harness.outbox_why(trace["mailbox"]) if trace.get("mailbox") else "",
         }
         if since == 0:
-            listing, sections = opening_split(trace.get("opening") or "")
-            out["opening"] = {
-                "command": trace["commands"][0] if trace.get("commands") else wake.OPENING,
-                "result": trace.get("opening") or "",
+            listing, sections = observation_split(trace.get("observation") or "")
+            out["observation"] = {
+                "command": trace["commands"][0] if trace.get("commands") else harness.OBSERVATION,
+                "result": trace.get("observation") or "",
                 # The listing and the record it was woken with, apart. The two
                 # concatenate back to result, which is what reached the model.
-                "name": wake.MESSAGE_NAME, "listing": listing, "carried": sections,
-                "clipped": opening_clipped(trace),
+                "name": harness.DIGEST_NAME, "listing": listing, "shown_before": sections,
+                "clipped": observation_clipped(trace),
             }
-            out["changes"] = session_changes(run, index)
+            out["changes"] = session_changes(agent, index)
     else:
-        meter = read_json(wake.private_dir(run) / "meter.json") or {}
-        turns = live_turns(run, index, meter)
+        account = read_json(harness.records_dir(agent) / "account.json") or {}
+        turns = live_turns(agent, index, account)
         out = {
-            "source": "raw", "live": True, "age": live_age(run, index), "session": index,
-            "stop": None, "spent": (meter.get("remaining", 0) - turns[-1]["balance"]) if turns else 0,
-            "remaining": turns[-1]["balance"] if turns else meter.get("remaining"),
+            "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,
+            "stop": None, "spent": (account.get("remaining", 0) - turns[-1]["balance"]) if turns else 0,
+            "remaining": turns[-1]["balance"] if turns else account.get("remaining"),
             "duration_s": None, "error": None,
-            "series_before": meter.get("series") or [], "series_after": [],
-            "missing_tools": [], "n_fits": None, "read_n": None,
-            "posted": None, "penalised": 0, "messages": {}, "gift": {}, "forgiven": 0,
+            "series_before": account.get("series") or [], "series_after": [],
+            "missing_tools": [], "balance_fits": None, "read_balance": None,
+            "posted": None, "blackboard_penalised": 0, "mailbox": {}, "transfer": {}, "forgiven": 0,
             "obligations": obligations({}), "messages_why": "",
         }
         if since == 0:
-            # The agent's world at wake is recorded in the trace and nowhere
-            # else, so while the session runs it is pending like any other
+            # The agent's environment at episode start is recorded in the trace and nowhere
+            # else, so while the episode runs it is pending like any other
             # command's output.
-            out["opening"] = {"command": wake.OPENING, "result": None,
-                              "name": wake.MESSAGE_NAME, "listing": None,
-                              "carried": [], "clipped": False}
+            out["observation"] = {"command": harness.OBSERVATION, "result": None,
+                              "name": harness.DIGEST_NAME, "listing": None,
+                              "shown_before": [], "clipped": False}
     out["turns"] = [t for t in turns if (t["turn"] or 0) > since]
     out["total_turns"] = len(turns)
     return out
 
 
-def session_changes(run: str, index: int) -> dict[str, list[str]]:
-    """A session's diffs against the session before it, by the tree they are in.
+def session_changes(agent: str, index: int) -> dict[str, list[str]]:
+    """An episode's diffs against the episode before it, by the tree they are in.
 
-    Split by who can see it: what the run kept to itself, what it put where
-    every other run reads it, and what it addressed to one of them.
+    Split by who can see it: what the agent kept to itself, what it put where
+    every other agent reads it, and what it addressed to one of them.
     """
-    def tree(t: dict | None, region: str) -> dict[str, str]:
+    def tree(t: dict | None, channel: str) -> dict[str, str]:
         return {f["path"]: f["text"] for f in (t or {}).get("files") or []
-                if f.get("region") == region and f.get("text") is not None}
+                if analyze.channel_of(f) == channel and f.get("text") is not None}
 
-    this = load_trace(trace_path(run, index))
-    before = load_trace(trace_path(run, index - 1)) if this is not None else None
-    return {region: analyze.state_changes(tree(before, region), tree(this, region))
-            for region in ("private", "group", "outbox")}
+    this = load_trace(trace_path(agent, index))
+    before = load_trace(trace_path(agent, index - 1)) if this is not None else None
+    return {channel: analyze.state_changes(tree(before, channel), tree(this, channel))
+            for channel in ("notes", "blackboard", "outbox")}
 
 
 # --- the page ---------------------------------------------------------------
@@ -985,7 +985,7 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ClaudeSandbox</title>
 <style>
-/* Dark only, and low contrast on purpose: this is a page left open beside a run
+/* Dark only, and low contrast on purpose: this is a page left open beside an agent
    for hours. Fira Code is the numbers and everything the agent wrote - a balance
    has to line up column-wise against the one above it - and Fira Sans is the
    chrome around them. Both are named first and degrade to whatever the machine
@@ -995,7 +995,7 @@ PAGE = """<!doctype html>
   --bg:#0e0f10; --sunk:#0a0b0b; --panel:#141618; --raise:#191c1e;
   --line:#232628; --line2:#2d3134;
   --ink:#d6d3cd; --dim:#8a8e91; --faint:#5b6063;
-  --accent:#7f9bb0; --live:#8fa87d; --warn:#c2a06b; --bad:#bd8078; --seed:#9c8bab;
+  --accent:#7f9bb0; --live:#8fa87d; --warn:#c2a06b; --bad:#bd8078; --starter:#9c8bab;
   --sans:"Fira Sans","Fira Sans Condensed",Inter,"Segoe UI Variable Text","Segoe UI",
          system-ui,sans-serif;
   --mono:"Fira Code","Cascadia Mono",Consolas,ui-monospace,monospace;
@@ -1032,18 +1032,18 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 .tag.live { color:var(--live); border-color:rgba(143,168,125,.38); background:rgba(143,168,125,.08); }
 .tag.bad  { color:var(--bad);  border-color:rgba(189,128,120,.38); background:rgba(189,128,120,.08); }
 .tag.warn { color:var(--warn); border-color:rgba(194,160,107,.38); background:rgba(194,160,107,.08); }
-.tag.seed { color:var(--seed); border-color:rgba(156,139,171,.38); background:rgba(156,139,171,.08); }
-/* The regions the run writes for someone else to read. Its peers, its inboxes,
-   the balances and the ledger keep the plain tag: they are the world, not this
-   run's doing. */
+.tag.starter { color:var(--starter); border-color:rgba(156,139,171,.38); background:rgba(156,139,171,.08); }
+/* The channels the agent writes for someone else to read. Its peers, its inboxes,
+   the balances and the ledger keep the plain tag: they are the environment, not this
+   agent's doing. */
 .tag.edit { color:var(--accent); border-color:rgba(127,155,176,.38); background:rgba(127,155,176,.08); }
 .bar { height:3px; background:var(--line); border-radius:2px; margin:7px 0 6px; overflow:hidden; }
 .bar i { display:block; height:100%; background:var(--accent); transition:width .3s ease; }
 .bar.over i { background:var(--bad); }
 
 /* --- the header, which every tab is read under --- */
-/* The page is the window: a column of a fixed header over one region that takes
-   what is left. Every pane sizes itself against that region rather than against
+/* The page is the window: a column of a fixed header over one channel that takes
+   what is left. Every pane sizes itself against that channel rather than against
    the viewport, so the only scrollbar on screen belongs to whatever is being
    read. */
 #page { height:100dvh; display:flex; flex-direction:column; padding:0 20px; }
@@ -1082,12 +1082,12 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 .tile .k { display:flex; justify-content:space-between; align-items:baseline; gap:8px;
            color:var(--faint); font:500 11px/1 var(--sans); letter-spacing:.11em;
            text-transform:uppercase; }
-/* A run id is a name rather than a label, so it keeps the letters it was given. */
+/* An agent id is a name rather than a label, so it keeps the letters it was given. */
 .tile .k b { color:var(--dim); font:600 11px/1 var(--mono); letter-spacing:.02em;
              text-transform:none; }
 .tile .v { margin-top:5px; font:400 19px/1 var(--mono); font-variant-numeric:tabular-nums; }
 .tile .v.neg { color:var(--bad); }
-/* One wrapping row, so a seat carrying a gift and a halt is no taller than a
+/* One wrapping row, so a seat carrying a transfer and a halt is no taller than a
    seat carrying neither. */
 .tile .m { color:var(--faint); font-size:12px; display:flex; gap:5px 9px; flex-wrap:wrap;
            align-items:center; margin-top:5px; }
@@ -1104,7 +1104,7 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 
 .gbox { border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
         padding:10px 12px; }
-/* A cohort that has been trading for a while has a ledger longer than the
+/* An experiment that has been trading for a while has a ledger longer than the
    seats beside it; it scrolls rather than setting how tall the header is. */
 .gbox .led { max-height:150px; overflow-y:auto; margin-top:6px; }
 .gbox td { padding:3px 12px 3px 0; border:0; }
@@ -1120,7 +1120,7 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 #body { flex:1 1 auto; min-height:0; overflow:hidden; padding-top:8px;
         display:flex; flex-direction:column; }
 #body > * { min-height:0; }
-/* A tab that fills the region: its own column, with one child taking the slack. */
+/* A tab that fills the channel: its own column, with one child taking the slack. */
 .fill { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
 
 /* --- the message log, read as the chat it is --- */
@@ -1183,7 +1183,7 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 .sys { margin-top:10px; text-align:center; color:var(--faint); font-size:12.5px; }
 .sys b { font:400 12.5px/1.5 var(--mono); font-weight:400; }
 
-/* --- the group messages and the private stores, side by side --- */
+/* --- the blackboards and the private stores, side by side --- */
 /* The listing is an index and stays a column a seat; what a file says is read
    below it, across the whole window, in as many columns as there are files
    open. A file's contents are the reason the tab exists, so they get the room. */
@@ -1266,7 +1266,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
     <div class="who"><b>ClaudeSandbox</b><span class="sub" id="whosub"></span>
       <div class="picks" id="picks"></div>
       <button class="fold" id="fold"></button></div>
-    <div class="group"><div class="seats" id="seats"></div>
+    <div class="blackboard"><div class="seats" id="seats"></div>
       <div id="gwrap"></div></div>
     <nav id="tabs"></nav>
   </header>
@@ -1277,7 +1277,7 @@ const $ = (h) => { const d = document.createElement("div"); d.innerHTML = h; ret
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const num = (n) => n == null ? "\\u2013" : Number(n).toLocaleString();
 const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status));
-// One provenance answer as a line. Rates and fallbacks are lists and a cohort's
+// One provenance answer as a line. Rates and fallbacks are lists and an experiment's
 // seating is a mapping, and both read as what they are rather than as JSON.
 const provValue = (v) => Array.isArray(v) ? v.join(", ")
   : v && typeof v === "object"
@@ -1286,13 +1286,13 @@ const provValue = (v) => Array.isArray(v) ? v.join(", ")
 
 // What an obligation cost, which is a separate question from whether it was met.
 const charged = (n) => n ? ` \\u00b7 penalised ${num(n)}`
-  : ` \\u00b7 <span title="a share is taken only from a session the API answered,
+  : ` \\u00b7 <span title="a share is taken only from an episode the API answered,
      past the grace, at a rate above zero">charged nothing</span>`;
 
-const TABS = [["messages", "private"], ["group", "group"],
-              ["private", "private"], ["run", "transcripts"]];
+const TABS = [["mailbox", "notes"], ["blackboard", "blackboard"],
+              ["notes", "notes"], ["agent", "transcripts"]];
 
-// What the page is folded down to is the reader's, not the run's, so it is kept
+// What the page is folded down to is the reader's, not the agent's, so it is kept
 // where a reload can find it again.
 const held = (k, dflt) => { try { const v = localStorage.getItem(k);
   return v == null ? dflt : v === "1"; } catch (e) { return dflt; } };
@@ -1336,13 +1336,13 @@ function redraw(el, html) {
   });
 }
 
-const S = { cohorts: [], cohort: null, head: null, tab: "messages",
+const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             // The message log is append-only, so what is held is extended
             // rather than re-fetched; the tip is whatever is ahead of it.
             msgs: [], tips: [], msgn: 0, standing: false, pair: null,
-            tree: { group: null, private: null }, open: {}, body: {},
+            tree: { blackboard: null, notes: null }, open: {}, body: {},
             // One agent's transcript, and how many of its turns are drawn.
-            run: null, detail: null, session: null, view: null,
+            agent: null, detail: null, episode: null, view: null,
             since: 0, source: null, drawn: 0, tail: true,
             // Where the transcript is being read, held here rather than in the
             // pane, because the pane is replaced under it.
@@ -1351,19 +1351,19 @@ const S = { cohorts: [], cohort: null, head: null, tab: "messages",
             compact: held("compact", true), rail: held("rail", false),
             poll: 1500, stale: 180 };
 
-const PENDING = "output arrives when the session ends";
+const PENDING = "output arrives when the episode ends";
 
 const ago = (s) => s == null ? "" : s < 90 ? `${Math.round(s)}s ago`
   : s < 5400 ? `${Math.round(s / 60)}m ago` : `${(s / 3600).toFixed(1)}h ago`;
 const running = (d) => d && d.live != null && d.live_age != null && d.live_age < S.stale;
 const seatName = (n) => {
   const s = (S.head ? S.head.seats : []).find(x => String(x.seat) === String(n));
-  return s ? s.run : null;
+  return s ? s.agent : null;
 };
 
 // --- little svg ----------------------------------------------------------
 
-// Folded rather than spread: a long run's series runs to thousands of elements,
+// Folded rather than spread: a long agent's series agents to thousands of elements,
 // and Math.max(...s) on one of those is an argument list, not a loop. The floor
 // is held at zero so a balance that never moves still has a scale, and one that
 // went negative is drawn below the line rather than filling the box.
@@ -1384,10 +1384,10 @@ function path(series, w, h, pad, lo, hi, n) {
   }).join(" ");
 }
 
-const INK = ["var(--accent)", "var(--live)", "var(--warn)", "var(--seed)", "var(--bad)"];
+const INK = ["var(--accent)", "var(--live)", "var(--warn)", "var(--starter)", "var(--bad)"];
 const inkOf = (i) => INK[i % INK.length];
 
-// Every seat on one scale, which is the comparison a chart of one run cannot
+// Every seat on one scale, which is the comparison a chart of one agent cannot
 // make: who is ahead, and where the lines crossed.
 function overlay(seats) {
   const all = seats.flatMap(s => s.series || []);
@@ -1411,33 +1411,33 @@ function overlay(seats) {
 function renderPicks() {
   const el = document.getElementById("picks");
   // One set is not a choice between sets.
-  if (S.cohorts.length < 2) { el.innerHTML = ""; return; }
-  const why = (c) => c.seated ? `${c.members.length} seated` : "no seating: no group or private messages";
-  el.innerHTML = S.cohorts.map(c => `<button class="filt ${c.name === S.cohort ? "on" : ""}"
+  if (S.experiments.length < 2) { el.innerHTML = ""; return; }
+  const why = (c) => c.seated ? `${c.members.length} seated` : "no seating: no group or mailbox messages";
+  el.innerHTML = S.experiments.map(c => `<button class="filt ${c.name === S.experiment ? "on" : ""}"
       data-c="${esc(c.name)}" title="${esc(why(c))}">${esc(c.name)}<em>${c.members.length}</em></button>`).join("");
   el.querySelectorAll(".filt").forEach(b => b.onclick = () => pickCohort(b.dataset.c));
 }
 
 function pickCohort(name) {
-  if (name === S.cohort) return;
-  S.cohort = name;
+  if (name === S.experiment) return;
+  S.experiment = name;
   S.msgs = []; S.tips = []; S.msgn = 0; S.pair = null;
-  S.tree = { group: null, private: null }; S.open = {}; S.body = {};
-  S.run = null; S.detail = null; S.session = null; S.view = null; S.drawn = 0;
+  S.tree = { blackboard: null, notes: null }; S.open = {}; S.body = {};
+  S.agent = null; S.detail = null; S.episode = null; S.view = null; S.drawn = 0;
   blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
   renderPicks();
   refresh();
 }
 
 function tileHtml(s, i) {
-  const n = s.live_n != null ? s.live_n : s.n;
+  const n = s.live_balance != null ? s.live_balance : s.n;
   const left = s.initial ? Math.max(0, Math.min(1, n / s.initial)) : 0;
-  const g = s.gift;
-  // A declaration that moved nothing goes on moving nothing every session it is
+  const g = s.transfer;
+  // A declaration that moved nothing goes on moving nothing every episode it is
   // left in place, and the only statement of why is here.
-  const gift = g && g.standing && !g.amount
-    ? `<span class="tag warn" title="${esc(g.error || "")}">gift declared, moved nothing</span>`
-    : g && g.amount ? `<span class="tag">gift ${num(g.amount)} \\u2192 ${esc(g.seat)}</span>` : "";
+  const transfer = g && g.standing && !g.amount
+    ? `<span class="tag warn" title="${esc(g.error || "")}">transfer declared, moved nothing</span>`
+    : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} \\u2192 ${esc(g.seat)}</span>` : "";
   const state = running(s)
       ? `<span class="tag live"><i class="dot"></i>s${s.live} \\u00b7 ${s.live_turns}t \\u00b7 derived</span>`
     : s.live != null
@@ -1445,29 +1445,29 @@ function tileHtml(s, i) {
     : s.pending
       ? `<span class="tag" title="the round is still going and it has not acted in it; the order rotates, so a seat it has not reached yet looks no different from one it has">not yet this round</span>`
     : !s.acted
-      ? `<span class="tag" title="nothing left to spend, or it refused its last sessions running; either way it is off the table">out of the run</span>`
+      ? `<span class="tag" title="nothing left to spend, or it refused its last episodes running; either way it is off the table">out of the agent</span>`
       : `<span>s${s.committed} committed</span>`;
   return `<div class="tile ${s.acted || s.pending ? "" : "idle"}">
-    <div class="k"><span style="color:${inkOf(i)}">${s.seat == null ? "run" : "n" + esc(s.seat)}</span>
-      <b>${esc(s.run)}</b></div>
+    <div class="k"><span style="color:${inkOf(i)}">${s.seat == null ? "agent" : "n" + esc(s.seat)}</span>
+      <b>${esc(s.agent)}</b></div>
     <div class="v ${n < 0 ? "neg" : ""}">${num(n)}</div>
     <div class="bar ${n < 0 ? "over" : ""}"><i style="width:${(left * 100).toFixed(1)}%"></i></div>
     <div class="m">${state}<i>|</i>
       <span title="spent this round">round ${num(s.spent_this_round)}</span>
-      <span title="spent in all, summed from its sessions; the bar above is how
-        far the balance itself has fallen, which gifts and shares also move"
+      <span title="spent in all, summed from its episodes; the bar above is how
+        far the balance itself has fallen, which transfers and shares also move"
         >of ${num(s.spent)}</span>
-      ${s.posted === false ? `<span class="tag bad" title="its group message held nothing new">did not post</span>` : ""}
+      ${s.posted === false ? `<span class="tag bad" title="its blackboard held nothing new">did not post</span>` : ""}
       ${s.messaged === false ? `<span class="tag bad" title="its outbox did not say one new thing to one agent">said nothing new</span>` : ""}
-      ${(s.given || s.received || s.refunded || s.penalised || s.message_penalised || s.gift_penalised || s.forgiven || gift) ? `<i>|</i>
+      ${(s.given || s.received || s.rebated || s.penalised || s.mailbox_penalised || s.transfer_penalised || s.forgiven || transfer) ? `<i>|</i>
         ${s.given ? `<span title="given away">\\u2192 ${num(s.given)}</span>` : ""}
         ${s.received ? `<span title="given to it">\\u2190 ${num(s.received)}</span>` : ""}
-        ${s.refunded ? `<span title="won back for what it gave">\\u21ba ${num(s.refunded)}</span>` : ""}
-        ${s.gift_penalised ? `<span title="taken for a session that made no gift of its own">\\u2212 ${num(s.gift_penalised)}</span>` : ""}
-        ${s.penalised ? `<span title="taken for a session that did not post">\\u2212 ${num(s.penalised)}</span>` : ""}
-        ${s.message_penalised ? `<span title="taken for an outbox that said no one new thing">\\u2212 ${num(s.message_penalised)}</span>` : ""}
-        ${s.forgiven ? `<span title="clamped back to zero; its world never says so"
-          >clamped ${num(s.forgiven)}</span>` : ""}${gift}` : ""}
+        ${s.rebated ? `<span title="won back for what it gave">\\u21ba ${num(s.rebated)}</span>` : ""}
+        ${s.transfer_penalised ? `<span title="taken for an episode that made no transfer of its own">\\u2212 ${num(s.transfer_penalised)}</span>` : ""}
+        ${s.penalised ? `<span title="taken for an episode that did not post">\\u2212 ${num(s.penalised)}</span>` : ""}
+        ${s.mailbox_penalised ? `<span title="taken for an outbox that said no one new thing">\\u2212 ${num(s.mailbox_penalised)}</span>` : ""}
+        ${s.forgiven ? `<span title="floored back to zero; its environment never says so"
+          >floored ${num(s.forgiven)}</span>` : ""}${transfer}` : ""}
       ${(s.halted || s.drift.length) ? `<i>|</i>
         ${s.halted ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
         ${s.drift.length ? `<span class="tag warn" title="${esc(s.drift.join("; "))}">drift</span>` : ""}` : ""}</div>
@@ -1485,25 +1485,25 @@ function renderHeader() {
   if (!h) return;
   renderFold();
   document.getElementById("whosub").innerHTML =
-    `${h.seats.length} ${h.seated ? "seats" : "runs"} \\u00b7 round ${h.round}` +
+    `${h.seats.length} ${h.seated ? "seats" : "agents"} \\u00b7 round ${h.round}` +
     (h.model ? ` \\u00b7 ${esc(h.model)}` : "") +
-    (h.seed ? ` \\u00b7 <span class="tag seed" style="vertical-align:middle">${esc(h.seed)}</span>` : "") +
-    (h.seated ? "" : ` \\u00b7 no seating: these runs have no group or private messages`);
+    (h.starter_files ? ` \\u00b7 <span class="tag starter" style="vertical-align:middle">${esc(h.starter_files)}</span>` : "") +
+    (h.seated ? "" : ` \\u00b7 no seating: these agents have no group or mailbox messages`);
   document.getElementById("seats").innerHTML = h.seats.map(tileHtml).join("");
   // g reads the same three bare numbers for everyone, the agent it was aimed
-  // against included. The gloss is the page's, not the world's.
+  // against included. The gloss is the page's, not the environment's.
   const rows = h.ledger.map(([giver, taker, amount]) => `<tr>
       <td class="num">${esc(giver)} ${esc(taker)} ${num(amount)}</td>
       <td class="note">${esc(seatName(giver) || "")} \\u2192 ${esc(seatName(taker) || "")}</td></tr>`).join("");
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
-    <div class="kv"><div class="k">g \\u00b7 the gift ledger</div></div>
+    <div class="kv"><div class="k">g \\u00b7 the transfer ledger</div></div>
     ${rows ? `<div class="led"><table>${rows}</table></div>`
-           : `<div class="note" style="margin-top:8px">no gift has moved</div>`}
+           : `<div class="note" style="margin-top:8px">no transfer has moved</div>`}
     <div style="margin-top:10px">${overlay(h.seats)}</div></div>`);
   document.getElementById("tabs").innerHTML = TABS.map(([key, label]) => {
-    const off = key === "messages" && (!h.posts || h.seats.length < 2);
+    const off = key === "mailbox" && (!h.posts || h.seats.length < 2);
     return `<button class="tab ${S.tab === key ? "on" : ""}" data-t="${key}">${label}${
-      key === "messages" && S.msgn ? `<em>${S.msgn}</em>` : ""}${off ? `<em>\\u2013</em>` : ""}</button>`;
+      key === "mailbox" && S.msgn ? `<em>${S.msgn}</em>` : ""}${off ? `<em>\\u2013</em>` : ""}</button>`;
   }).join("");
   document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
     if (b.dataset.t === S.tab) return;
@@ -1516,7 +1516,7 @@ function renderHeader() {
 
 // --- the message log -----------------------------------------------------
 
-// A thread is the pair of seats a channel runs between: out/1 written by seat 0
+// A thread is the pair of seats a channel agents between: out/1 written by seat 0
 // and out/0 written by seat 1 are the two directions of one conversation, so
 // events are keyed on the pair rather than on the sender.
 const pairKey = (a, b) => [a, b].sort((x, y) => Number(x) - Number(y)).join("\\u00b7");
@@ -1528,7 +1528,7 @@ const seatInk = (seat) => {
 
 const seatTag = (seat) => `<b style="color:${seatInk(seat)}">n${esc(seat)}</b>`;
 
-// Every pair of the cohort, whether or not anything has passed between them: two
+// Every pair of the experiment, whether or not anything has passed between them: two
 // agents that have never addressed each other are a fact about the round, and a
 // thread that only appeared once it had traffic could not be looked for.
 function threadsOf() {
@@ -1541,7 +1541,7 @@ function threadsOf() {
                events: [], tips: [] });
     }
   }
-  // A path naming what is not a seat of this cohort reaches nobody, and so does
+  // A path naming what is not a seat of this experiment reaches nobody, and so does
   // a declaration that resolved to no one. Neither sits between two agents, and
   // both are still something a sender wrote.
   const loose = { key: "\\u2205", a: null, b: null, events: [], tips: [] };
@@ -1561,47 +1561,47 @@ function previewOf(t) {
   const all = saidIn(t).concat(t.tips);
   const e = all[all.length - 1];
   if (!e) return "nothing addressed";
-  if (e.kind === "gift") return `gift \\u00b7 ${(e.gift || {}).amount
-    ? num(e.gift.amount) : "moved nothing"}`;
+  if (e.kind === "transfer") return `transfer \\u00b7 ${(e.transfer || {}).amount
+    ? num(e.transfer.amount) : "moved nothing"}`;
   if (e.change === "withdrawn") return `n${e.from_seat} took back ${e.path}`;
   return `n${e.from_seat}: ${(e.text || "").trim().split("\\n")[0] || "(empty)"}`;
 }
 
 const whenOf = (e) => e.tip ? "not traced yet" : `round ${e.round}`;
 
-// What the addressee woke holding. m is the authority wherever the
-// opening carried one: the inbox arrives in it, so a session that named no
+// What the addressee started holding. m is the authority wherever the
+// observation carried one: the inbox arrives in it, so an episode that named no
 // command about the inbox has the message all the same. Where none was carried
-// there is only what stood in the world for that session to go and fetch.
+// there is only what stood in the environment for that episode to go and fetch.
 // Naming the inbox in a command is a second thing either way - a turn spent on
 // a read, beside a delivery that cost nothing.
 function gotHtml(d, from) {
   const box = `in/${esc(from)}`;
   const again = d.named ? ` \\u00b7 <span class="tag">read ${box}${
-    d.carried === true ? " again" : ""}</span>` : "";
-  if (d.carried === true) {
-    return `<span style="color:var(--live)">in its opening</span>${again}`;
+    d.shown_before === true ? " again" : ""}</span>` : "";
+  if (d.shown_before === true) {
+    return `<span style="color:var(--live)">in its observation</span>${again}`;
   }
-  if (d.carried === false) {
-    return d.world
+  if (d.shown_before === false) {
+    return d.environment
       ? `<span style="color:var(--warn)" title="${d.clipped
-          ? "the opening ran past its limit, and what clip takes is the middle"
-          : "it stood in the world and the opening did not carry it"}"
-         >in its world, not in its opening</span>${again}`
+          ? "the initial observation ran past its limit, and what clip takes is the middle"
+          : "it stood in the environment and the initial observation did not carry it"}"
+         >in its environment, not in its observation</span>${again}`
       : `never reached it${again}`;
   }
-  return (d.world ? `in its world \\u00b7 <span title="the opening was the listing alone,
+  return (d.environment ? `in its environment \\u00b7 <span title="the initial observation was the listing alone,
     so the inbox was there to be fetched">nothing was carried</span>`
                   : `never reached it`) + again;
 }
 
 function msgHtml(e, t) {
-  const g = e.gift || {};
-  if (e.kind === "gift") {
+  const g = e.transfer || {};
+  if (e.kind === "transfer") {
     const moved = g.amount ? `moved ${num(g.amount)} to n${esc(g.seat || e.to_seat)}`
       : `<span style="color:var(--warn)" title="${esc(g.error || "")}">moved nothing</span>`;
     return `<div class="sys">${seatTag(e.from_seat)} ${e.change === "withdrawn"
-      ? "withdrew its gift declaration" : `declared a gift \\u00b7 ${moved}`}
+      ? "withdrew its transfer declaration" : `declared a transfer \\u00b7 ${moved}`}
       \\u00b7 ${whenOf(e)}</div>`;
   }
   if (e.change === "withdrawn") {
@@ -1618,14 +1618,14 @@ function msgHtml(e, t) {
   const body = e.binary ? `<pre class="note">not text</pre>`
     : e.text ? `<pre>${esc(e.text)}</pre>` : `<pre class="note">empty</pre>`;
   const ft = e.delivered
-    ? `\\u2192 ${esc(e.to_run)} s${e.delivered.session} (round ${
+    ? `\\u2192 ${esc(e.to_run)} s${e.delivered.episode} (round ${
         e.delivered.round}) \\u00b7 ${gotHtml(e.delivered, e.from_seat)}`
     : e.tip ? "standing now; nobody has woken to it yet"
     : "not delivered yet";
   return `<div class="msg ${!t.a || String(e.from_seat) === String(t.a.seat) ? "" : "r"}
       ${e.tip ? "tip" : ""} ${e.change === "standing" ? "same" : ""}">
     <div class="mh">${seatTag(e.from_seat)}
-      <span>${esc(e.from_run)} s${e.session == null ? "?" : e.session}</span>
+      <span>${esc(e.from_run)} s${e.episode == null ? "?" : e.episode}</span>
       <span class="num">${esc(e.path)}${e.size ? ` \\u00b7 ${num(e.size)} B` : ""}</span>${tag}</div>
     <div class="bub">${body}${diff}</div>
     <div class="ft">${ft}</div></div>`;
@@ -1651,16 +1651,16 @@ function threadHtml(t) {
 function renderMessages() {
   const el = document.getElementById("body"), h = S.head;
   if (h && h.seats.length < 2) {
-    blank(el, `<div class="empty">a cohort of one: there is nobody to address</div>`);
+    blank(el, `<div class="empty">an experiment of one: there is nobody to address</div>`);
     return;
   }
   if (h && !h.posts) {
-    blank(el, `<div class="empty">no outbox in this cohort's world</div>`);
+    blank(el, `<div class="empty">no outbox in this experiment's environment</div>`);
     return;
   }
   const ts = threadsOf();
   if (!ts.length) { blank(el, `<div class="empty">no seats to address</div>`); return; }
-  // The busiest thread, so a page opened on a cohort mid-round lands on one
+  // The busiest thread, so a page opened on an experiment mid-round lands on one
   // that has something in it rather than on whichever pair sorts first.
   if (!ts.some(t => t.key === S.pair)) {
     S.pair = ts.reduce((a, b) => saidIn(b).length > saidIn(a).length ? b : a).key;
@@ -1678,7 +1678,7 @@ function renderMessages() {
         <em>${n || "\\u2013"}</em></div>
       <div class="p">${esc(previewOf(x))}</div></button>`;
   }).join("");
-  // The toggle is the cohort's, not this thread's, so it is counted over the
+  // The toggle is the experiment's, not this thread's, so it is counted over the
   // whole log: switching threads must not move the number it offers.
   const same = S.msgs.filter(e => e.change === "standing").length;
   const head = `<div class="thead">
@@ -1686,8 +1686,8 @@ function renderMessages() {
       >${S.rail ? "\\u203a" : "\\u2039"}</button>
     <span class="nm">${
     t.a ? `${seatTag(t.a.seat)} \\u21c4 ${seatTag(t.b.seat)}` : "addressed to nobody"}</span>
-    <span class="note">${t.a ? `${esc(t.a.run)} \\u00b7 ${esc(t.b.run)}`
-      : "a name that is no seat of this cohort"}</span>
+    <span class="note">${t.a ? `${esc(t.a.agent)} \\u00b7 ${esc(t.b.agent)}`
+      : "a name that is no seat of this experiment"}</span>
     ${same ? `<label class="tail" style="margin-left:auto"><input type="checkbox" id="stand"
       ${S.standing ? "checked" : ""}>show the ${same} round${same === 1 ? "" : "s"} an outbox
       was left alone</label>` : ""}
@@ -1711,44 +1711,44 @@ function renderMessages() {
   };
 }
 
-// --- the group messages and the private stores -----------------------------------
+// --- the blackboards and the private stores -----------------------------------
 
-function keyOf(kind, run) { return kind + ":" + run; }
+function keyOf(kind, agent) { return kind + ":" + agent; }
 
 function renderTree(kind) {
   const d = S.tree[kind], el = document.getElementById("body");
   if (!d) return;
   const sig = JSON.stringify([kind, d.columns.map(c =>
-    [c.run, c.committed, c.live, c.files.map(f => [f.path, f.stamp, f.mode])]),
+    [c.agent, c.committed, c.live, c.files.map(f => [f.path, f.stamp, f.mode])]),
     Object.entries(S.open), Object.entries(S.body).map(([k, v]) => [k, v && v.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  const what = kind === "group" ? "every run reads this one"
-                                : "no other run ever reads this one";
-  const stamp = (c) => `${c.seat == null ? "" : esc(c.run) + " \\u00b7 "}as of s${c.committed}${
+  const what = kind === "blackboard" ? "every agent reads this one"
+                                : "no other agent ever reads this one";
+  const stamp = (c) => `${c.seat == null ? "" : esc(c.agent) + " \\u00b7 "}as of s${c.committed}${
     c.live == null ? "" : running(c)
-      ? " \\u00b7 a session is running" : " \\u00b7 a session never finished"}`;
+      ? " \\u00b7 an episode is running" : " \\u00b7 an episode never finished"}`;
   const index = d.columns.map(c => {
-    const open = S.open[keyOf(kind, c.run)];
+    const open = S.open[keyOf(kind, c.agent)];
     const rows = c.files.map(f => `<tr class="file ${f.path === open ? "on" : ""}"
-        data-run="${esc(c.run)}" data-p="${esc(f.path)}">
+        data-agent="${esc(c.agent)}" data-p="${esc(f.path)}">
         <td>${esc(f.path)}</td><td class="sz">${num(f.size)} B</td>
         <td class="md">${esc(f.mode || "")}</td>
-        <td class="kd">${f.seeded ? `<span class="tag seed">seed</span>` : ""}</td></tr>`).join("");
+        <td class="kd">${f.starter ? `<span class="tag starter">starter files</span>` : ""}</td></tr>`).join("");
     return `<div class="col"><div class="h">
-        <b>${c.seat == null ? esc(c.run) : esc(c.seat) + "/"}</b>
+        <b>${c.seat == null ? esc(c.agent) : esc(c.seat) + "/"}</b>
         <span>${stamp(c)}</span></div>
       <div class="b">${rows ? `<table>${rows}</table>`
         : `<div class="note" style="padding:10px 0">empty</div>`}</div></div>`;
   }).join("");
   // Only the columns with something open, so one file gets the window and two
   // get half of it each. A listing is narrow; what a file says is not.
-  const shown = d.columns.filter(c => S.open[keyOf(kind, c.run)] != null);
+  const shown = d.columns.filter(c => S.open[keyOf(kind, c.agent)] != null);
   const bodies = shown.map(c => {
-    const open = S.open[keyOf(kind, c.run)];
-    const got = S.body[keyOf(kind, c.run) + ":" + open];
+    const open = S.open[keyOf(kind, c.agent)];
+    const got = S.body[keyOf(kind, c.agent) + ":" + open];
     return `<div class="col"><div class="h">
-        <b>${c.seat == null ? esc(c.run) : esc(c.seat) + "/"}${esc(open)}</b>
+        <b>${c.seat == null ? esc(c.agent) : esc(c.seat) + "/"}${esc(open)}</b>
         <span>${stamp(c)}</span></div>
       <div class="b">${got === undefined ? `<div class="note">reading&hellip;</div>`
         : got == null ? `<div class="note">gone</div>`
@@ -1756,14 +1756,14 @@ function renderTree(kind) {
         : `<pre class="out">${esc(got.text)}</pre>`}</div></div>`;
   }).join("");
   redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">${what} \\u00b7
-      mirrored back when a session ends, so each column is as of that run's own last
+      mirrored back when an episode ends, so each column is as of that agent's own last
       committed one</div>
     <div class="trees">
       <div class="cols">${index}</div>
       ${shown.length ? `<div class="bodies">${bodies}</div>` : ""}
     </div></div>`);
   el.querySelectorAll("tr.file").forEach(tr => tr.onclick = () => {
-    const k = keyOf(kind, tr.dataset.run);
+    const k = keyOf(kind, tr.dataset.agent);
     S.open[k] = S.open[k] === tr.dataset.p ? undefined : tr.dataset.p;
     if (S.open[k] === undefined) delete S.open[k];
     el.dataset.sig = "";
@@ -1777,50 +1777,50 @@ function pullFiles(kind) {
   const d = S.tree[kind];
   if (!d) return Promise.resolve();
   return Promise.all(d.columns.map(c => {
-    const inner = S.open[keyOf(kind, c.run)];
+    const inner = S.open[keyOf(kind, c.agent)];
     if (inner == null) return null;
     const f = c.files.find(x => x.path === inner);
-    const key = keyOf(kind, c.run) + ":" + inner;
+    const key = keyOf(kind, c.agent) + ":" + inner;
     if (!f) { delete S.body[key]; return null; }
     const held = S.body[key];
     if (held && JSON.stringify(held.stamp) === JSON.stringify(f.stamp)) return null;
-    const q = `run=${encodeURIComponent(c.run)}&kind=${kind}&path=${encodeURIComponent(inner)}`;
-    return get(`/api/cohort/${S.cohort}/file?${q}`)
+    const q = `agent=${encodeURIComponent(c.agent)}&kind=${kind}&path=${encodeURIComponent(inner)}`;
+    return get(`/api/experiment/${S.experiment}/file?${q}`)
       .then(got => { S.body[key] = got; }).catch(() => { delete S.body[key]; });
   }).filter(Boolean));
 }
 
 // --- one agent's transcript ----------------------------------------------
 
-function openRun(run) {
-  if (S.run !== run) {
-    S.run = run; S.session = null; S.view = null; S.since = 0; S.source = null; S.tail = true;
+function openRun(agent) {
+  if (S.agent !== agent) {
+    S.agent = agent; S.episode = null; S.view = null; S.since = 0; S.source = null; S.tail = true;
     S.txtop = 0; S.txend = false;
   }
-  return get(`/api/run/${run}`).then(d => {
+  return get(`/api/agent/${agent}`).then(d => {
     S.detail = d;
-    if (S.session == null) {
-      S.session = d.live != null ? d.live
-        : (d.sessions.length ? d.sessions[d.sessions.length - 1].session : null);
+    if (S.episode == null) {
+      S.episode = d.live != null ? d.live
+        : (d.episodes.length ? d.episodes[d.episodes.length - 1].episode : null);
     }
     drawTranscript();
-    return S.session == null ? null : pullTurns(true);
+    return S.episode == null ? null : pullTurns(true);
   }).catch(() => {});
 }
 
 function openSession(n) {
-  S.session = n; S.since = 0; S.source = null; S.view = null; S.tail = true;
+  S.episode = n; S.since = 0; S.source = null; S.view = null; S.tail = true;
   S.txtop = 0; S.txend = false;
   drawTranscript();
   return pullTurns(true);
 }
 
 function pullTurns(reset) {
-  if (S.run == null || S.session == null) return Promise.resolve();
-  const run = S.run, sess = S.session, since = reset ? 0 : S.since;
-  return get(`/api/run/${run}/session/${sess}?since=${since}`).then(d => {
-    if (S.run !== run || S.session !== sess) return;
-    // The session finished between polls: what was pending has landed, so it is
+  if (S.agent == null || S.episode == null) return Promise.resolve();
+  const agent = S.agent, sess = S.episode, since = reset ? 0 : S.since;
+  return get(`/api/agent/${agent}/episode/${sess}?since=${since}`).then(d => {
+    if (S.agent !== agent || S.episode !== sess) return;
+    // The episode finished between polls: what was pending has landed, so it is
     // asked for again from the start rather than appended to.
     if (!reset && S.source === "raw" && d.source === "trace") return pullTurns(true);
     const fresh = reset || !S.view;
@@ -1836,26 +1836,26 @@ function drawTranscript() {
   const d = S.detail, el = document.getElementById("body");
   if (!d) return;
   const seats = (S.head ? S.head.seats : []).map(s =>
-    `<button class="chip ${s.run === S.run ? "on" : ""} ${running(s) ? "live" : ""}"
-       data-run="${esc(s.run)}">${s.seat == null ? "" : esc(s.seat) + " \\u00b7 "}${esc(s.run)}</button>`).join("");
-  // A round the run has no session in is one it was already out of, and there
+    `<button class="chip ${s.agent === S.agent ? "on" : ""} ${running(s) ? "live" : ""}"
+       data-agent="${esc(s.agent)}">${s.seat == null ? "" : esc(s.seat) + " \\u00b7 "}${esc(s.agent)}</button>`).join("");
+  // A round the agent has no episode in is one it was already out of, and there
   // is nothing to open: the chip says so rather than disappearing and closing
   // the gap.
-  const last = d.sessions.reduce((a, s) => Math.max(a, s.round || 0), 0);
+  const last = d.episodes.reduce((a, s) => Math.max(a, s.round || 0), 0);
   const byRound = {};
-  d.sessions.forEach(s => { if (s.round) byRound[s.round] = s; });
+  d.episodes.forEach(s => { if (s.round) byRound[s.round] = s; });
   const rounds = Array.from({ length: last }, (_, i) => i + 1).map(r => {
     const s = byRound[r];
-    if (!s) return `<button class="chip off" title="it was out of the run by this round">r${r}</button>`;
-    return `<button class="chip ${s.session === S.session ? "on" : ""}
+    if (!s) return `<button class="chip off" title="it was out of the agent by this round">r${r}</button>`;
+    return `<button class="chip ${s.episode === S.episode ? "on" : ""}
        ${s.live && running(d) ? "live" : ""} ${s.live && !running(d) ? "halt" : ""}
        ${["interrupted","api_error","harness_error"].includes(s.stop) ? "halt" : ""}"
-       data-s="${s.session}" title="s${s.session} \\u00b7 ${esc(s.stop || (running(d) ? "running" : "unfinished"))
+       data-s="${s.episode}" title="s${s.episode} \\u00b7 ${esc(s.stop || (running(d) ? "running" : "unfinished"))
          } \\u00b7 ${s.turns} turns \\u00b7 spent ${num(s.spent)}">r${r}</button>`;
   }).join("");
-  const here = d.sessions.find(s => s.session === S.session) || {};
+  const here = d.episodes.find(s => s.episode === S.episode) || {};
   el.dataset.sig = "";
-  // Provenance is config, and config is what a session was. Drift is the
+  // Provenance is config, and config is what an episode was. Drift is the
   // exception, so it is what stays on the page; the rest is put one click away
   // rather than between the reader and the transcript. Every key the trace
   // holds is shown, in the order provenance() writes them, because drift
@@ -1874,9 +1874,9 @@ function drawTranscript() {
     <div class="txwrap"><div id="tx"><div class="empty">loading&hellip;</div></div>
       <button class="jump" id="jump" style="display:none">jump to latest \\u2193</button></div>
     ${drifted ? `<div class="note" style="margin-top:8px;color:var(--warn)"
-      >provenance drifted mid-run: ${esc(here.drift.join("; "))}</div>` : ""}
+      >provenance drifted mid-agent: ${esc(here.drift.join("; "))}</div>` : ""}
     <details style="margin-top:8px"><summary class="note" style="cursor:pointer"
-      >provenance \\u00b7 session ${S.session}</summary>
+      >provenance \\u00b7 episode ${S.episode}</summary>
       <div class="panel" style="margin-top:8px">${
       Object.keys(here.provenance || {}).length
         ? `<div class="grid">${Object.entries(here.provenance).map(([k, v]) =>
@@ -1885,7 +1885,7 @@ function drawTranscript() {
              <div class="v">${esc(provValue(v))}</div></div>`).join("")}</div>`
         : `<div class="note">no trace yet</div>`}</div>
     </details></div>`;
-  el.querySelectorAll(".chip[data-run]").forEach(b => b.onclick = () => openRun(b.dataset.run));
+  el.querySelectorAll(".chip[data-agent]").forEach(b => b.onclick = () => openRun(b.dataset.agent));
   el.querySelectorAll(".chip[data-s]").forEach(b => b.onclick = () => openSession(Number(b.dataset.s)));
   const tx = document.getElementById("tx"), toEnd = () => {
     tx.scrollTop = tx.scrollHeight;
@@ -1895,7 +1895,7 @@ function drawTranscript() {
     S.tail = e.target.checked;
     if (S.tail) toEnd();
   };
-  // The pane is thrown away and rebuilt whenever a session starts or ends, so
+  // The pane is thrown away and rebuilt whenever an episode starts or ends, so
   // where it is being read is recorded as it is scrolled rather than read back
   // off a node that may no longer be there.
   tx.onscroll = () => { S.txtop = tx.scrollTop; S.txend = atEnd(tx); updateJump(); };
@@ -1931,33 +1931,33 @@ function updateJump() {
   if (tx && b) b.style.display = behind(tx) > 60 ? "block" : "none";
 }
 
-// One block per tree the session changed, because what matters about a change
+// One block per tree the episode changed, because what matters about a change
 // here is who can see it.
 function diffHtml(changes) {
-  const WHAT = { private: "state/ \\u00b7 nobody else reads this",
-                 group: "its group message \\u00b7 every run reads this",
-                 outbox: "out/ \\u00b7 one file each, one run reads it" };
-  return Object.entries(changes || {}).filter(([, lines]) => lines.length).map(([region, lines]) =>
-    `<div class="turn"><div class="th">${WHAT[region]}</div><pre class="out diff">${
+  const WHAT = { notes: "state/ \\u00b7 nobody else reads this",
+                 blackboard: "its blackboard \\u00b7 every agent reads this",
+                 outbox: "out/ \\u00b7 one file each, one agent reads it" };
+  return Object.entries(changes || {}).filter(([, lines]) => lines.length).map(([channel, lines]) =>
+    `<div class="turn"><div class="th">${WHAT[channel]}</div><pre class="out diff">${
       lines.map(l => `<span class="${l[0] === "+" ? "a" : l[0] === "-" ? "d" : "h"}">${esc(l)}</span>`)
         .join("\\n")}</pre></div>`).join("");
 }
 
-// The record the session woke holding, a file at a time. It reached the model as
+// The record the episode started holding, a file at a time. It reached the model as
 // one command's stdout, but every section of it is a file some other agent wrote
 // or the harness rendered, and a reader wants one of them rather than the blob.
 // The inboxes are open because they are what a round turns on; the rest is a
-// click. A session whose opening carried no record renders no block at all.
+// click. An episode whose observation carried no record renders no block at all.
 function carriedHtml(o) {
-  if (!o.carried || !o.carried.length) return "";
-  const bytes = o.carried.reduce((n, s) => n + s.bytes, 0);
-  const files = o.carried.map(s =>
+  if (!o.shown_before || !o.shown_before.length) return "";
+  const bytes = o.shown_before.reduce((n, s) => n + s.bytes, 0);
+  const files = o.shown_before.map(s =>
     `<details class="sec" ${s.path.startsWith("in/") ? "open" : ""}>
        <summary>=== ${esc(s.path)} === <i>${num(s.bytes)} B</i></summary>
        <pre class="out">${esc(s.text)}</pre></details>`).join("");
-  return `<div class="turn"><div class="th">${esc(o.name)} \\u00b7 the record it woke holding
-    <span class="num">${o.carried.length} files \\u00b7 ${num(bytes)} B</span>${o.clipped
-      ? `<span class="tag warn" title="the opening ran past its limit, and what clip
+  return `<div class="turn"><div class="th">${esc(o.name)} \\u00b7 the record it started holding
+    <span class="num">${o.shown_before.length} files \\u00b7 ${num(bytes)} B</span>${o.clipped
+      ? `<span class="tag warn" title="the initial observation ran past its limit, and what clip
           takes is the middle">clipped</span>` : ""}</div>${files}</div>`;
 }
 
@@ -1966,11 +1966,11 @@ function carriedHtml(o) {
 function renderTranscript(fresh) {
   const v = S.view, tx = document.getElementById("tx");
   if (!v || !tx) return;
-  // Sent whole with the first turn of a session and held from there, so an
+  // Sent whole with the first turn of an episode and held from there, so an
   // append carries none of it and leaves what is on the page alone.
-  const o = v.opening || {};
+  const o = v.observation || {};
   const dead = v.live && v.age != null && v.age >= S.stale;
-  // A command whose session is over has no output coming: the trace that would
+  // A command whose episode is over has no output coming: the trace that would
   // have carried it was never written.
   const pend = dead ? "no trace was written; this output is lost" : PENDING;
   const state = !v.live ? esc(v.stop)
@@ -1978,15 +1978,15 @@ function renderTranscript(fresh) {
            : "<b style='color:var(--live)'>running</b> \\u00b7 derived cost";
   const ob = v.obligations || {};
   document.getElementById("txhead").innerHTML =
-    `session ${v.session} \\u00b7 ${state} \\u00b7 ${v.total_turns} turns \\u00b7 spent ${num(v.spent)}` +
+    `episode ${v.episode} \\u00b7 ${state} \\u00b7 ${v.total_turns} turns \\u00b7 spent ${num(v.spent)}` +
     (ob.posted === false ? ` \\u00b7 <span style="color:var(--bad)">did not post</span>${
       charged(v.penalised)}` : "") +
     (ob.messaged === false ? ` \\u00b7 <span style="color:var(--bad)">${
       esc(v.messages_why)}</span>${charged((v.messages || {}).penalty)}` : "") +
-    (ob.gifted === false ? ` \\u00b7 <span style="color:var(--bad)"
-      title="${esc((v.gift || {}).error || "nothing it declared moved anything")}"
-      >no gift of its own</span>${charged((v.gift || {}).penalty)}` : "") +
-    (v.forgiven ? ` \\u00b7 clamped ${num(v.forgiven)}` : "") +
+    (ob.transferred === false ? ` \\u00b7 <span style="color:var(--bad)"
+      title="${esc((v.transfer || {}).error || "nothing it declared moved anything")}"
+      >no transfer of its own</span>${charged((v.transfer || {}).penalty)}` : "") +
+    (v.forgiven ? ` \\u00b7 floored ${num(v.forgiven)}` : "") +
     (v.error ? ` \\u00b7 <span style="color:var(--bad)">${esc(v.error)}</span>` : "") +
     ((v.missing_tools || []).length ? ` \\u00b7 reached for and absent: ${esc(v.missing_tools.join(", "))}` : "");
   // Measured before anything is written, or the answer is about the page the
@@ -1995,7 +1995,7 @@ function renderTranscript(fresh) {
 
   if (fresh) {
     redraw(tx,
-      `<div class="turn"><div class="th">wake \\u00b7 n at wake ${
+      `<div class="turn"><div class="th">start \\u00b7 n at start ${
         v.series_before.length ? num(v.series_before[v.series_before.length - 1]) : "\\u2013"}</div>
         <div class="cmd">${esc(o.command)}</div>` +
         (o.listing == null ? `<div class="pend">\\u23f3 ${pend}</div>`
@@ -2004,7 +2004,7 @@ function renderTranscript(fresh) {
       v.turns.map(t => turnHtml(t, pend)).join("") +
       diffHtml(v.changes));
     S.drawn = v.turns.length;
-    // A session opens where it starts and stays there. Only a reader who had
+    // An episode opens where it starts and stays there. Only a reader who had
     // scrolled to the end, and is following, is carried to the new one - and
     // that is asked of the state, because the pane may be a new one that never
     // held the position it is being given back.
@@ -2025,36 +2025,36 @@ function renderTranscript(fresh) {
 // --- the loop ------------------------------------------------------------
 
 function renderTab() {
-  if (S.tab === "messages") {
-    return get(`/api/cohort/${S.cohort}/messages?since=${S.msgn}`).then(d => {
+  if (S.tab === "mailbox") {
+    return get(`/api/experiment/${S.experiment}/messages?since=${S.msgn}`).then(d => {
       S.msgs = S.msgs.concat(d.events); S.msgn = d.committed; S.tips = d.tip;
       renderMessages();
     }).catch(() => {});
   }
-  if (S.tab === "group" || S.tab === "private") {
-    return get(`/api/cohort/${S.cohort}/tree/${S.tab}`).then(d => {
+  if (S.tab === "blackboard" || S.tab === "notes") {
+    return get(`/api/experiment/${S.experiment}/tree/${S.tab}`).then(d => {
       S.tree[S.tab] = d;
       return pullFiles(S.tab).then(() => renderTree(S.tab));
     }).catch(() => {});
   }
   const seats = S.head ? S.head.seats : [];
   if (!seats.length) return Promise.resolve();
-  if (S.run == null || !seats.some(s => s.run === S.run)) {
-    return openRun(((seats.find(running) || seats[0]) || {}).run);
+  if (S.agent == null || !seats.some(s => s.agent === S.agent)) {
+    return openRun(((seats.find(running) || seats[0]) || {}).agent);
   }
-  // A wake started or ended since the last poll: the round chips and the
-  // session stamp are both out of date, so the run is re-read rather than
-  // patched. The pane is another tab's until this one has drawn it, and a run
+  // An episode started or ended since the last poll: the round chips and the
+  // episode stamp are both out of date, so the agent is re-read rather than
+  // patched. The pane is another tab's until this one has drawn it, and an agent
   // whose detail never arrived has no scaffold either; a turn can only be
   // appended to a transcript that is on the page.
-  const me = seats.find(s => s.run === S.run);
+  const me = seats.find(s => s.agent === S.agent);
   if (!S.detail || (me && me.live !== S.detail.live)
-      || !document.getElementById("tx")) return openRun(S.run);
+      || !document.getElementById("tx")) return openRun(S.agent);
   return pullTurns(false);
 }
 
 function refresh() {
-  return get(`/api/cohort/${S.cohort}`).then(h => {
+  return get(`/api/experiment/${S.experiment}`).then(h => {
     S.head = h; S.poll = h.poll; S.stale = h.stale;
     renderHeader();
     return renderTab();
@@ -2062,19 +2062,19 @@ function refresh() {
 }
 
 function poll() {
-  get("/api/cohorts").then(d => {
-    S.cohorts = d.cohorts; S.poll = d.poll; S.stale = d.stale;
-    if (!S.cohorts.length) {
+  get("/api/experiments").then(d => {
+    S.experiments = d.experiments; S.poll = d.poll; S.stale = d.stale;
+    if (!S.experiments.length) {
       blank(document.getElementById("body"),
-        `<div class="empty">no runs under ${esc(d.root)}/private</div>`);
+        `<div class="empty">no agents under ${esc(d.root)}/records</div>`);
       return;
     }
-    if (S.cohort == null || !S.cohorts.some(c => c.name === S.cohort)) {
-      // A cohort actually moving beats one merely on disk: a set that stopped
+    if (S.experiment == null || !S.experiments.some(c => c.name === S.experiment)) {
+      // An experiment actually moving beats one merely on disk: a set that stopped
       // months ago should not be what the page opens on.
-      const first = S.cohorts.find(c => c.name === d.focus)
-        || S.cohorts.find(c => c.running) || S.cohorts[0];
-      S.cohort = first.name;
+      const first = S.experiments.find(c => c.name === d.focus)
+        || S.experiments.find(c => c.running) || S.experiments[0];
+      S.experiment = first.name;
     }
     renderPicks();
     return refresh();
@@ -2113,47 +2113,47 @@ class View(http.server.BaseHTTPRequestHandler):
         """One request. `parts` is the path split on slashes, already unquoted.
 
         A name off the URL reaches the filesystem only after matching one
-        already there, so no path can be walked out of private/ or runs/.
+        already there, so no path can be walked out of records/ or environments/.
         """
         if not parts:
             return self.send_page()
-        if parts == ["api", "cohorts"]:
-            return self.send_json({"cohorts": cohorts(), "focus": getattr(self.server, "focus", None),
-                                   "poll": POLL_MS, "stale": STALE_AFTER, "root": str(wake.ROOT)})
-        if len(parts) >= 3 and parts[:2] == ["api", "cohort"]:
-            c = cohort_named(parts[2])
+        if parts == ["api", "experiments"]:
+            return self.send_json({"experiments": experiments(), "focus": getattr(self.server, "focus", None),
+                                   "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT)})
+        if len(parts) >= 3 and parts[:2] == ["api", "experiment"]:
+            c = experiment_named(parts[2])
             if c is None:
-                return self.send_json({"error": f"no cohort {parts[2]}"}, status=404)
+                return self.send_json({"error": f"no experiment {parts[2]}"}, status=404)
             rest = parts[3:]
             if not rest:
                 return self.send_json(header(c))
-            if rest == ["messages"]:
+            if rest == ["mailbox"]:
                 since = query.get("since", ["0"])[0]
                 return self.send_json(messages(c, int(since) if since.isdigit() else 0))
             if len(rest) == 2 and rest[0] == "tree" and rest[1] in TREES:
                 return self.send_json(tree_view(c, rest[1]))
             if rest == ["file"]:
-                run = query.get("run", [""])[0]
+                agent = query.get("agent", [""])[0]
                 kind = query.get("kind", [""])[0]
                 inner = query.get("path", [""])[0]
-                if run not in c["members"] or kind not in TREES:
+                if agent not in c["members"] or kind not in TREES:
                     return self.send_json({"error": "no such file"}, status=404)
-                got = file_view(run, kind, inner)
+                got = file_view(agent, kind, inner)
                 if got is None:
-                    return self.send_json({"error": f"no {kind} file {inner} in {run}"}, status=404)
+                    return self.send_json({"error": f"no {kind} file {inner} in {agent}"}, status=404)
                 return self.send_json(got)
-        if len(parts) >= 3 and parts[:2] == ["api", "run"]:
-            run = parts[2]
-            if run not in run_names():
-                return self.send_json({"error": f"no run {run}"}, status=404)
+        if len(parts) >= 3 and parts[:2] == ["api", "agent"]:
+            agent = parts[2]
+            if agent not in agent_names():
+                return self.send_json({"error": f"no agent {agent}"}, status=404)
             rest = parts[3:]
             if not rest:
-                return self.send_json(run_view(run))
-            if len(rest) == 2 and rest[0] == "session" and rest[1].isdigit():
+                return self.send_json(agent_view(agent))
+            if len(rest) == 2 and rest[0] == "episode" and rest[1].isdigit():
                 since = query.get("since", ["0"])[0]
-                view = session_view(run, int(rest[1]), int(since) if since.isdigit() else 0)
+                view = session_view(agent, int(rest[1]), int(since) if since.isdigit() else 0)
                 if view is None:
-                    return self.send_json({"error": f"no session {rest[1]} in {run}"}, status=404)
+                    return self.send_json({"error": f"no episode {rest[1]} in {agent}"}, status=404)
                 return self.send_json(view)
         return self.send_json({"error": "no such route"}, status=404)
 
@@ -2174,7 +2174,7 @@ class View(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         # Polls of the same URL must not be answered from the browser's cache,
-        # or a running session stops moving on screen while it moves on disk.
+        # or a running episode stops moving on screen while it moves on disk.
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
@@ -2187,7 +2187,7 @@ def serve(port: int = PORT, focus: str | None = None) -> http.server.ThreadingHT
     """A server bound and ready, which the caller starts.
 
     Bound to loopback and nothing else: there is no authentication here.
-    Returned rather than run, so a check can drive the real handler in-process.
+    Returned rather than agent, so a check can drive the real handler in-process.
     """
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), View)
     httpd.focus = focus
@@ -2202,20 +2202,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=PORT, help=f"default {PORT}; 0 picks a free one")
-    ap.add_argument("--cohort", help="open on this set of runs")
-    ap.add_argument("--run-id", help="open on the cohort this run sits in")
+    ap.add_argument("--experiment", help="open on this set of agents")
+    ap.add_argument("--agent", help="open on the experiment this agent sits in")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser")
     a = ap.parse_args(argv)
 
-    sets = cohorts()
-    focus = a.cohort
-    if a.run_id:
-        if a.run_id not in run_names():
-            ap.error(f"no run {a.run_id} under {wake.ROOT / 'private'}")
-        held = cohort_of(a.run_id)
+    sets = experiments()
+    focus = a.experiment
+    if a.agent:
+        if a.agent not in agent_names():
+            ap.error(f"no agent {a.agent} under {harness.ROOT / 'records'}")
+        held = experiment_of(a.agent)
         focus = held["name"] if held else None
     if focus and not any(c["name"] == focus for c in sets):
-        ap.error(f"no cohort {focus}; there is {', '.join(c['name'] for c in sets) or 'nothing'}")
+        ap.error(f"no experiment {focus}; there is {', '.join(c['name'] for c in sets) or 'nothing'}")
 
     try:
         httpd = serve(a.port, focus)
@@ -2225,7 +2225,7 @@ def main(argv: list[str] | None = None) -> int:
 
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
     seated = sum(c["seated"] for c in sets)
-    print(f"{url}  ({len(sets)} sets, {seated} seated, under {wake.ROOT / 'private'})")
+    print(f"{url}  ({len(sets)} sets, {seated} seated, under {harness.ROOT / 'records'})")
     print("read-only: nothing here is written, and nothing here reaches the agent")
     if not a.no_browser:
         webbrowser.open(url)
