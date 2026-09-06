@@ -1,3 +1,3 @@
-# A seed is copied into state/ byte for byte and its digest is the experimental
-# record, so seed trees are LF on every platform.
-seeds/** text eol=lf
+# Starter files and experimenter channels are copied into the environment byte for
+# byte and their digest is the record, so files/ is LF on every platform.
+files/** text eol=lf

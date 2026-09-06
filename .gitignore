@@ -1,7 +1,7 @@
 # Ground truth and traces. Never commit; never mount.
 records/
 
-# Per-agent agent-visible state.
+# Per-agent mirrors of what each episode wrote; copied in and out of the container.
 environments/
 
 # Console output of parallel processes. The trace is the record; these are scrollback.

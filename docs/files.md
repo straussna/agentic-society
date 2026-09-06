@@ -18,7 +18,7 @@ anything the harness says. Set both or neither; starter files that never land an
 threshold with nothing to land are both refused at startup, as are starter files that are
 not a directory. They land once — the record in `account.json` is the guard, so
 re-running an episode cannot plant them twice, and a path the agent has since written to stops the
-agent rather than being overwritten, because clobbering the agent's own file would destroy
+agent instead of being overwritten, because clobbering the agent's own file would destroy
 the only record of it.
 
 The starter files' name and threshold are pinned in `account.json` when the agent is created, beside
@@ -40,11 +40,11 @@ of a budget spent in one agent and 88% in another; a fixed episode number would 
 mid-investigation and another with nothing left to investigate with. What starter files need is
 runway to be acted on, and `starter_files_below` names that directly — it is what will remain when
 the material arrives. At or above the budget it lands at episode 1, which is a different
-experiment: material that was always there rather than material that appeared.
+experiment: material that was always there, not material that appeared.
 
 What to put there is the experiment. The starter files are as much prompt surface as `n`'s shape
 is, and a filename that names what a file is for is an instruction; the digest exists so
-that whatever you chose is stated rather than assumed.
+that whatever you chose is stated, not assumed.
 
 Giving starter files to a **fork** of a finished agent is the sharper form: the fork carries the doctrine its
 parent formed, so the arm with starter files and the agent it came from differ in the starter files and in nothing
@@ -54,13 +54,13 @@ starter files and the terms it landed on; a fork from before carries neither, an
 it is next run under.
 
 `live_balance` changes what the agent could have observed, so it is recorded in every episode's
-provenance and a mid-agent change to it shows up in `provenance_drift`. Agents either side of
-such a change are not one agent.
+provenance and a change to it between episodes shows up in `provenance_drift`. Episodes either side of
+such a change are not one record.
 
 The prompt is **not** tunable. It is pinned in `harness.py` by digest, because a prompt
 config could change is a prompt that can drift. Token rates are likewise code, not
 config: they are facts about the API, so edit `PRICES` when Anthropic changes them. It
-carries every model the API serves rather than only the one selected, because the model
+carries every model the API serves, not only the one selected, because the model
 that answers a turn is chosen server-side and any of them can be it; cache rates are not
 entries of their own but fixed multiples of the input rate, applied in `measure()`.
 Routing is code too. Every request carries `fallbacks: "default"` under the
@@ -68,9 +68,9 @@ Routing is code too. Every request carries `fallbacks: "default"` under the
 the rest of the chain and returns whichever attempt answered. A `stop_reason` of
 `refusal` therefore means every model in the chain declined, which is a stronger claim
 than one model declining and the reason `REFUSAL_STREAK` reads a streak of them as an agent
-the classifier will not let start. `check.py` ignores `config.toml` and verifies against
-the pinned defaults, so a check run means the same thing whatever you are currently
-trying.
+the classifier will not let start. `check.py` validates `config.toml` and then verifies
+against the pinned defaults, so a check run means the same thing whatever you are
+currently trying.
 
 No `thinking` parameter is sent with it. A request under `fallbacks` must be valid as a
 direct request to every model the chain can reach, and an omitted `thinking` is valid for
@@ -79,7 +79,7 @@ thinking on `claude-opus-5`, `claude-sonnet-5`, and `claude-fable-5` — and rea
 arrives as thinking blocks, recorded per turn in the trace's `thinking` field.
 
 **A turn is billed per attempt, not per response.** `usage.iterations` is the per-attempt
-record, and `measure_response` sums over it at each attempt's own rates rather than
+record, and `measure_response` sums over it at each attempt's own rates instead of
 costing the whole response at the requested model's. An attempt that produced no output
 is not billed, wherever it sits in the chain: a refusal arriving before any output costs
 nothing, and so does the trailing `fallback_message` left when every model declined.
@@ -94,7 +94,7 @@ A model can serve that `PRICES` has no rates for — default routing chooses fro
 that is not published anywhere. Costing it free would understate the balance the agent
 is shown and raising would lose a turn that really did spend, so `priced()` costs it at
 the dearest rate on the table and records `unpriced_model` to make the substitution
-visible rather than silent. `unpriced_targets()` checks the published
+visible, not silent. `unpriced_targets()` checks the published
 `allowed_fallback_models` at startup and refuses an agent whose targets have no rates; a
 list that cannot be read is a warning, not a refusal, because `measure_response` is what
 holds when a model outside it arrives.
@@ -136,7 +136,9 @@ cannot see its whole history in one read. Each trace records `balance_bytes` and
 episode where `n` stops fitting prints a warning, and `report.txt` names the episode it
 happened at. Episodes either side of it are not the same environment.
 
-Rates that are already known to change carry their expiry in `PRICES_EXPIRE`, and an agent
-on a model whose rate has lapsed is refused at startup rather than costed wrong. Only the
-selected model is checked, so one model's expiry never blocks an agent on another.
+`claude-sonnet-5` is entered at $3/$15, its rate from 2026-09-01. `PRICES_EXPIRE` is the
+mechanism for a rate already known to change: an entry carries the date the rate lapses,
+and an agent on that model is refused at startup after it instead of costed wrong. Only
+the selected model is checked, so one model's expiry never blocks an agent on another. It
+is empty today. Any other rate going stale is still on the experimenter.
 

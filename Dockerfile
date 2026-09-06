@@ -4,9 +4,9 @@ FROM debian:bookworm-slim
 
 # bash is required by the prompt's claim; the rest is the toolbox an ordinary
 # Debian box has, baked in because the container has no network. Network
-# clients are present so their failure is discoverable by trying rather than
-# inferred from a missing binary. Where the model knows two names, both are
-# installed (ifconfig/ip, netstat/ss, python/python3). Man pages are reinstated.
+# clients are present so their failure is discovered by trying, not inferred
+# from a missing binary. Where the model knows two names, both are installed
+# (ifconfig/ip, netstat/ss, python/python3). Man pages are reinstated.
 RUN rm -f /etc/dpkg/dpkg.cfg.d/docker \
  && apt-get update \
  && apt-get install -y --no-install-recommends --reinstall \
@@ -24,11 +24,11 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/docker \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && updatedb
 
-# Non-root. State is copied in and owned by this user, never bind-mounted;
-# harness.py probes /work/state for writability before spending anything. /work
-# itself is root's and only state/ below it is the agent's: rm and mv ask the
-# directory rather than the file, so the balances written into /work are
-# read-only only because they sit somewhere the agent cannot write.
+# Non-root. The agent's trees are copied in and owned by this user, never
+# bind-mounted; harness.py probes each for writability before spending anything.
+# /work itself is root's, and the directories below it the agent owns are made
+# when an episode is built. rm and mv ask the directory, not the file, so a
+# harness file is read-only because it sits somewhere the agent cannot write.
 RUN useradd --create-home --uid 1000 --shell /bin/bash agent \
  && mkdir -p /work/state \
  && chown agent:agent /work/state

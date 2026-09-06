@@ -42,7 +42,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 |---|---|
 | **Environment** | Everything under `/work` in an agent's sandbox: its channels and the harness files, nothing else |
 | **Seat** | An agent's numbered position, from 1. Names its balance to every reader alike |
-| **Channel** | One region of the environment with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
+| **Channel** | One part of the environment with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
 | **Writer** | Who may put bytes in a channel: `self` or `experimenter`. The harness's own files are the `[harness_files]` table, not channels |
 | **Readers** | Who may read it: `self`, `all`, `addressee` (one named peer per file), or `harness` (the harness parses it) |
 | **Shape** | `directory` (any files, any layout), `mailbox` (one file per peer, an outbox on the writer's side and an inbox on each reader's), or `file` (one file at a fixed path) |
@@ -63,7 +63,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Delivery** | `push`: pushed channels are quoted in the digest at episode start. `pull`: nothing is quoted; the agent reads what it chooses at the ordinary price |
 | **Pushed** | A channel property: whether it is part of the digest under push delivery |
 | **Silence penalty** | A channel property: the share of the remaining balance taken from an episode that added nothing new to the channel |
-| **Transfer** | The one schema today: a line `<seat> <amount>` that credits a peer with no more than the episode spent |
+| **Transfer** | The one schema today: a line `<label> <amount>` that credits a peer with no more than the episode spent |
 | **Funded by** | Who pays for a transfer. `harness`: the receiver is credited from nowhere and the giver rebated; the total grows. `giver`: the amount leaves the giver; the total is conserved |
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
@@ -115,7 +115,7 @@ Three principles bind the language:
 |---|---|---|
 | `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
-| `[[channel]]` | tables | The environment's regions. Declaring any replaces the default set whole |
+| `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[agent]]` | tables, two or more | The seats, in order; seat 1 is the first table |
 | any key of section 3 | | The experiment's default, applied after `config.toml` and held to the same rules |
 
@@ -161,7 +161,7 @@ recorded in the account by name, digest, episode and paths, and lands once.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `delivery` | `"push"` \| `"pull"` | `"push"` | same | Whether pushed channels are quoted in the digest or left to be read |
+| `delivery` | `"push"` \| `"pull"` | `"push"` | Whether pushed channels are quoted in the digest or left to be read |
 | `digest_file_limit` | int ≥ 200 | 2000 | Characters of each file the digest quotes |
 | `observation_limit` | int ≥ `tool_result_limit` | 40000 | Characters of the whole initial observation |
 
@@ -185,8 +185,8 @@ These were top-level keys and are fields of the channel they describe. A manifes
 
 ## 4. The channel object
 
-A channel is one region of every agent's environment. Six properties describe every
-region the harness has ever had.
+A channel is one part of every agent's environment. Six properties describe every
+channel the harness has ever had.
 
 ```toml
 [[channel]]
@@ -373,7 +373,7 @@ silence_penalty_percent = 50
 ledger = "g"
 ```
 
-An experiment of one agent under `wake.py` is this environment with no peers: the
+An agent under `harness.py` alone is this environment with no peers: the
 blackboard is its own, and the mailbox and transfer channels have nobody to reach and
 are not planted.
 

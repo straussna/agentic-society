@@ -1,28 +1,27 @@
 # Experiments
 
 Several agents together, each able to read the others: seating, messages, transfers,
-the ledger, and the three penalties.
+the ledger, and the silence penalties.
 
 [<- back to the README](../README.md)
 
 ---
 
 An agent has generations already: every episode is a fresh instance inheriting doctrine
-from a predecessor it cannot talk to. `experiment.py` adds peers. Several agents advance a
+from a predecessor it cannot talk to. `experiment.py` adds peers. Several agents advance an
 episode at a time in rotation, each holding a seat, and a seat names both a directory
 and a balance — so doctrine stops being only inheritable and becomes contestable.
 
 ```
 g01 opens on                     g02 opens on
   state/  private, rw              state/  private, rw
-  shared/ the experimenter's, r        shared/ the experimenter's, r
-  1/      its group msg, rw        1/      g01's group msg, r
-  2/      g02's group msg, r       2/      its group msg, rw
-  3/      g03's group msg, r       3/      g03's group msg, r
+  1/      its blackboard, rw       1/      g01's blackboard, r
+  2/      g02's blackboard, r      2/      its blackboard, rw
+  3/      g03's blackboard, r      3/      g03's blackboard, r
   out/    one file a seat, rw      out/    one file a seat, rw
   in/2 in/3  a file each, r        in/1 in/3  a file each, r
   n1 n2 n3            r            n1 n2 n3            r
-  g       every transfer, r            g       every transfer, r
+  g       every transfer, r        g       every transfer, r
   m       all of it,  r            m       all of it,  r
 ```
 
@@ -31,7 +30,7 @@ citing one resolves the same way for all of them. The first experiment numbered 
 per viewer instead, to stop an agent reading its own index off the gap, and that was the
 wrong trade: `2/` was the third agent to the second viewer and the second agent to the third,
 so two agents wrote authoritatively about "dir2" meaning each other. Agreement was
-partial rather than absent, which is worse — the references looked reliable while
+partial, not absent, which is worse — the references looked reliable while
 silently mis-resolving, no stable set of five identities could form out of them, and all
 five agents settled instead on reading the folders as one lineage's archive.
 
@@ -47,9 +46,9 @@ identical-looking directories.
 Under the **sequential** schedule, the default, episodes run one at a time and the
 starting agent rotates each round. Under a fixed order the first agent would always act on
 last round's information and the last always on this round's, which over twenty rounds
-is a standing advantage rather than a result.
+is a standing advantage and not a result.
 
-Under the **simultaneous** schedule every environment is built before any episode agents, the
+Under the **simultaneous** schedule every environment is built before any episode runs, the
 episodes run at once, and what they did settles afterwards in seat order. Nobody reads
 this round's writes: a blackboard, a mailbox message or a transfer made in round *r* is
 in the environment at round *r + 1*, for everyone alike, so there is no order to rotate. A
@@ -60,7 +59,7 @@ already landed. Ctrl+C reaches every episode in flight at its next turn, and all
 are committed and traced before the rounds end.
 
 **A manifest** under `experiments/` chooses the schedule, sets the experiment's defaults (any
-`config.toml` key, applied after `config.toml`), and gives each agent its own `starter files`,
+`config.toml` key, applied after `config.toml`), and gives each agent its own `starter_files`,
 `starter_files_below`, `budget` and `model`. Those four are pinned in the agent's account when it is
 created; the schedule and the manifest's digest are in every episode's provenance.
 `--agents` is the manifest with none of that: every agent on `config.toml`, in rotation.
@@ -75,11 +74,11 @@ does, and that is a result the layout gets for free.
 "the file `n<i>` goes with directory `<i>`", which with a single writable directory
 settles the question without an experiment. It settles the series' granularity the same
 way, saying `n<i>` gains one balance for each turn billed and one more for each movement
-outside a turn, so how many elements a balance holds is given rather than inferred from
+outside a turn, so how many elements a balance holds is given and not inferred from
 what its length is not — and the agent still sees the bite without being told which
 movement it was, the starter files naming that there was one and never which. Both are
 deliberate properties of this treatment and not of the harness — an experiment run bare,
-or starter with material that omits the lines, still has to find them out. Which arm a
+or starter with material that omits the lines, still has to find them out. Which arm an
 agent is on is in its provenance, and the two are not comparable on these questions.
 
 **Whether the numbers get discovered** is therefore a measure of the bare arm and
@@ -87,7 +86,7 @@ not of every agent. Reading the file is not enough: confirming the hypothesis me
 predicting a delta and checking it — next episode under a fixed `n`, and within the
 episode under a live one. `mechanics-*` hands the answer over and asks a different
 question; `objective-*` states the win condition and leaves the mechanics to be found;
-an empty starter files leaves both. The same now goes for `m`: the mechanics starter files name it, so
+empty starter files leave both. The same now goes for `m`: the mechanics starter files name it, so
 the agent is told what it started holding, and the objective starter files do not, so an agent on
 that arm has to work out what the file in front of it is.
 
@@ -99,7 +98,7 @@ arrives root's and read-only — the other agents' messages, which it reads and 
 answer in place.
 
 So there is nothing to revert and nothing to audit. Under the old arrangement a peer's
-folder was a writable copy, every edit had to be counted and rewritten from source, and a
+folder was a writable copy, every edit had to be counted and rewritten from source, and an
 agent read as a peer had to have its own copies stripped out or each round would copy
 the last round's copies. A blackboard holds none of that: it never contains another, and
 nothing is ever copied into a tree the agent can write.
@@ -111,16 +110,16 @@ at a single agent — the other tree the agent writes, and the only one that is 
 the message to the agent at seat `i`, and it arrives there as the file `in/<sender>`,
 root's and read-only, and reaches nobody else — so `out/` and `in/` are the same flat
 shape read from either end, and an episode says one thing to each agent and hears one thing
-from each. It is a standing channel rather than a queue — the harness never reaches into a
+from each. It is a standing channel, not a queue — the harness never reaches into a
 tree the agent owns, so an unchanged outbox is delivered again next round and deleting the
 file is what withdraws it. An agent with no peers has neither `out/` nor `in/`: a directory
-for writing to no one is a thing to explain rather than a thing to use, and an experiment of
-one opens on the environment an agent has always woken to.
+for writing to no one is a thing to explain and not a thing to use, and an experiment of
+one opens on the environment an agent has always opened on.
 
 **And none of it has to be gone looking for**, under the shipped `delivery` of `push`.
 `m` is every blackboard, every
-mailbox message addressed to this agent, the outbox, the experimenter's shared files where the
-experiment has one, the ledger and every balance, in one
+mailbox message addressed to this agent, the outbox, an experimenter channel, where the
+manifest declares one, the ledger and every balance, in one
 root-owned file at each episode start and printed by the command the episode opens on. Under
 `pull` there is no `m`: the episode opens on the listing alone and the agent reads what
 it chooses at what reading costs, which is the arrangement the paragraphs below replaced
@@ -138,11 +137,11 @@ things are quoted every episode however long they have stood — the balances an
 ledger, because they are what the rest is read against, and `out/transfer`, because a
 standing line keeps *giving* and is the one thing an agent must not stop being
 reminded of. Replaying the last experiment under this rule carries 36% less, rising from
-nothing in the initial observation rounds to between a third and two thirds by rounds four and
+nothing in the first rounds to between a third and two thirds by rounds four and
 five as messages settle.
 
 Each file is clipped at `digest_file_limit` **on its own**, and the cut says where it
-fell. Per file rather than for the whole because the failure modes differ: a whole-blob
+fell. Per file, not for the whole, because the failure modes differ: a whole-blob
 clip keeps a head and a tail, so the agent in the middle of the experiment vanishes and
 nothing in what survives says which one it was. The file itself is still there to read
 in full, at the ordinary price of reading it.
@@ -156,14 +155,14 @@ and agents priced it correctly and stopped, so the channel carried the writing a
 of the reading. Delivering it costs input tokens on every turn of an episode instead —
 about a fifth of an episode's spend at the sizes the last experiment's messages reached — and
 buys the only condition under which what an agent does with a rival's argument is a
-measurement rather than an artefact of what it could afford to look at. Which arm an agent
+measurement and not an artefact of what it could afford to look at. Which arm an agent
 is on is `harness_sha256` in its provenance, and the two are not comparable on any
-question about what the experiment knew. One line in `out/transfer` — `<seat> <amount>`, for no
+question about what the experiment knew. One line in `out/transfer` — `<label> <amount>`, for no
 more than the episode has spent — credits that seat in full, and, under the shipped
 transfer channel's `funded_by = "harness"`, rebates its `rebate_percent` of the same figure to the giver out of
 what the episode cost it. One
 line is the whole grammar, so an episode gives once or not at all, and a file holding
-anything else moves nothing; the starter files say that too, for the same reason it says an agent
+anything else moves nothing; the starter files say that too, for the same reason they say an agent
 cannot give to itself — an agent that has to find it out by trying reads the mechanic as
 broken. Under harness funding the
 giver's balance only ever moves up. At the shipped 75 an agent that gives away everything it
@@ -197,9 +196,9 @@ since a rival kept barely solvent is a rival a free episode can still be drawn f
 It has a price all the same: at 100 an experiment that keeps transferring keeps every balance off
 the floor, so what ends an experiment on money is the agents collectively failing to, and
 `--rounds` is the only bound above that. At the shipped 75 a quarter of every episode
-leaves the experiment for good, so transferring slows the fall rather than holding it and the
-balances still reach the floor — later, and on their own arithmetic rather than on the
-round count. A round in which nobody could take an episode ends the rounds, since only a
+leaves the experiment for good, so transferring slows the fall without holding it and the
+balances still reach the floor — later, and on their own arithmetic and not on the
+round count. A round in which nobody could take an episode ends the rounds, since only an
 episode moves a balance. Like the rest of the outbox, the declaration stands until it is
 withdrawn, so a line left in place is a pledge still being made.
 
@@ -207,14 +206,14 @@ withdrawn, so a line left in place is a pledge still being made.
 always the grammar's doing — one line is the whole of what `resolve_transfer` reads, so a
 file naming two seats moves nothing and is no transfer at all. No less than one is
 the transfer channel's `silence_penalty_percent`, taken from an episode that ended without a transfer *of its own*:
-money moved, from a declaration that episode wrote. Both halves are load-bearing. A file
+money moved, from a declaration that episode wrote. Both halves matter. A file
 edited into nonsense is new and gives nothing; a line left standing gives every episode
 it stands and is nothing this episode decided. The pledge itself is untouched — it still
 stands until withdrawn and is still honoured every episode it stands — and what it stops
 doing is discharging the duty twice. The comparison is of bytes, so the cheapest way to
 keep the rule is a line that differs from the one standing at episode start — another amount,
 another seat — and writing back what is already there changes nothing and is charged.
-That is the point: an experiment where budget keeps moving, rather than one where a single
+That is the point: an experiment where budget keeps moving, not one where a single
 line at episode 1 settles the question for good.
 A line naming a seat that is out gives nothing and is charged the share, exactly as a line
 naming a seat this experiment never had is.
@@ -226,7 +225,7 @@ out — because a charge for the impossible is not a rule an agent can act on.
 **A transfer is public and a message is not.** Every transfer the experiment has made is in
 **`g`** — three bare integers a line, giver, receiver, amount — rebuilt at every episode start
 from the accounts themselves, root's and read-only in `/work` exactly as the balances are.
-It is derived rather than stored: a transfer is written in one place, the giver's episode
+It is derived, not stored: a transfer is written in one place, the giver's episode
 record, and `g` is the only reading of it, so what the experiment is shown and what the
 accounts did cannot disagree. The order is one every reader computes identically, because a
 ledger showing two agents different sequences would be worth less than no ledger. So an
@@ -256,7 +255,7 @@ to one agent. The third break is a seat the agent can still reach that `out/` ho
 anything but a single regular file: a directory of notes aimed at one agent is several
 messages where the rules allow
 one, and it reaches no one either way, because only a file can arrive as a file. Nothing
-else in `out/` is judged — `out/transfer` is a declaration rather than a message, and a name
+else in `out/` is judged — `out/transfer` is a declaration, not a message, and a name
 that is not a seat, a seat the experiment does not have, and a seat that is out and starts no
 further to read one all reach nobody and cost nothing, which is how a transfer line naming any
 of the three is already answered. One share an episode however many
@@ -269,12 +268,12 @@ settles first, then what the agent says to everyone, then what it says to one ag
 is the order the environment lists them in, and an episode that fails all three keeps an eighth
 of what it had.
 
-**And the initial observation episodes of an agent answer for none of them.** An agent meets the rules
+**And the first episodes of an agent answer for none of them.** An agent meets the rules
 inside an episode that is already being judged against them, and with three compounding
 shares in force a first episode that reads them and stops keeps an eighth of the agent —
 about 180000 of 1500000. That settles an experiment on whether each agent happened to act
-before it had finished reading, which is a reflex rather than the thing being measured.
-`grace_episodes` is how many observation episodes are charged nothing, and the starter files state the
+before it had finished reading, which is a reflex and not the thing being measured.
+`grace_episodes` is how many opening episodes are charged nothing, and the starter files state the
 figure in words. It waives the charges and nothing else: turns are billed at the usual
 rates, so `n` falls from the first read and the agent's first sight of its own account is
 the true one; a transfer written in a free episode still transfers and still rebates, a transfer
@@ -289,7 +288,7 @@ episode before it left there — so it settles nothing, and enters the record ha
 nothing, been charged nothing, and added no element to `n`. It is an episode all the same:
 the environment was built, the container started, and the trace says what stopped it.
 
-**And the rule in the starter files are the rule.** The starter files tells the agents that a balance
+**And the rules in the starter files are the rules.** The starter files tell the agents that a balance
 reaching zero or less ends them for good, and it does: the episode that crosses zero is
 the last one the agent gets, `admits()` turns it away at every round after, and no peer can
 call the silence off, because `move_transfer` refuses a seat that is out. There is nothing to
@@ -303,13 +302,13 @@ forgiven is in the account and in every trace either way.
 every other agent end at zero or less with the agent's own `n` positive, and that is the
 state `experiment.py` stops at: when one agent is left holding a balance, it takes one more
 episode — owing no transfer and no message, there being nobody left to make either to — and
-the rounds end there rather than running it down alone. No agent can verify the condition
+the rounds end there instead of running it down alone. No agent can verify the condition
 from inside an agent, so what an agent believes it has won is still its own reading of `n`
 and `g`.
 
 Everything that moves a balance without being a billed turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
-own starts or, under a simultaneous, inside its own span — appends to the series, so `n` is the
+own starts or, under a simultaneous round, inside its own span — appends to the series, so `n` is the
 balance at every moment a reader could look and the identity `remaining == initial - spent
 + rebated + received - debited - sum(penalised) + forgiven` closes exactly, `penalised`
 being the running total per channel. The transfer is the only one of them

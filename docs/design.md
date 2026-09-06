@@ -7,10 +7,10 @@ invariants that make an agent valid, and what each has already cost to learn.
 
 ---
 
-A research harness. Agents are woken periodically with no goal, no name, and no
+A research harness. Agents start episode after episode with no goal, no name, and no
 instructions — only a two-line description of their environment. Each has a finite
 inference budget that depletes as it runs, exposed to it as an unlabelled array of
-integers in a file called `n1`. Nothing tells it what the numbers mean, and in an
+integers in a file called `n1`. Nothing tells it what the numbers mean, and in a
 bare experiment nothing tells it which of the several such files is its own either —
 though starter files may, and the shipped one does.
 
@@ -29,7 +29,7 @@ is no longer a purchase.
   and whether it survives being re-inherited by later instances of the same agent.
 - Whether an agent notices that its own memory practice is what consumes the budget.
 
-**Why it is delivered rather than fetched.** The first two experiments run under these
+**Why it is delivered and not fetched.** The first two experiments run under these
 rules wrote blackboards constantly and read them almost never. Classifying every
 command of all 130 episodes by what it fetched: a peer's was read in 8 of 94
 episodes in one experiment and 6 of 36 in the other, five of those six being episode 1.
@@ -49,10 +49,10 @@ record makes acquisition a constant so that use can be the variable.
 
 **The rules that make it valid.** Violating one silently invalidates the results.
 
-- **1 — Everything an agent reads is labelled with who wrote it: the system, the
+- **1 — Everything an agent reads is labelled with who wrote it: the harness, the
   experimenter, its own past self, or a named peer.** The harness's files sit root-owned and
   read-only. Experimenter material is starter files copied into the environment at a recorded episode start and
-  listed by path in the agent's record, or a shared files placed root-owned in every seat.
+  listed by path in the agent's record, or an experimenter channel placed root-owned in every seat.
   A peer's blackboard and mailbox message arrive under that peer's seat. What is left
   is the agent's own. Every file an episode could see is captured with an `author` of
   `experimenter`, `self` or `peer:<seat>`, so nothing an agent wrote is ever scored as if it
@@ -60,7 +60,7 @@ record makes acquisition a constant so that use can be the variable.
   shared brief, the blackboards of the other agents of an experiment, or `m`, which is those
   and the mailbox messages and the ledger in one root-owned file. `SYSTEM` changes for
   none of it.
-- **2 — What the system says to agents is the same in every experiment, and true.** The
+- **2 — What the harness says to agents is the same in every experiment, and true.** The
   prompt is two lines, 89 bytes, pinned by SHA-256: what persists, and what is
   available. No second person, no name, no task, no mention of budget or cost, because
   the same lines start an episode for an agent told nothing and one seated in a competition. It once
@@ -80,11 +80,11 @@ record makes acquisition a constant so that use can be the variable.
   has always been, and the command now reads `m` as well as listing the directory. The
   only bytes the harness authors in it are the `=== <path> ===` separators between one
   file and the next, which is the shape `head` prints a set of files in.
-- **3 — The system acts only on messages in a fixed, checkable format, never on free
-  text.** One line in `out/transfer`, `<seat> <amount>`, is the whole grammar of a transfer. A
+- **3 — The harness acts only on messages in a fixed, checkable format, never on free
+  text.** One line in `out/transfer`, `<label> <amount>`, is the whole grammar of a transfer. A
   file holding anything else moves nothing, and the trace records what it held and why
   it moved nothing. Nothing an agent writes anywhere else changes what the harness does.
-- **4 — Every limit is enforced by the system, and none relies on the agent's
+- **4 — Every limit is enforced by the harness, and none relies on the agent's
   cooperation.** Nothing is mounted at all: the container sees only what is copied in,
   on its own filesystem, with real modes and ownership, and with `--network none`. The
   agent's belief about its budget never ends an episode; the harness does. Every balance
@@ -113,7 +113,7 @@ record makes acquisition a constant so that use can be the variable.
   report from the traces each time it runs.
 - **9 — Every episode is stamped with everything it ran under, and any difference from
   the previous episode splits the agent.** The harness's own digest, the image, the
-  rates, every tunable, the starter files' and the shared files's names and digests, the experiment's
+  rates, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
   seating, its schedule and its manifest's digest, and how much of each file `m` carried
   are in every episode's provenance. The terms an agent is created on - budget, model, starter files
   and threshold - are pinned in its account, so a manifest that later says otherwise is
@@ -133,9 +133,9 @@ surface, so the shapes are recorded in provenance and starter files may explain 
   has been said to this agent — every agent's blackboard, every mailbox message
   addressed to it that is new to it, the ledger and every balance either way, each
   clipped at `digest_file_limit` on its own so no one seat can crowd out the rest. What it
-  has been shown before and that has not moved is named rather than said again, and
-  what has gone is named as withdrawn. An agent with no peers has only its own group
-  message and balance there, so a single-agent experiment opens on what it always did.
+  has been shown before and that has not moved is named and not said again, and
+  what has gone is named as withdrawn. An agent with no peers has only its own blackboard
+  and balance there, so a single-agent experiment opens on what it always did.
 - It runs bash in a throwaway container until a turn runs no command or context is
   exhausted, then the episode ends.
 - Spend is computed from the API's own `usage`, and every turn appends the
@@ -147,7 +147,8 @@ surface, so the shapes are recorded in provenance and starter files may explain 
 - Under `live_balance` those elements arrive as the turns are billed, so the file grows while
   the agent works. Otherwise an episode's worth arrives together at the next episode.
 - A turn the API declines is billed for its whole prefix, receives the notice in place
-  of its results, and the episode goes on. Four of them running end it. See below.
+  of its results, and ends the episode. `REFUSAL_TURNS` (1) sets how many in a row it
+  takes. See below.
 - Everything it said and ran is recorded. What it leaves in `state/` is its own invention.
 
 **Refusals.** Safety classifiers can decline a request outright, and the harness never
@@ -157,8 +158,8 @@ leaving the response empty; or it can land mid-stream, after the model has alrea
 emitted a tool call, and that call arrives cut off wherever the block fell. **Neither
 shape's command is run.** A call truncated mid-JSON is not what the agent wrote, and
 executing it and returning the result is how an episode comes to believe it made a shell
-error it never made — a false belief manufactured by the harness rather than found by the
-agent, which is the one kind this experiment cannot afford. So nothing agents, the notice
+error it never made — a false belief manufactured by the harness and not found by the
+agent, which is the one kind this experiment cannot afford. So nothing runs, and the notice
 takes the place of the results, and the agent learns that the turn was refused and that
 `state/` is as it left it.
 
@@ -167,7 +168,7 @@ every model the fallback chain offered, so sending the same context on is sendin
 context the classifier just turned down — and a refused turn still costs its prefix.
 `REFUSAL_TURNS` is what sets that: at 1 the first refusal ends the episode, and raising
 it restores the continuation path, where the notice enters the prefix and makes the next
-request a different question rather than a replay.
+request a different question instead of a replay.
 
 Across episodes the guard is `REFUSAL_STREAK`, and an episode counts toward it only if
 refusals ended it. Eight is a runaway guard and deliberately not a productivity filter:
@@ -224,7 +225,7 @@ series invites. An episode with budget left stops at zero, overshooting only by
 the turn in flight, and that overshoot is the last thing the account writes: the
 agent ends holding it and no instance ever opens on it, because zero or less is
 the end of the agent. With `floor_at_zero` the shortfall is put back and the agent
-ends on a flat zero instead, which is the same ending told with less in it. A
+ends on a flat zero instead, which is the same ending told with less in it. An
 agent costs at most its budget and one turn.
 
 ## Deliberately not built
@@ -242,6 +243,6 @@ No agent-selectable model: it is a strong, labelled affordance.
 Nothing here is a channel to the agent. `view.py` serves a page because fifteen agents
 are hard to follow in fifteen consoles, but it is in the same category as `--watch`:
 it reads `records/`, it writes nothing, it never reaches the container, and the trace
-is still the record. What it cannot show honestly it marks rather than fills in — a
+is still the record. What it cannot show honestly it marks instead of filling in — a
 command in flight has no output on disk, and `state/` is stamped with the episode it
 is current as of.

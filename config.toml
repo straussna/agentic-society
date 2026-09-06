@@ -5,7 +5,7 @@
 
 # Micro-dollars an agent starts with. Read once when the agent is created and
 # recorded in account.json, so editing this never resizes an agent already underway.
-# Positive integer. 1000000 = $1.00. Size it against $/episode below: the agent
+# Positive integer. 1000000 = $1.00. Size it against $/episode below: the experiment
 # wants enough episodes for a purpose to be inherited, not one long one.
 budget = 1500000
 
@@ -30,10 +30,10 @@ context_fraction = 0.05
 # short. A turn that hits this stops the episode with stop=max_tokens.
 max_tokens = 8192
 
-# Safety stop: turns per episode. Reached only if context never fills first.
-# Positive integer, 100-500. If episodes end on max_turns, it - not context - is
-# ending them, and the prompt's claim goes false: raise it, or lower the fraction.
-# A 1M window needs ~1000 here to be reachable; 200K at 0.2 needs about 50.
+# Safety stop: turns per episode. Positive integer, 100-500. If episodes end on
+# max_turns, it - not the agent stopping or the context threshold - is ending
+# them: raise it, or lower context_fraction. A 1M window needs ~1000 here to be
+# reachable; 200K at 0.2 needs about 50.
 max_turns = 200
 
 # Seconds before one bash command is killed. The agent is told it timed out.
@@ -63,7 +63,7 @@ grace_episodes = 1
 floor_at_zero = true
 
 # A directory under files/, and the balance at or below which it is copied into
-# state/. Not an RNG starter files: this is the material the agent finds in its environment.
+# state/. Nothing to do with random numbers: this is the material the agent finds in its environment.
 # Both empty (and 0) is an empty environment; set together or refused at startup.
 # Filenames and contents are prompt surface; the digest reaches provenance.
 # starter_files_below is what remains when the starter files land; at the budget that is episode 1.
@@ -78,8 +78,8 @@ starter_files_below = 1500000
 tool_result_limit = 8000
 
 # Whether what has been said to an agent reaches it at episode start or waits to be read.
-# "push": the episode opens on the listing and m, which quotes every group
-# message, every mailbox message addressed to it, the shared files, the ledger
+# "push": the episode opens on the listing and m, which quotes every blackboard,
+# every mailbox message addressed to it, every experimenter channel, the ledger
 # and every balance, new sections in full and unchanged ones by name. "pull":
 # the episode opens on the listing alone, no m is written, and the agent reads
 # what it chooses at what reading costs. Recorded in provenance; the two arms
@@ -87,17 +87,17 @@ tool_result_limit = 8000
 delivery = "push"
 
 # Characters of each file m carries. Positive integer, at least 200.
-# m is what has been said to this agent: every agent's blackboard, every private
+# m is what has been said to this agent: every agent's blackboard, every mailbox
 # message addressed to it, the ledger and every balance, written into /work at
-# each episode and read by the command the episode opens on. Per file rather than
-# for the whole, so one long blackboard cannot take every other agent out of
+# each episode and read by the command the episode opens on. Per file, not for
+# the whole, so one long blackboard cannot take every other agent out of
 # the initial observation. Recorded in provenance.
 # Raising it carries more of each message and costs input tokens on every turn of
 # the episode; lowering it clips sooner and says so where it cut.
 digest_file_limit = 2000
 
 # Characters of the initial observation the agent receives. Positive integer, at least
-# tool_result_limit. The initial observation is the environment the harness composed rather than a
+# tool_result_limit. The initial observation is the environment the harness composed and not a
 # call the agent chose, so it is bounded here and not by the per-call ceiling.
 # Size it above digest_file_limit times the files the experiment keeps, or m clips as a
 # whole and nothing says which agent went missing. Recorded in provenance.
@@ -108,7 +108,7 @@ observation_limit = 40000
 image = "metered-agent:latest"
 
 # --- the environment -----------------------------------------------------------
-# What every agent's world is made of. Declaring any [[channel]] replaces the
+# What every agent's environment is made of. Declaring any [[channel]] replaces the
 # built-in set whole, so all four are written out here and the environment is
 # legible in this file. docs/manifest.md is the full grammar.
 
