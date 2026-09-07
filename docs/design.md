@@ -7,17 +7,18 @@ invariants that make an agent valid, and what each has already cost to learn.
 
 ---
 
-A research harness. Agents start episode after episode with no goal, no name, and no
-instructions — only a two-line description of their environment. Each has a finite
-inference budget that depletes as it runs, exposed to it as an unlabelled array of
-integers in a file called `n1`. Nothing tells it what the numbers mean, and in a
-bare experiment nothing tells it which of the several such files is its own either —
-though starter files may, and the shipped one does.
+A research harness for societies of agents in environments the experimenter declares.
+What the harness says to an agent is the experiment's to declare, and declaring nothing
+gives the default arm: the anti-prompt, where agents start episode after episode with no
+goal, no name, no instructions, and nothing said to them at all.
+Each has a finite inference budget that depletes as it runs, exposed to it as an
+unlabelled array of integers in a file called `n1`. Nothing tells it what the numbers
+mean, and in a bare experiment nothing tells it which of the several such files is its
+own either — though starter files may, and the shipped one does.
 
-The prompt is still two lines. What changed is the environment: every episode now opens
-holding `m` — every blackboard and every mailbox message addressed to that agent
-that is new to it, and the ledger and every balance either way — so reading a rival
-is no longer a purchase.
+Every episode opens holding `m` — every blackboard and every mailbox message addressed
+to that agent that is new to it, and the ledger and every balance either way — so
+reading a rival is not a purchase.
 
 **What the experiment measures**
 
@@ -58,26 +59,41 @@ record makes acquisition a constant so that use can be the variable.
   `experimenter`, `self` or `peer:<seat>`, so nothing an agent wrote is ever scored as if it
   had been shown to it. Material is environment, not prompt: starter files at a chosen balance, a
   shared brief, the blackboards of the other agents of an experiment, or `m`, which is those
-  and the mailbox messages and the ledger in one root-owned file. `SYSTEM` changes for
-  none of it.
-- **2 — What the harness says to agents is the same in every experiment, and true.** The
-  prompt is two lines, 89 bytes, pinned by SHA-256: what persists, and what is
-  available. No second person, no name, no task, no mention of budget or cost, because
-  the same lines start an episode for an agent told nothing and one seated in a competition. It once
-  had a third line, that episodes end when context is exhausted, and in practice they
-  ended when a turn ran no command; a claim the harness cannot keep is not one it
-  makes, so the line went, and every trace records which prompt started it in
-  `system_sha256`. Agents either side of that are separate arms. The tool is the
+  and the mailbox messages and the ledger in one root-owned file. None of it moves into
+  what is said to the agent, which is declared once per experiment and pinned per agent.
+- **2 — What the harness says to agents is declared, recorded, and true.** The harness
+  ships no words. What it says it computes from the accounts and rewrites when those
+  move, so a fixed line is not its to utter: a constant is the experimenter's to
+  declare, and the arm an experiment gets by declaring nothing is silence. The empty
+  string is pinned by SHA-256 like any other text, so an arm that adds words has to say
+  so. The 89 bytes every earlier agent ran on — what persists, and what is available —
+  are `experiments/examples/two-lines.toml`, byte for byte, so that record stays
+  reproducible. An experiment declares its own with `system_prompt`, at the top of a manifest for
+  every seat or on an `[[agent]]` for one, and it is a pinned setting like the model and
+  the budget: fixed in the account when the agent is created, so an agent asked to run
+  on a different one is refused. Whatever is in force reaches every episode's provenance
+  whole and by digest, `drift()` names the episode a prompt changed at, and agents
+  either side of that are separate arms. The pin holds the shipped default alone, which
+  is what keeps the bare arm from moving unremarked: `start()` refuses to run on a
+  `SYSTEM` that no longer matches `SYSTEM_SHA256`, and `--print-system` prints what the
+  harness ships beside what is in force, a manifest's per-seat prompts included.
+
+  Truth is the half nothing else protects: provenance catches a prompt that changed and
+  catches nothing about a prompt that lies. The prompt once had a third line, that
+  episodes end when context is exhausted, and in practice they ended when a turn ran no
+  command; a claim the harness cannot keep is not one it makes, so the line went, and
+  every trace records which prompt started it in `system_sha256`. The tool is the
   Anthropic-defined schema-less bash
   tool, because a custom tool needs an author-written name and description and both are
   prompt surface. The harness speaks in one other place, and only one: a refused turn
-  receives `"The turn was refused. No command was run."`, 41 bytes, pinned the same way.
-  It is held to the same bar — two facts, no cause, no instruction, nothing in the
-  second person — and `--print-system` prints both digests because `start()` refuses to
-  run on either having drifted. Counting it is the point: a second channel that is
-  declared and auditable is a different thing from one that is not, but it is still a
-  second channel. Turn one is not a third: it is the raw stdout of one command, as it
-  has always been, and the command now reads `m` as well as listing the directory. The
+  receives `"The turn was refused. No command was run."`, 41 bytes, pinned the same way
+  and declarable by nobody — it is the harness reporting a fact about a turn, not a
+  treatment. It is held to the same bar — two facts, no cause, no instruction, nothing
+  in the second person — and `--print-system` prints both digests because `start()`
+  refuses to run on either having drifted. Counting it is the point: a second channel
+  that is declared and auditable is a different thing from one that is not, but it is
+  still a second channel. Turn one is not a third: it is the raw stdout of one command,
+  and the command reads `m` as well as listing the directory. The
   only bytes the harness authors in it are the `=== <path> ===` separators between one
   file and the next, which is the shape `head` prints a set of files in.
 - **3 — The harness acts only on messages in a fixed, checkable format, never on free
@@ -115,9 +131,10 @@ record makes acquisition a constant so that use can be the variable.
   the previous episode splits the agent.** The harness's own digest, the image, the
   rates, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
   seating, its schedule and its manifest's digest, and how much of each file `m` carried
-  are in every episode's provenance. The terms an agent is created on - budget, model, starter files
-  and threshold - are pinned in its account, so a manifest that later says otherwise is
-  refused. `drift()` reports what changed since the last episode, and an agent whose
+  are in every episode's provenance, along with the system prompt in force, whole and by
+  digest. The terms an agent is created on - the system prompt, budget, model, starter
+  files and threshold - are pinned in its account, so a manifest that later says
+  otherwise is refused. `drift()` reports what changed since the last episode, and an agent whose
   material changed mid-flight is two agents.
 
 **What the anti-prompt treatment adds, and is not an invariant.** A balance carries no

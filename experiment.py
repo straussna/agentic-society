@@ -1,7 +1,7 @@
 """Several agents advancing together, each reading the others' blackboards.
 
     py -3 experiment.py --agents g01 g02 g03 --rounds 20
-    py -3 experiment.py --manifest experiments/example.toml --rounds 20
+    py -3 experiment.py --manifest experiments/examples/anti-prompt.toml --rounds 20
 
 One round is one episode for each agent; a seat names a blackboard and a
 balance. A manifest gives each agent its own terms and the experiment its schedule."""
@@ -41,10 +41,12 @@ SCHEDULES = ("sequential", "simultaneous")
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
-AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "model"}
+AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "model",
+              "system_prompt"}
 
 AGENT_TYPES = (("id", str), ("label", str), ("starter_files", str),
-               ("starter_files_below", int), ("budget", int), ("model", str))
+               ("starter_files_below", int), ("budget", int), ("model", str),
+               ("system_prompt", str))
 
 # What an agent may be called to its peers: one path segment, since it lands in
 # paths and file names. The default is the seat number.
@@ -161,7 +163,8 @@ def load_manifest(path: Path) -> dict:
 
 def terms_of(entry: dict) -> dict[str, Any]:
     """One agent's pinned settings as load_account's keywords, None where the manifest is silent."""
-    return {k: entry.get(k) for k in ("model", "budget", "starter_files", "starter_files_below")}
+    return {k: entry.get(k) for k in ("model", "budget", "starter_files", "starter_files_below",
+                                      "system_prompt")}
 
 
 def stamp_of(manifest: dict) -> dict[str, str]:
@@ -414,7 +417,7 @@ def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, c
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Verifies the prompt digest and the endpoint, then runs the rounds."""
+    """CLI. Verifies the shipped digests and the endpoint, then runs the rounds."""
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)

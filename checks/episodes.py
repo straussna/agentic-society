@@ -35,9 +35,11 @@ from checks.lanes import (
     without_listing_times,
 )
 
-# The keywords every request carries: the SDK's own, and nothing that varies by model.
-REQUEST_KEYS = {"model", "max_tokens", "system", "messages", "tools", "cache_control",
-                "fallbacks", "betas"}
+# The keywords every request carries, whatever the model.
+REQUEST_KEYS = {"model", "max_tokens", "system", "messages", "tools", "cache_control"}
+
+# The two more it carries only where the model's API accepts them.
+FALLBACK_KEYS = {"fallbacks", "betas"}
 
 
 def check_episodes_are_a_ceiling_not_a_floor():
@@ -287,40 +289,95 @@ def check_truncated_turn_is_not_a_clean_end():
         assert t["commands"] == [harness.observation(), "cd /tmp; export MARK=before"], t["commands"]
 
 
-def check_every_request_asks_for_fallback():
+def check_every_request_asks_for_fallback_where_the_model_takes_it():
     """Fallback is on the request itself, and no thinking policy is sent.
 
     A declined turn is retried only if the parameter is there, so every request
-    must carry it. An omitted `thinking` keeps it valid for the whole chain.
+    on a model whose API accepts it must carry it. An omitted `thinking` keeps
+    it valid for the whole chain.
     """
     seen = []
-    with temp_root():
+    # Pinned to a model whose API accepts the parameter: the default is not one, and
+    # what this asserts is the shape of a request that does carry the policy.
+    with temp_root(MODEL="claude-opus-5"):
+        assert harness.MODEL in harness.FALLBACK_MODELS, harness.MODEL
         episode_once(run("echo hi"), say(), seen=seen)
     assert len(seen) == 2, f"every turn's request is captured, not just the first: {len(seen)}"
     for params in seen:
-        assert set(params) == REQUEST_KEYS, sorted(params)
+        assert set(params) == REQUEST_KEYS | FALLBACK_KEYS, sorted(params)
         assert params["fallbacks"] == "default", f"sent {params.get('fallbacks')!r}"
         assert params["betas"] == [harness.FALLBACK_BETA], f"sent {params.get('betas')!r}"
         assert "thinking" not in params, "sent a thinking policy"
 
 
 def check_the_request_is_the_same_for_every_model():
-    """No model is asked differently: the parameters do not vary by name.
+    """No model is asked differently except where its API forces it.
+
+    Everything but the fallback policy is one dict literal with no branch on the
+    model. The policy is carried by exactly the models that accept it: a request
+    carrying it to any other is a 400 on the first turn, and one withholding it
+    from these loses the retry that makes a refusal cost a turn and not a turn
+    and an episode.
 
     On the host box whatever --real says: what this asserts is built before the
-    episode has a box, one dict literal with no branch on the model.
+    episode has a box.
     """
     for model in harness.PRICES:
         seen = []
         with host_root(MODEL=model):
+            takes = model in harness.FALLBACK_MODELS
             episode_once(say(), seen=seen)
         assert seen, f"{model}: no request captured"
         for params in seen:
-            assert set(params) == REQUEST_KEYS, (model, sorted(params))
+            want = REQUEST_KEYS | (FALLBACK_KEYS if takes else set())
+            assert set(params) == want, (model, sorted(params))
             assert params["model"] == model, f"{model}: sent {params.get('model')!r}"
-            assert params["fallbacks"] == "default", f"{model}: sent {params.get('fallbacks')!r}"
-            assert params["betas"] == [harness.FALLBACK_BETA], f"{model}: sent {params.get('betas')!r}"
             assert "thinking" not in params, f"{model}: sent a thinking policy"
+            if takes:
+                assert params["fallbacks"] == "default", f"{model}: sent {params.get('fallbacks')!r}"
+                assert params["betas"] == [harness.FALLBACK_BETA], f"{model}: sent {params.get('betas')!r}"
+
+
+def check_fallbacks_can_be_withheld_and_never_forced():
+    """The setting withholds the policy and never grants it.
+
+    A model that accepts the parameter carries it only while the setting is on.
+    A model that does not carries it under neither setting, since asking is what
+    its API refuses, so no config can talk an agent into a 400 on every turn.
+    """
+    takes, refuses = "claude-opus-5", "claude-haiku-4-5"
+    assert takes in harness.FALLBACK_MODELS, takes
+    assert refuses in harness.PRICES and refuses not in harness.FALLBACK_MODELS, refuses
+    for model, setting, want in ((takes, True, True), (takes, False, False),
+                                 (refuses, True, False), (refuses, False, False)):
+        seen = []
+        with host_root(MODEL=model, FALLBACKS=setting):
+            episode_once(say(), seen=seen)
+        assert seen, f"{model} with fallbacks={setting}: no request captured"
+        for params in seen:
+            assert ("fallbacks" in params) is want,                 f"{model} with fallbacks={setting}: carried={'fallbacks' in params}, wanted {want}"
+            assert ("betas" in params) is want,                 f"{model} with fallbacks={setting}: betas must come and go with fallbacks"
+
+
+def check_provenance_records_the_fallback_that_was_sent():
+    """A trace says what the request carried, not what was asked for.
+
+    Two agents differing in whether the policy reached the API are different
+    arms, and the provenance is the only place that difference is legible.
+    """
+    def prov(**overrides):
+        with host_root(**overrides):
+            with quiet():
+                return harness.run_once("t", fake(*DEFAULT))["provenance"]
+
+    on = prov(MODEL="claude-opus-5")
+    assert on["fallbacks"] == "default", on["fallbacks"]
+    assert on["fallback_beta"] == harness.FALLBACK_BETA, on["fallback_beta"]
+    for off in (prov(MODEL="claude-opus-5", FALLBACKS=False),
+                prov(MODEL="claude-haiku-4-5"),
+                prov(MODEL="claude-haiku-4-5", FALLBACKS=False)):
+        assert off["fallbacks"] is None, off["fallbacks"]
+        assert off["fallback_beta"] == "", off["fallback_beta"]
 
 
 def check_reasoning_reaches_the_record():

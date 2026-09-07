@@ -320,7 +320,8 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 # Every harness global a check is allowed to move, and therefore every one pinned()
 # puts back. temp_root refuses any name outside this set.
 RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
-                                "CHANNELS", "HARNESS_FILES", "PRICES_EXPIRE", "replace_file",
+                                "CHANNELS", "HARNESS_FILES", "PRICES_EXPIRE", "PINNED",
+                                "replace_file",
                             # Set per check and put back by pinned(), so no check
                             # carries into the next in the same worker.
                             "STOPPING", "catch_signals"}
@@ -636,9 +637,9 @@ PERSONA = [
     {"name": "identity", "writer": "self", "readers": "self", "shape": "file",
      "path": "journal/IDENTITY.md"},
     {"name": "noticeboard", "writer": "self", "readers": "all", "shape": "directory",
-     "path": "from-{label}"},
+     "path": "from-{label}", "measured": True},
     {"name": "letters", "writer": "self", "readers": "addressee", "shape": "mailbox",
-     "outbox": "to", "inbox": "from"},
+     "outbox": "to", "inbox": "from", "measured": True},
 ]
 
 PERSONA_FILES = {"balance": "balance", "digest": "digest"}

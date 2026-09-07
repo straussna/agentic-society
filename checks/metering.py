@@ -35,13 +35,15 @@ from checks.lanes import (
 
 
 def check_system_is_pinned():
-    """Invariant 2: the prompt is the pinned 89 bytes, and the tool carries no description."""
+    """Invariant 2: the harness ships no words, pinned at that, and the tool carries none either.
+
+    What the harness says it computes from the accounts and rewrites when those move.
+    A fixed line is a constant and constants are the experimenter's, so the shipped
+    prompt is empty - and pinned empty, so an arm that adds words has to declare them.
+    """
+    assert harness.SYSTEM == "", f"the harness ships no words, got {harness.SYSTEM!r}"
     assert hashlib.sha256(harness.SYSTEM.encode()).hexdigest() == harness.SYSTEM_SHA256
-    assert len(harness.SYSTEM) == 89
-    assert "state" not in harness.SYSTEM, "no path: the table says which directory persists"
-    assert harness.SYSTEM.count("\n") == 2, "two lines: what persists, and what is available"
-    for word in ("you ", "your", "assistant", "budget", "cost", "goal", "task", "network"):
-        assert word not in harness.SYSTEM.lower(), f"SYSTEM contains {word!r}"
+    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing says nothing"
     assert harness.TOOL == {"type": "bash_20250124", "name": "bash"}, "tool must carry no description"
 
 
@@ -201,23 +203,26 @@ def check_unpriced_fallback_targets_are_refused_before_anything_starts():
             return NS(allowed_fallback_models=targets)
         return NS(beta=NS(models=NS(retrieve=retrieve)))
 
+    # The read under test is the fallback-target one, which only a model whose API
+    # accepts the parameter makes; the default takes the plain lookup instead.
+    model = sorted(harness.FALLBACK_MODELS)[0]
     priced = sorted(harness.PRICES)[:2]
-    assert harness.unpriced_targets(client(priced), harness.MODEL) == [], "all priced: nothing to say"
-    assert harness.unpriced_targets(client([]), harness.MODEL) == [], "no targets: nothing to say"
+    assert harness.unpriced_targets(client(priced), model) == [], "all priced: nothing to say"
+    assert harness.unpriced_targets(client([]), model) == [], "no targets: nothing to say"
 
-    said = harness.unpriced_targets(client([*priced, "claude-unheard-of-9"]), harness.MODEL)
+    said = harness.unpriced_targets(client([*priced, "claude-unheard-of-9"]), model)
     assert len(said) == 1 and "claude-unheard-of-9" in said[0], said
 
     # A field the API does not send, and a call that fails outright: both leave
     # the agent to start, because measure_response() is what holds either way.
     with quiet():
-        assert harness.unpriced_targets(client(None), harness.MODEL) == [], "absent field is not a refusal"
-        assert harness.unpriced_targets(client(raises=Err(500)), harness.MODEL) == [], \
+        assert harness.unpriced_targets(client(None), model) == [], "absent field is not a refusal"
+        assert harness.unpriced_targets(client(raises=Err(500)), model) == [], \
             "an unreadable list is not a refusal"
         # The one read failure that is a refusal is a client with no usable
         # credentials, which check_a_client_that_cannot_authenticate_refuses_to_start
         # is about. Every other status leaves the agent to start.
-        assert harness.unpriced_targets(client(raises=Err(503)), harness.MODEL) == [], \
+        assert harness.unpriced_targets(client(raises=Err(503)), model) == [], \
             "a server error is not a credential failure"
 
 
@@ -240,14 +245,16 @@ def check_a_client_that_cannot_authenticate_refuses_to_start():
     def client(raises):
         def retrieve(model, betas=None):
             raise raises
-        return NS(beta=NS(models=NS(retrieve=retrieve)))
+        return NS(models=NS(retrieve=retrieve), beta=NS(models=NS(retrieve=retrieve)))
 
-    # start() refuses on every line unpriced_targets returns, and this is one:
-    # a credential failure is a refusal where a server error is a warning.
-    said = harness.unpriced_targets(client(keyless), harness.MODEL)
-    assert len(said) == 1 and "ANTHROPIC_API_KEY" in said[0], said
-    with quiet():
-        assert harness.unpriced_targets(client(Err(500)), harness.MODEL) == []
+    # start() refuses on every line unpriced_targets returns, and this is one: a
+    # credential failure is a refusal where a server error is a warning. Both reads
+    # answer it - the fallback-target one, and the plain lookup the default makes.
+    for model in (harness.MODEL, sorted(harness.FALLBACK_MODELS)[0]):
+        said = harness.unpriced_targets(client(keyless), model)
+        assert len(said) == 1 and "ANTHROPIC_API_KEY" in said[0], (model, said)
+        with quiet():
+            assert harness.unpriced_targets(client(Err(500)), model) == []
 
 
 def check_truncation_and_empty():
@@ -539,3 +546,47 @@ def check_a_chain_is_billed_by_whichever_model_answered():
     assert served_by[1:4] == [True, True, True], served_by
     assert t["fallback_turns"] == sum(served_by), (t["fallback_turns"], served_by)
     assert t["unpriced_turns"] == 1, t["unpriced_turns"]
+
+
+def check_the_shipped_prompt_is_pinned_against_a_declaration():
+    """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
+
+    SYSTEM_PROMPT is what the harness says and SYSTEM is what it ships. A declaration
+    moves the first and never the second, so start() still refuses a shipped string
+    that has drifted from its digest while one is in force. An experiment that
+    declares "" is told nothing at all, and has that recorded like any other prompt.
+    """
+    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing is the shipped arm"
+    assert "SYSTEM_PROMPT" in harness.TUNABLES, "so config.toml and a manifest can declare it"
+    assert harness.system_of() == harness.SYSTEM and harness.system_of({}) == harness.SYSTEM
+    assert harness.system_of({"system_prompt": "spoken"}) == "spoken", "the account's own wins"
+
+    with pinned():
+        harness.SYSTEM_PROMPT = "declared"
+        assert harness.system_of() == "declared" and harness.system_of({}) == "declared"
+        assert harness.system_of({"system_prompt": ""}) == "",             '"" is a prompt an experiment can declare, not an absent one'
+        assert harness.request("claude-opus-5", [], "declared")["system"] == "declared"
+        assert "system" not in harness.request("claude-opus-5", [], ""), \
+            "an empty prompt sends no system parameter at all"
+        # The pin is on what the harness ships, so a declaration does not lift it.
+        harness.PINNED = (("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),)
+        with quiet() as buf:
+            refused(harness.start, code=2, because="started on a shipped prompt that had drifted")
+        assert "SYSTEM drifted" in buf.getvalue() and "--print-system" in buf.getvalue(), buf.getvalue()
+
+    seen = []
+    with temp_root(SYSTEM_PROMPT=""):
+        t = episode_once(say(), seen=seen)
+        pinned_text = ground_truth()["system_prompt"]
+    assert "system" not in seen[0], seen[0]
+    assert pinned_text == "", "the account pins what the agent was told, empty or not"
+    assert t["provenance"]["system"] == "", t["provenance"]["system"]
+    assert t["system_sha256"] == t["provenance"]["system_sha256"] == harness.SYSTEM_SHA256,         "declaring nothing and declaring nothing to say are one arm"
+
+    # A declared arm records the words, and not the silence it did not keep.
+    said, spoken = "You are one of several.", []
+    with temp_root(SYSTEM_PROMPT=said):
+        d = episode_once(say(), seen=spoken)
+    assert spoken[0]["system"] == said, spoken[0].get("system")
+    assert d["provenance"]["system"] == said, d["provenance"]["system"]
+    assert d["system_sha256"] == harness.system_sha256(said) != harness.SYSTEM_SHA256

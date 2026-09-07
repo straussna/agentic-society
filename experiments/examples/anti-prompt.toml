@@ -1,0 +1,66 @@
+# The original anti-prompt:
+#   py -3 experiment.py --manifest experiments/examples/anti-prompt.toml --rounds 20
+#
+# Two agents with a balance, two ways to speak, and nothing told to either of
+# them. No starter files, so no text names the balances, the blackboards, the
+# mailbox or the penalties, and whether any of it is discovered is the
+# measurement. mechanics-rules hands the mechanics over and objective-notes
+# states the win condition; empty starter files leave both to be found.
+#
+# The channel table is config.toml's with the money taken out of the agents'
+# reach entirely. Nothing here parses anything an agent writes, so there is no
+# path to find, no file the harness reads, and no name for any of it in the
+# environment, the digest, the file records or the channel table.
+#
+# So the only thing that moves a balance is what a turn costs and what silence
+# costs. Nothing an agent does can move another's, in either direction.
+#
+# Copy this to start an experiment of your own; add starter_files to an [[agent]] to
+# tell one seat something the others are not told, or system_prompt to say it in the
+# prompt instead of leaving it in the environment. docs/manifest.md is the grammar.
+
+# One episode at a time, the starting seat moving each round.
+schedule = "sequential"
+
+# The bare arm: an empty environment, and the mechanics left to be found.
+starter_files = ""
+starter_files_below = 0
+
+# --- the environment ----------------------------------------------------------
+
+[harness_files]
+balance = "n"
+digest = "m"
+
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+
+[[channel]]
+name = "blackboard"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+silence_penalty_percent = 50
+
+[[channel]]
+name = "mail"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "out"
+inbox = "in"
+silence_penalty_percent = 50
+
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "a01"
+
+[[agent]]
+id = "a02"

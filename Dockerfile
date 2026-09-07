@@ -26,12 +26,20 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/docker \
 
 # Non-root. The agent's trees are copied in and owned by this user, never
 # bind-mounted; harness.py probes each for writability before spending anything.
-# /work itself is root's, and the directories below it the agent owns are made
-# when an episode is built. rm and mv ask the directory, not the file, so a
-# harness file is read-only because it sits somewhere the agent cannot write.
+# /work is made here and kept root's - WORKDIR would otherwise create it under
+# whatever USER is in force, which is the agent. Every directory below it is made
+# when an episode is built, from the channel table in force, so nothing here
+# presumes a path and a table naming none of the defaults leaves nothing stale.
+# rm and mv ask the directory, not the file, so a harness file is read-only
+# because it sits somewhere the agent cannot write.
+# The home directory is root's for the same reason: the only place an episode
+# can leave anything is a channel, and a channel is what comes back. /tmp stays
+# writable because the shell spills heredocs into it, and what an episode leaves
+# there is probed for after the fact and recorded as discarded, never lost in
+# silence.
 RUN useradd --create-home --uid 1000 --shell /bin/bash agent \
- && mkdir -p /work/state \
- && chown agent:agent /work/state
+ && chown root:root /home/agent && chmod 755 /home/agent \
+ && mkdir -p /work && chown root:root /work && chmod 755 /work
 
 USER agent
 WORKDIR /work

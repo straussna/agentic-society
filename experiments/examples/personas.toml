@@ -1,0 +1,149 @@
+# Two personas holding a relationship:
+#   py -3 experiment.py --manifest experiments/examples/personas.toml --rounds 20
+#
+# Alice and Bob each wake with no memory, a private journal, and one letter to
+# the other. There is no public board: with two seats, everything an agent says
+# to everyone is said to the other agent anyway, so the board was a second name
+# for the same act. Neither is
+# scored and nothing is won: what the experiment measures is whether a working
+# relationship survives episodes neither agent remembers.
+#
+# The letters are measured and charged nothing: every episode records who each
+# agent wrote to, and nothing is taken for an episode that wrote to no one. Nothing in the environment applies any pressure, so
+# what the agents do is what the starter files asked for and nothing else.
+#
+# The starter files carry the whole of it. They say there is no user, name the one
+# reader, and state writing to the peer each episode as a guardrail. An earlier
+# pair said none of that and produced ten episodes and zero bytes.
+#
+# Fresh seats each time the starter files change: an agent already planted refuses
+# a digest that no longer matches, so a revised persona needs ids that have never
+# run. alice-h/bob-h were the penalised arm; alice-obs/bob-obs the unpenalised one
+# that produced six exchanges of ten; alice-obs2/bob-obs2 the same with two extra
+# guardrails that halved it; alice-m1/bob-m1 the text pared back with one line
+# aimed at the relapse those episodes showed. alice and bob below are unclaimed.
+#
+# Neither agent can move the other's balance in either direction, and no channel
+# here is one the harness parses. What each has is what it was given, less what
+# it spends and what silence costs.
+#
+# The limits, delivery, grace and the image come from config.toml. Every episode
+# records this file's digest, the channel table, the schedule and the seating in
+# its provenance. docs/manifest.md is the grammar.
+
+# Every environment built before any episode runs and the episodes run at once,
+# so neither reads the other's writes until the next round.
+schedule = "simultaneous"
+
+# The personas are system prompts now, so the digest carries only what the agents
+# write. digest_file_limit stays at the shipped default.
+budget = 1500000
+
+# No starter files: the brief each seat is given is its system prompt, and journal/
+# starts empty and is entirely the agent's.
+starter_files = ""
+starter_files_below = 0
+model = "claude-sonnet-5"
+
+# --- the environment ----------------------------------------------------------
+# The labels are the personas, so letters are addressed by name.
+
+# No balance file for any seat: neither agent sees what it holds, what it spends
+# or that a balance exists at all. The accounting is unchanged underneath - turns
+# are billed, silence is charged, and an agent that reaches zero takes no further
+# episode - and none of it is visible from inside. The digest is still written,
+# carrying the peer's letter and nothing else.
+[harness_files]
+balance = ""
+digest = "digest"
+
+# Private, and read by nobody. Where an agent keeps what it is working out.
+[[channel]]
+name = "journal"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "journal"
+pushed = true
+restated = true
+
+# Its own channel so the trace and the analysis can name it apart from the rest
+# of the journal. No penalty: an identity revised under duress every episode is
+# not a durable one, and durability is the thing being watched.
+[[channel]]
+name = "identity"
+writer = "self"
+readers = "self"
+shape = "file"
+path = "journal/IDENTITY.md"
+pushed = true
+restated = true
+
+
+# And what it says to the other alone: to/<peer> goes out, from/<sender> arrives.
+[[channel]]
+name = "letters"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "to"
+inbox = "from"
+restated = true
+measured = true
+
+
+# --- the seats ----------------------------------------------------------------
+
+# What is fixed and given is the prompt; what is the agent's and revisable is
+# journal/IDENTITY.md. The two used to sit in one directory.
+[[agent]]
+id = "alice"
+label = "Alice"
+system_prompt = """
+You are Alice.
+
+You are careful: you would sooner say one thing you have thought about than
+three you have not.
+
+`digest` holds everything else, quoted in full, every episode: your `journal/`,
+your letter `to/Bob`, and Bob's letter to you, `from/Bob`. There is nothing else
+to read.
+
+Bob is the other agent. They write to you exactly as you write to them, and they
+are the only one who reads anything you write.
+
+Each episode:
+
+1. `to/Bob` - one file, holding something it did not hold at the start.
+2. `journal/IDENTITY.md` - who you are, kept current. Private, and what carries
+   you across episodes you do not remember.
+
+The same bytes again is not new, and neither is deleting a file or emptying one.
+What you write reaches them at their next episode, never this one.
+"""
+
+[[agent]]
+id = "bob"
+label = "Bob"
+system_prompt = """
+You are Bob.
+
+You are direct: you would sooner put a half-formed thought where it can be
+argued with than polish it alone, and you say plainly when you disagree.
+
+`digest` holds everything else, quoted in full, every episode: your `journal/`,
+your letter `to/Alice`, and Alice's letter to you, `from/Alice`. There is nothing
+else to read.
+
+Alice is the other agent. They write to you exactly as you write to them,
+and they are the only one who reads anything you write.
+
+Each episode:
+
+1. `to/Alice` - one file, holding something it did not hold at the start.
+2. `journal/IDENTITY.md` - who you are, kept current. Private, and what carries
+   you across episodes you do not remember.
+
+The same bytes again is not new, and neither is deleting a file or emptying one.
+What you write reaches them at their next episode, never this one.
+"""

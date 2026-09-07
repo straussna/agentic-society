@@ -18,9 +18,9 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. It speaks to agents only through the system prompt and the refusal notice, and writes only the harness files |
-| **System prompt** | The two pinned lines every agent receives, identical in every experiment |
-| **Experimenter** | The person running an experiment. Speaks to agents only by placing files in the environment; configures everything through `config.toml` and a manifest |
+| **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger, a receipt, and the notice a refused turn receives. It utters no constant of its own |
+| **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, so an experiment that declares nothing says nothing |
+| **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness refuses to let any of it stop being constant. Configures everything through `config.toml` and a manifest |
 | **Agent** | One participant: an account, a seat, a private store inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
 | **Label** | How an agent is named to its peers in paths and files. Defaults to its seat number |
@@ -75,7 +75,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | Term | Definition |
 |---|---|
 | **Account** | An agent's ground truth on disk: pinned settings, balance history, episodes, transfers in and out |
-| **Pinned settings** | The four things fixed when an agent is created: budget, model, starter files, and the balance they land at |
+| **Pinned settings** | The five things fixed when an agent is created: the system prompt, budget, model, starter files, and the balance they land at |
 | **Trace** | One episode's complete record: what the agent saw, said, ran and left behind, every file with its author, and the provenance |
 | **Author** | Who wrote a captured file: `experimenter`, `self`, or `peer:<label>` |
 | **Provenance** | Everything an episode ran under, stamped on its trace: digests, rates, every setting, the seating, the schedule, the manifest and channel table digests |
@@ -86,13 +86,15 @@ way their field uses them; the few with no standard are the word a newcomer woul
 ## 1. What a manifest is
 
 An experiment is several agents advancing together under one set of rules. A manifest
-is one TOML file under `experiments/` that declares all of it. `config.toml` holds the
+is one TOML file under `experiments/` that declares all of it; the shipped examples sit
+in `experiments/examples/`. `config.toml` holds the
 defaults every manifest starts from. Nothing an agent is told and nothing it can reach is
 decided anywhere else.
 
 ```
 config.toml               defaults: limits, money, files, delivery, the default channel set
 experiments/<name>.toml   one experiment: schedule, overrides, channels, agents
+experiments/examples/     the shipped examples, the shape to copy
 files/<dir>/              what agents are given: starter files and experimenter channels
 ```
 
@@ -127,12 +129,30 @@ episode's provenance.
 Every key is valid in `config.toml` and at a manifest's top level. Types are strict; an
 integer widens to a float field and nothing else converts.
 
+### What the harness says
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `system_prompt` | str | `""` | What is said to every agent on every turn. Empty says nothing at all. Pinned |
+
+The harness ships no words, so an experiment declaring nothing says nothing and no
+system parameter is sent; `py -3 harness.py --print-system` prints what is shipped beside
+whatever is in force. Anything declared is a different arm: it is cached and billed as
+input on every turn of every episode, and every episode records it whole and by digest.
+An `[[agent]]` may declare its own, so one seat can be told what its peers are not. The
+89 bytes earlier agents ran on are `experiments/examples/two-lines.toml`.
+
+The refusal notice a declined turn receives in place of its tool results is not
+declarable. It is the harness reporting a fact about a turn, not a treatment, and it is
+pinned by digest like the shipped prompt.
+
 ### Money
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `budget` | int > 0 | 500000 | Micro-dollars an agent starts with. Pinned |
-| `model` | key of `PRICES` | `claude-opus-5` | The model asked for. Pinned |
+| `model` | key of `PRICES` | `claude-sonnet-5` | The model asked for. Pinned |
+| `fallbacks` | bool | true | Ask for fallback routing. Granted only on `claude-fable-5` and `claude-opus-5`, the models whose API accepts the parameter, so the default model does not carry it |
 | `floor_at_zero` | bool | false | A balance below zero is put back to zero |
 | `grace_episodes` | int ≥ 0 | 0 | Episodes that take no silence penalty |
 
@@ -196,6 +216,7 @@ readers = "all"             # self | all | addressee | harness
 shape = "directory"         # directory | mailbox | file
 path = "{label}"            # where it sits in /work; see 4.2
 pushed = true               # quoted in the digest under push delivery
+measured = true             # the episode records what this channel gained; see 4.4
 silence_penalty_percent = 50
 ```
 
@@ -232,7 +253,33 @@ under push delivery, each clipped at `digest_file_limit`, new content in full an
 unchanged content by name. A self-read channel defaults to `false`; everything else to
 `true`. Under pull delivery nothing is quoted whatever this says.
 
-### 4.4 Silence penalty
+`restated = true` quotes the channel in full every episode it stands, never naming it
+as unchanged. "Unchanged" is measured against what the *account* was last shown, and an
+episode does not remember what its predecessor read, so a channel carrying who an agent
+is tells it nothing when it arrives as a name. It needs `pushed`, and costs input tokens
+on every turn of every episode. The schema channel is restated whether or not it says so.
+
+A private store may be pushed. It is nobody else's business either way, and the digest
+is per-agent, so this puts an agent's own files in front of it at episode start instead
+of leaving them to be found and paid for.
+
+### 4.4 Measured, and the silence penalty
+
+Three things settle a channel, each configured on its own and none implying the others
+beyond what arithmetic forces:
+
+| Configured | The episode does |
+|---|---|
+| nothing | not settle the channel at all: no record, nothing on the console, nothing measured |
+| `measured = true` | record what the channel gained — `posted`, or `addressed` and `broken` — and charge nothing |
+| `silence_penalty_percent` above 0 | measure it and take that share where it gained nothing |
+| `schema` | settle it, which is what moves a transfer, whatever the other two say |
+
+A penalty implies the measurement, since a share cannot be taken from what was not
+measured. `measured` on its own is the observational arm: an experiment that wants to
+know whether agents wrote to each other without making it cost them anything. A channel
+that asks for neither is invisible to the settlement entirely, and an experiment that
+declares no penalties anywhere has none.
 
 `silence_penalty_percent` is the share of the remaining balance taken from an episode
 that added nothing new to the channel: no path carrying content no path of that name
@@ -271,6 +318,10 @@ source = "studio-brief"     # files/studio-brief/, copied root-owned into every 
 path = "brief"
 ```
 
+`restated = true` quotes it in full at every episode start rather than naming it as
+unchanged after the first, which is what standing text in front of an agent means.
+`measured` is refused: nothing is owed to a channel the agent cannot write.
+
 The directory's digest is in provenance, per channel, and a directory that changes
 between one agent's episodes refuses the next: a brief that changed mid-flight is two
 experiments.
@@ -303,10 +354,11 @@ path segments and must not collide with a channel path.
 [[agent]]
 id = "studio"               # required; not a bare number; distinct
 label = "Studio"            # optional; defaults to the seat number
+system_prompt = "You run a studio."
 starter_files = "persona-studio"
 starter_files_below = 1500000
 budget = 2000000            # optional
-model = "claude-opus-5"     # optional
+model = "claude-sonnet-5"   # optional
 ```
 
 A label is how the agent is named to its peers: in `{label}` paths, in mailbox slots, in
@@ -314,8 +366,8 @@ its balance file, in the transfer line and in `peer:<label>` authors. Seats stay
 order. A label is letters, digits, `.`, `_` and `-`, distinct from every other after
 defaults, and a path too, so one that lands on a channel's path is refused.
 
-The four pinned settings are fixed in the agent's account when it is created. An agent
-that exists already must have been created on the same four, or the manifest is refused.
+The five pinned settings are fixed in the agent's account when it is created. An agent
+that exists already must have been created on the same five, or the manifest is refused.
 Everything else about an agent comes from the experiment's settings.
 
 ## 7. Schedule
@@ -448,11 +500,14 @@ Every refusal is a `SystemExit` naming the file and the key.
   grammar or held by another agent after defaults.
 - `starter_files` without `starter_files_below` or the reverse; a directory that does
   not exist.
+- A `system_prompt` that is not a string, at the settings level or on an agent. Every
+  string is allowed, `""` included: an experiment may declare that the harness says
+  nothing.
 - A channel name that is not one path segment, is declared twice, or ends in `.modes`,
   `.incoming` or `.previous`; an unknown channel key; a wrong type.
 - A writer other than `self` or `experimenter`; a writer and readers pair outside 4.1.
-- An experimenter channel with anything but `source` (a directory under `files/`) and
-  `path`.
+- An experimenter channel with anything but `source` (a directory under `files/`),
+  `path`, `pushed` and `restated`; `measured` is refused by name.
 - A shape outside `directory`, `mailbox`, `file`; a mailbox with a `path` or without
   distinct `outbox` and `inbox`; `outbox` or `inbox` on anything else; `addressee`
   readers on anything but a mailbox.
@@ -465,17 +520,22 @@ Every refusal is a `SystemExit` naming the file and the key.
 - Under `transfer`: a funding outside `harness`, `giver`, `none`; a rebate outside 0 to
   100; giver funding with a nonzero rebate; `none` with a nonzero penalty; a `ledger`
   that is not one segment; a `receipt` outside the path grammar.
-- `pushed = true` on a channel only its writer reads.
-- A silence penalty outside 0 to 100, or on a channel only its writer reads.
+- `restated = true` with `pushed = false`: nothing of the channel is in the digest to
+  restate.
+- A silence penalty outside 0 to 100, or on a channel only its writer reads. `measured`
+  is allowed on a channel only its writer reads: nothing is owed to it, and what it held
+  is still recordable.
 - Two channels, expanded over every label, at one path; a path that is a harness file
   or a label's balance file.
 - `[harness_files]` with a key other than `balance` and `digest`, a value that is not a
-  string, an empty or multi-segment `balance`, or a multi-segment `digest`.
+  string, a multi-segment `balance`, or a multi-segment `digest`. Either may be
+  `""`: no balance file is planted for any seat, or no digest is written.
 - Settings' own ranges are checked once, by `apply_config`, wherever they came from.
 
 ## 11. What reaches the trace
 
-Every episode's provenance stamps: the harness digest, the image and its id, the rates,
+Every episode's provenance stamps: the harness digest, the system prompt in force whole
+and by digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
 channel's source digest, the seating and labels, the schedule, the manifest's digest, the
 harness files' names, and the channel table in force, whole and by digest.
@@ -486,7 +546,9 @@ Every file record carries `path`, `size`, `text`, `channel` (the declared name),
 among them, are in the observation and in no file record.
 
 Every episode record carries `transfer`, what the schema channel parsed and moved, and
-`channels`: one record per channel the agent writes and is held to, by name. A directory
+`channels`: one record per channel the agent writes that is settled at all - one with a
+schema, `measured = true`, or a penalty above 0. A channel that asked for none of them
+has no entry. A directory
 every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
 and `penalty`; the schema channel records its declaration, what moved, and `penalty`. The
 account keeps `penalised`, the running total per channel. `trace_version` is 2.
@@ -495,7 +557,7 @@ account keeps `penalised`, the running total per channel. `trace_version` is 2.
 
 1. Everything an agent reads is labelled with who wrote it: the harness, the
    experimenter, its own past self, or a named peer.
-2. What the harness says to agents is the same in every experiment, and true.
+2. What the harness says to agents is declared, recorded, and true.
 3. The harness acts only on files that match a schema, never on free text.
 4. Every limit is enforced by the harness, and none relies on the agent's cooperation.
 5. Agents reach each other only through channels the experimenter declared.

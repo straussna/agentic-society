@@ -1,0 +1,62 @@
+# The two lines the harness used to ship, declared:
+#   py -3 experiment.py --manifest experiments/examples/two-lines.toml --rounds 20
+#
+# anti-prompt.toml's environment with the 89 bytes every earlier agent was started on
+# put back as a declaration. The harness ships no words now - a fixed line is a
+# constant, and constants are the experimenter's - so the arm all the earlier data was
+# collected under is this file rather than the default.
+#
+# The text is byte-for-byte what harness.py pinned, sha256 63ac78a0. Anything else here
+# is anti-prompt.toml, so the two differ in what is said and in nothing else.
+
+# What the harness says to both seats. TOML trims the newline after the opening
+# quotes, so this is exactly the 89 bytes and not 90.
+system_prompt = """
+Files written under ./ persist between sessions.
+bash and file read/write are available.
+"""
+
+schedule = "sequential"
+
+# The bare arm: an empty environment, and the mechanics left to be found.
+starter_files = ""
+starter_files_below = 0
+
+# --- the environment ----------------------------------------------------------
+
+[harness_files]
+balance = "n"
+digest = "m"
+
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+
+[[channel]]
+name = "blackboard"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+silence_penalty_percent = 50
+
+[[channel]]
+name = "mail"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "out"
+inbox = "in"
+silence_penalty_percent = 50
+
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "a01"
+
+[[agent]]
+id = "a02"

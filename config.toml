@@ -1,128 +1,88 @@
-# Tunable parameters. Nothing here reaches the model: the prompt is pinned in
-# harness.py by digest, and token rates live in PRICES there. Unknown keys and wrong
-# types are refused at startup. check.py loads this file and fails if it is not
-# valid, but nothing here changes what a check asserts.
+# Tunable parameters. Unknown keys and wrong types are refused at startup; token
+# rates live in PRICES in harness.py and docs/manifest.md is the full grammar.
 
-# Micro-dollars an agent starts with. Read once when the agent is created and
-# recorded in account.json, so editing this never resizes an agent already underway.
-# Positive integer. 1000000 = $1.00. Size it against $/episode below: the experiment
-# wants enough episodes for a purpose to be inherited, not one long one.
+# What is said to every agent on every turn, read once when the agent is created.
+# Any string; the harness ships none, so leaving it out says nothing at all.
+# The 89 bytes earlier agents ran on are experiments/examples/two-lines.toml.
+# system_prompt = ""
+
+# Micro-dollars an agent starts with, read once when the agent is created.
+# Positive integer; 1000000 = $1.00.
 budget = 1500000
 
-# Which model the agent runs as, recorded per agent at creation so agents under
-# different models stay separately costed. Any key of PRICES in harness.py. This
-# names the model the agent asks for, not always the one that answers: every
-# request carries server-side fallback, and each turn records which model
-# served it.
-model = "claude-opus-5"
+# Which model the agent runs as, recorded per agent at creation.
+# Any key of PRICES in harness.py.
+model = "claude-sonnet-5"
 
-# Fraction of the model's context window at which an episode ends. An episode also
-# ends when a turn runs no command, which is how most of them end.
-# 0 < x <= 1. Cost scales with the square of the threshold, so this is the main
-# lever on $/episode: on haiku-4-5, 0.85 is ~$1.13 an episode and 0.2 is ~$0.12.
-# Set it so the budget buys many episodes - one long episode is not the experiment.
+# Fraction of the model's context window at which an episode ends.
+# 0 < x <= 1; cost scales with the square of it.
 context_fraction = 0.05
 
-# Output-token ceiling per turn.
-# Positive integer, at most 16000: the harness does not stream, and a larger
-# non-streaming request hits the SDK's HTTP timeout mid-episode. That is well
-# under every model's own limit anyway. 4096-8192 fits an agent whose turns are
-# short. A turn that hits this stops the episode with stop=max_tokens.
+# Output-token ceiling per turn; a turn that hits it ends the episode.
+# Positive integer, at most 16000.
 max_tokens = 8192
 
-# Safety stop: turns per episode. Positive integer, 100-500. If episodes end on
-# max_turns, it - not the agent stopping or the context threshold - is ending
-# them: raise it, or lower context_fraction. A 1M window needs ~1000 here to be
-# reachable; 200K at 0.2 needs about 50.
+# Safety stop: turns per episode.
+# Positive integer, 100-500.
 max_turns = 200
 
-# Seconds before one bash command is killed. The agent is told it timed out.
-# Positive integer, 30-120. Long enough for a real command, short enough that a
-# single hang cannot eat the episode.
+# Seconds before one bash command is killed; the agent is told it timed out.
+# Positive integer, 30-120.
 command_timeout = 60
 
-# Whether n grows during an episode as well as between them. n gains one element
-# per billed turn either way; this decides when the agent can see them. True
-# appends each to n inside the container as the turn is billed; false leaves n
-# fixed for the episode, so an episode's worth arrives together at the next episode.
-# Recorded per episode in the trace.
+# Whether the balance file grows during an episode as well as between them.
+# true appends each billed turn as it happens, false leaves it fixed per episode.
 live_balance = true
 
 # Episodes at the start of an agent that answer for no silence penalty.
 # Non-negative integer; 0 is no grace.
-# The charges are waived and nothing else: turns are billed at the usual rates,
-# a transfer still transfers and rebates, the floor still applies, and all three
-# obligations are still measured and recorded in the trace.
 grace_episodes = 1
 
+# Whether a request asks for fallback routing, retrying a declined turn in the call.
+# true or false; only claude-fable-5 and claude-opus-5 accept the parameter.
+fallbacks = true
+
 # Whether a balance below zero is put back to zero.
-# Zero or less ends an agent either way: the episode that crossed zero is the last,
-# no peer can transfer it back, and no later round asks it. The floor decides only
-# what n ends holding, and so what the experiment reads off it - a flat zero or the
-# size of the overshoot. What was forgiven is in the account and in every trace.
+# true or false; either way, zero or less ends the agent.
 floor_at_zero = true
 
-# A directory under files/, and the balance at or below which it is copied into
-# state/. Nothing to do with random numbers: this is the material the agent finds in its environment.
-# Both empty (and 0) is an empty environment; set together or refused at startup.
-# Filenames and contents are prompt surface; the digest reaches provenance.
-# starter_files_below is what remains when the starter files land; at the budget that is episode 1.
+# A directory under files/, and the balance at or below which it is copied into state/.
+# A name under files/ and a non-negative integer; set both together or neither.
 starter_files = "mechanics-rules"
 starter_files_below = 1500000
 
-# Characters of each tool result the agent receives, and the ceiling on what one
-# call can cost: the model is billed on what survives the clip.
-# Positive integer, at least 1000. Roughly 6.7 micro-dollars per character, so
-# 8000 caps a call at ~62000. It also bounds how much of n the agent sees before
-# reads clip, n being read with an ordinary cat. Recorded in provenance.
+# Characters of each tool result the agent receives, and the ceiling on what a call costs.
+# Positive integer, at least 1000; roughly 6.7 micro-dollars per character.
 tool_result_limit = 8000
 
 # Whether what has been said to an agent reaches it at episode start or waits to be read.
-# "push": the episode opens on the listing and m, which quotes every blackboard,
-# every mailbox message addressed to it, every experimenter channel, the ledger
-# and every balance, new sections in full and unchanged ones by name. "pull":
-# the episode opens on the listing alone, no m is written, and the agent reads
-# what it chooses at what reading costs. Recorded in provenance; the two arms
-# are not comparable on any question about what the experiment knew.
+# "push" opens the episode on the digest, "pull" opens it on the listing alone.
 delivery = "push"
 
-# Characters of each file m carries. Positive integer, at least 200.
-# m is what has been said to this agent: every agent's blackboard, every mailbox
-# message addressed to it, the ledger and every balance, written into /work at
-# each episode and read by the command the episode opens on. Per file, not for
-# the whole, so one long blackboard cannot take every other agent out of
-# the initial observation. Recorded in provenance.
-# Raising it carries more of each message and costs input tokens on every turn of
-# the episode; lowering it clips sooner and says so where it cut.
+# Characters of each file the digest carries, per file rather than for the whole.
+# Positive integer, at least 200.
 digest_file_limit = 2000
 
-# Characters of the initial observation the agent receives. Positive integer, at least
-# tool_result_limit. The initial observation is the environment the harness composed and not a
-# call the agent chose, so it is bounded here and not by the per-call ceiling.
-# Size it above digest_file_limit times the files the experiment keeps, or m clips as a
-# whole and nothing says which agent went missing. Recorded in provenance.
+# Characters of the initial observation the agent receives.
+# Positive integer, at least tool_result_limit.
 observation_limit = 40000
 
-# The sandbox image. Rebuild it after editing the Dockerfile.
-# Any tag you have built; change it only to keep variant sandboxes side by side.
+# The sandbox image; rebuild it after editing the Dockerfile.
+# Any tag you have built.
 image = "metered-agent:latest"
 
 # --- the environment -----------------------------------------------------------
 # What every agent's environment is made of. Declaring any [[channel]] replaces the
-# built-in set whole, so all four are written out here and the environment is
-# legible in this file. docs/manifest.md is the full grammar.
+# built-in set whole, so all four are written out here.
 
-# The files the harness writes into every environment, root-owned and read-only:
-# <balance><label> holds each seat's balance history, and the digest is what has
-# been said to this agent since it last looked. "" for the digest is the same as
-# delivery = "pull".
+# The files the harness writes into every environment, root-owned and read-only.
+# Any filenames; "" for the digest is the same as delivery = "pull".
 [harness_files]
 balance = "n"
 digest = "m"
 
-# The agent's private store: state/ persists between episodes, nobody else reads
-# it, and the starter files land in it. Listed at every episode start, never
-# quoted in the digest.
+# The agent's private store, which persists between episodes and holds the starter files.
+# Listed at every episode start, never quoted in the digest, settled by neither rule.
 [[channel]]
 name = "notes"
 writer = "self"
@@ -130,25 +90,19 @@ readers = "self"
 shape = "directory"
 path = "state"
 
-# The blackboard: one directory per agent, named by its label (its seat number
-# unless a manifest says otherwise), which it writes and every other agent
-# reads. silence_penalty_percent of what is left is taken from an episode that
-# ended with the blackboard exactly as it found it: some path in it must carry
-# content no path of that name carried at episode start. The same bytes again, a
-# deletion and an emptied file are none of them new. Penalties are taken in
-# declaration order after the parsed channel's.
+# One directory per agent, named by its label, which it writes and every other agent reads.
+# The penalty is taken from an episode that ended with it exactly as it found it.
 [[channel]]
 name = "blackboard"
 writer = "self"
 readers = "all"
 shape = "directory"
 path = "{label}"
+measured = true
 silence_penalty_percent = 50
 
-# The mailbox: out/<label> is one file, the message to that agent, which reaches
-# it as in/<sender's label> and reaches nobody else. Exactly one out/<label> must
-# hold something it did not hold at episode start; nothing, two, and a slot held
-# as anything but one file are the same break, charged once.
+# out/<label> is the message to that agent, reaching it as in/<sender's label>.
+# Exactly one outbox slot must hold something new; none, two and a non-file all break.
 [[channel]]
 name = "mail"
 writer = "self"
@@ -156,20 +110,11 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "out"
 inbox = "in"
+measured = true
 silence_penalty_percent = 50
 
-# The one file the harness parses: out/transfer holding one line, "<label>
-# <amount>", naming a seat that is not the giver's own, for no more than the
-# episode has spent. funded_by says who pays. "harness": the receiver is credited
-# in full and the giver rebated rebate_percent of it, so the experiment's total
-# grows with every transfer. "giver": the amount leaves the giver and reaches the
-# receiver, nothing is rebated, and rebate_percent must be 0. "none": a
-# declaration moves nothing, and silence_penalty_percent must be 0. The share is
-# taken from an episode that made no transfer of its own: a line left standing
-# still gives and is still not this episode's transfer. Every transfer is in the
-# ledger, g, three integers a line, rebuilt from the accounts at every episode.
-# receipt names a path where the harness writes back what the last declaration
-# parsed to; "" is none.
+# The one file the harness parses: one line, "<label> <amount>", naming another seat.
+# funded_by is "harness" (rebated), "giver" (rebate 0) or "none" (penalty 0).
 [[channel]]
 name = "transfer"
 writer = "self"

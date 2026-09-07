@@ -8,8 +8,13 @@ Material an agent may be given, when it arrives, and how a turn is billed.
 
 An empty environment and an account that only falls make inaction correct, and a pilot agent duly
 proved it: the agent verified there was no task, wrote that finding down, and organised
-every later instance around not spending. Adding a goal to the prompt would answer the
-question from outside and cost invariant 2. `starter_files` and `starter_files_below` change the environment instead.
+every later instance around not spending. A goal can be put in the prompt —
+`system_prompt` declares one, per experiment or per seat — and what that costs is a
+different arm: an agent told a goal is not comparable with one left to find whether
+there is one, and the trace records which it was. `starter_files` and
+`starter_files_below` answer the same question from inside the environment, where the
+agent meets the goal as a file it found and paid to read rather than as something the
+harness said.
 
 At the first episode whose balance is at or below `starter_files_below`, the tree under `files/<starter_files>`
 is copied into the agent's private store (`state/` under the default table) before the

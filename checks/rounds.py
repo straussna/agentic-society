@@ -231,9 +231,10 @@ def check_a_manifest_is_validated():
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
     assert m["sha256"] == hashlib.sha256(good.encode("utf-8")).hexdigest()
     assert experiment.terms_of(m["agents"][0]) == {"model": None, "budget": None, "starter_files": "s",
-                                                   "starter_files_below": 400000}
+                                                   "starter_files_below": 400000,
+                                                   "system_prompt": None}
     assert experiment.terms_of(m["agents"][1]) == {"model": other_model, "budget": 7, "starter_files": None,
-                                                   "starter_files_below": None}
+                                                   "starter_files_below": None, "system_prompt": None}
     short = experiment.shorthand(["a", "b"])
     assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
@@ -539,3 +540,51 @@ def check_a_manifest_table_replaces_the_whole_set():
         assert m["channels"] is None, "no [[channel]], and the table in force stays"
         table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p))
         assert len(table) == 4 and hf == {"balance": "n", "digest": ""}, (table, hf)
+
+
+def check_a_manifest_declares_what_the_harness_says():
+    """Invariant 2: a declared prompt reaches the request, the account and the trace.
+
+    The experiment's own is what a seat is told unless the seat declares its own, and
+    the prompt is pinned like the other four settings: an agent asked to run on a
+    different one is refused, episodes either side of it not being one experiment.
+    """
+    mine, ours = "You are studio 1.", "You are one of several studios."
+    text = ('system_prompt = "' + ours + '"\n'
+            '[[agent]]\nid = "g01"\nsystem_prompt = "' + mine + '"\n'
+            '[[agent]]\nid = "g02"\n')
+    with temp_root() as root:
+        p = manifest_file(root, text)
+        seen = []
+
+        def start(config=None, overrides=None, models=(), **kw):
+            harness.apply_config(overrides or {}, "manifest")
+            return fake(*DEFAULT, seen=seen)
+
+        harness.start = start
+        with quiet() as buf:
+            code = experiment.main(["--manifest", str(p), "--rounds", "1"])
+        sent = {r["system"] for r in seen}
+        accounts = {r: ground_truth(r) for r in ("g01", "g02")}
+        traces = {r: trace_on_disk(r, 1) for r in accounts}
+
+        # A seat's own declaration is one of its pinned settings.
+        p.write_text(text.replace(mine, mine + " Again."), encoding="utf-8", newline="\n")
+        with quiet():
+            refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1"]), "system_prompt",
+                    because="an agent was re-created on a different system prompt")
+        # The experiment's default is read at creation like every other setting, so a
+        # seat that took it keeps what it was told and a later manifest does not resay it.
+        p.write_text(text.replace(ours, ours + " Again."), encoding="utf-8", newline="\n")
+        with quiet():
+            assert experiment.main(["--manifest", str(p), "--rounds", "1"]) == 0
+        kept = ground_truth("g02")["system_prompt"]
+    assert code == 0, buf.getvalue()
+    assert sent == {mine, ours}, "each seat was told what it declared"
+    assert harness.SYSTEM not in sent, "and nothing was told the shipped default"
+    assert {r: a["system_prompt"] for r, a in accounts.items()} == {"g01": mine, "g02": ours}
+    assert kept == ours, "the account is what the agent is told, not the manifest of the day"
+    for r, t in traces.items():
+        want = accounts[r]["system_prompt"]
+        assert t["provenance"]["system"] == want, (r, t["provenance"]["system"])
+        assert t["provenance"]["system_sha256"] == t["system_sha256"] == harness.system_sha256(want)

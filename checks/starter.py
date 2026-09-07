@@ -22,6 +22,7 @@ from checks.lanes import (
     seated,
     temp_root,
     trace_on_disk,
+    turn_cost,
 )
 
 
@@ -55,8 +56,11 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     varying by orders of magnitude, so what the starter files land on is runway remaining.
     """
     landed = {}
+    # The gap is two of the cheap agent's turns, so it crosses inside the four
+    # episodes run whatever a turn costs under the model in force.
+    below = 500_000 - 2 * turn_cost()
     for name, steps in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
-        with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=497_000) as root:
+        with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=below) as root:
             plant(root)
             with quiet():
                 harness.run_episodes(name, fake(*steps), 4)
@@ -66,7 +70,7 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     assert landed["cheap"]["episode"] > landed["dear"]["episode"], landed
     assert all(r["episode"] < 4 for r in landed.values()), \
         f"both must land inside the episodes run, with headroom to spare: {landed}"
-    assert all(r["remaining"] <= 497_000 for r in landed.values()), landed
+    assert all(r["remaining"] <= below for r in landed.values()), landed
     assert all(r["sha256"] == landed["cheap"]["sha256"] for r in landed.values()), \
         "the same starter files, whenever they happened to land"
 

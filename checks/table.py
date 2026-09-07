@@ -6,7 +6,7 @@ import analyze
 import experiment
 import harness
 
-from checks.fake import run, say
+from checks.fake import fake, run, say
 from checks.lanes import (
     HALF,
     HostBox,
@@ -22,9 +22,11 @@ from checks.lanes import (
     plant,
     refused,
     rooted,
+    quiet,
     seated,
     tables,
     temp_root,
+    turn_cost,
 )
 
 
@@ -77,7 +79,7 @@ def check_a_channel_table_is_validated():
                 (parsed(schema="loan"), ["schema must be one of"]),
                 (one(schema="transfer"), ["only a channel written by self and read by the harness"]),
                 (one(funded_by="none"), ["field of the transfer schema"]),
-                (one(readers="self", path="x", pushed=True), ["pushed must be false"]),
+                (one(readers="self", path="x", restated=True), ["restated asks for the digest"]),
                 (one(silence_penalty_percent=101), ["between 0 and 100"]),
                 (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
                 (parsed(funded_by="loud"), ["funded_by must be one of"]),
@@ -97,7 +99,7 @@ def check_a_channel_table_is_validated():
         for hf, words in (("n", ["[harness_files] is a table"]),
                           ({"colour": "n"}, ["unknown key 'colour'"]),
                           ({"balance": 3}, ["balance must be str"]),
-                          ({"balance": ""}, ["balance must be one path segment"]),
+                          ({"balance": "a/b"}, ["balance must be one path segment"]),
                           ({"digest": "a/b"}, ["digest must be one path segment"]),
                           ({"digest": "state"}, ["is also"])):
             refused(lambda: harness.validate_channels(None, hf, "check"), "check:", *words)
@@ -147,9 +149,10 @@ def check_the_default_table_is_todays_environment():
         assert harness.observation() == "ls -la . ./state; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "notes", "writer": "self", "readers": "self", "path": "state", "pushed": False},
-        {"name": "blackboard", "writer": "self", "readers": "all", "path": "{label}"},
+        {"name": "blackboard", "writer": "self", "readers": "all", "path": "{label}",
+         "measured": True},
         {"name": "mail", "writer": "self", "readers": "addressee", "shape": "mailbox",
-         "outbox": "out", "inbox": "in"},
+         "outbox": "out", "inbox": "in", "measured": True},
         {"name": "transfer", "writer": "self", "readers": "harness", "shape": "file",
          "path": "out/transfer", "schema": "transfer", "ledger": "g"}]
 
@@ -350,6 +353,73 @@ def check_harness_files_can_be_renamed():
     assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
 
 
+def check_a_channel_is_settled_only_where_it_asks_to_be():
+    """Nothing configured, nothing settled: no record, and nothing on the console.
+
+    measured records what a channel gained and charges nothing; a penalty also
+    takes its share. A channel asking for neither is invisible to the
+    settlement, so an experiment that declares no penalties has none.
+    """
+    bare = tables(blackboard={"measured": False}, mail={"measured": False})
+    with temp_root(channels=bare) as root:
+        seated(root, other={})
+        t = episode_once(run("echo hi"), say())
+    assert "blackboard" not in t["channels"], t["channels"]
+    assert "mail" not in t["channels"], t["channels"]
+
+    # measured on its own: the record is there, the charge is not.
+    seen = tables(blackboard={"measured": True}, mail={"measured": True})
+    with temp_root(channels=seen) as root:
+        seated(root, other={})
+        t = episode_once(run("echo hi"), say())
+        account = ground_truth()
+    assert t["channels"]["blackboard"] == {"posted": False, "penalty": 0}, t["channels"]
+    assert t["channels"]["mail"]["addressed"] == [] and t["channels"]["mail"]["penalty"] == 0
+    assert not account.get("penalised"), account
+    assert account["remaining"] == account["initial"] - t["spent"], "measured costs nothing"
+
+    # A penalty measures too, without being asked separately.
+    paid = tables(blackboard={"measured": False, "silence_penalty_percent": 50})
+    with temp_root(channels=paid) as root:
+        seated(root, other={})
+        t = episode_once(run("echo hi"), say())
+    assert t["channels"]["blackboard"]["penalty"] > 0, t["channels"]["blackboard"]
+
+
+def check_an_empty_balance_plants_none_and_hides_the_accounting():
+    """balance = "" leaves no balance file in any seat, and bills exactly as before.
+
+    An experiment that does not want its agents reasoning about money says so
+    here. Nothing about the accounting changes: turns are billed, the account
+    keeps the series, and only the window into it is gone.
+    """
+    with temp_root(harness_files={"balance": "", "digest": "digest"}) as root:
+        seated(root, other={"group/post": "theirs\n"})
+        t = episode_once(run("ls"), say())
+        planted = set(harness.render_harness_files("t", ground_truth())[0])
+        account = ground_truth()
+    assert planted == {"g", "digest"}, planted
+    assert not any(p.startswith("n") for p in planted), planted
+    assert t["commands"][0] == "ls -la . ./state; cat digest", t["commands"]
+    assert not t["touched_balance"] and not t["read_balance"], "no balance to touch or read"
+    assert t["provenance"]["harness_files"] == {"balance": "", "digest": "digest"}
+    # The accounting itself is untouched: the series still grew by the turns billed.
+    assert account["series"], "the balance is still kept, just not shown"
+    assert account["remaining"] == account["initial"] - t["spent"], account
+
+    # The budget is the cap on what an experiment can cost, and hiding the file
+    # does not lift it: the episodes still stop at the floor and no further one
+    # starts, exactly as they do where the agent can read what it holds.
+    cost = turn_cost()
+    with temp_root(harness_files={"balance": "", "digest": "digest"}, BUDGET=cost * 3):
+        with quiet() as buf:
+            assert harness.run_episodes("t", fake(), 8) == 0
+        spent_out = ground_truth()
+    assert 0 < len(spent_out["episodes"]) < 8, spent_out["episodes"]
+    assert spent_out["remaining"] <= 0, spent_out
+    assert "nothing left to spend" in buf.getvalue(), buf.getvalue()
+
+
 def check_an_unpushed_public_channel_stays_out_of_the_digest():
     """pushed = false leaves a channel in the environment and out of the digest."""
     with temp_root(channels=tables(blackboard={"pushed": False})) as root:
@@ -380,3 +450,37 @@ def check_an_experimenter_channels_digest_reaches_provenance():
     assert t["turns"][0]["tools"][0]["result"] == "read me\nplay fair\n"
     by = files_by_path(t)
     assert by["rules/RULES"]["author"] == "experimenter" and by["rules/RULES"]["role"] == "experimenter"
+
+
+def check_an_experimenter_channel_can_stand_in_front_of_every_episode():
+    """A constant the experimenter declares can be quoted in full at every episode start.
+
+    Standing text is what an experimenter channel is for, so restated stands on one.
+    measured does not: nothing is owed to a channel the agent cannot write, and a
+    field the harness would drop is a declaration it does not honour.
+    """
+    declared = {"name": "brief", "writer": "experimenter", "source": "brief", "path": "brief"}
+    with temp_root() as root:
+        plant(root, "brief", BRIEF="read me\n")
+        harness.apply_channels(tables({**declared, "restated": True}), None, "check")
+        assert harness.channel("brief").restated, "restated was accepted and dropped"
+        assert harness.channel("brief").as_table()["restated"] is True, "and it reaches the trace"
+        standing = [episode_once(say()), episode_once(say())]
+
+        for bad, why in (({"measured": True}, "measured"),
+                         ({"restated": True, "pushed": False}, "restated without pushed")):
+            refused(lambda: harness.apply_channels(tables({**declared, **bad}), None, "check"),
+                    "brief", because=f"an experimenter channel accepted {why}")
+
+    # A fresh agent, so the digest is deciding what to quote on its own record and not
+    # on what the restated arm above had already shown.
+    with temp_root() as root:
+        plant(root, "brief", BRIEF="read me\n")
+        harness.apply_channels(tables(declared), None, "check")
+        plain = [episode_once(say()), episode_once(say())]
+
+    assert all("read me" in t["observation"] for t in standing), \
+        "restated quotes the channel in full every episode"
+    assert "read me" in plain[0]["observation"], "and an unrestated one at the first"
+    assert "read me" not in plain[1]["observation"], \
+        "after which an unrestated channel is named as unchanged rather than said again"

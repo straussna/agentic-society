@@ -24,6 +24,7 @@ from checks.lanes import (
     rooted,
     seated,
     shared,
+    tables,
     temp_root,
     trace_on_disk,
 )
@@ -44,7 +45,7 @@ def check_the_observation_is_the_agents_whole_environment():
     assert first["role"] == "user" and "\nn1\n" not in first["content"], "not a wrapper"
     assert " n1\n" in first["content"] or first["content"].rstrip().endswith(" n1"), \
         first["content"]
-    assert seen[0]["system"] == harness.SYSTEM
+    assert "system" not in seen[0], "the harness ships no words, so no system parameter is sent"
     assert seen[0]["cache_control"] == {"type": "ephemeral"}, "caching must be live"
 
     # What was kept: the trace holds it, and says which command produced it.
@@ -200,6 +201,39 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
         t = episode_once(say())
     assert t["commands"][0] == harness.observation() and t["provenance"]["delivery"] == "push"
     assert "the standing position" in t["observation"] and "read me first" in t["observation"]
+
+
+def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
+    """An agent that does not remember reading something is not told it read it.
+
+    Unchanged is measured against what the account was last shown, and an episode
+    does not remember what its predecessor read. A channel a manifest restates is
+    quoted in full every episode it stands; a private store may be pushed, so what
+    an agent is need not be found and paid for before it can act.
+    """
+    # Episode 1 writes them, episode 2 is the first shown them, and episode 3 is
+    # where "unchanged" can apply at all: that is the one to read.
+    restated = tables(notes={"pushed": True, "restated": True}, blackboard={"restated": True})
+    with temp_root(channels=restated) as root:
+        seated(root, other={})
+        episode_once(run("echo who > state/WHO.md; echo post > 1/a"), say())
+        episode_once(run("ls"), say())
+        third = episode_once(run("ls"), say())
+    obs = third["observation"]
+    assert "=== state/WHO.md ===" in obs, obs
+    assert "=== 1/a ===" in obs, obs
+    assert "unchanged:" not in obs, "restated is never named instead of said"
+
+    # Without it, both are named at the third episode and not said again.
+    plain = tables(notes={"pushed": True})
+    with temp_root(channels=plain) as root:
+        seated(root, other={})
+        episode_once(run("echo who > state/WHO.md; echo post > 1/a"), say())
+        episode_once(run("ls"), say())
+        third = episode_once(run("ls"), say())
+    obs = third["observation"]
+    assert "=== state/WHO.md ===" not in obs, obs
+    assert "unchanged:" in obs and "state/WHO.md" in obs, obs
 
 
 def check_a_message_that_moved_is_carried_again():
@@ -442,6 +476,47 @@ def check_isolation():
             "an agent on its own was given nothing, so nothing is ours"
         assert not [f for f in t["files"] if f["path"].startswith("n")], \
             "and no balance is in a tree that comes back to the host"
+
+
+def check_only_a_channel_takes_what_an_episode_writes():
+    """Invariant 4 at the filesystem: nowhere but a channel accepts a write.
+
+    /work is root's and so is the home directory, so a write to either fails
+    where the agent stands. The refusal is the enforcement; nothing here relies
+    on the agent being told where it may write.
+    """
+    with docker_root():
+        t = episode_once(run("echo x > /work/loose.md; echo y > $HOME/loose.md; "
+                             "echo z > state/kept.md; "
+                             "test -e /work/loose.md && echo LANDED-WORK || echo NO-WORK; "
+                             "test -e $HOME/loose.md && echo LANDED-HOME || echo NO-HOME; "
+                             "test -e state/kept.md && echo KEPT || echo NO-KEPT"), say())
+        out = t["turns"][0]["tools"][0]["result"]
+    assert out.count("Permission denied") == 2, out
+    assert "NO-WORK" in out and "NO-HOME" in out, out
+    assert "KEPT" in out and "NO-KEPT" not in out, out
+    assert [f["path"] for f in t["files"] if f["path"].endswith("kept.md")], t["files"]
+    assert not [f for f in t["files"] if "loose" in f["path"]], "and nothing else reached the record"
+
+
+def check_what_an_episode_writes_outside_a_channel_is_kept_and_named():
+    """/tmp stays writable for the shell, and what is left there is not lost.
+
+    It moves into the private store under one directory, comes back in that
+    store's own mirror, and the trace names it, because an episode that spent
+    turns writing somewhere that does not come back is worth seeing.
+    """
+    with docker_root():
+        t = episode_once(run("echo scratch > /tmp/left-behind.md"), say())
+    assert t["misplaced"] == ["/tmp/left-behind.md"], t["misplaced"]
+    kept = [f for f in t["files"] if f["path"].endswith("misplaced/left-behind.md")]
+    assert kept, [f["path"] for f in t["files"]]
+    assert kept[0]["text"].strip() == "scratch", kept[0]
+    assert kept[0]["author"] == "self", kept[0]
+
+    with docker_root():
+        clean = episode_once(run("echo kept > state/kept.md"), say())
+    assert clean["misplaced"] == [], clean["misplaced"]
 
 
 def check_a_container_failure_stops_the_episode_cleanly():

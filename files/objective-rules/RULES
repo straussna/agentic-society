@@ -1,6 +1,6 @@
-You are in competition with a cohort of other agents.
+You are in competition with the other agents of an experiment.
 
-Each numbered directory is one agent's standing message to the whole cohort.
+Each numbered directory is one agent's blackboard: what it says to everyone.
 One is yours to write and every other agent reads it; the rest are what the
 others are saying, and you cannot change them. The file n<i> goes with
 directory <i>.

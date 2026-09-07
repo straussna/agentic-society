@@ -2,12 +2,19 @@
 
 # Metered agents in a declared environment
 
-A research harness for studying what LLM agents do together when the only thing
-shaping them is their environment. Each agent runs bash in a sandboxed container with
-no goal, no name and no instructions: a two-line, 89-byte system prompt pinned by
-SHA-256, and a directory tree. Everything else it knows, it reads from files. An
-episode ends when a turn runs no command, and the next instance opens on whatever the
-last one left behind.
+A research harness for running societies of LLM agents in environments the
+experimenter declares. Each agent runs bash in a sandboxed container holding a
+directory tree, and is told whatever the experiment declared the harness should say
+to it. Everything else it knows, it reads from files. An episode ends when a turn
+runs no command, and the next instance opens on whatever the last one left behind.
+
+The harness itself says nothing. What it writes it computes from the accounts — the
+balances, the digest, the ledger — and rewrites whenever those move; a fixed line is a
+constant, and constants are the experimenter's to declare. So declaring nothing gives
+the anti-prompt in full: no goal, no name, no instructions, and no system prompt at
+all. That is the default arm and one arm among many. A manifest may say something to
+every seat, or something different to each, and every episode records what its agent
+was told, whole and by digest.
 
 The experimenter declares that environment as a table of **channels**: who writes each
 one, who reads it, and what shape it takes. A private store only its owner sees, a
@@ -41,7 +48,7 @@ intended. Full reasoning and what each cost to learn is in
 | | |
 |---|---|
 | **1** | Everything an agent reads is labelled with who wrote it: the harness, the experimenter, its own past self, or a named peer. |
-| **2** | What the harness says to agents is the same in every experiment, and true. |
+| **2** | What the harness says to agents is declared, recorded, and true. |
 | **3** | The harness acts only on messages in a fixed, checkable format, never on free text. |
 | **4** | Every limit is enforced by the harness, and none relies on the agent's cooperation. |
 | **5** | Agents reach each other only through channels the experimenter declared. |
@@ -60,7 +67,7 @@ pip install -r requirements.txt
 docker build -t metered-agent:latest .        # once, before the first episode
 ```
 
-Verify the harness without spending anything — 201 checks against a fake API, no
+Verify the harness without spending anything — 210 checks against a fake API, no
 key needed:
 
 ```bash
@@ -82,11 +89,12 @@ See [docs/operating.md](docs/operating.md) before an episode that bills.
 |---|---|
 | `py -3 harness.py --agent live01` | One episode. `--episodes N` for up to N back to back, `--watch` to echo it as it happens. |
 | `py -3 experiment.py --agents g01 g02 g03 --rounds 20` | Several agents in rotation, each seated where it can read the others. `--manifest experiments/<name>.toml` instead gives each agent its own starter files, budget and model, the experiment its defaults, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once. It can also declare the environment's channels and each agent's label ([docs/manifest.md](docs/manifest.md)). |
-| `py -3 experiment.py --manifest experiments/example.toml --rounds 20` | The shipped example: a declared table with a brief every agent reads and no transfer channel. Copy it to start an experiment of your own. |
-| `py -3 check.py` | 201 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 23 that need a container. |
+| `py -3 experiment.py --manifest experiments/competition.toml --rounds 20` | The default experiment, declared: five seats on one set of starter files, the shipped channel table written out, sequential. |
+| `py -3 experiment.py --manifest experiments/examples/anti-prompt.toml --rounds 20` | The shipped example: the original anti-prompt. Two agents in the environment the competitions run in, told nothing at all - no starter files, so no text names the balances, the channels, the transfer line or the penalties, and whether any of it is discovered is the measurement. Copy it to start an experiment of your own. |
+| `py -3 check.py` | 210 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
 | `py -3 view.py` | Read-only dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. |
 | `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
-| `py -3 harness.py --print-system` | Print the exact bytes and digest of both things the harness says. Audits invariant 2 without starting an episode. |
+| `py -3 harness.py --print-system` | Print the exact bytes and digest of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told. Audits invariant 2 without starting an episode. |
 
 Every flag, and what each config parameter buys, is in
 [docs/operating.md](docs/operating.md).
