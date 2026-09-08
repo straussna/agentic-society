@@ -51,7 +51,7 @@ def check_the_view_reads_a_live_episode_from_raw():
         assert view.live_index("t") == 1, "a raw log with no trace is an unfinished episode"
         v = view.episode_view("t", 1)
         assert (v["source"], v["live"]) == ("raw", True), v["source"]
-        assert [c["command"] for t in v["turns"] for c in t["tools"]] == \
+        assert [c["call"] for t in v["turns"] for c in t["tools"]] == \
             ["cat n1", "echo hi > state/note.txt", "ls state"], v["turns"]
         assert all(c["result"] is None for t in v["turns"] for c in t["tools"]), \
             "no command's output is on disk until the trace is"
@@ -152,7 +152,7 @@ def check_the_page_fetches_nothing():
     the machine to have or not, never linked.
     """
     page = view.PAGE
-    assert "<title>ClaudeSandbox</title>" in page
+    assert "<title>agent-society</title>" in page
     assert "//cdn" not in page and "<script src" not in page, "nothing is fetched"
     for fetches in ("@import", "url(http", "url(//", "url('", 'url("', "<link", "fonts.googleapis"):
         assert fetches not in page, f"the page reaches out with {fetches}"

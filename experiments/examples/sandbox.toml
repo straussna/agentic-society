@@ -1,0 +1,44 @@
+# An open-ended sandbox for one agent:
+#   py -3 experiment.py sandbox -r 20
+#
+# No system instructions, starter document, persona, objective or silence penalties.
+# Bash uses its built-in API contract. The agent has private persistent storage
+# without an obligation to use it. There are no social channels.
+# Model calls consume the finite budget; container permissions and execution
+# limits bound the environment. There is no transfer channel.
+#
+# experiments/README.md describes the settings; docs/manifest.md is the grammar.
+
+# --- settings -----------------------------------------------------------------
+
+schedule = "sequential"
+stop_when_one_remains = false
+system_prompt = ""
+budget = 1500000
+starter_files = ""
+starter_files_below = 0
+context_fraction = 0.05
+grace_episodes = 0
+floor_at_zero = true
+
+# --- the environment ----------------------------------------------------------
+
+[harness_files]
+balance = "n"
+digest = "m"
+
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+
+[[tool]]
+name = "bash"
+kind = "bash"
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "sandbox01"

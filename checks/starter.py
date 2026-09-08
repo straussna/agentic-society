@@ -6,6 +6,7 @@ creation, and what a fork rebuilds and refuses."""
 from __future__ import annotations
 
 import json
+import experiment
 import harness
 
 from checks.fake import fake, run, say
@@ -24,6 +25,29 @@ from checks.lanes import (
     trace_on_disk,
     turn_cost,
 )
+
+
+def check_manifest_relative_starter_documents_include_empty_files():
+    """A manifest resolves top-level and per-seat starter documents beside itself."""
+    with temp_root() as root:
+        folder = root / "experiments"
+        folder.mkdir()
+        doc = folder / "placeholder.md"
+        doc.write_bytes(b"")
+        manifest = folder / "example.toml"
+        manifest.write_text(
+            'system_prompt = ""\nstarter_files = "./placeholder.md"\n'
+            'starter_files_below = 1000\n[[tool]]\nname = "bash"\nkind = "bash"\n'
+            '[[agent]]\nid = "a"\nstarter_files = "./placeholder.md"\n'
+            'starter_files_below = 1000\n', encoding="utf-8")
+        loaded = experiment.load_manifest(manifest)
+        source = str(doc.resolve())
+        assert loaded["overrides"]["starter_files"] == source
+        assert loaded["agents"][0]["starter_files"] == source
+        assert harness.files_listing(source) == [("placeholder.md", b"")]
+        empty = harness.files_sha256(source)
+        doc.write_text("A starting point.", encoding="utf-8")
+        assert harness.files_sha256(source) != empty
 
 
 def check_starter_files_land_when_the_balance_falls():
@@ -192,18 +216,22 @@ def check_starter_files_config_is_validated():
     """starter_files and starter_files_below are set together, and starter_files must name a real directory."""
     with rooted(HostBox) as root:
         plant(root, "ok")
-        f = root / "config.toml"
-        for bad in ('starter_files = "ok"', 'starter_files_below = 3', 'starter_files = "ok"\nstarter_files_below = 0',
-                    'starter_files = "nope"\nstarter_files_below = 2', 'starter_files = "ok"\nstarter_files_below = -1',
-                    'starter_files = 5\nstarter_files_below = 2'):
-            f.write_text(bad, encoding="utf-8")
-            with pinned():
-                refused(lambda: harness.load_config(f), "starter_files",
-                        because=f"accepted bad starter_files config: {bad!r}")
 
-        f.write_text('starter_files = "ok"\nstarter_files_below = 400000\n', encoding="utf-8")
+        def declared(**values):
+            """Starter file terms as a manifest states them; config.toml refuses them."""
+            harness.apply_config(values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST)
+
+        for bad in ({"starter_files": "ok"}, {"starter_files_below": 3},
+                    {"starter_files": "ok", "starter_files_below": 0},
+                    {"starter_files": "nope", "starter_files_below": 2},
+                    {"starter_files": "ok", "starter_files_below": -1},
+                    {"starter_files": 5, "starter_files_below": 2}):
+            with pinned():
+                refused(lambda: declared(**bad), "starter_files",
+                        because=f"accepted bad starter_files terms: {bad!r}")
+
         with pinned():
-            harness.load_config(f)
+            declared(starter_files="ok", starter_files_below=400_000)
             assert (harness.STARTER_FILES, harness.STARTER_FILES_BELOW) == ("ok", 400_000)
         # The digest covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")

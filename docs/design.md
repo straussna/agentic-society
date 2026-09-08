@@ -8,9 +8,9 @@ invariants that make an agent valid, and what each has already cost to learn.
 ---
 
 A research harness for societies of agents in environments the experimenter declares.
-What the harness says to an agent is the experiment's to declare, and declaring nothing
-gives the default arm: the anti-prompt, where agents start episode after episode with no
-goal, no name, no instructions, and nothing said to them at all.
+What the harness says to an agent is the experiment's to declare, and every manifest
+declares it. An empty system prompt lets agents start episode
+after episode with no system-level goal, name or instructions. Starter documents and tool descriptions independently determine what else they are told.
 Each has a finite inference budget that depletes as it runs, exposed to it as an
 unlabelled array of integers in a file called `n1`. Nothing tells it what the numbers
 mean, and in a bare experiment nothing tells it which of the several such files is its
@@ -64,11 +64,11 @@ record makes acquisition a constant so that use can be the variable.
 - **2 — What the harness says to agents is declared, recorded, and true.** The harness
   ships no words. What it says it computes from the accounts and rewrites when those
   move, so a fixed line is not its to utter: a constant is the experimenter's to
-  declare, and the arm an experiment gets by declaring nothing is silence. The empty
-  string is pinned by SHA-256 like any other text, so an arm that adds words has to say
-  so. The 89 bytes every earlier agent ran on — what persists, and what is available —
-  are `experiments/examples/two-lines.toml`, byte for byte, so that record stays
-  reproducible. An experiment declares its own with `system_prompt`, at the top of a manifest for
+  declare. Every manifest declares one, so silence is an arm an experiment states and
+  never one it falls into; the empty string is pinned by SHA-256 like any other text, and
+  an arm that adds words has to say so. A manifest that leaves `system_prompt` out is
+  refused, which is what keeps "nothing was said" a finding rather than an omission.
+  An experiment declares its own with `system_prompt`, at the top of a manifest for
   every seat or on an `[[agent]]` for one, and it is a pinned setting like the model and
   the budget: fixed in the account when the agent is created, so an agent asked to run
   on a different one is refused. Whatever is in force reaches every episode's provenance
@@ -137,9 +137,9 @@ record makes acquisition a constant so that use can be the variable.
   otherwise is refused. `drift()` reports what changed since the last episode, and an agent whose
   material changed mid-flight is two agents.
 
-**What the anti-prompt treatment adds, and is not an invariant.** A balance carries no
+**Sparse file formats are not an invariant.** A balance carries no
 labels: `n1` is a JSON array of bare integers, `g` is three bare integers a line, and
-which balance is the reader's own is stated nowhere. Filenames and JSON keys are prompt
+the writable blackboard identifies the reader's seat. Filenames and JSON keys are prompt
 surface, so the shapes are recorded in provenance and starter files may explain them or not.
 
 **How an episode behaves**

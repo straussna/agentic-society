@@ -1,10 +1,10 @@
 """Several agents advancing together, each reading the others' blackboards.
 
-    py -3 experiment.py --agents g01 g02 g03 --rounds 20
-    py -3 experiment.py --manifest experiments/examples/anti-prompt.toml --rounds 20
+    py -3 experiment.py sandbox -r 20
 
-One round is one episode for each agent; a seat names a blackboard and a
-balance. A manifest gives each agent its own terms and the experiment its schedule."""
+One round is one episode for each agent; a seat names a blackboard and a balance.
+Every run names its manifest: the schedule, the environment, and each agent's terms.
+config.toml holds only what is true of every run whatever the experiment."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ ATTEMPTS = 2
 # episodes run at once, and the results settle in seat order, so nobody reads
 # this round's writes and a transfer made in one round is seen at the next.
 SCHEDULES = ("sequential", "simultaneous")
+EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "agent", "channel", "harness_files", "tool"}
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
@@ -72,16 +73,21 @@ def order(agents: list[str], rnd: int) -> list[str]:
 
 
 def shorthand(ids: list[str], schedule: str = "sequential") -> dict:
-    """The manifest `--agents` stands for: these agents, on config.toml, in rotation."""
-    return {"schedule": schedule, "overrides": {}, "agents": [{"id": i} for i in ids],
+    """A bare manifest for these agents, which is what a round stamps when driven directly."""
+    return {"schedule": schedule, "stop_when_one_remains": False,
+            "overrides": {}, "agents": [{"id": i} for i in ids],
             "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
-            "channels": None, "harness_files": None, "sha256": ""}
+            "channels": None, "harness_files": None, "tools": None, "sha256": ""}
 
 
 def check_ids(ids: list[str], where: str) -> None:
-    """Refuse an experiment of fewer than two agents, a repeated id, or an id that is a bare number."""
-    if len(ids) < 2:
-        raise SystemExit(f"{where}: an experiment needs two or more agents; one agent has no peers")
+    """Refuse an experiment with no agents, a repeated id, or an id that is a bare number.
+
+    One seat is an experiment: harness.py runs a single agent under the manifest that
+    declares its situation, and a seat with no peers reaches nobody.
+    """
+    if not ids:
+        raise SystemExit(f"{where}: an experiment needs at least one [[agent]]")
     if len(set(ids)) != len(ids):
         raise SystemExit(f"{where}: an agent is listed twice: {ids}")
     if bad := [i for i in ids if not i or BARE_NUMBER.match(i)]:
@@ -108,14 +114,34 @@ def check_agent(path: Path, entry: dict) -> None:
                            starter_files_below=entry.get("starter_files_below"))
 
 
+def manifest_path(named: str) -> Path:
+    """Resolve a manifest: a bare name sits under experiments/, anything else is the path given.
+
+    A name with a suffix or a directory in it is a path and is used as written, so a
+    manifest anywhere on disk stays reachable. A bare name is looked for in
+    experiments/ and then experiments/examples/, and when it is in neither the
+    experiments/ candidate is returned for load_manifest to refuse by name.
+    """
+    given = Path(named)
+    if given.suffix or len(given.parts) > 1:
+        return given
+    here = Path(__file__).resolve().parent / "experiments"
+    candidates = (here / f"{named}.toml", here / "examples" / f"{named}.toml")
+    return next((c for c in candidates if c.exists()), candidates[0])
+
+
 def load_manifest(path: Path) -> dict:
     """Read an experiment manifest: the schedule, the experiment's defaults, and each agent's terms.
 
     Returns {"schedule", "overrides", "agents", "labels", "channels", "harness_files",
-    "sha256"}. Unknown keys, wrong types, and terms that do not go together exit
-    with a message naming the file, the way load_config does. The overrides' own
+    "tools", "sha256"}. Unknown keys, wrong types, and terms that do not go together
+    exit with a message naming the file, the way load_config does. The overrides' own
     types and ranges are checked when start() applies them, so one set of rules
     holds for both.
+
+    Every manifest declares a system_prompt, at the top level or on each agent. The
+    empty string is a declaration and says nothing; an omitted key is refused, so
+    what an agent is told is always something the experiment wrote down.
     """
     if not path.exists():
         raise SystemExit(f"{path}: no such manifest")
@@ -125,16 +151,25 @@ def load_manifest(path: Path) -> dict:
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         raise SystemExit(f"{path}: not a manifest: {e}") from None
 
-    allowed = {"schedule", "agent", "channel", "harness_files"} | {t.lower() for t in harness.TUNABLES}
+    allowed = EXPERIMENT_KEYS | {t.lower() for t in harness.TREATMENT}
+
     check_keys(refuser(path), "", top, allowed, retired=harness.RETIRED,
-               expected="schedule, [[agent]] tables, [[channel]] tables, [harness_files], "
-                        "and any config.toml key")
+               elsewhere={t.lower(): harness.NOT_MANIFEST for t in harness.PROCESS},
+               expected="schedule, [[agent]] tables, [[channel]] tables, [[tool]] tables, "
+                        "[harness_files], and any experiment setting")
     schedule = top.get("schedule", "sequential")
     if schedule not in SCHEDULES:
         raise SystemExit(f"{path}: schedule must be one of {list(SCHEDULES)}, got {schedule!r}")
+    stop_when_one_remains = top.get("stop_when_one_remains", False)
+    if type(stop_when_one_remains) is not bool:
+        raise SystemExit(f"{path}: stop_when_one_remains must be bool, got {type(stop_when_one_remains).__name__}")
     agents = top.get("agent")
     if not isinstance(agents, list) or not all(isinstance(r, dict) for r in agents):
         raise SystemExit(f"{path}: agents are [[agent]] tables, each with an id")
+    for terms in [top, *agents]:
+        starter = terms.get("starter_files")
+        if isinstance(starter, str) and starter.startswith(("./", "../", ".\\", "..\\")):
+            terms["starter_files"] = str((path.parent / starter).resolve())
     for entry in agents:
         check_agent(path, entry)
     check_ids([entry["id"] for entry in agents], str(path))
@@ -150,14 +185,29 @@ def load_manifest(path: Path) -> dict:
             raise SystemExit(f"{path}: label {label!r} is held by {other!r} and {entry['id']!r}")
         labels[str(seat)] = label
 
-    tables, harness_files = top.get("channel"), top.get("harness_files")
-    if tables is not None or harness_files is not None:
-        harness.validate_channels(tables, harness_files, str(path), tuple(labels.values()))
+    tables, harness_files, tool_tables = (top.get("channel"), top.get("harness_files"),
+                                          top.get("tool"))
+    if tables is not None or harness_files is not None or tool_tables is not None:
+        # A tool is held against the table this manifest declares and not against
+        # the one in force, so it is refused here for the reason start() would
+        # refuse it later.
+        chans = harness.validate_channels(tables, harness_files, str(path),
+                                          tuple(labels.values()))[0]
+        if tool_tables is not None:
+            harness.validate_tools(tool_tables, chans, str(path))
+
+    # Last, so a manifest with a structural fault is refused for that fault first.
+    if "system_prompt" not in top and not all("system_prompt" in e for e in agents):
+        raise SystemExit(f"{path}: declare system_prompt, at the top level or on every "
+                         f"[[agent]]. What an agent is told is the experiment's and reaches "
+                         f'every request, so it is stated and never inherited; system_prompt = ""'
+                         f" is the declaration that says nothing")
 
     overrides = {k: v for k, v in top.items()
-                 if k not in ("schedule", "agent", "channel", "harness_files")}
-    return {"schedule": schedule, "overrides": overrides, "agents": agents, "labels": labels,
-            "channels": tables, "harness_files": harness_files,
+                 if k not in ("schedule", "agent", "channel", "harness_files", "tool")}
+    return {"schedule": schedule, "stop_when_one_remains": stop_when_one_remains,
+            "overrides": overrides, "agents": agents, "labels": labels,
+            "channels": tables, "harness_files": harness_files, "tools": tool_tables,
             "sha256": hashlib.sha256(data).hexdigest()}
 
 
@@ -167,9 +217,11 @@ def terms_of(entry: dict) -> dict[str, Any]:
                                       "system_prompt")}
 
 
-def stamp_of(manifest: dict) -> dict[str, str]:
-    """What every episode of the experiment records about how it was driven."""
-    return {"schedule": manifest["schedule"], "manifest_sha256": manifest["sha256"]}
+def stamp_of(manifest: dict) -> dict[str, Any]:
+    """What every episode records about how the experiment was driven."""
+    return {"schedule": manifest["schedule"],
+            "stop_when_one_remains": manifest["stop_when_one_remains"],
+            "manifest_sha256": manifest["sha256"]}
 
 
 # --- rounds -------------------------------------------------------------------
@@ -381,14 +433,12 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
 
 
 def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, create: Callable,
-               stamp: dict[str, str], labels: dict[str, str]) -> bool:
+               stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool) -> bool:
     """One round: drop the agents that cannot act, name the round, run it, and say
     whether the rounds go on.
 
-    The rounds end when every agent is out, when one agent is left holding a
-    balance (it takes one more episode, owing no transfer and no message, there
-    being nobody left to make either to), or when nobody seated could be given an
-    environment to start in.
+    The rounds end when every agent is out, when the manifest stops after one
+    agent remains, or when nobody seated could be given an environment to start.
     """
     # Asked before the round, so the header names who will act. Between here and
     # an agent's own turn its balance can only move up, a peer's transfer being
@@ -399,16 +449,16 @@ def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, c
     if not live:
         print(f"every agent is out after {rnd} rounds")
         return False
+    if stop_when_one_remains and len(live) == 1:
+        print(f"{next(iter(live))} is the only agent left with anything to spend; the competition ends")
+        return False
     # The order decides who acts on this round's information and who on last
     # round's, so it is on screen beside the round number. Under a simultaneous
     # round nobody acts on this round's, and the seats are named in their own order.
     ordered = agents if a_round is simultaneous_round else order(agents, rnd)
     acting = [agent for agent in ordered if agent in live]
     print(f"--- round {rnd + 1} ({' '.join(acting)}) ---")
-    if len(live) == 1:
-        a_round(agents, live, rnd, create, stamp, labels)
-        print(f"{acting[0]} is the only agent left with anything to spend; the rounds end here")
-        return False
+
     if not a_round(agents, live, rnd, create, stamp, labels):
         print(f"no agent could take an episode in round {rnd + 1}; "
               f"the rounds end here with {len(live)} agents at the table")
@@ -420,32 +470,38 @@ def main(argv: list[str] | None = None) -> int:
     """CLI. Verifies the shipped digests and the endpoint, then runs the rounds."""
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--agents", nargs="+", metavar="ID",
-                     help="two or more agent ids, each on config.toml, in rotation")
-    src.add_argument("--manifest", type=Path, metavar="PATH",
-                     help="an experiment manifest: the schedule, the experiment's defaults, and each "
-                          "agent's own terms")
-    ap.add_argument("--rounds", type=int, default=1, metavar="N",
+    ap.add_argument("name", nargs="?", metavar="NAME",
+                    help="an experiment manifest: the schedule, the experiment's defaults, and each "
+                         "agent's own terms. Every run names the experiment it is part of. A bare "
+                         "name is looked for under experiments/ and experiments/examples/; anything "
+                         "with a suffix or a directory in it is taken as the path it is")
+    ap.add_argument("-m", "--manifest", dest="named", metavar="NAME",
+                    help="the same manifest, given as a flag")
+    ap.add_argument("-r", "--rounds", type=int, default=1, metavar="N",
                     help="up to N episodes for each agent, stopping early as budgets end")
-    ap.add_argument("--config", type=Path, help="default: config.toml beside harness.py")
+    ap.add_argument("--model", metavar="MODEL",
+                    help="use MODEL for every seat in this invocation; it must have rates and "
+                         "must match any existing agent accounts")
+    ap.add_argument("-c", "--config", type=Path, help="default: config.toml beside harness.py")
     a = ap.parse_args(argv)
 
     if a.rounds < 1:
         ap.error("--rounds must be at least 1")
-    if a.agents is not None:
-        try:
-            check_ids(a.agents, "--agents")
-        except SystemExit as e:
-            ap.error(str(e))
-        manifest = shorthand(a.agents)
-    else:
-        manifest = load_manifest(a.manifest)
+    named = a.named or a.name
+    if named is None:
+        ap.error("name a manifest: a name under experiments/, or a path to one")
+    manifest = load_manifest(manifest_path(named))
+    if a.model is not None:
+        harness.validate_terms("--model", model=a.model, budget=None,
+                               starter_files=None, starter_files_below=None)
+        for entry in manifest["agents"]:
+            entry["model"] = a.model
 
     create = harness.start(a.config, overrides=manifest["overrides"],
                            models={e["model"] for e in manifest["agents"] if e.get("model")},
                            channel_tables=manifest["channels"], harness_files=manifest["harness_files"],
-                           labels=tuple(manifest["labels"].values()))
+                           labels=tuple(manifest["labels"].values()),
+                           tool_tables=manifest["tools"])
     harness.catch_signals()
     agents = [e["id"] for e in manifest["agents"]]
     live = set(agents)
@@ -460,7 +516,8 @@ def main(argv: list[str] | None = None) -> int:
           f"{manifest['schedule']})")
     try:
         for rnd in range(a.rounds):
-            if not play_round(a_round, agents, live, rnd, create, stamp, manifest["labels"]):
+            if not play_round(a_round, agents, live, rnd, create, stamp, manifest["labels"],
+                              manifest["stop_when_one_remains"]):
                 break
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,

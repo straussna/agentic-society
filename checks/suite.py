@@ -6,6 +6,7 @@ from pathlib import Path
 import inspect
 import os
 import re
+import tomllib
 import harness
 
 from checks import checks
@@ -88,3 +89,32 @@ def check_every_harness_global_a_check_moves_is_restored():
     assert moved, "no check assigns a harness global; the scan found nothing to hold"
     loose = {name: sorted(ls) for name, ls in moved.items() if name not in RESTORED}
     assert not loose, f"assigned by a check and not in RESTORED: {loose}"
+
+
+def check_no_setting_is_given_in_two_places():
+    """config.toml and an experiment own disjoint halves of the settings.
+
+    A setting given in both files is a run whose terms depend on which was read last.
+    Each file refuses the other's keys by name; this asserts the two halves cover
+    every tunable exactly once, and that the files the repo ships keep to them.
+    """
+    assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, "every tunable is owned"
+    assert not harness.PROCESS & harness.TREATMENT, sorted(harness.PROCESS & harness.TREATMENT)
+
+    root = Path(harness.__file__).parent
+    cfg = tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
+    assert set(cfg) == {p.lower() for p in harness.PROCESS}, \
+        f"config.toml states the process parameters and only those: {sorted(cfg)}"
+
+    manifests = sorted((root / "experiments").rglob("*.toml"))
+    assert manifests, "the repo ships manifests"
+    treatment = {t.lower() for t in harness.TREATMENT}
+    for m in manifests:
+        top = tomllib.loads(m.read_text(encoding="utf-8"))
+        assert top.get("agent"), f"{m.name}: an experiment seats agents"
+        stray = sorted(set(top) - {"schedule", "agent", "channel", "harness_files", "tool"}
+                       - treatment)
+        assert not stray, f"{m.name} sets {stray}, which config.toml owns"
+        told = "system_prompt" in top or all("system_prompt" in a for a in top["agent"])
+        assert told, (f"{m.name}: declare system_prompt, at the top level or on every "
+                      f"[[agent]]; what an agent is told is never inherited")

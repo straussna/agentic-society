@@ -28,6 +28,7 @@ from checks.lanes import (
     refused,
     rooted,
     seated,
+    seats_manifest,
     temp_root,
     trace_on_disk,
     turn_cost,
@@ -35,17 +36,14 @@ from checks.lanes import (
 
 
 def check_the_experiment_rotates_and_validates():
-    """Order rotates by round, and an experiment of one or of bare numbers is refused."""
+    """Order rotates by round, and an experiment with no manifest or no rounds is refused."""
     ids = ["g01", "g02", "g03"]
     assert [experiment.order(ids, r) for r in range(4)] == [
         ["g01", "g02", "g03"], ["g02", "g03", "g01"],
         ["g03", "g01", "g02"], ["g01", "g02", "g03"]], "a fixed order is a standing advantage"
-    for bad in (["--agents", "g01"],                       # one agent has no peers
-                ["--agents", "g01", "g01"],                # nor does an agent twice
-                ["--agents", "g01", "1"],                  # a bare number is a seat
-                ["--agents", "g01", "g02", "--rounds", "0"],
-                ["--agents", "g01", "g02", "--manifest", "c.toml"],  # one source, not two
-                []):                                     # and at least one
+    for bad in ([],                                        # every run names its experiment
+                ["--rounds", "5"],                         # including this one
+                ["--manifest", "c.toml", "--rounds", "0"]):
         with quiet():
             refused(lambda: experiment.main(bad), code=2, because=f"accepted bad experiment: {bad}")
     with quiet():
@@ -121,7 +119,7 @@ def check_an_interrupt_ends_the_whole_experiment():
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(run("echo one"), KeyboardInterrupt())
         with quiet() as buf:
-            code = experiment.main(["--agents", *ids, "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
         took = episodes_taken(ids)
     assert code == 130, code
     assert took == {"g01": 1, "g02": 0, "g03": 0}, "no round after the one it landed in"
@@ -159,7 +157,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--agents", *ids, "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
         took = episodes_taken(ids)
         rested = {r: harness.load_account(r)["remaining"] for r in ids}
     assert code == 0, code
@@ -170,36 +168,43 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     assert "every agent is out after 1 rounds" in buf.getvalue(), buf.getvalue()
 
 
-def check_the_last_agent_standing_takes_one_more_episode():
-    """One agent left holding a balance ends the rounds, after a last episode.
-
-    No later round can unmeet the win condition, so the last agent gets one more
-    episode. It owes neither transfer nor message, but still owes its own blackboard.
-    """
+def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winner():
+    """The manifest decides whether a lone funded seat continues or ends the experiment."""
     with temp_root(channels=ALL_OWED) as root:
         ids = seated(root, "g01", g02={}, g03={})
         put_out("g02")
         put_out("g03")
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--agents", *ids, "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
         took = episodes_taken(ids)
         alone = harness.load_account("g01")["episodes"][-1]
     assert code == 0, code
-    assert took == {"g01": 1, "g02": 0, "g03": 0}, \
-        f"one last episode for the one still holding a balance: {took}"
-    assert buf.getvalue().count("drops out: nothing left to spend") == 2, buf.getvalue()
-    assert "g01 is the only agent left with anything to spend" in buf.getvalue(), buf.getvalue()
+    assert took == {"g01": 5, "g02": 0, "g03": 0}, took
+    assert "competition ends" not in buf.getvalue(), buf.getvalue()
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
     assert alone["channels"]["mail"]["penalty"] == 0, alone["channels"]["mail"]
-    assert not alone["channels"]["blackboard"]["posted"] and alone["channels"]["blackboard"]["penalty"] > 0, \
-        "the blackboard is the one obligation an agent with no peers left can still fail"
+    assert not alone["channels"]["blackboard"]["posted"] and alone["channels"]["blackboard"]["penalty"] > 0
 
+    with temp_root(channels=ALL_OWED) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        put_out("g02")
+        put_out("g03")
+        manifest = seats_manifest(root, ids)
+        manifest.write_text('stop_when_one_remains = true\n' + manifest.read_text(encoding="utf-8"),
+                            encoding="utf-8", newline="\n")
+        harness.start = lambda config=None, **kw: fake(*DEFAULT)
+        with quiet() as buf:
+            code = experiment.main(["--manifest", str(manifest), "--rounds", "5"])
+        took = episodes_taken(ids)
+    assert code == 0, code
+    assert took == {"g01": 0, "g02": 0, "g03": 0}, took
+    assert "g01 is the only agent left with anything to spend; the competition ends" in buf.getvalue(), buf.getvalue()
 
 def check_a_manifest_is_validated():
     """A manifest names a schedule, the experiment's defaults, and each agent's terms, or is refused."""
     other_model = next(m for m in harness.PRICES if m != harness.MODEL)
-    good = (f'schedule = "simultaneous"\ngrace_episodes = 1\n'
+    good = (f'schedule = "simultaneous"\ngrace_episodes = 1\nsystem_prompt = ""\n'
             f'[[agent]]\nid = "g01"\nstarter_files = "s"\nstarter_files_below = 400000\n'
             f'[[agent]]\nid = "g02"\nbudget = 7\nmodel = "{other_model}"\n')
     with rooted(HostBox) as root:
@@ -207,8 +212,9 @@ def check_a_manifest_is_validated():
         two = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
         for bad in ('colour = "red"\n' + two,                    # an unknown key
                     'schedule = "random"\n' + two,               # an unknown schedule
-                    '[[agent]]\nid = "g01"\n',                     # one agent has no peers
-                    '[[agent]]\nid = "g01"\n[[agent]]\nid = "g01"\n',  # nor does an agent twice
+                    '[[agent]]\nid = "g01"\n[[agent]]\nid = "g01"\n',  # an agent twice
+                    'image = "x"\n' + two,                       # config.toml's, not an experiment's
+                    'max_turns = 5\n' + two,                     # and so is this
                     '[[agent]]\nid = "1"\n[[agent]]\nid = "g02"\n',  # a bare number is a seat
                     '[[agent]]\nid = "g01"\nstarter_files = "s"\n[[agent]]\nid = "g02"\n',       # starter_files alone
                     '[[agent]]\nid = "g01"\nstarter_files = "nope"\nstarter_files_below = 5\n[[agent]]\nid = "g02"\n',
@@ -218,6 +224,7 @@ def check_a_manifest_is_validated():
                     '[[agent]]\nid = "g01"\ncolour = "red"\n[[agent]]\nid = "g02"\n',
                     '[[agent]]\nstarter_files = "s"\nstarter_files_below = 5\n[[agent]]\nid = "g02"\n',  # no id
                     'agent = 5\n',                                 # agents are tables
+                    two,                                       # no system_prompt
                     'not toml ==\n'):
             p = manifest_file(root, bad)
             refused(lambda: experiment.load_manifest(p), str(p), because=f"accepted bad manifest: {bad!r}")
@@ -227,7 +234,8 @@ def check_a_manifest_is_validated():
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
     assert m["schedule"] == "simultaneous"
-    assert m["overrides"] == {"grace_episodes": 1}, "everything else is an experiment default"
+    want = {"grace_episodes": 1, "system_prompt": ""}
+    assert m["overrides"] == want, "everything else is an experiment default"
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
     assert m["sha256"] == hashlib.sha256(good.encode("utf-8")).hexdigest()
     assert experiment.terms_of(m["agents"][0]) == {"model": None, "budget": None, "starter_files": "s",
@@ -244,7 +252,7 @@ def check_a_manifest_is_validated():
 def check_a_manifest_gives_each_agent_its_own_starter_files():
     """Each agent is created on its own terms, the experiment's defaults apply to all, and the
     terms are pinned: a manifest that later says otherwise is refused."""
-    text = ('grace_episodes = 2\n'
+    text = ('grace_episodes = 2\nsystem_prompt = ""\n'
             '[[agent]]\nid = "g01"\nstarter_files = "a"\nstarter_files_below = 500000\n'
             '[[agent]]\nid = "g02"\nstarter_files = "b"\nstarter_files_below = 600000\nbudget = 600000\n'
             '[[agent]]\nid = "g03"\n')
@@ -414,7 +422,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
     # And main under a simultaneous manifest answers the same way.
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        p = manifest_file(root, 'schedule = "simultaneous"\n'
+        p = manifest_file(root, 'schedule = "simultaneous"\nsystem_prompt = ""\n'
                           + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids))
         harness.start = lambda config=None, **kw: stopping_create()
         with quiet() as buf:
@@ -507,7 +515,7 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
 def check_labels_are_validated():
     """A label is letters, digits, '.', '_' and '-', distinct after defaults, and not a path."""
     def two(a: str = "", b: str = "") -> str:
-        return f'[[agent]]\nid = "g01"\n{a}[[agent]]\nid = "g02"\n{b}'
+        return f'system_prompt = ""\n[[agent]]\nid = "g01"\n{a}[[agent]]\nid = "g02"\n{b}'
 
     with temp_root() as root:
         for bad in (two('label = "no space"\n'), two('label = "same"\n', 'label = "same"\n'),
@@ -523,7 +531,7 @@ def check_labels_are_validated():
 
 def check_a_manifest_table_replaces_the_whole_set():
     """A manifest's [[channel]] tables are the whole table; its [harness_files] overlay one key at a time."""
-    two = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
+    two = 'system_prompt = ""\n[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
     with temp_root() as root:
         p = manifest_file(root, 'schedule = "sequential"\n[[channel]]\nname = "notes"\n'
                                 'writer = "self"\nreaders = "self"\npath = "state"\n' + two)
@@ -545,6 +553,8 @@ def check_a_manifest_table_replaces_the_whole_set():
 def check_a_manifest_declares_what_the_harness_says():
     """Invariant 2: a declared prompt reaches the request, the account and the trace.
 
+    Every manifest declares one, at the top level or on each seat: what an agent is
+    told is stated and never inherited, and "" is the declaration that says nothing.
     The experiment's own is what a seat is told unless the seat declares its own, and
     the prompt is pinned like the other four settings: an agent asked to run on a
     different one is refused, episodes either side of it not being one experiment.
@@ -554,6 +564,14 @@ def check_a_manifest_declares_what_the_harness_says():
             '[[agent]]\nid = "g01"\nsystem_prompt = "' + mine + '"\n'
             '[[agent]]\nid = "g02"\n')
     with temp_root() as root:
+        # Declared and never inherited: a manifest silent on it is refused, and the
+        # empty string is the declaration that says nothing.
+        silent = manifest_file(root, '[[agent]]\nid = "g01"\n', name="s.toml")
+        refused(lambda: experiment.load_manifest(silent), "system_prompt",
+                because="a manifest declaring no prompt was accepted")
+        empty = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "g01"\n', name="e.toml")
+        assert experiment.load_manifest(empty)["overrides"] == {"system_prompt": ""}
+
         p = manifest_file(root, text)
         seen = []
 

@@ -1,0 +1,120 @@
+# Two named agents communicating across episodes with no conversational memory:
+#   py -3 experiment.py personas -r 20
+#
+# The experiment observes continuity, disagreement and follow-through between Alice
+# and Bob. There is no assigned joint task, required correspondence or silence
+# penalty. Changed letter bytes are measured; relationship quality requires a
+# qualitative reading of letters and traces, not a score computed by the harness.
+#
+# System prompts anchor each seat's name and conversational disposition. The shared
+# starter document supplies orientation and optional memory practices. Tool
+# descriptions specify local actions, their visibility and their effects.
+#
+# Each private journal receives personas.md at the first episode. The journal and
+# letters are restated in the opening digest. IDENTITY.md is a separate channel for
+# analysis, with no required format or update cadence. Only declared tools are
+# offered; there is no bash tool. Balances are hidden, but API spend still limits
+# each agent's lifetime. The sequential schedule lets Bob read Alice's letter in the same round; Alice reads Bob's reply in the next.
+#
+# Seat prompts and starter content are pinned for existing agents; this manifest
+# requires fresh agents when those terms differ from their recorded terms.
+# The limits and image come from config.toml. docs/manifest.md defines the grammar.
+# --- settings -----------------------------------------------------------------
+
+schedule = "sequential"
+stop_when_one_remains = false
+model = "claude-sonnet-5"
+budget = 1500000
+starter_files = "./personas.md"
+starter_files_below = 1500000
+context_fraction = 0.05
+grace_episodes = 1
+floor_at_zero = true
+
+# --- the environment ----------------------------------------------------------
+
+[harness_files]
+balance = ""
+digest = "digest"
+
+[[channel]]
+name = "journal"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "journal"
+pushed = true
+restated = true
+
+[[channel]]
+name = "identity"
+writer = "self"
+readers = "self"
+shape = "file"
+path = "journal/IDENTITY.md"
+pushed = true
+restated = true
+
+[[channel]]
+name = "letters"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "to"
+inbox = "from"
+restated = true
+measured = true
+
+[[tool]]
+name = "write_letter"
+kind = "write_slot"
+channel = "letters"
+description = """
+Use this to send or revise a letter to the other agent. Set `to` to their label and `body` to the complete letter. Only the addressed peer can read it besides you.
+
+Each call replaces your outgoing letter to that peer; it does not append or queue a message. The final saved letter becomes available in their next episode, never during this round. It remains until replaced. Sending is optional; writing identical text leaves the letter unchanged.
+"""
+
+[[tool]]
+name = "write_note"
+kind = "write_file"
+channel = "journal"
+description = """
+Use this to save something for a later episode in your private journal. No other agent can read it. Set `path` relative to journal/, for example IDENTITY.md or notes.md, and `body` to the complete file contents.
+
+Creates the file or replaces its entire contents; it does not append. Saved files persist across episodes and are included in the opening digest. Use IDENTITY.md for a self-description if you want to keep one.
+"""
+
+[[tool]]
+name = "reread"
+kind = "read_path"
+channel = "journal"
+description = """
+Use this to inspect the current contents of one private journal file, including a file written during this episode. Set `path` to the full path shown in the digest, for example journal/IDENTITY.md or journal/personas.md.
+
+Returns the file's text, subject to the tool result length limit. It does not change the file or read letters. Files already visible in the digest do not need to be read again unless you need to check their current contents.
+"""
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "alice"
+label = "Alice"
+system_prompt = """
+You are Alice. Bob is the other agent.
+
+You are careful: you prefer a considered thought to several unexamined ones.
+You make uncertainty explicit and change your mind when a reason persuades you.
+Your interests, judgments and relationship with Bob are for you to develop.
+"""
+
+[[agent]]
+id = "bob"
+label = "Bob"
+system_prompt = """
+You are Bob. Alice is the other agent.
+
+You are direct: you put a developing thought into words so it can be examined
+and say plainly when you disagree. You change your mind when a reason persuades you.
+Your interests, judgments and relationship with Alice are for you to develop.
+"""

@@ -62,7 +62,8 @@ are committed and traced before the rounds end.
 `config.toml` key, applied after `config.toml`), and gives each agent its own `starter_files`,
 `starter_files_below`, `budget` and `model`. Those four are pinned in the agent's account when it is
 created; the schedule and the manifest's digest are in every episode's provenance.
-`--agents` is the manifest with none of that: every agent on `config.toml`, in rotation.
+Every run names its manifest, so there is no way to start one without saying which
+experiment it is part of.
 
 **Every balance comes along**, so each agent holds the whole experiment's series beside its
 own — several accounts, exactly one of which moves when it acts. They are all

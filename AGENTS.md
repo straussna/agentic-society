@@ -18,7 +18,7 @@ this ladder and stop at the first rung that covers what you changed.
 | what you changed | run |
 |---|---|
 | one behaviour, and you know its name | `py -3 check.py <name-fragment>` |
-| pricing, metering, refusals, traces, the declared system prompt, starter files, forks, experiments, manifests, the channel table, labels, receipts, harness file names, simultaneous rounds, experimenter channels, transfer funding, push and pull delivery, author labels, transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial observation, the silence penalties, the grace, the floor | `py -3 check.py --no-docker` |
+| pricing, metering, refusals, traces, the declared system prompt, starter files, forks, experiments, manifests, the channel table, the tool table and what a tool call does, labels, receipts, harness file names, simultaneous rounds, experimenter channels, transfer funding, push and pull delivery, author labels, transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial observation, the silence penalties, the grace, the floor | `py -3 check.py --no-docker` |
 | anything, before handing work over | `py -3 check.py` |
 | `harness.py`'s episode path — the container, the shell, `load_state`/`save_state`, `run_once` | `py -3 check.py --real` |
 
@@ -38,7 +38,7 @@ What only a container can show — modes, ownership, the dead network, what the
 image has and lacks — takes a real one. That includes the checks that an inbox
 and the transfer ledger really are root's and really do refuse every route into
 them. Those are the checks that skip when Docker is down, and the reason
-`--no-docker` still runs 185 of 210.
+`--no-docker` still runs 203 of 228.
 
 `--real` puts every check in a container. It is what says the two lanes still
 agree, so run it after changing how an episode is set up or torn down. It is not

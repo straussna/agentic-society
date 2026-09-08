@@ -10,13 +10,15 @@ Sections, in the order an episode meets them:
   1. What the harness says          SYSTEM, REFUSAL_NOTICE, PINNED, TOOL, system_of
   2. Rates                          PRICES, PRICES_EXPIRE, FALLBACK_BETA
   3. Tunables                       defaults, load_config, apply_config
-  4. The channel table              Channel, DEFAULT_CHANNELS, validate_channels
+  4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
+                                    Tool, TOOL_KINDS, validate_tools
   5. Process constants              ROOT, HARNESS_SHA256, limits, stop sets, regexes
   6. Accounts                       load_account, Seating, adjust, penalise
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
- 10. The container and the shell    Container, Shell, load_state, save_state, clip
+ 10. The container and the shell    Container, Shell, load_state, save_state, clip,
+                                    Bound, bind_tools
  11. The API                        measure_response, call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
@@ -32,6 +34,7 @@ Sections, in the order an episode meets them:
 from __future__ import annotations
 
 import argparse
+import base64
 import contextvars
 import dataclasses
 import functools
@@ -59,8 +62,8 @@ from typing import Any, Callable, Iterable
 # The harness ships no words. What it says to an agent it computes from the accounts -
 # the balances, the digest, the ledger, a receipt - and rewrites whenever those move. A
 # fixed line is a constant, and a constant is the experimenter's to declare through
-# SYSTEM_PROMPT. So the arm an experiment gets by declaring nothing is silence, and the
-# empty string is pinned like any other text: an arm that adds words has to say so.
+# SYSTEM_PROMPT. Every manifest declares one, the empty string included, and the empty
+# string is pinned like any other text: silence is an arm an experiment states.
 SYSTEM = ""
 
 SYSTEM_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -110,14 +113,19 @@ PRICES = {
     "claude-mythos-5": (1000, 5000, 1_000_000),
     "claude-opus-5": (500, 2500, 1_000_000),
     "claude-opus-4-8": (500, 2500, 1_000_000),
-    "claude-opus-4-7": (500, 2500, 1_000_000),
-    "claude-opus-4-6": (500, 2500, 1_000_000),
     "claude-opus-4-5": (500, 2500, 200_000),
     "claude-sonnet-5": (300, 1500, 1_000_000),
-    "claude-sonnet-4-6": (300, 1500, 1_000_000),
-    "claude-sonnet-4-5": (300, 1500, 200_000),
     "claude-haiku-4-5": (100, 500, 200_000),
 }
+
+# Every model in PRICES accepts strict tool use, which is what lets a declared
+# tool carry `strict` without the request differing by model. A model that does
+# not take it is not priced: a tool set that varied by model would make two seats
+# of one experiment two arms for a reason the experimenter never declared. Adding
+# a model to PRICES without adding it here fails check_every_priced_model_takes_a_strict_tool.
+STRICT_MODELS = frozenset({"claude-fable-5", "claude-mythos-5", "claude-opus-5",
+                           "claude-opus-4-8", "claude-opus-4-5", "claude-sonnet-5",
+                           "claude-haiku-4-5"})
 
 # model -> (last day the rate above holds, what replaces it). Only for rates
 # already known to change; lapsed_prices() refuses to start an agent on a model
@@ -140,9 +148,9 @@ FALLBACK_MODELS = frozenset({"claude-fable-5", "claude-opus-5"})
 # that reaches the model.
 
 # What the harness says to every agent, which is whatever the experiment declared it
-# should. The shipped SYSTEM - nothing - unless a manifest says otherwise, and "" sends
-# no system parameter at all. Pinned per agent at creation, and recorded whole and by
-# digest in every episode's provenance.
+# should. Every manifest declares it, so this default stands only for a round driven
+# straight from a list of ids; "" sends no system parameter at all. Pinned per agent at
+# creation, and recorded whole and by digest in every episode's provenance.
 SYSTEM_PROMPT = SYSTEM
 
 BUDGET = 500_000              # micro-dollars per agent, at creation only
@@ -186,17 +194,37 @@ DIGEST_FILE_LIMIT = 2_000
 # and TOOL_RESULT_LIMIT is the ceiling on what a chosen call may cost.
 OBSERVATION_LIMIT = 40_000
 
+# Whether the shell is offered to the agent as a tool. The container and its shell
+# exist either way - the harness builds the environment, runs the initial
+# observation and carries out every declared tool through them. What this decides
+# is whether the agent may issue commands of its own, or reaches its environment
+# only through the actions the experiment declared.
+SHELL_TOOL = False
+
 # The sandbox image the container is started from.
 IMAGE = "metered-agent:latest"
 
-TUNABLES = {"SYSTEM_PROMPT", "BUDGET", "MODEL", "CONTEXT_FRACTION", "MAX_TOKENS", "MAX_TURNS",
-            "COMMAND_TIMEOUT", "LIVE_BALANCE", "GRACE_EPISODES", "FALLBACKS",
-            "FLOOR_AT_ZERO", "STARTER_FILES", "STARTER_FILES_BELOW", "TOOL_RESULT_LIMIT",
-            "DELIVERY", "DIGEST_FILE_LIMIT", "OBSERVATION_LIMIT", "IMAGE"}
+# config.toml's, and refused in a manifest: the machine, the API and the safety
+# stops, true of every run whatever the experiment is.
+PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_LIMIT",
+           "FALLBACKS"}
+
+# An experiment's, and refused in config.toml: everything an agent's situation is
+# made of, alongside the [[channel]] tables and [harness_files] that go with it.
+TREATMENT = {"SYSTEM_PROMPT", "MODEL", "BUDGET", "STARTER_FILES", "STARTER_FILES_BELOW",
+             "CONTEXT_FRACTION", "DELIVERY", "DIGEST_FILE_LIMIT", "OBSERVATION_LIMIT",
+             "LIVE_BALANCE", "GRACE_EPISODES", "FLOOR_AT_ZERO"}
+
+TUNABLES = PROCESS | TREATMENT
+
+# What each file says when it is handed the other's key.
+NOT_CONFIG = "an experiment's to declare; config.toml holds what is true of every run"
+NOT_MANIFEST = "config.toml's, and true of every run whatever the experiment declares"
 
 # Keys config.toml once held that are now fields of a channel. Refused by name, so
 # the message says where each went.
 RETIRED = {
+    "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": "rebate_percent on the channel with schema = \"transfer\"",
     "transfer_silence_penalty_percent": "silence_penalty_percent on the channel with schema = \"transfer\"",
@@ -230,26 +258,30 @@ def load_config(path: Path | None = None) -> Path | None:
     if not f.exists():
         return None
     top = tomllib.loads(f.read_text(encoding="utf-8"))
-    tables, harness_files = top.pop("channel", None), top.pop("harness_files", None)
-    apply_config(top, str(f))
-    if tables is not None or harness_files is not None:
-        apply_channels(tables, harness_files, str(f))
+    for table in ("channel", "harness_files", "tool"):
+        if table in top:
+            raise SystemExit(f"{f}: {table} is {NOT_CONFIG}. Declare it in a manifest under "
+                             f"{ROOT / 'experiments'}")
+    apply_config(top, str(f), PROCESS, NOT_CONFIG)
     return f
 
 
 def check_keys(refuse: Callable[[str], None], where: str, raw: dict, allowed: Iterable[str],
                types: Iterable[tuple[str, type]] = (), retired: dict[str, str] | None = None,
-               expected: str = "") -> None:
+               expected: str = "", elsewhere: dict[str, str] | None = None) -> None:
     """Refuse an unknown key or a wrong type, naming the table and the key.
 
     The one place config.toml, a manifest, an [[agent]] table and a [[channel]]
     table are held to their keys, so every refusal reads alike. `where` leads
     each message, `types` fixes the type of the keys that have one, `retired`
-    names where a key went, and `expected` replaces the list of allowed keys.
+    names where a key went, `elsewhere` names the file a real key belongs in, and
+    `expected` replaces the list of allowed keys.
     """
     for key in raw:
         if retired and key in retired:
             refuse(f"{where}unknown key {key!r}; it is now {retired[key]}")
+        if elsewhere and key in elsewhere:
+            refuse(f"{where}{key} is {elsewhere[key]}")
     if unknown := sorted(set(raw) - set(allowed)):
         refuse(f"{where}unknown key {unknown[0]!r}; "
                f"expected {expected or sorted(allowed)}")
@@ -258,19 +290,24 @@ def check_keys(refuse: Callable[[str], None], where: str, raw: dict, allowed: It
             refuse(f"{where}{key} must be {kind.__name__}, got {type(raw[key]).__name__}")
 
 
-def apply_config(values: dict[str, Any], source: str) -> None:
+def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = TUNABLES,
+                 elsewhere: str = "") -> None:
     """Overlay config keys onto the tunables and validate the whole set.
 
-    `source` names where the values came from in every refusal. A manifest's
-    experiment-level defaults come through here after config.toml, so both are held
-    to the same types and ranges.
+    `source` names where the values came from in every refusal. `allowed` is the half
+    of TUNABLES this file owns, and a key belonging to the other half is refused
+    saying so, so no setting can be given in two places. A manifest's experiment-level
+    defaults come through here after config.toml, so both are held to the same types
+    and ranges.
     """
     f = source
+    allowed = set(allowed)
 
     def refuse(why: str) -> None:
         raise SystemExit(f"{f}: {why}")
 
-    check_keys(refuse, "", values, [t.lower() for t in TUNABLES], retired=RETIRED)
+    check_keys(refuse, "", values, [t.lower() for t in allowed], retired=RETIRED,
+               elsewhere={k.lower(): elsewhere for k in TUNABLES - allowed} if elsewhere else None)
     for key, value in values.items():
         name = key.upper()
         default = globals()[name]
@@ -329,11 +366,12 @@ def validate_terms(source: str, *, model: str | None, budget: int | None,
                          f"mean to start")
     if starter_files_below is not None and starter_files_below < 0:
         raise SystemExit(f"{lead}starter_files_below must be zero or positive, got {starter_files_below}")
-    if starter_files and not files_dir(starter_files).is_dir():
-        raise SystemExit(f"{lead}starter_files {starter_files!r} is not a directory under {ROOT / 'files'}")
+    if starter_files and not (files_dir(starter_files).is_dir() or files_dir(starter_files).is_file()):
+        raise SystemExit(f"{lead}starter_files {starter_files!r} is not a file or directory at "
+                         f"{files_dir(starter_files)}")
 
 
-# --- 4. The channel table --------------------------------------------------------
+# --- 4. The channel and tool tables -----------------------------------------------
 
 
 @dataclasses.dataclass(frozen=True)
@@ -350,7 +388,8 @@ class Channel:
     path: str = ""                   # directory and file shapes; may hold {label}
     outbox: str = ""                 # mailbox: the writer's side
     inbox: str = ""                  # mailbox: each reader's side
-    pushed: bool = True              # quoted in the digest under push delivery
+    pushed: bool = True              # quoted in the digest under push delivery; every
+                                     # channel, a private store included
     restated: bool = False           # quoted every episode, never named as unchanged
     measured: bool = False           # the episode records what this channel gained
     silence_penalty_percent: int = 0
@@ -400,7 +439,7 @@ class Channel:
 # The default set: the competition environment, in the paths the starter files
 # name. Code defaults, not config.toml's: no penalty, a full rebate.
 DEFAULT_CHANNELS: tuple[Channel, ...] = (
-    Channel("notes", "self", "self", "directory", path="state", pushed=False),
+    Channel("notes", "self", "self", "directory", path="state"),
     Channel("blackboard", "self", "all", "directory", path="{label}", measured=True),
     Channel("mail", "self", "addressee", "mailbox", outbox="out", inbox="in", measured=True),
     Channel("transfer", "self", "harness", "file", path="out/transfer", schema="transfer",
@@ -536,6 +575,25 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
     return table, hf
 
 
+def path_fault(path: Any) -> str | None:
+    """Why nothing may stand at this path, as the tail of a refusal, or None where it may.
+
+    The one rule a declared path and a path a tool call names are both held to,
+    so a tool cannot reach anywhere a channel could not.
+    """
+    if not isinstance(path, str) or not path:
+        return "must be a path"
+    if path.startswith("/") or any(seg in (".", "..") or not SEGMENT.match(seg)
+                                    for seg in path.split("/")):
+        return (f"{path!r} must be segments of letters, digits, '.', '_', "
+                f"'-' and at most one {{label}}, with no leading '/' and no '..'")
+    if path.count("{label}") > 1:
+        return f"{path!r} names {{label}} more than once"
+    if path.split("/")[0].endswith(SIDECARS):
+        return f"{path!r} is a name the host keeps for itself"
+    return None
+
+
 def check_path(refuse: Callable[[str], None], name: str, key: str, path: Any,
                placeholder: bool) -> None:
     """Refuse a path no channel can stand at, naming the channel and the key.
@@ -543,16 +601,8 @@ def check_path(refuse: Callable[[str], None], name: str, key: str, path: Any,
     `placeholder` is whether {label} belongs in it, which only a directory every
     agent reads has.
     """
-    if not isinstance(path, str) or not path:
-        refuse(f"channel {name}: {key} must be a path")
-    if path.startswith("/") or any(seg in (".", "..") or not SEGMENT.match(seg)
-                                    for seg in path.split("/")):
-        refuse(f"channel {name}: {key} {path!r} must be segments of letters, digits, '.', '_', "
-               f"'-' and at most one {{label}}, with no leading '/' and no '..'")
-    if path.count("{label}") > 1:
-        refuse(f"channel {name}: {key} {path!r} names {{label}} more than once")
-    if path.split("/")[0].endswith(SIDECARS):
-        refuse(f"channel {name}: {key} {path!r} is a name the host keeps for itself")
+    if fault := path_fault(path):
+        refuse(f"channel {name}: {key} {fault}")
     if "{label}" in path and not placeholder:
         refuse(f"channel {name}: {{label}} has no meaning in {key} here; only a directory "
                f"every agent writes has one instance per agent")
@@ -696,7 +746,7 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
             if key in raw:
                 refuse(f"channel {name}: {key} is a field of the transfer schema, and this "
                        f"channel has none")
-    pushed = raw.get("pushed", readers != "self")
+    pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
@@ -764,6 +814,157 @@ def apply_channels(tables: list[dict] | None, harness_files: dict | None, source
     CHANNELS, HARNESS_FILES = validate_channels(tables, harness_files, source, labels)
 
 
+# --- the tools a channel offers --------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Tool:
+    """One named action an experiment offers its agents. docs/manifest.md section 4.8.
+
+    A tool is a kind from the menu below pointed at a declared channel. The kind
+    decides what the tool does and what its result reports; a manifest chooses the
+    name, where it points, and the words the agent reads. It invents no behaviour:
+    the input schema is the harness's, because that is the contract a call is held
+    to. Bash is offered only when declared.
+    """
+    name: str
+    kind: str                        # a key of TOOL_KINDS
+    channel: str = ""                # empty for bash
+    description: str = ""            # the experimenter's words; "" takes the harness's
+
+    def as_table(self) -> dict:
+        return dataclasses.asdict(self)
+
+# The fixed menu, and the channel each kind takes. A kind the harness gains is an
+# entry here, a branch in each of Bound's three methods, and a check. Nothing a
+# manifest writes reaches this table.
+TOOL_KINDS: dict[str, str] = {
+    "bash": "no channel",
+    "write_slot": "a mailbox channel",
+    "write_file": "a directory channel the agent writes",
+    "transfer": "an enabled transfer schema channel",
+    "read_path": "any channel the environment plants",
+}
+
+# The API's grammar for a tool name, and so the experimenter's.
+TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+TOOL_KEYS = ("name", "kind", "channel", "description")
+
+TOOL_TYPES = (("name", str), ("kind", str), ("channel", str), ("description", str))
+
+# The tools in force: none, until a manifest declares some. config.toml declares no
+# environment, so it declares no actions on one.
+TOOLS: list[Tool] = []
+
+
+def tools() -> list[Tool]:
+    """The tool table this process runs under."""
+    return list(TOOLS)
+
+
+def tools_sha256(table: Iterable[Tool]) -> str:
+    """Digest of a tool table: every field of every tool, in declaration order."""
+    body = json.dumps([t.as_table() for t in table], sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def tools_from(records: list[dict] | None) -> list[Tool]:
+    """A tool table read back out of a trace's provenance; none where there is none."""
+    return [Tool(**r) for r in records or []]
+
+
+def kind_takes(kind: str, ch: Channel) -> bool:
+    """Whether a channel is the shape this kind of tool acts on."""
+    if kind == "write_slot":
+        return ch.shape == "mailbox"
+    if kind == "write_file":
+        return ch.writer == "self" and ch.shape == "directory"
+    if kind == "transfer":
+        return ch.schema == "transfer" and ch.funded_by != "none"
+    return True                      # read_path takes whatever the environment plants
+
+
+def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
+               refuse: Callable[[str], None]) -> Tool:
+    """One [[tool]] table as a Tool, or a refusal naming the tool and the key.
+
+    `table` is what has been parsed before it, for the duplicate-name rule, and
+    `chans` the channel table the tool has to point into.
+    """
+    name = raw.get("name")
+    if not isinstance(name, str) or not name:
+        refuse("every tool needs a name")
+    if not TOOL_NAME.match(name):
+        refuse(f"tool name {name!r} must be at most 64 letters, digits, '_' and '-', "
+               f"which is the grammar the API takes")
+    if any(t.name == name for t in table):
+        refuse(f"tool {name!r} is declared twice")
+    if held := sorted(set(raw) & {"input_schema", "schema", "properties", "required"}):
+        refuse(f"tool {name}: {held[0]} is the harness's, not a manifest's; the input "
+               f"schema is the contract a call is held to, and is built from the kind "
+               f"and the channel. The description is the words this tool is given")
+    check_keys(refuse, f"tool {name}: ", raw, TOOL_KEYS, TOOL_TYPES)
+    kind = raw.get("kind")
+    if kind not in TOOL_KINDS:
+        refuse(f"tool {name}: kind must be one of {sorted(TOOL_KINDS)}, got {kind!r}")
+    if kind == "bash":
+        if name != "bash" or raw.get("channel") or raw.get("description"):
+            refuse("bash requires name = 'bash' and no channel or description")
+        return Tool("bash", "bash")
+    if name == "bash":
+        refuse("tool bash requires kind = 'bash'")
+    where = raw.get("channel")
+    ch = next((c for c in chans if c.name == where), None)
+    if ch is None:
+        refuse(f"tool {name}: channel {where!r} is not in the channel table "
+               f"{[c.name for c in chans]}")
+    if not kind_takes(kind, ch):
+        refuse(f"tool {name}: kind {kind!r} takes {TOOL_KINDS[kind]}, and channel "
+               f"{ch.name!r} is not one")
+    return Tool(name, kind, ch.name, raw.get("description", ""))
+
+
+def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str) -> list[Tool]:
+    """Read a tool table against a channel table, or refuse it naming the file and the key.
+
+    An omitted table means no tools. Pure: nothing is set.
+    """
+    def refuse(why: str) -> None:
+        raise SystemExit(f"{source}: {why}")
+
+    if tables is None:
+        tables = []
+    elif not isinstance(tables, list) or not all(isinstance(x, dict) for x in tables):
+        refuse("tools are [[tool]] tables")
+    out: list[Tool] = []
+    for raw in tables:
+        out.append(parse_tool(raw, out, chans, refuse))
+    return out
+
+
+def apply_tools(tables: list[dict] | None, chans: list[Channel], source: str) -> None:
+    """Validate a tool table against the channel table and make it the one in force.
+
+    Bash availability is derived from the declared table.
+    """
+    global TOOLS, SHELL_TOOL
+    table = validate_tools(tables, chans, source)
+    shell = any(t.kind == "bash" for t in table)
+    if not shell:
+        if not table:
+            raise SystemExit(f"{source}: bash is not declared and no [[tool]] is declared, so "
+                             f"the agent is offered nothing to act with and every episode "
+                             f"ends on its first turn")
+        if DELIVERY != "push" or not HARNESS_FILES["digest"]:
+            raise SystemExit(f"{source}: bash is not declared, so an episode opens on the "
+                             f"digest and nothing else; delivery is {DELIVERY!r} and the "
+                             f"digest is {HARNESS_FILES['digest']!r}, which leaves the first "
+                             f"turn with nothing in it")
+    TOOLS = table
+    SHELL_TOOL = shell
+
+
 # --- 5. Process constants --------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent
@@ -802,7 +1003,7 @@ FILE_CONTENT_LIMIT = 100_000
 
 # The shape of a trace: every file record names its channel, writer, readers,
 # role and author, and every episode record settles its channels by name.
-TRACE_VERSION = 2
+TRACE_VERSION = 3
 
 # --watch only. Not in TUNABLES, so config.toml cannot set it, and it never
 # reaches the agent.
@@ -1163,20 +1364,22 @@ def penalise(account: dict, ch: Channel) -> int:
 # the harness says. Their names and contents are prompt surface, recorded by
 # digest in every episode (invariant 9).
 def files_dir(name: str) -> Path:
-    """Where a directory of starter files or an experimenter channel's source lives.
+    """Where starter files or an experimenter channel's source lives.
     Committed, unlike environments/ and records/."""
     return ROOT / "files" / name
 
 
 def files_listing(name: str) -> list[tuple[str, bytes]]:
-    """A directory under files/ as (relative path, bytes), ordered so the digest is stable."""
+    """A source as (relative path, bytes), ordered so the digest is stable."""
     root = files_dir(name)
+    if root.is_file():
+        return [(root.name, root.read_bytes())]
     return [(p.relative_to(root).as_posix(), p.read_bytes())
             for p in sorted(root.rglob("*")) if p.is_file()]
 
 
 def files_sha256(name: str) -> str:
-    """Digest of a whole directory under files/: paths and bytes, both.
+    """Digest of a starter source: paths and bytes, both.
 
     Recorded, not pinned: every episode's provenance says which one it got.
     """
@@ -1594,17 +1797,25 @@ def listing_command(table: Iterable[Channel]) -> str:
 
 
 def observation(table: Iterable[Channel] | None = None, digest: str | None = None,
-                delivery: str | None = None) -> str:
+                delivery: str | None = None, shell: bool | None = None) -> str:
     """The command the episode opens on: the listing, and the digest where one is pushed.
 
-    The table, the digest's name and the delivery default to the ones in force;
-    a reader of a trace passes the ones its provenance records.
+    The table, the digest's name, the delivery and whether the shell is offered
+    default to the ones in force; a reader of a trace passes the ones its
+    provenance records.
+
+    A listing is what an agent holding the shell reads to know what there is to
+    reach. Where the shell is withheld there is nothing to reach it with, so an
+    episode opens on the digest alone: the content of the channels rather than
+    their layout. apply_tools refuses that arrangement without a digest, so this
+    never returns nothing.
     """
     listing = listing_command(channels() if table is None else table)
     digest = HARNESS_FILES["digest"] if digest is None else digest
-    if (DELIVERY if delivery is None else delivery) == "push" and digest:
-        return f"{listing}; cat {shlex.quote(digest)}"
-    return listing
+    pushed = (DELIVERY if delivery is None else delivery) == "push" and digest
+    if (SHELL_TOOL if shell is None else shell):
+        return f"{listing}; cat {shlex.quote(digest)}" if pushed else listing
+    return f"cat {shlex.quote(digest)}"
 
 
 @functools.lru_cache
@@ -1996,6 +2207,9 @@ class Shell:
 
     def __init__(self, container: str) -> None:
         self.container, self.proc, self.buf = container, None, bytearray()
+        # Counted so a caller can ask whether the shell it addressed is the one
+        # that answered. A restart loses cwd, exports and any output in flight.
+        self.restarts = 0
         self.restart()
 
     def argv(self) -> list[str]:
@@ -2017,6 +2231,7 @@ class Shell:
 
     def restart(self) -> None:
         """Start a fresh shell, losing cwd and exports - which is what restart is."""
+        self.restarts += 1
         self.close()
         self.proc = subprocess.Popen(
             self.argv(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -2284,6 +2499,290 @@ def rescue_misplaced(shell: Shell, instances: list[Instance]) -> list[str]:
     return found
 
 
+
+# --- what a declared tool does ---------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Unanswered:
+    """A probe the shell did not answer, and what it said instead.
+
+    Distinct from None, which is the shell answering that nothing is at the path.
+    A tool that cannot see what a path holds says so, because the absence it would
+    otherwise report is one it cannot tell this apart from.
+    """
+    said: str
+
+
+def read_path_in(shell: Shell, path: str) -> str | None | Unanswered:
+    """What `path` holds in the environment now.
+
+    None where it is not a file, and an Unanswered where the shell did not answer.
+    One command, so an absent file and an empty one are told apart by the flag the
+    probe prints ahead of the bytes; a probe that comes back without that flag, or
+    from a shell that died or restarted under it, saw nothing it can report.
+    """
+    q = shlex.quote(path)
+    # `test` takes no --, so the quoting is what keeps the path a path; two
+    # arguments is the form in which the first is always the operator.
+    before = shell.restarts
+    out = shell.run(f"if [ -f {q} ]; then printf 1; cat -- {q}; else printf 0; fi",
+                    COMMAND_TIMEOUT)
+    if shell.restarts != before or shell.proc.poll() is not None or out[:1] not in ("0", "1"):
+        return Unanswered(out.strip() or "the shell gave no answer")
+    return out[1:] if out[:1] == "1" else None
+
+
+def write_path_in(shell: Shell, path: str, body: str) -> tuple[int, str]:
+    """Put `body` at `path` and say how many bytes are there afterwards.
+
+    Base64 so the bytes arrive as they were given: no here-document tag to
+    collide with, and no newline the agent did not ask for. Written through the
+    episode's own shell, so the file is the agent's exactly as a bash write would
+    make it. Returns (-1, what the shell said) where the write did not land.
+    """
+    q = shlex.quote(path)
+    data = base64.b64encode(body.encode("utf-8")).decode("ascii")
+    holder = posixpath.dirname(path)
+    make = f"mkdir -p -- {shlex.quote(holder)} && " if holder else ""
+    said = shell.run(f"{make}printf %s '{data}' | base64 -d > {q} && wc -c < {q}",
+                     COMMAND_TIMEOUT).strip()
+    return (int(said), said) if said.isdigit() else (-1, said)
+
+
+@dataclasses.dataclass(frozen=True)
+class Bound:
+    """One declared tool as one episode can use it: the tool, its channel, and the
+    instances of that channel this environment planted.
+
+    What the agent is offered and what a call does are computed from these three
+    and nothing else, so a tool can neither say nor reach what the channel table
+    does not.
+    """
+    tool: Tool
+    channel: Channel
+    instances: tuple[Instance, ...]
+    reach: tuple[str, ...] | None = None   # the labels still reachable; None filters none
+
+    @property
+    def own(self) -> Instance | None:
+        """The instance the agent writes, where this channel gives it one."""
+        return next((i for i in self.instances if i.writable), None)
+
+    @property
+    def slots(self) -> list[str]:
+        """The peers a mailbox reaches, as this agent names them, in seat order.
+
+        A seat that is out is not a message target - resolve_mailbox judges only
+        the reachable slots - so it is not offered either. Offering it would be
+        offering a write that lands and settles nothing, which is the one thing a
+        tool result must never say.
+        """
+        if self.tool.kind == "transfer":
+            return list(self.reach or ())
+        return [i.label for i in self.instances
+                if i.role == "peer" and (self.reach is None or i.label in self.reach)]
+
+    @property
+    def paths(self) -> list[str]:
+        """Every path of this channel the agent can reach, in the environment's order."""
+        return [i.path for i in self.instances]
+
+    def paths_said(self) -> str:
+        """Those paths as the description names them: a directory ends in a slash.
+
+        A tool reads files, and a channel every agent reads is a directory per
+        seat, so a path named bare would read as something the tool could fetch.
+        """
+        return ", ".join(i.path + ("" if i.is_file else "/") for i in self.instances)
+
+    def spec(self) -> dict:
+        """The tool as the request carries it.
+
+        `strict` guarantees the arguments validate against the schema, so a call
+        that names a peer outside the enumeration or leaves out a body costs no
+        turn. Every model in PRICES accepts it, so the tool set still varies by
+        experiment and never by model.
+        """
+        return {"name": self.tool.name, "description": self.description(),
+                "input_schema": self.schema(), "strict": True}
+
+    def description(self) -> str:
+        """What the agent is told this tool does.
+
+        Prompt surface, and the experimenter's: a description reaches the model in
+        the request exactly as the system prompt does, so it is theirs to write and
+        it is recorded whole and by digest in the tool table. An experiment that
+        writes none is given the harness's own account of the action, which is
+        computed from the channel and cannot say what the channel does not.
+        docs/manifest.md section 4.8.
+        """
+        return self.tool.description or self.generated()
+
+    def generated(self) -> str:
+        """The harness's account of this tool, computed from the channel it points at.
+
+        What a tool says of itself when the experiment declares no words of its
+        own. Every path, label and reader in it is read out of the channel table.
+        """
+        ch = self.channel
+        if self.tool.kind == "transfer":
+            funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
+                       f"The harness funds it and rebates {ch.rebate_percent}% to you.")
+            return (f"Declare a transfer to one peer in {self.own.path}. Each call replaces "
+                    "the pending declaration. At episode end, the harness transfers the "
+                    "requested positive integer amount in micro-dollars, capped at this "
+                    f"episode's spend. {funding}")
+        if self.tool.kind == "write_slot":
+            return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
+                    f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
+                    f"read it, and reads it at {ch.inbox}/{self.own.label}.")
+        if self.tool.kind == "write_file":
+            return (f"Write a file in the {ch.name!r} channel, at {self.own.path}/<path>. "
+                    f"It replaces whatever that path holds. {self.readers_said()}")
+        return (f"Read one file in the {ch.name!r} channel, which holds "
+                f"{self.paths_said()}. Returns what that file holds, clipped at "
+                f"{TOOL_RESULT_LIMIT} characters.")
+
+    def readers_said(self) -> str:
+        """Who reads the channel this tool writes, in a sentence."""
+        return ("Every agent in the experiment can read it."
+                if self.channel.readers == "all" else "Nobody else can read it.")
+
+    def schema(self) -> dict:
+        """The input schema, which is the harness's whatever the description says.
+
+        `additionalProperties: false` and a whole `required` are what strict tool
+        use asks of every object, and are true of these anyway: a call carries
+        exactly the arguments the kind acts on.
+        """
+        body = {"type": "string", "description": "The text the file will hold, these bytes exactly."}
+        if self.tool.kind == "transfer":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["to", "amount"], "properties": {
+                        "to": {"type": "string", "enum": self.slots},
+                        "amount": {"type": "integer",
+                                   "description": "A positive whole number of micro-dollars; capped at episode spend."}}}
+        if self.tool.kind == "write_slot":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["to", "body"], "properties": {
+                        "to": {"type": "string", "enum": self.slots,
+                               "description": f"The peer's label. Yours is {self.own.label}."},
+                        "body": body}}
+        if self.tool.kind == "write_file":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["path", "body"], "properties": {
+                        "path": {"type": "string",
+                                 "description": f"Where under {self.own.path}/ the file sits."},
+                        "body": body}}
+        return {"type": "object", "additionalProperties": False, "required": ["path"],
+                "properties": {"path": {"type": "string",
+                                        "description": "One file's path in this channel."}}}
+
+    def call(self, shell: Shell, args: dict) -> str:
+        """Do what the call asks, and say what actually happened.
+
+        Every answer is a fact about the environment after the call: what the path
+        held, what it holds now, or why nothing was done. A call that changed
+        nothing says so, because a tool reporting success for a no-op teaches the
+        agent something false.
+
+        Every argument is checked here even though `strict` is sent. Invariant 4:
+        a limit the harness enforces does not rest on the model keeping to a
+        schema it was handed.
+        """
+        if self.tool.kind == "transfer":
+            to, amount = args.get("to"), args.get("amount")
+            if to not in self.slots:
+                return (f"{to!r} is not a peer this channel reaches; it reaches "
+                        f"{', '.join(self.slots)}. Nothing was written.")
+            if type(amount) is not int or amount <= 0:
+                return "amount must be a positive integer. Nothing was written."
+            result = self.put(shell, self.own.path, f"{to} {amount}\n")
+            return result + " Transfers settle at episode end, capped at the episode's spend."
+        if self.tool.kind == "write_slot":
+            to = args.get("to")
+            if to not in self.slots:
+                return (f"{to!r} is not a peer this channel reaches; it reaches "
+                        f"{', '.join(self.slots)}. Nothing was written.")
+            return self.put(shell, f"{self.channel.outbox}/{to}", args.get("body"))
+        if self.tool.kind == "write_file":
+            rel = args.get("path")
+            if fault := path_fault(rel):
+                return f"path {fault}. Nothing was written."
+            if "{label}" in rel:
+                return (f"path {rel!r} names {{label}}, which is the manifest's word and not "
+                        f"a path here. Nothing was written.")
+            return self.put(shell, f"{self.own.path}/{rel}", args.get("body"))
+        return self.fetch(shell, args.get("path"))
+
+    def put(self, shell: Shell, path: str, body: Any) -> str:
+        """Write one path in this channel, and report the change against what was there."""
+        if not isinstance(body, str):
+            return f"body must be text, and arrived as {type(body).__name__}. Nothing was written."
+        was = read_path_in(shell, path)
+        if isinstance(was, Unanswered):
+            return (f"{path} could not be read, so what it holds is not known and nothing "
+                    f"was written: {was.said}")
+        if was == body:
+            return f"{path} already held exactly this. Nothing was written and nothing changed."
+        wrote, said = write_path_in(shell, path, body)
+        if wrote < 0:
+            return f"{path} was not written: {said}"
+        if was is None:
+            return f"wrote {wrote} bytes to {path}, which held nothing before."
+        return f"replaced the {len(was.encode('utf-8'))} bytes {path} held with {wrote}."
+
+    def fetch(self, shell: Shell, path: Any) -> str:
+        """Read one path in this channel, or say why it is not one."""
+        if fault := path_fault(path):
+            return f"path {fault}. Nothing was read."
+        if "{label}" in path or not any(path == p or path.startswith(p + "/")
+                                        for p in self.paths):
+            return (f"{path} is not in the {self.channel.name!r} channel, which holds "
+                    f"{self.paths_said()}. Nothing was read.")
+        held = read_path_in(shell, path)
+        if isinstance(held, Unanswered):
+            return f"{path} could not be read: {held.said}. Nothing was read."
+        if held is None:
+            return f"{path} is not a file. Nothing was read."
+        return clip(held, TOOL_RESULT_LIMIT) if held else f"{path} is empty."
+
+
+def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
+               instances: Iterable[Instance], reach: Iterable[str] | None = None) -> list[Bound]:
+    """Every declared tool this environment can actually offer, in declaration order.
+
+    A tool whose channel this episode did not plant - a mailbox in an agent with
+    no peers - is not offered, because an affordance that cannot act is not one.
+    A write needs the instance the agent writes, and a slot needs a peer to reach.
+
+    `reach` is the labels this episode can still reach, which an episode passes
+    and a caller inspecting a table outside one leaves as None.
+    """
+    chans, instances = list(chans), list(instances)
+    reach = None if reach is None else tuple(reach)
+    out: list[Bound] = []
+    for t in table:
+        ch = next((c for c in chans if c.name == t.channel), None)
+        if ch is None:
+            continue
+        bound = Bound(t, ch, tuple(i for i in instances if i.name == t.channel), reach)
+        if not bound.instances:
+            continue
+        if t.kind != "read_path" and bound.own is None:
+            continue
+        if t.kind == "transfer":
+            peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
+            bound = dataclasses.replace(bound, reach=tuple(
+                label for label in (reach if reach is not None else peers)
+                if label != bound.own.label))
+        if t.kind in ("write_slot", "transfer") and not bound.slots:
+            continue
+        out.append(bound)
+    return out
+
+
 # --- 11. The API -----------------------------------------------------------------
 
 # The token counts that carry cost. Zeroed alongside centi on a response we
@@ -2535,17 +3034,22 @@ def fallbacks_for(model: str) -> bool:
     return FALLBACKS and model in FALLBACK_MODELS
 
 
-def request(model: str, messages: list[dict], system: str) -> dict:
+def request(model: str, messages: list[dict], system: str,
+            tools: Iterable[dict] = (), shell: bool = False) -> dict:
     """The parameters of one API call.
 
     One dict literal and two branches, so two models are asked differently only
     where the API forces it. `system` is what this agent's experiment declared, and
-    an empty one is sent as no system parameter at all. Caching auto-places on the
-    newest turn. A declined turn is retried inside the same call on whichever model
-    the category recommends, which is what the fallback policy asks for.
+    an empty one is sent as no system parameter at all. `tools` are the specs of
+    whatever the experiment declared, and `shell` whether the agent is offered the
+    shell as well: it comes first when explicitly declared. The tools vary by experiment
+    and never by model. Caching
+    auto-places on the newest turn. A declined turn is retried inside the same call
+    on whichever model the category recommends, which is what the fallback policy
+    asks for.
     """
     params = {"model": model, "max_tokens": MAX_TOKENS,
-              "messages": messages, "tools": [TOOL],
+              "messages": messages, "tools": ([TOOL] if shell else []) + list(tools),
               "cache_control": {"type": "ephemeral"}}
     if system:
         params["system"] = system
@@ -2578,22 +3082,36 @@ def turn_record(turn: int, rid: str, r: Any, u: dict, previous: int, balance: in
             "tools": [], **{k: u[k] for k in BILLABLE}}
 
 
-def run_tools(shell: Shell, calls: list, rec: dict, out: dict) -> list[dict]:
+def run_tools(shell: Shell, calls: list, rec: dict, out: dict,
+              bound: Iterable[Bound] = ()) -> list[dict]:
     """Run every tool call of a turn and return the tool_result blocks to send back.
 
-    A call carrying no command is the {"restart": true} form: the shell is
-    restarted for real and the result says nothing. Results are stored unclipped
-    in the record, which is the text the agent received.
+    A bash call carrying no command is the {"restart": true} form: the shell is
+    restarted for real and the result says nothing. A declared tool acts through
+    the same shell and answers with what happened to the environment, and adds
+    nothing to `commands`: those are the commands the agent wrote. Results are
+    stored unclipped in the record, which is the text the agent received.
     """
+    offered = {b.tool.name: b for b in bound}
     results = []
     for b in calls:
-        cmd = (getattr(b, "input", None) or {}).get("command")
-        if cmd is None:
-            shell.restart()
-        text = " " if cmd is None else sh(shell, cmd)
-        if cmd is not None:
-            out["commands"].append(cmd)
-        rec["tools"].append({"command": cmd, "result": text})
+        name = getattr(b, "name", "") or TOOL["name"]
+        args = getattr(b, "input", None) or {}
+        if action := offered.get(name):
+            text = clip(action.call(shell, args), TOOL_RESULT_LIMIT)
+            rec["tools"].append({"tool": name, "command": None, "input": args, "result": text})
+        elif name == TOOL["name"] and SHELL_TOOL:
+            cmd = args.get("command")
+            if cmd is None:
+                shell.restart()
+            text = " " if cmd is None else sh(shell, cmd)
+            if cmd is not None:
+                out["commands"].append(cmd)
+            rec["tools"].append({"tool": name, "command": cmd, "input": None, "result": text})
+        else:
+            # Nothing the request offered, so nothing to do but say so.
+            text = f"there is no tool named {name!r}. Nothing was done."
+            rec["tools"].append({"tool": name, "command": None, "input": args, "result": text})
         results.append({"type": "tool_result", "tool_use_id": b.id, "content": text})
     return results
 
@@ -2666,13 +3184,17 @@ def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
 
 
 def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: str,
-              raw: Path | None) -> dict:
+              raw: Path | None, bound: Iterable[Bound] = ()) -> dict:
     """Drive one episode's turns. API failures are recorded in the returned dict.
 
     `label` is the agent's own, which names the balance LIVE_BALANCE rewrites.
     `raw` is the file every response is appended to verbatim, or None for no record.
+    `bound` are the declared tools this environment can offer, empty for the shell
+    alone. Their specs are built once: the tool set stands for the episode.
     """
     model, remaining = account["model"], account["remaining"]
+    bound = list(bound)
+    specs = [b.spec() for b in bound]
     system = system_of(account)
     limit = int(PRICES[model][2] * CONTEXT_FRACTION)
     # admits() starts no episode at or below zero, so every episode begins with
@@ -2695,7 +3217,8 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
                 out["stop"] = "budget_exhausted"
                 break
 
-            r = call(create, request(model, messages, system), out["retries"])
+            r = call(create, request(model, messages, system, specs, SHELL_TOOL),
+                     out["retries"])
             # Before the response is read for anything: a turn that fails below is
             # still on disk exactly as it arrived.
             log_raw(raw, turn, r)
@@ -2757,7 +3280,8 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
                 out["stop"] = ended
                 break
 
-            messages.append({"role": "user", "content": run_tools(shell, calls, rec, out)})
+            messages.append({"role": "user",
+                             "content": run_tools(shell, calls, rec, out, bound)})
             if at_limit:
                 out["stop"] = "context_threshold"
                 break
@@ -3033,6 +3557,16 @@ def provenance(model: str, seating: Seating | None = None,
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
         "harness_files": dict(HARNESS_FILES),
+        # Invariant 9 for what the agent can do: the tools offered beside bash,
+        # whole and by digest, so two agents offered different actions are
+        # different arms. What each one says of itself the harness generates from
+        # this table and the channel table, so nothing else has to be recorded for
+        # the wording to be reproducible.
+        "tools": [t.as_table() for t in tools()],
+        "tools_sha256": tools_sha256(tools()),
+        # Whether the shell was among them, which decides what the episode opened
+        # on as well as what it could do.
+        "shell_tool": SHELL_TOOL,
         # Each experimenter channel's files by digest.
         "source_sha256": {c.name: files_sha256(c.source) for c in table
                           if c.writer == "experimenter"},
@@ -3171,6 +3705,7 @@ class Episode:
     seating: Seating
     reach: dict[str, str]                # seat -> agent, every peer that is not out
     instances: list[Instance]
+    bound: list[Bound]                   # the declared tools this environment can offer
     shown: dict[str, str]                # the harness files planted, by name
     shown_now: dict[str, str] | None     # what the digest showed, by section; None under pull
     ledger_shown: list[tuple[str, str, int]]
@@ -3241,8 +3776,21 @@ def build_episode(agent: str) -> Episode:
     for line in drifted:
         print(f"  provenance drift, {agent} episode {index}: {line}", file=sys.stderr)
 
+    # What the tool table comes to in this environment, which is not the table
+    # itself: a tool whose channel this seating did not plant is not offered.
+    # apply_tools holds the declared table against SHELL_TOOL; this holds what is
+    # left of it, so an agent with nothing to act with is refused here rather than
+    # asked for a turn it has no way to answer.
+    bound = bind_tools(tools(), channels(), instances,
+                       [seating.labels[seat] for seat in reach])
+    if not SHELL_TOOL and not bound:
+        raise SystemExit(f"agent {agent} is offered no shell and none of the "
+                         f"{len(tools())} declared tools can act in this environment, so "
+                         f"there is nothing for it to do: {', '.join(t.name for t in tools())}")
+
     ep = Episode(agent=agent, index=index, account=account, series_before=list(account["series"]),
-                 seating=seating, reach=reach, instances=instances, shown=shown,
+                 seating=seating, reach=reach, instances=instances,
+                 bound=bound, shown=shown,
                  shown_now=shown_now, ledger_shown=ledger(agent, account),
                  canonical=render_balance(account["series"]), prov=prov, drifted=drifted,
                  records=records_dir(agent), before=before, started=time.time())
@@ -3293,7 +3841,7 @@ def run_episode(ep: Episode, create: Callable) -> dict:
     out: dict = {}
     try:
         out = run_turns(create, ep.shell, ep.account, ep.index, ep.seating.label,
-                        raw_path(ep.agent, ep.index))
+                        raw_path(ep.agent, ep.index), ep.bound)
     finally:
         # While the container is still up, and after the last billed turn: this
         # asks the image a question, never the model.
@@ -3521,14 +4069,16 @@ def drive(agent: str, create: Callable, prepare: Callable | None = None) -> dict
 
 def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
           models: Iterable[str] = (), channel_tables: list[dict] | None = None,
-          harness_files: dict | None = None, labels: Iterable[str] = ("1",)) -> Callable:
+          harness_files: dict | None = None, labels: Iterable[str] = ("1",),
+          tool_tables: list[dict] | None = None) -> Callable:
     """Read the config, refuse an agent that would mean something else, return `create`.
 
     The checks a live agent must pass before it costs anything: the prompt is
     pinned, the rates have not lapsed, the endpoint is real. Exits on failure.
     `overrides` are a manifest's experiment-level defaults, applied after config.toml
     and held to the same rules; `models` are the per-agent models a manifest names,
-    each checked as the default is.
+    each checked as the default is. `tool_tables` are the actions it offers beside
+    bash, decided against the channel table it declared.
     """
     def refuse(why: str) -> None:
         print(why, file=sys.stderr)
@@ -3541,10 +4091,13 @@ def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
     cfg = load_config(config)
     print(f"config: {cfg or 'built-in defaults'}")
     if overrides:
-        apply_config(overrides, "manifest")
+        apply_config(overrides, "manifest", TREATMENT, NOT_MANIFEST)
     # A manifest's table replaces the set whole; its names overlay one by one; and
     # whatever is in force is held against the labels this experiment will use.
     apply_channels(channel_tables, harness_files, "manifest", tuple(labels))
+    # After the channels, and whether or not this manifest declares any: a tool
+    # points at a channel, so a table that replaced the channels re-decides them.
+    apply_tools(tool_tables, channels(), "manifest")
     asked = {MODEL, *models}
     for model in sorted(asked):
         if lapsed := lapsed_prices(model):
@@ -3626,7 +4179,8 @@ def catch_signals() -> None:
     signal.signal(signal.SIGTERM, stop)
 
 
-def run_episodes(agent: str, create: Callable, count: int) -> int:
+def run_episodes(agent: str, create: Callable, count: int,
+                 prepare: Callable | None = None) -> int:
     """Run up to `count` episodes back to back. Returns the exit status.
 
     `count` is a ceiling, never a floor; the account decides the rest. An agent
@@ -3640,7 +4194,7 @@ def run_episodes(agent: str, create: Callable, count: int) -> int:
             print(f"stopping after {ran} of {count} episodes", file=sys.stderr)
             break
         try:
-            trace = drive(agent, create)
+            trace = drive(agent, create, prepare)
         except BUILD_FAILURES as e:
             # Starting the container, copying state in, and starting the shell all
             # happen before the first API call, so nothing reaching here was billed
@@ -3832,7 +4386,30 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
         show_prompt("experiment", default)
         for entry in m["agents"]:
             show_prompt(entry["id"], entry.get("system_prompt", default))
+        show_tools(m["tools"])
     return 1 if drifted else 0
+
+
+def show_tools(declared: list[dict] | None) -> None:
+    """The tool descriptions an experiment declares, which are prompt surface too.
+
+    A description reaches the model in the request the way the system prompt does,
+    so --print-system audits both. A tool that declares none is named as taking the
+    harness's own account of it, which is computed per agent from the channel and
+    the seating and so is not a constant to print here.
+    """
+    if not declared:
+        print("tools: none declared (no bash)")
+        return
+    print()
+    print(f"tools: {len(declared)} declared")
+    for raw in declared:
+        if raw["kind"] == "bash":
+            print("  bash (built-in shell)")
+            continue
+        said = raw.get("description", "")
+        words = repr(said) if said else "(the harness's account of the channel)"
+        print(f"  {raw['name']} ({raw['kind']} on {raw.get('channel', '')}): {words}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -3850,7 +4427,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--print-system", action="store_true",
                     help="print what the harness ships and what is in force; starts no episode")
     ap.add_argument("--manifest", type=Path, metavar="PATH",
-                    help="with --print-system, also audit the prompts a manifest declares")
+                    help="the experiment this agent is part of: its environment, its settings "
+                         "and this agent's own terms. Required to run an episode")
     ap.add_argument("--print-files", metavar="NAME",
                     help="print the listing and digest of a directory under files/; starts no episode")
     ap.add_argument("--fork-from", metavar="AGENT",
@@ -3863,8 +4441,6 @@ def main(argv: list[str] | None = None) -> int:
         WATCH = True
         sys.stdout.reconfigure(errors="replace")
 
-    if a.manifest and not a.print_system:
-        ap.error("--manifest is read only by --print-system")
     if a.print_system:
         return print_system(a.config, a.manifest)
     # Audits invariant 9 without starting anything, so it runs on a drifted prompt
@@ -3891,12 +4467,28 @@ def main(argv: list[str] | None = None) -> int:
     # decides anything here, so it runs before the config is even read.
     if a.fork_from:
         return fork(a.fork_from, a.at, a.agent)
-    # Which file set the tunables is the one thing about them the trace cannot
-    # record: an agent reading no config and one reading a config of every default
-    # are the same episode.
-    create = start(a.config)
+    if not a.manifest:
+        ap.error("--manifest is required: an agent runs as part of an experiment, and the "
+                 "manifest is what declares its environment and its terms")
+    # Deferred, so harness.py is fully imported before experiment.py imports it.
+    import experiment
+    m = experiment.load_manifest(a.manifest)
+    ids = [e["id"] for e in m["agents"]]
+    entry = next((e for e in m["agents"] if e["id"] == a.agent), None)
+    if entry is None:
+        ap.error(f"{a.manifest} seats {ids}, and not {a.agent!r}")
+    # Which file set the process parameters is the one thing about them the trace
+    # cannot record: an agent reading no config and one reading a config of every
+    # default are the same episode. Everything else is the manifest's, and its digest
+    # is in every trace.
+    create = start(a.config, overrides=m["overrides"],
+                   models={e["model"] for e in m["agents"] if e.get("model")},
+                   channel_tables=m["channels"], harness_files=m["harness_files"],
+                   labels=tuple(m["labels"].values()), tool_tables=m["tools"])
     catch_signals()
-    return run_episodes(a.agent, create, a.episodes)
+    load_account(a.agent, **experiment.terms_of(entry))
+    seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
+    return run_episodes(a.agent, create, a.episodes, seat(a.agent))
 
 
 if __name__ == "__main__":

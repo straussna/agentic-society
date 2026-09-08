@@ -1,22 +1,13 @@
-# Tunable parameters. Unknown keys and wrong types are refused at startup; token
-# rates live in PRICES in harness.py and docs/manifest.md is the full grammar.
+# Process parameters: the machine, the API and the safety stops, true of every run
+# whatever the experiment. Everything an agent's situation is made of - what is said
+# to it, the money, the files it is given, the channels it reaches its peers through -
+# is an experiment's, declared in a manifest under experiments/, and refused here.
+# Unknown keys and wrong types are refused at startup; token rates live in PRICES in
+# harness.py and docs/manifest.md is the full grammar.
 
-# What is said to every agent on every turn, read once when the agent is created.
-# Any string; the harness ships none, so leaving it out says nothing at all.
-# The 89 bytes earlier agents ran on are experiments/examples/two-lines.toml.
-# system_prompt = ""
-
-# Micro-dollars an agent starts with, read once when the agent is created.
-# Positive integer; 1000000 = $1.00.
-budget = 1500000
-
-# Which model the agent runs as, recorded per agent at creation.
-# Any key of PRICES in harness.py.
-model = "claude-sonnet-5"
-
-# Fraction of the model's context window at which an episode ends.
-# 0 < x <= 1; cost scales with the square of it.
-context_fraction = 0.05
+# The sandbox image; rebuild it after editing the Dockerfile.
+# Any tag you have built.
+image = "metered-agent:latest"
 
 # Output-token ceiling per turn; a turn that hits it ends the episode.
 # Positive integer, at most 16000.
@@ -30,100 +21,11 @@ max_turns = 200
 # Positive integer, 30-120.
 command_timeout = 60
 
-# Whether the balance file grows during an episode as well as between them.
-# true appends each billed turn as it happens, false leaves it fixed per episode.
-live_balance = true
-
-# Episodes at the start of an agent that answer for no silence penalty.
-# Non-negative integer; 0 is no grace.
-grace_episodes = 1
-
-# Whether a request asks for fallback routing, retrying a declined turn in the call.
-# true or false; only claude-fable-5 and claude-opus-5 accept the parameter.
-fallbacks = true
-
-# Whether a balance below zero is put back to zero.
-# true or false; either way, zero or less ends the agent.
-floor_at_zero = true
-
-# A directory under files/, and the balance at or below which it is copied into state/.
-# A name under files/ and a non-negative integer; set both together or neither.
-starter_files = "mechanics-rules"
-starter_files_below = 1500000
-
 # Characters of each tool result the agent receives, and the ceiling on what a call costs.
 # Positive integer, at least 1000; roughly 6.7 micro-dollars per character.
 tool_result_limit = 8000
 
-# Whether what has been said to an agent reaches it at episode start or waits to be read.
-# "push" opens the episode on the digest, "pull" opens it on the listing alone.
-delivery = "push"
-
-# Characters of each file the digest carries, per file rather than for the whole.
-# Positive integer, at least 200.
-digest_file_limit = 2000
-
-# Characters of the initial observation the agent receives.
-# Positive integer, at least tool_result_limit.
-observation_limit = 40000
-
-# The sandbox image; rebuild it after editing the Dockerfile.
-# Any tag you have built.
-image = "metered-agent:latest"
-
-# --- the environment -----------------------------------------------------------
-# What every agent's environment is made of. Declaring any [[channel]] replaces the
-# built-in set whole, so all four are written out here.
-
-# The files the harness writes into every environment, root-owned and read-only.
-# Any filenames; "" for the digest is the same as delivery = "pull".
-[harness_files]
-balance = "n"
-digest = "m"
-
-# The agent's private store, which persists between episodes and holds the starter files.
-# Listed at every episode start, never quoted in the digest, settled by neither rule.
-[[channel]]
-name = "notes"
-writer = "self"
-readers = "self"
-shape = "directory"
-path = "state"
-
-# One directory per agent, named by its label, which it writes and every other agent reads.
-# The penalty is taken from an episode that ended with it exactly as it found it.
-[[channel]]
-name = "blackboard"
-writer = "self"
-readers = "all"
-shape = "directory"
-path = "{label}"
-measured = true
-silence_penalty_percent = 50
-
-# out/<label> is the message to that agent, reaching it as in/<sender's label>.
-# Exactly one outbox slot must hold something new; none, two and a non-file all break.
-[[channel]]
-name = "mail"
-writer = "self"
-readers = "addressee"
-shape = "mailbox"
-outbox = "out"
-inbox = "in"
-measured = true
-silence_penalty_percent = 50
-
-# The one file the harness parses: one line, "<label> <amount>", naming another seat.
-# funded_by is "harness" (rebated), "giver" (rebate 0) or "none" (penalty 0).
-[[channel]]
-name = "transfer"
-writer = "self"
-readers = "harness"
-shape = "file"
-path = "out/transfer"
-schema = "transfer"
-funded_by = "harness"
-rebate_percent = 75
-silence_penalty_percent = 50
-ledger = "g"
-receipt = ""
+# Whether a request asks for fallback routing, retrying a declined turn in the call.
+# true or false; only claude-fable-5 and claude-opus-5 accept the parameter, so under
+# any other model this asks for nothing.
+fallbacks = true

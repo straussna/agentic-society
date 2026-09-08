@@ -261,6 +261,17 @@ def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
     return p
 
 
+def seats_manifest(root: Path, ids: Iterable[str], name: str = "seats.toml") -> Path:
+    """A manifest seating these agents and declaring silence.
+
+    Every run names its experiment, so a round driven from a list of ids needs a file
+    to name; the settings come from whatever the check pinned. A manifest states what
+    its agents are told, so the empty prompt is written out.
+    """
+    seat = "[[agent]]" + chr(10) + 'id = "%s"' + chr(10)
+    return manifest_file(root, 'system_prompt = ""' + chr(10) + "".join(seat % i for i in ids), name)
+
+
 def tables(*extra: dict, **per_name: dict) -> list[dict]:
     """The default channel table as [[channel]] tables, with fields changed by name.
 
@@ -280,6 +291,19 @@ HALF = {"silence_penalty_percent": 50}
 ALL_OWED = tables(blackboard=HALF, mail=HALF, transfer=HALF)
 
 FULL_REBATE = tables(transfer={"rebate_percent": 100})
+
+
+def offers(*declared: dict) -> list[dict]:
+    """[[tool]] tables, one per (kind, channel) pair given as "kind:channel".
+
+    offers("write_slot:mail") is one tool named after its kind; a dict is a whole
+    tool table, for a check that wants its own name. For temp_root(tools=...).
+    """
+    out = []
+    for d in declared:
+        out.append(d if isinstance(d, dict) else
+                   dict(zip(("kind", "channel"), d.split(":")), name=d.split(":")[0]))
+    return out
 
 
 def digest_name() -> str:
@@ -320,7 +344,7 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 # Every harness global a check is allowed to move, and therefore every one pinned()
 # puts back. temp_root refuses any name outside this set.
 RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
-                                "CHANNELS", "HARNESS_FILES", "PRICES_EXPIRE", "PINNED",
+                                "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PRICES_EXPIRE", "PINNED",
                                 "replace_file",
                             # Set per check and put back by pinned(), so no check
                             # carries into the next in the same worker.
@@ -344,11 +368,12 @@ def pinned():
 
 
 @contextlib.contextmanager
-def rooted(box, channels=None, harness_files=None, **overrides):
+def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     """Point harness at a throwaway directory, with episodes running in `box`.
 
     `overrides` set harness module globals (MAX_TURNS=1, COMMAND_TIMEOUT=2) for the
-    duration, and pinned() puts every one of them back.
+    duration, and pinned() puts every one of them back. `tools` are [[tool]] tables,
+    decided against whatever channel table is then in force.
     """
     unknown = set(overrides) - RESTORED
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
@@ -360,11 +385,13 @@ def rooted(box, channels=None, harness_files=None, **overrides):
             setattr(harness, k, v)
         if channels is not None or harness_files is not None:
             harness.apply_channels(channels, harness_files, "check")
+        declared = [{"name": "bash", "kind": "bash"}] if tools is None else tools
+        harness.apply_tools(declared, harness.channels(), "check")
         yield Path(d)
 
 
 @contextlib.contextmanager
-def host_root(channels=None, harness_files=None, **overrides):
+def host_root(channels=None, harness_files=None, tools=None, **overrides):
     """A throwaway agent pinned to this machine, whatever --real says.
 
     For the few checks about what is *sent* and not about the episode it drives.
@@ -372,27 +399,27 @@ def host_root(channels=None, harness_files=None, **overrides):
     """
     if not host_bash():
         raise Skip
-    with rooted(HostBox, channels=channels, harness_files=harness_files, **overrides) as d:
+    with rooted(HostBox, channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
         yield d
 
 
 @contextlib.contextmanager
-def temp_root(channels=None, harness_files=None, **overrides):
+def temp_root(channels=None, harness_files=None, tools=None, **overrides):
     """A throwaway agent whose episodes are a directory and a shell on this machine.
 
     What most checks want: the pipeline end to end - account, turns, series,
     trace - without paying for a container that proves nothing they assert.
     """
     if REAL_ONLY:
-        with docker_root(channels=channels, harness_files=harness_files, **overrides) as d:
+        with docker_root(channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
             yield d
         return
-    with host_root(channels=channels, harness_files=harness_files, **overrides) as d:
+    with host_root(channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
         yield d
 
 
 @contextlib.contextmanager
-def docker_root(channels=None, harness_files=None, **overrides):
+def docker_root(channels=None, harness_files=None, tools=None, **overrides):
     """A throwaway agent whose episodes are real containers.
 
     For the checks that turn on something only a container has. Skips when
@@ -400,7 +427,7 @@ def docker_root(channels=None, harness_files=None, **overrides):
     """
     if not docker_ready():
         raise Skip
-    with rooted(harness.Container, channels=channels, harness_files=harness_files, **overrides) as d:
+    with rooted(harness.Container, channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
         yield d
 
 

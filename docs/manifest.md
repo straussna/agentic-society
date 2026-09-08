@@ -19,7 +19,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | Term | Definition |
 |---|---|
 | **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger, a receipt, and the notice a refused turn receives. It utters no constant of its own |
-| **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, so an experiment that declares nothing says nothing |
+| **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, and every manifest declares one, `""` included |
 | **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness refuses to let any of it stop being constant. Configures everything through `config.toml` and a manifest |
 | **Agent** | One participant: an account, a seat, a private store inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
@@ -49,6 +49,8 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Blackboard** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
 | **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's inbox and nowhere else |
 | **Schema** | A fixed format the harness parses from a `self`-written, `harness`-read file and acts on. A fixed menu in code |
+| **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
+| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `write_file`, `read_path`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its private directory when its balance first falls to a chosen level |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
 | **Harness file** | A file the harness renders from the accounts and plants read-only: a balance per seat, a ledger per transfer channel, and the digest |
@@ -87,14 +89,16 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 An experiment is several agents advancing together under one set of rules. A manifest
 is one TOML file under `experiments/` that declares all of it; the shipped examples sit
-in `experiments/examples/`. `config.toml` holds the
-defaults every manifest starts from. Nothing an agent is told and nothing it can reach is
-decided anywhere else.
+in `experiments/examples/`. Every run names one, so nothing an agent is told and nothing
+it can reach is decided anywhere else. `config.toml` holds the process parameters — the
+machine, the API, the safety stops — and nothing an agent's situation is made of; the two
+sets are disjoint and each file refuses the other's keys by name.
 
 ```
-config.toml               defaults: limits, money, files, delivery, the default channel set
-experiments/<name>.toml   one experiment: schedule, overrides, channels, agents
+config.toml               the machine and the API: image, limits, timeouts, fallbacks
+experiments/<name>.toml   one experiment: schedule, settings, channels, agents
 experiments/examples/     the shipped examples, the shape to copy
+experiments/README.md     the index: every shipped experiment and the arm it pairs with
 files/<dir>/              what agents are given: starter files and experimenter channels
 ```
 
@@ -105,42 +109,55 @@ Three principles bind the language:
   (invariant 9). Anything the harness *interprets* is a schema, and schemas are a fixed
   menu in code (invariant 3).
 - **Names are the experimenter's.** Every file and directory an agent sees is named in
-  the manifest. The defaults are the anti-prompt treatment's; a persona experiment
+  the manifest. The defaults use sparse names; a persona experiment
   chooses its own.
-- **The default manifest is today.** An experiment that declares nothing gets exactly
-  the environment the competitions run in, byte for byte. That is how the existing suite
-  stays the proof.
+- **The default environment is today's.** An experiment that declares no `[[channel]]`
+  gets exactly the environment the competitions run in, byte for byte. That is how the
+  existing suite stays the proof. What is said to an agent has no default: a manifest
+  declares it or is refused.
 
 ## 2. Top level
 
 | Key | Type | Meaning |
 |---|---|---|
 | `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
+| `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
-| `[[agent]]` | tables, two or more | The seats, in order; seat 1 is the first table |
-| any key of section 3 | | The experiment's default, applied after `config.toml` and held to the same rules |
+| `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
+| `[[agent]]` | tables, one or more | The seats, in order; seat 1 is the first table |
+| `system_prompt` | str, **required** here or on every `[[agent]]` | What is said to every agent on every turn. `""` says nothing |
+| any other key of section 3 | | The default for every seat |
 
-Unknown keys are refused, naming the key. The file's digest is stamped in every
-episode's provenance.
+Unknown keys are refused, naming the key; so is a `config.toml` key, saying where it
+lives. The file's digest is stamped in every episode's provenance.
 
 ## 3. Settings
 
-Every key is valid in `config.toml` and at a manifest's top level. Types are strict; an
-integer widens to a float field and nothing else converts.
+Every key here is an experiment's: valid at a manifest's top level, and refused in
+`config.toml`. Types are strict; an integer widens to a float field and nothing else
+converts. The keys `config.toml` owns are at the end of this section.
+
+Episode limits that bound the machine rather than the treatment — `max_tokens`,
+`max_turns`, `command_timeout`, `tool_result_limit` — are `config.toml`'s. What is left
+here is what the agent's situation is made of.
 
 ### What the harness says
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `system_prompt` | str | `""` | What is said to every agent on every turn. Empty says nothing at all. Pinned |
+| `system_prompt` | str | **required** | What is said to every agent on every turn. Empty says nothing at all. Pinned |
 
-The harness ships no words, so an experiment declaring nothing says nothing and no
-system parameter is sent; `py -3 harness.py --print-system` prints what is shipped beside
-whatever is in force. Anything declared is a different arm: it is cached and billed as
-input on every turn of every episode, and every episode records it whole and by digest.
-An `[[agent]]` may declare its own, so one seat can be told what its peers are not. The
-89 bytes earlier agents ran on are `experiments/examples/two-lines.toml`.
+It is the one setting with no default. A manifest declares it at the top level or on
+every `[[agent]]`, and one that declares it nowhere is refused: what an agent is told is
+the experiment's, and an omission and a decision must not look alike in the record.
+
+`""` is a declaration and says nothing - the harness ships no words, and no system
+parameter is sent. Anything else is a different arm: it is cached and billed as input on
+every turn of every episode, and every episode records it whole and by digest. An
+`[[agent]]` may declare its own, so one seat can be told what its peers are not, and a
+seat that declares none takes the experiment's. `py -3 harness.py --print-system` prints
+what is shipped beside whatever is in force.
 
 The refusal notice a declined turn receives in place of its tool results is not
 declarable. It is the harness reporting a fact about a turn, not a treatment, and it is
@@ -151,8 +168,7 @@ pinned by digest like the shipped prompt.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `budget` | int > 0 | 500000 | Micro-dollars an agent starts with. Pinned |
-| `model` | key of `PRICES` | `claude-sonnet-5` | The model asked for. Pinned |
-| `fallbacks` | bool | true | Ask for fallback routing. Granted only on `claude-fable-5` and `claude-opus-5`, the models whose API accepts the parameter, so the default model does not carry it |
+| `model` | key of `PRICES` | `claude-sonnet-5` | The model asked for. Pinned. Every priced model accepts strict tool use, which is what lets a declared tool carry it |
 | `floor_at_zero` | bool | false | A balance below zero is put back to zero |
 | `grace_episodes` | int ≥ 0 | 0 | Episodes that take no silence penalty |
 
@@ -160,11 +176,7 @@ pinned by digest like the shipped prompt.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `context_fraction` | 0 < x ≤ 1 | 0.85 | Fraction of the window at which an episode ends |
-| `max_tokens` | int ≤ 16000 | 8192 | Output ceiling per turn |
-| `max_turns` | int > 0 | 200 | Turns per episode, a safety stop |
-| `command_timeout` | int > 0 | 60 | Seconds before one command is killed |
-| `tool_result_limit` | int ≥ 1000 | 8000 | Characters of each command result, and so the ceiling on one call's cost |
+| `context_fraction` | 0 < x ≤ 1 | 0.85 | Fraction of the window at which an episode ends. Cost scales with its square |
 | `live_balance` | bool | true | Balances update inside an episode, not only between them |
 
 ### Files
@@ -185,11 +197,15 @@ recorded in the account by name, digest, episode and paths, and lands once.
 | `digest_file_limit` | int ≥ 200 | 2000 | Characters of each file the digest quotes |
 | `observation_limit` | int ≥ `tool_result_limit` | 40000 | Characters of the whole initial observation |
 
-### Sandbox
+Both clips are bounded against `tool_result_limit`, which `config.toml` owns.
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `image` | tag | `metered-agent:latest` | The container image |
+### Refused: what config.toml owns
+
+`image`, `max_tokens`, `max_turns`, `command_timeout`, `tool_result_limit` and
+`fallbacks` are the process parameters: the machine, the API and the safety stops, true
+of every run whatever the experiment is. They live in `config.toml`, and a manifest
+naming one is refused saying so — no setting is given in two places, and no run's terms
+depend on which file was read last.
 
 ### Refused: keys that became channel fields
 
@@ -250,8 +266,8 @@ channel sits inside a directory the agent writes and comes and goes with it.
 
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
-unchanged content by name. A self-read channel defaults to `false`; everything else to
-`true`. Under pull delivery nothing is quoted whatever this says.
+unchanged content by name. Every channel defaults to `true`, a private store included.
+Under pull delivery nothing is quoted whatever this says.
 
 `restated = true` quotes the channel in full every episode it stands, never naming it
 as unchanged. "Unchanged" is measured against what the *account* was last shown, and an
@@ -259,9 +275,12 @@ episode does not remember what its predecessor read, so a channel carrying who a
 is tells it nothing when it arrives as a name. It needs `pushed`, and costs input tokens
 on every turn of every episode. The schema channel is restated whether or not it says so.
 
-A private store may be pushed. It is nobody else's business either way, and the digest
-is per-agent, so this puts an agent's own files in front of it at episode start instead
-of leaving them to be found and paid for.
+A private store is pushed like anything else. It is nobody else's business either way -
+the digest is per-agent - so this puts an agent's own notes in front of it at episode
+start instead of leaving them to be found and paid for. An agent is read the same file
+whether it goes looking or not, so the choice is only whether it pays a turn first, and
+what it wrote to itself last episode is the thing it most needs this one. An experiment
+that wants a store written and never read back declares `pushed = false` and says so.
 
 ### 4.4 Measured, and the silence penalty
 
@@ -334,6 +353,148 @@ with its own name and path, and each directory every agent reads is its own obli
 settled and charged apart. One schema channel. There is no count field because the table
 is the count.
 
+### 4.8 Tools
+
+A channel says where an agent may write and who reads it. A tool is that same
+permission offered as an action, in the request rather than in a file the agent has to
+find, read and infer a purpose for.
+
+```toml
+[[tool]]
+name = "send"               # required; unique; letters, digits, '_' and '-', at most 64
+kind = "write_slot"         # required; from the menu below
+channel = "mail"            # required; a declared channel the kind can act on
+description = "..."         # optional; prompt surface. Omitted, the harness writes it
+```
+
+Every tool must be declared. No declaration means no bash; an empty tool set is refused.
+
+| `kind` | Takes | Input | What the harness does |
+|---|---|---|---|
+| `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
+| `write_slot` | a mailbox channel | `to` (a peer's label), `body` | Replaces what `<outbox>/<to>` holds |
+| `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
+| `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
+| `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a positive integer in micro-dollars) | Replaces the pending declaration; episode-end settlement moves at most the episode spend, using the channel funding and rebate settings |
+
+The two `path` arguments are not the same argument. A `write_file`'s is relative to the
+one instance the agent writes, there being only one place it could mean. A `read_path`'s
+is whole, because the channel it reads may have an instance per seat and a bare name
+would not say which. So one string can name two files, and a `description` that replaces
+the harness's says which of them it means; the generated ones already do.
+
+The menu is code, like the schema menu: a manifest names a kind and a channel and
+invents no behaviour. A new kind is a change to `harness.py` with a check of its own,
+and is listed here when it lands.
+
+**Bash is opt-in**, using this declaration:
+
+```toml
+[[tool]]
+name = "bash"
+kind = "bash"
+```
+
+Bash takes no channel or custom description. Its API schema is built in.
+Without this declaration, agents receive only the declared channel tools. The
+container and shell still carry out those actions internally.
+It also changes what an episode opens on. A listing is what an agent holding the shell
+reads to know what there is to reach; with no shell there is nothing to reach it with, so
+the episode opens on the **digest alone** - the content of the channels rather than their
+layout. That is the arm for an agent that never has to read a filesystem: every path it
+needs is named in the tool descriptions and every byte it is shown is content.
+
+Two arrangements are refused before anything is billed, both being experiments that would
+end every episode on its first turn:
+
+| Refused | Why |
+|---|---|
+| no declared `bash` tool with no `[[tool]]` | the agent is offered nothing to act with, and an empty tool set is not a request the API takes |
+| no declared `bash` tool with `delivery = "pull"` or `digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
+| no declared `bash` tool where this seating leaves every declared tool out | the table is not empty but the request would be, for the same reason and with the same result |
+
+The first two are settled when the manifest is read. The third is a seat's rather than
+an experiment's — which tools can act depends on what the seating planted — so it is
+settled as that agent's environment is built, still before the container starts and
+before anything is billed.
+
+**A tool acts through the episode's own shell**, so what it leaves is the agent's file
+with the agent's ownership, mirrors back with its tree, and settles exactly as the same
+bytes written with `bash` would. It runs no command of the agent's, so the episode's
+`commands` do not grow.
+
+**A tool is offered only where it can act.** A mailbox is not planted for an agent with
+no peers, so a `write_slot` on it is left out of that agent's request rather than
+offered and refused at every call. A seat that is out is not a message target either -
+the mailbox settles only the reachable slots - so it is not in the `to` enumeration, and
+a mailbox whose every peer is out is not offered at all. Which tools an agent was
+actually offered follows from the tool table and the seating, both in provenance.
+
+#### What a tool says of itself
+
+A tool's `description` is **prompt surface, and the experimenter's**. It reaches the
+model inside the request exactly as the system prompt does, it is theirs to write, and it
+is recorded whole and by digest in the tool table like every other declaration. Two
+wordings of the same action are two arms.
+
+This is the fourth slot an experiment can speak in, beside the system prompt, the starter
+files and an experimenter channel - and the only one attached to an action. Descriptions can explain when an action is useful as well as what it does.
+An action-specific obligation is an experiment design choice, not an API requirement. `experiments/examples/personas.toml` is the worked example.
+
+A declared description **replaces** the harness's account rather than adding to it, so an
+experiment that writes one is stating the mechanics itself where it wants them stated.
+`py -3 harness.py --print-system --manifest PATH` prints every declared description
+beside the prompts, which is what makes this surface auditable without starting an
+episode.
+
+**The input schema is never declarable.** `input_schema`, `schema`, `properties` and
+`required` are refused by name. The schema is the contract a call is held to - the
+harness validates and executes against it - so a manifest that could write it could
+promise fields the harness ignores. Same line as the schema menu in 4.5: the experimenter
+declares, the code enforces.
+
+**Where nothing is declared**, the harness gives its own account of the action, computed
+from the channel it points at:
+
+| Kind | The generated text names |
+|---|---|
+| `write_slot` | the channel's name, its outbox and inbox paths, the writer's label, and that the addressee alone reads it |
+| `write_file` | the channel's name, the agent's own instance path, and whether every agent or nobody else reads it |
+| `read_path` | the channel's name, every path of it this agent can reach with a directory's trailing slash, and the clip |
+
+Every path, label and reader in it is read out of the channel table, so it moves when the
+declaration moves and never otherwise; it cannot say what the channel does not. It is not
+in provenance as text because it is a function of the harness digest, the channel table
+and the seating, all three of which are.
+
+The input schema is generated the same way, declared or not; a `write_slot`'s `to` is an
+enumeration of the peers that channel actually reaches, as this agent names them.
+
+Every declared tool carries `strict`, which makes the API guarantee the arguments
+validate: a call naming a peer outside the enumeration or leaving out a body costs no
+turn. It is sendable only because every model in `PRICES` accepts it - a model that did
+not would make the tool set differ by model, which is the one thing the request may never
+do, so such a model is not priced. The harness checks every argument anyway (invariant
+4): a limit it enforces does not rest on the model keeping to a schema it was handed.
+
+#### What a result says
+
+A tool result is a fact about the environment after the call, and never a bare success.
+A write that changed nothing says so, because a tool reporting success for a no-op would
+tell an agent it had met an obligation the settlement will charge it for missing.
+
+```
+wrote 4 bytes to out/2, which held nothing before.
+out/2 already held exactly this. Nothing was written and nothing changed.
+replaced the 4 bytes out/2 held with 4.
+'9' is not a peer this channel reaches; it reaches 2. Nothing was written.
+state/secret is not in the 'blackboard' channel, which holds 1, 2. Nothing was read.
+```
+
+A call the harness will not make is refused in the result rather than raised: the path
+rule a channel is held to is the path rule a tool argument is held to, so a tool reaches
+nowhere a channel could not.
+
 ## 5. Harness files
 
 The files the harness renders from the accounts and plants read-only in every seat.
@@ -393,7 +554,6 @@ writer = "self"
 readers = "self"
 shape = "directory"
 path = "state"
-pushed = false
 
 [[channel]]
 name = "blackboard"
@@ -431,9 +591,18 @@ are not planted.
 
 ## 9. A persona experiment
 
+Starter files may be a single document or a directory. In a manifest,
+`starter_files = "./personas.md"` resolves beside that manifest; `../` also
+resolves from its directory. A bare source name resolves under `files/`.
+A single document is planted under its filename, including when it is empty.
+
 ```toml
 schedule = "simultaneous"
 delivery = "push"
+
+# Each seat is briefed by its starter files and the experimenter channel below,
+# so the harness says nothing - declared, as every manifest must.
+system_prompt = ""
 
 [harness_files]
 balance = "balance"
@@ -495,14 +664,18 @@ identity file is its own channel so the trace and the analysis can name it.
 Every refusal is a `SystemExit` naming the file and the key.
 
 - Unknown keys anywhere; wrong types; values out of range as section 3 states; any key of
-  the refused table in section 3, naming the channel field it became.
-- Fewer than two agents; a duplicate, empty, or bare-number `id`; a `label` outside its
+  the refused tables in section 3, naming the channel field it became or the file it
+  lives in.
+- A `[[channel]]`, `[[tool]]` or `[harness_files]` table in `config.toml`, which declares
+  no environment and so declares no actions on one.
+- No agents at all; a duplicate, empty, or bare-number `id`; a `label` outside its
   grammar or held by another agent after defaults.
 - `starter_files` without `starter_files_below` or the reverse; a directory that does
   not exist.
-- A `system_prompt` that is not a string, at the settings level or on an agent. Every
+- A manifest with no `system_prompt`, at the settings level or on every agent. Every
   string is allowed, `""` included: an experiment may declare that the harness says
-  nothing.
+  nothing, and must declare even that.
+- A `system_prompt` that is not a string, at the settings level or on an agent.
 - A channel name that is not one path segment, is declared twice, or ends in `.modes`,
   `.incoming` or `.previous`; an unknown channel key; a wrong type.
 - A writer other than `self` or `experimenter`; a writer and readers pair outside 4.1.
@@ -527,6 +700,18 @@ Every refusal is a `SystemExit` naming the file and the key.
   is still recordable.
 - Two channels, expanded over every label, at one path; a path that is a harness file
   or a label's balance file.
+- A tool with no name, a name outside the API's grammar, a name declared twice, or the
+  name `bash`; an unknown tool key; a wrong type; a `kind` outside the menu; a `channel`
+  that is not in the channel table the manifest declares; a kind whose channel is the
+  wrong shape for it; `input_schema`, `schema`, `properties` or `required`, each refused
+  by name as the harness's. Every `description` string is allowed, `""` included: that
+  is the experiment asking for the harness's own account of the action.
+- no declared `bash` tool with no `[[tool]]`, or with `delivery = "pull"` or an empty
+  `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no
+  shell whose every declared tool is left out of its request because this seating
+  planted no channel for it to act on — an episode that would open on a turn the agent
+  has nothing to answer with. Refused as the environment is built, before the container
+  starts and before anything is billed.
 - `[harness_files]` with a key other than `balance` and `digest`, a value that is not a
   string, a multi-segment `balance`, or a multi-segment `digest`. Either may be
   `""`: no balance file is planted for any seat, or no digest is written.
@@ -538,7 +723,12 @@ Every episode's provenance stamps: the harness digest, the system prompt in forc
 and by digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
 channel's source digest, the seating and labels, the schedule, the manifest's digest, the
-harness files' names, and the channel table in force, whole and by digest.
+harness files' names, the channel table in force, whole and by digest, and the tool
+table in force, whole and by digest, each tool's declared description among its fields,
+and whether the shell was offered.
+Two agents offered different actions - or the same actions described differently - are
+different arms. Where a tool declares no description, what it said of itself follows from
+the harness digest, the channel table and the seating.
 
 Every file record carries `path`, `size`, `text`, `channel` (the declared name),
 `writer`, `readers`, `role` (`own`, `peer`, `experimenter`), `author` (`experimenter`,
@@ -551,16 +741,22 @@ schema, `measured = true`, or a penalty above 0. A channel that asked for none o
 has no entry. A directory
 every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
 and `penalty`; the schema channel records its declaration, what moved, and `penalty`. The
-account keeps `penalised`, the running total per channel. `trace_version` is 2.
+account keeps `penalised`, the running total per channel.
+
+Every tool record carries `tool` (`bash` or the declared name), `result`, and then
+`command` for the shell or `input` for a declared tool, the other being null.
+`trace_version` is 3.
 
 ## 12. Invariants, restated in this vocabulary
 
 1. Everything an agent reads is labelled with who wrote it: the harness, the
    experimenter, its own past self, or a named peer.
 2. What the harness says to agents is declared, recorded, and true.
-3. The harness acts only on files that match a schema, never on free text.
+3. The harness acts only on files that match a schema and on tool calls that match a
+   declared tool, never on free text. Both menus are fixed in code.
 4. Every limit is enforced by the harness, and none relies on the agent's cooperation.
-5. Agents reach each other only through channels the experimenter declared.
+5. Agents reach each other only through channels the experimenter declared, whether they
+   reach them with the shell or with a declared tool.
 6. Every cost is counted exactly and the accounts always balance.
 7. Every episode records what the agent saw, said, did, and left behind.
 8. Every ledger, digest or report is recomputed from the episode records, never kept as

@@ -200,10 +200,56 @@ def transfer_of(t: dict) -> dict:
     return t["transfer"]
 
 
+def tool_call(rec: dict) -> str:
+    """One tool call as the transcript shows it.
+
+    The shell's is the command it ran, or "(restart)" for the bare form. A declared
+    tool ran no command of its own, so its call is shown instead. A record from
+    before the tool table names no tool and is the shell's.
+    """
+    name = rec.get("tool")
+    if name and name != harness.TOOL["name"]:
+        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((rec.get("input") or {}).items()))
+        return f"{name}({carried})"
+    return "(restart)" if rec["command"] is None else rec["command"]
+
+
+# What a tool call names a place with. A body is content and names nothing.
+TOOL_PLACES = ("path", "to")
+
+
+def tool_calls(t: dict) -> list[dict]:
+    """Every declared tool call this episode made, the shell's excluded."""
+    return [c for turn in t.get("turns") or [] for c in turn.get("tools") or []
+            if (c.get("tool") or harness.TOOL["name"]) != harness.TOOL["name"]]
+
+
+def reached(t: dict) -> list[str]:
+    """Every string this episode named a place with: the commands it ran, and the
+    path and addressee arguments of the tools it called.
+
+    A declared tool runs no command of its own, so an arm acting through tools names
+    nothing in `commands`. Anything asking what an episode reached asks this, so the
+    answer does not depend on which of the two an experiment offered.
+    """
+    return list(t.get("commands") or []) + [str(c["input"][k]) for c in tool_calls(t)
+                                  for k in TOOL_PLACES if k in (c.get("input") or {})]
+
+
+def names(place: str, path: str) -> bool:
+    """Whether one of those strings names this path.
+
+    A command names it whole; a tool argument may carry only the tail of it, being
+    relative to the channel or the instance the tool points at.
+    """
+    return path in place or path.endswith("/" + place)
+
+
 def touched_peer(t: dict) -> bool:
-    """Whether any command this episode named another agent's label as a path."""
+    """Whether this episode named another agent's label: as a path in a command or a
+    tool argument, or as the peer a slot was addressed to."""
     others = [label for seat, label in labels_of(t).items() if seat != seat_of(t)]
-    return any(f"{label}/" in c for c in t["commands"] for label in others)
+    return any(f"{label}/" in s or s == label for s in reached(t) for label in others)
 
 
 def starter_name_of(t: dict) -> str:
@@ -212,9 +258,9 @@ def starter_name_of(t: dict) -> str:
 
 
 def touched_starter(t: dict) -> bool:
-    """Whether any command this episode named a path the agent was given."""
+    """Whether this episode named a path the agent was given, in a command or a tool call."""
     paths = [f["path"] for f in starter_files_of(t)]
-    return any(p in c for c in t["commands"] for p in paths)
+    return any(names(s, p) for s in reached(t) for p in paths)
 
 
 def changed_starter(t: dict) -> bool:
@@ -373,7 +419,10 @@ def episode_cols(t: dict) -> dict:
         "missing_tools": ";".join(t["missing_tools"]),
         "error": next(iter((t["error"] or "").splitlines()), ""),
         "spent": t["spent"], "remaining": t["remaining"], "turns": len(t["turns"]),
-        "commands": len(t["commands"]), "retries": len(t["retries"]),
+        # The two ways an episode acts, counted apart: an arm offered only tools
+        # runs no commands, and one offered only the shell makes no tool calls.
+        "commands": len(t["commands"]), "tool_calls": len(tool_calls(t)),
+        "retries": len(t["retries"]),
         "duration_s": t["duration_s"],
     }
 
@@ -772,7 +821,7 @@ def transcript(agents: dict[str, list[dict]]) -> str:
                 if turn["stop_reason"] == "max_tokens":
                     out.append(f"  [{turn['turn']}] -- truncated at max_tokens --")
                 for c in turn["tools"]:
-                    out.append(f"    $ {c['command']}")
+                    out.append(f"    $ {tool_call(c)}")
                     out += [f"    | {line}" for line in (c["result"] or "").splitlines()]
                 out.append("")
             # Every captured file after this episode, against the one before it.

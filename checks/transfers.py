@@ -210,11 +210,10 @@ def check_the_rebate_rate_is_tunable_and_bounded():
 
     # Above 100 an agent mints budget out of a transfer it gets back in full.
     for bad in (101, -1):
-        with rooted(HostBox) as root:
-            cfg = root / "config.toml"
-            cfg.write_text(channel_toml(tables(transfer={"rebate_percent": bad})), encoding="utf-8")
-            refused(lambda: harness.load_config(cfg), "rebate_percent",
-                    because=f"rebate_percent {bad} was accepted")
+        with rooted(HostBox):
+            refused(lambda: harness.apply_channels(tables(transfer={"rebate_percent": bad}),
+                                                   None, "manifest"),
+                    "rebate_percent", because=f"rebate_percent {bad} was accepted")
 
 
 def check_a_giver_funded_transfer_debits_the_giver():

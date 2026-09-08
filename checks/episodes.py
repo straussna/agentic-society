@@ -36,7 +36,10 @@ from checks.lanes import (
 )
 
 # The keywords every request carries, whatever the model.
-REQUEST_KEYS = {"model", "max_tokens", "system", "messages", "tools", "cache_control"}
+# The keys every request carries. `system` is not one: the harness ships no words, so
+# it is sent only by an experiment that declared some. `tools` is always there and
+# always holds the shell; what else is in it an experiment declares, never a model.
+REQUEST_KEYS = {"model", "max_tokens", "messages", "tools", "cache_control"}
 
 # The two more it carries only where the model's API accepts them.
 FALLBACK_KEYS = {"fallbacks", "betas"}
@@ -319,9 +322,14 @@ def check_the_request_is_the_same_for_every_model():
     from these loses the retry that makes a refusal cost a turn and not a turn
     and an episode.
 
+    The tools are the one keyword whose value an experiment moves, and it moves by
+    experiment and never by model: every model is offered the same set, and where
+    nothing is declared that set is the shell alone.
+
     On the host box whatever --real says: what this asserts is built before the
     episode has a box.
     """
+    offered = {}
     for model in harness.PRICES:
         seen = []
         with host_root(MODEL=model):
@@ -336,6 +344,9 @@ def check_the_request_is_the_same_for_every_model():
             if takes:
                 assert params["fallbacks"] == "default", f"{model}: sent {params.get('fallbacks')!r}"
                 assert params["betas"] == [harness.FALLBACK_BETA], f"{model}: sent {params.get('betas')!r}"
+        offered[model] = seen[0]["tools"]
+    assert set(map(repr, offered.values())) == {repr([harness.TOOL])}, \
+        f"the tool set varies by experiment and not by model: {offered}"
 
 
 def check_fallbacks_can_be_withheld_and_never_forced():

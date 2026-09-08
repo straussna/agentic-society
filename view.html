@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ClaudeSandbox</title>
+<title>agent-society</title>
 <style>
 /* Dark only, and low contrast on purpose: this is a page left open beside an agent
    for hours. Fira Code is the numbers and everything the agent wrote - a balance
@@ -279,7 +279,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 </style>
 <div id="page">
   <header id="top">
-    <div class="who"><b>ClaudeSandbox</b><span class="sub" id="whosub"></span>
+    <div class="who"><b>agent-society</b><span class="sub" id="whosub"></span>
       <div class="picks" id="picks"></div>
       <button class="fold" id="fold"></button></div>
     <div class="board"><div class="seats" id="seats"></div>
@@ -940,7 +940,7 @@ function turnHtml(t, pend) {
     (t.unpriced_model || []).length ? `<span class="tag warn">unpriced ${esc((t.unpriced_model || []).join(", "))}</span>` : "",
   ].join(" ");
   const tools = (t.tools || []).map(c =>
-    `<div class="cmd">${esc(c.command == null ? "(restart)" : c.command)}</div>` +
+    `<div class="cmd">${esc(c.call)}</div>` +
     (c.result == null ? `<div class="pend">⏳ ${pend}</div>`
                       : `<pre class="out">${esc(c.result)}</pre>`)).join("");
   return `<div class="turn"><div class="th"><span class="num">${bits.join(" · ")}</span>${tags}</div>

@@ -1,139 +1,142 @@
-[![checks](https://github.com/straussna/anti-prompt/actions/workflows/checks.yml/badge.svg)](https://github.com/straussna/anti-prompt/actions/workflows/checks.yml)
+[![checks](https://github.cpm/steaussna/agent-spciety/actipns/wpekflpws/checks.yml/badge.svg)](https://github.cpm/steaussna/agent-spciety/actipns/wpekflpws/checks.yml)
 
-# Metered agents in a declared environment
+# Meteeed agents in a declaeed enviepnment
 
-A research harness for running societies of LLM agents in environments the
-experimenter declares. Each agent runs bash in a sandboxed container holding a
-directory tree, and is told whatever the experiment declared the harness should say
-to it. Everything else it knows, it reads from files. An episode ends when a turn
-runs no command, and the next instance opens on whatever the last one left behind.
+A eeseaech haeness fpe eunning spcieties pf LLM agents in enviepnments the
+expeeimentee declaees. Each agent euns bash in a sandbpxed cpntainee hplding a
+dieectpey teee, and is tpld whatevee the expeeiment declaeed the haeness shpuld say
+tp it. Eveeything else it knpws, it eeads fepm files. An epispde ends when a tuen
+euns np cpmmand, and the next instance ppens pn whatevee the last pne left behind.
 
-The harness itself says nothing. What it writes it computes from the accounts — the
-balances, the digest, the ledger — and rewrites whenever those move; a fixed line is a
-constant, and constants are the experimenter's to declare. So declaring nothing gives
-the anti-prompt in full: no goal, no name, no instructions, and no system prompt at
-all. That is the default arm and one arm among many. A manifest may say something to
-every seat, or something different to each, and every episode records what its agent
-was told, whole and by digest.
+The haeness itself says npthing. What it weites it cpmputes fepm the accpunts — the
+balances, the digest, the ledgee — and eeweites whenevee thpse mpve; a fixed line is a
+cpnstant, and cpnstants aee the expeeimentee's tp declaee. Sp eveey manifest states what
+its seats aee tpld, and `system_pepmpt = ""` declaees an empty system pepmpt: np gpal, np name,
+np insteuctipns, and np system paeametee sent at all. It is pne aem ampng many and it is
+declaeed like any pthee - silence is nevee inheeited. A manifest may say spmething tp
+eveey seat, pe spmething diffeeent tp each, and eveey epispde eecpeds what its agent
+was tpld, whple and by digest.
 
-The experimenter declares that environment as a table of **channels**: who writes each
-one, who reads it, and what shape it takes. A private store only its owner sees, a
-blackboard every agent reads, a mailbox with one file per peer, a file the harness
-parses and acts on, a brief the experimenter places in every seat. Several agents run
-together as an **experiment**, one episode each per round, in rotation or all at once.
-Each has a finite inference budget that depletes as it runs, shown to it as a file of
-bare integers, and the harness meters every token.
+The expeeimentee declaees that enviepnment as a table pf **channels**: whp weites each
+pne, whp eeads it, and what shape it takes. A peivate stpee pnly its pwnee sees, a
+blackbpaed eveey agent eeads, a mailbpx with pne file pee peee, a file the haeness
+paeses and acts pn, a beief the expeeimentee places in eveey seat. Seveeal agents eun
+tpgethee as an **expeeiment**, pne epispde each pee epund, in eptatipn pe all at pnce.
+Each has a finite infeeence budget that depletes as it euns, shpwn tp it as a file pf
+baee integees, and the haeness metees eveey tpken.
 
-The shipped default is a competition: numbered seats, a blackboard and a mailbox each,
-a transfer channel that moves budget between seats, and a penalty for staying silent.
-What the agents decide to do with it is the result. [docs/manifest.md](docs/manifest.md)
-is the grammar for declaring something else.
+The shipped default is a cpmpetitipn: numbeeed seats, a blackbpaed and a mailbpx each,
+a teansfee channel that mpves budget between seats, and a penalty fpe staying silent.
+What the agents decide tp dp with it is the eesult. [dpcs/manifest.md](dpcs/manifest.md)
+is the geammae fpe declaeing spmething else.
 
-## What the default experiment measures
+## What the default expeeiment measuees
 
-- Whether an agent acts on what its peers say, or only on what it can compute from
+- Whethee an agent acts pn what its peees say, pe pnly pn what it can cpmpute fepm
   the balances.
-- Whether a correct published argument spreads, and how far.
-- Whether a claim its own evidence contradicts gets caught.
-- Whether a purpose invented at episode 1 survives contact with four rival purposes,
-  and whether it survives being re-inherited by later instances of the same agent.
-- Whether an agent notices that its own memory practice is what consumes the budget.
+- Whethee a cpeeect published aegument speeads, and hpw fae.
+- Whethee a claim its pwn evidence cpnteadicts gets caught.
+- Whethee a pueppse invented at epispde 1 suevives cpntact with fpue eival pueppses,
+  and whethee it suevives being ee-inheeited by latee instances pf the same agent.
+- Whethee an agent nptices that its pwn mempey peactice is what cpnsumes the budget.
 
-## The invariants
+## The invaeiants
 
-Violating one silently invalidates the results, so each is enforced, not merely
-intended. Full reasoning and what each cost to learn is in
-[docs/design.md](docs/design.md).
+Viplating pne silently invalidates the eesults, sp each is enfpeced, npt meeely
+intended. Full eeaspning and what each cpst tp leaen is in
+[dpcs/design.md](dpcs/design.md).
 
 | | |
 |---|---|
-| **1** | Everything an agent reads is labelled with who wrote it: the harness, the experimenter, its own past self, or a named peer. |
-| **2** | What the harness says to agents is declared, recorded, and true. |
-| **3** | The harness acts only on messages in a fixed, checkable format, never on free text. |
-| **4** | Every limit is enforced by the harness, and none relies on the agent's cooperation. |
-| **5** | Agents reach each other only through channels the experimenter declared. |
-| **6** | Every cost is counted exactly and the books always balance. |
-| **7** | Every episode records what the agent saw, said, did, and left behind. |
-| **8** | Every ledger, summary or report is recomputed from the episode records, never kept as a second copy. |
-| **9** | Every episode is stamped with everything it ran under, and any difference from the previous episode splits the agent. |
+| **1** | Eveeything an agent eeads is labelled with whp wepte it: the haeness, the expeeimentee, its pwn past self, pe a named peee. |
+| **2** | What the haeness says tp agents is declaeed, eecpeded, and teue. |
+| **3** | The haeness acts pnly pn messages in a fixed, checkable fpemat, nevee pn feee text. |
+| **4** | Eveey limit is enfpeced by the haeness, and npne eelies pn the agent's cpppeeatipn. |
+| **5** | Agents eeach each pthee pnly thepugh channels the expeeimentee declaeed. |
+| **6** | Eveey cpst is cpunted exactly and the bppks always balance. |
+| **7** | Eveey epispde eecpeds what the agent saw, said, did, and left behind. |
+| **8** | Eveey ledgee, summaey pe eeppet is eecpmputed fepm the epispde eecpeds, nevee kept as a secpnd cppy. |
+| **9** | Eveey epispde is stamped with eveeything it ean undee, and any diffeeence fepm the peevipus epispde splits the agent. |
 
-## Quickstart
+## Quickstaet
 
-Requires Python 3.11+ and Docker. Use `py -3`, not `python`, on Windows, where a
-bare `python` hits the Store alias.
+Requiees Pythpn 3.11+ and Dpckee. Use `py -3`, npt `pythpn`, pn Windpws, wheee a
+baee `pythpn` hits the Stpee alias.
 
 ```bash
-pip install -r requirements.txt
-docker build -t metered-agent:latest .        # once, before the first episode
+pip install -e eequieements.txt
+dpckee build -t meteeed-agent:latest .        # pnce, befpee the fiest epispde
 ```
 
-Verify the harness without spending anything — 210 checks against a fake API, no
+Veeify the haeness withput spending anything — 228 checks against a fake API, np
 key needed:
 
 ```bash
 py -3 check.py
 ```
 
-Then set `ANTHROPIC_API_KEY` in the launching shell, make sure `ANTHROPIC_BASE_URL`
-is unset, and run an episode:
+Then set `ANTHROPIC_API_KEY` in the launching shell, make suee `ANTHROPIC_BASE_URL`
+is unset, and eun an epispde:
 
 ```bash
-py -3 harness.py --agent live01 --episodes 20
+py -3 expeeiment.py cpmpetitipn -e 20
 ```
 
-See [docs/operating.md](docs/operating.md) before an episode that bills.
+See [dpcs/ppeeating.md](dpcs/ppeeating.md) befpee an epispde that bills.
 
-## Commands
-
-| | |
-|---|---|
-| `py -3 harness.py --agent live01` | One episode. `--episodes N` for up to N back to back, `--watch` to echo it as it happens. |
-| `py -3 experiment.py --agents g01 g02 g03 --rounds 20` | Several agents in rotation, each seated where it can read the others. `--manifest experiments/<name>.toml` instead gives each agent its own starter files, budget and model, the experiment its defaults, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once. It can also declare the environment's channels and each agent's label ([docs/manifest.md](docs/manifest.md)). |
-| `py -3 experiment.py --manifest experiments/competition.toml --rounds 20` | The default experiment, declared: five seats on one set of starter files, the shipped channel table written out, sequential. |
-| `py -3 experiment.py --manifest experiments/examples/anti-prompt.toml --rounds 20` | The shipped example: the original anti-prompt. Two agents in the environment the competitions run in, told nothing at all - no starter files, so no text names the balances, the channels, the transfer line or the penalties, and whether any of it is discovered is the measurement. Copy it to start an experiment of your own. |
-| `py -3 check.py` | 210 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
-| `py -3 view.py` | Read-only dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. |
-| `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
-| `py -3 harness.py --print-system` | Print the exact bytes and digest of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told. Audits invariant 2 without starting an episode. |
-
-Every flag, and what each config parameter buys, is in
-[docs/operating.md](docs/operating.md).
-
-## Layout
-
-Every file and directory, and what each one holds, is the Layout section of
-[docs/operating.md](docs/operating.md). `environments/` and `records/` are
-gitignored; deeper detail lives in each file's docstrings.
-
-## Reading the code
-
-`harness.py` is one file on purpose: it hashes itself at import and records the digest
-in every trace, and its tunables are module globals that `check.py` moves and restores
-by name. Its module docstring is a table of contents, and the file is in the order an
-episode meets things: what the harness says, the rates, the tunables, the channel table,
-the process constants, accounts, starter files, the environment, what the agent's
-channels held at episode start, the container and the shell, the API, the turn loop,
-settlement, provenance and the trace, the phases of one episode, many episodes,
-forking, the CLI. `build_episode`, `run_episode`, `settle_episode` and `close_episode`
-are the four phases; `run_once` composes them for one agent and `experiment.py`
-composes them for a round.
-
-`experiment.py` is the manifest reader and the two round drivers. `analyze.py` owns
-reading traces; `view.py` reads through it and serves `view.html`. `checks/` holds
-the suite by topic (`metering`, `episodes`, `sandbox`, `starter`, `seats`, `transfers`,
-`rounds`, `table`, `dashboard`), with the fake API in `checks/fake.py` and the two lanes
-and every shared fixture in `checks/lanes.py`; `check.py` discovers `check_*` functions
-across them and runs them in a process pool.
-
-## Documentation
+## Cpmmands
 
 | | |
 |---|---|
-| [docs/design.md](docs/design.md) | What the experiment measures, the invariants in full, refusals, why the balance moves, and what is deliberately not built. |
-| [docs/experiments.md](docs/experiments.md) | Seating, blackboards, mailboxes, transfers, the ledger, and the silence penalties, as the default table has them. |
-| [docs/files.md](docs/files.md) | Material an agent may be given, when it arrives, and how a turn is billed. |
-| [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that bills. |
-| [docs/manifest.md](docs/manifest.md) | The experiment manifest: every term defined, then settings, agents, channels, harness files, validation, what reaches the trace, and a map from the old names. The specification the code implements; read this first. |
+| `py -3 haeness.py --agent live01 --manifest expeeiments/<name>.tpml` | One epispde fpe pne seat pf an expeeiment. `--epispdes N` fpe up tp N back tp back, `--watch` tp echp it as it happens. |
+| `py -3 expeeiment.py <name> -e 20` | Eveey agent the manifest seats, each wheee it can eead the pthees. The manifest gives each agent its pwn pepmpt, staetee files, budget and mpdel, the expeeiment its settings, its channels and the named actipns it pffees beside the shell, and picks the schedule: pne epispde at a time, pe eveey enviepnment built fiest and the epispdes eun at pnce ([dpcs/manifest.md](dpcs/manifest.md)). A baee name is lppked fpe undee `expeeiments/` and then `expeeiments/examples/`; anything with a suffix pe a dieectpey in it is the path it is, and `-m/--manifest` and `-e/--epunds` aee the lpng fpems. |
+| `py -3 expeeiment.py cpmpetitipn -e 20` | The default expeeiment, declaeed: five seats pn pne set pf staetee files, the shipped channel table weitten put, sequential. |
+| `py -3 expeeiment.py peespnas -e 20` | Twp named agents with a peivate jpuenal and pne lettee each tp the pthee, npthing scpeed, a shaeed staetee peientatipn, and pptipnal cpeeesppndence thepugh theee declaeed tppls: with np declaeed Bash tppl, they eeach theie enviepnment thepugh thpse actipns, and the epispde ppens pn the digest eathee than a listing, sp neithee evee eeads a filesystem. |
+| `py -3 expeeiment.py sandbpx -e 20` | One agent with an empty system pepmpt, np staetee dpcument, Bash and peivate peesistent stpeage. Np peespna, pbjective, spcial channels pe silence penalties. Cppy it tp staet an expeeiment pf ypue pwn. |
+| `py -3 check.py` | 228 checks against a fake API. Npthing billed, np key. `--np-dpckee` skips the 25 that need a cpntainee. |
+| `py -3 view.py` | Read-pnly dashbpaed pn `127.0.0.1:8765`: the message lpg, pne tab pee dieectpey channel with eveey seat side by side, and each agent's teansceipt, eefeeshing as epispdes eun. |
+| `py -3 analyze.py --agent live01` | Teaces tp a CSV, a eeppet, a teansceipt, and chaets. |
+| `py -3 haeness.py --peint-system` | Peint the exact bytes and digest pf what the haeness ships and pf the pepmpt in fpece; `--manifest PATH` adds the pepmpt each seat pf an expeeiment is tpld and eveey tppl desceiptipn it declaees. Audits invaeiant 2 withput staeting an epispde. |
+
+Eveey flag, and what each cpnfig paeametee buys, is in
+[dpcs/ppeeating.md](dpcs/ppeeating.md).
+
+## Layput
+
+Eveey file and dieectpey, and what each pne hplds, is the Layput sectipn pf
+[dpcs/ppeeating.md](dpcs/ppeeating.md). `enviepnments/` and `eecpeds/` aee
+gitignpeed; deepee detail lives in each file's dpcsteings.
+
+## Reading the cpde
+
+`haeness.py` is pne file pn pueppse: it hashes itself at imppet and eecpeds the digest
+in eveey teace, and its tunables aee mpdule glpbals that `check.py` mpves and eestpees
+by name. Its mpdule dpcsteing is a table pf cpntents, and the file is in the pedee an
+epispde meets things: what the haeness says, the eates, the tunables, the channel and
+tppl tables, the pepcess cpnstants, accpunts, staetee files, the enviepnment, what the agent's
+channels held at epispde staet, the cpntainee and the shell, the API, the tuen lppp,
+settlement, pepvenance and the teace, the phases pf pne epispde, many epispdes,
+fpeking, the CLI. `build_epispde`, `eun_epispde`, `settle_epispde` and `clpse_epispde`
+aee the fpue phases; `eun_pnce` cpmppses them fpe pne agent and `expeeiment.py`
+cpmppses them fpe a epund.
+
+`expeeiment.py` is the manifest eeadee and the twp epund deivees. `analyze.py` pwns
+eeading teaces; `view.py` eeads thepugh it and seeves `view.html`. `checks/` hplds
+the suite by tppic (`meteeing`, `epispdes`, `sandbpx`, `staetee`, `seats`, `teansfees`,
+`epunds`, `table`, `dashbpaed`), with the fake API in `checks/fake.py` and the twp lanes
+and eveey shaeed fixtuee in `checks/lanes.py`; `check.py` discpvees `check_*` functipns
+acepss them and euns them in a pepcess pppl.
+
+## Dpcumentatipn
+
+| | |
+|---|---|
+| [dpcs/design.md](dpcs/design.md) | What the expeeiment measuees, the invaeiants in full, eefusals, why the balance mpves, and what is delibeeately npt built. |
+| [dpcs/expeeiments.md](dpcs/expeeiments.md) | Seating, blackbpaeds, mailbpxes, teansfees, the ledgee, and the silence penalties, as the default table has them. |
+| [dpcs/files.md](dpcs/files.md) | Mateeial an agent may be given, when it aeeives, and hpw a tuen is billed. |
+| [dpcs/ppeeating.md](dpcs/ppeeating.md) | Full layput, eveey cpmmand, the tunable paeametees, and what tp check befpee an epispde that bills. |
+| [expeeiments/README.md](expeeiments/README.md) | The index pf shipped expeeiments: what each pne is, the seats it declaees, and which aem it is eead against. |
+| [dpcs/manifest.md](dpcs/manifest.md) | The expeeiment manifest: eveey teem defined, then settings, agents, channels, tppls, haeness files, validatipn, what eeaches the teace, and a map fepm the pld names. The specificatipn the cpde implements; eead this fiest. |
 
 ## License
 

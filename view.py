@@ -40,7 +40,7 @@ STALE_AFTER = 180
 SPARK_POINTS = 240
 
 # The leading letters of an agent id, which is what names a set of them when
-# nothing better is on disk: c01..c05 are the c agents.
+# nothing better is on disk: comp01..comp05 are the comp agents.
 AGENT_PREFIX = re.compile(r"^[^\d]*")
 
 # Stands for a path an outbox did not hold, which is not the same as a path it
@@ -283,7 +283,8 @@ def from_trace(t: dict) -> list[dict]:
         "unpriced_model": turn.get("unpriced_model"),
         "text": turn.get("text") or "",
         "thinking": turn.get("thinking") or "",
-        "tools": [{"command": tool.get("command"), "result": tool.get("result")}
+        "tools": [{"result": tool.get("result"),
+                   "call": call_shown(tool.get("tool"), tool.get("command"), tool.get("input"))}
                   for tool in turn.get("tools") or []],
         "tokens": {k: turn.get(k, 0) for k in harness.BILLABLE},
     } for turn in t.get("turns") or []]
@@ -318,7 +319,9 @@ def from_raw(lines: list[dict], account: dict) -> list[dict]:
             "unpriced_model": u["unpriced"] or None,
             "text": harness.blocks(content, "text", "text"),
             "thinking": harness.blocks(content, "thinking", "thinking"),
-            "tools": [{"command": command_of(b), "result": None}
+            "tools": [{"result": None,
+                       "call": call_shown(getattr(b, "name", None), command_of(b),
+                                          args_of(b))}
                       for b in content if getattr(b, "type", "") == "tool_use"],
             "tokens": {k: u.get(k, 0) for k in harness.BILLABLE},
         })
@@ -328,6 +331,24 @@ def from_raw(lines: list[dict], account: dict) -> list[dict]:
 def command_of(block: Any) -> str | None:
     """The command a tool_use block asked for, or None for a bare restart."""
     return getattr(getattr(block, "input", None), "command", None)
+
+
+def args_of(block: Any) -> dict:
+    """What a tool_use block carried, as a dict; empty where it carried nothing."""
+    return dict(vars(getattr(block, "input", None) or SimpleNamespace()))
+
+
+def call_shown(name: str | None, command: str | None, args: Any) -> str:
+    """The one line a tool call is shown as.
+
+    The shell's is the command it ran, or "(restart)" for the bare form. A
+    declared tool's is the call itself, since it ran no command of its own.
+    Traces older than the tool table name no tool and are all the shell's.
+    """
+    if name and name != harness.TOOL["name"]:
+        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((args or {}).items()))
+        return f"{name}({carried})"
+    return "(restart)" if command is None else command
 
 
 def live_turns(agent: str, index: int, account: dict) -> list[dict]:
@@ -783,7 +804,7 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
     return {"round": nxt["round"], "episode": nxt["episode"], "box": box,
             "shown_before": None if paths is None else box in paths,
             "environment": any(f["path"] == box for f in analyze.inbox_files(nxt["trace"])),
-            "named": any(box in cmd for cmd in nxt["trace"].get("commands") or []),
+            "named": any(analyze.names(s, box) for s in analyze.reached(nxt["trace"])),
             "clipped": observation_clipped(nxt["trace"])}
 
 
@@ -1033,6 +1054,8 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     table = agent_table(last)
     hf = analyze.harness_files_of(last) if last else dict(harness.HARNESS_FILES)
     delivery = analyze.provenance_of(last)["delivery"] if last else harness.DELIVERY
+    # Traces from before the shell became declarable were all shell-holding.
+    shell = analyze.provenance_of(last).get("shell_tool", True) if last else harness.SHELL_TOOL
     mail = harness.mailbox_channel(table)
     out = {
         "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,
@@ -1045,7 +1068,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
         "turns": going["turns"],
     }
     if since == 0:
-        out["observation"] = {"command": harness.observation(table, hf["digest"], delivery),
+        out["observation"] = {"command": harness.observation(table, hf["digest"], delivery, shell),
                               "result": None, "name": hf["digest"],
                               "inbox": mail.inbox if mail else None, "listing": None,
                               "shown_before": [], "clipped": False}

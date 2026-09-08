@@ -60,7 +60,7 @@ def check_a_channel_table_is_validated():
                 (one(writer="harness"), ["writer must be one of"]),
                 (one(readers="nobody"), ["not a channel the harness has"]),
                 (tables({"name": "b", "writer": "experimenter", "source": "studio-brief",
-                         "path": "b", "shape": "directory"}), ["takes source and path, not shape"]),
+                         "path": "b", "shape": "directory"}), ["takes source, path, pushed and restated, not shape"]),
                 (tables({"name": "b", "writer": "experimenter", "source": "nope", "path": "b"}),
                  ["source 'nope' is not a directory"]),
                 (one(shape="heap"), ["shape must be one of"]),
@@ -79,7 +79,8 @@ def check_a_channel_table_is_validated():
                 (parsed(schema="loan"), ["schema must be one of"]),
                 (one(schema="transfer"), ["only a channel written by self and read by the harness"]),
                 (one(funded_by="none"), ["field of the transfer schema"]),
-                (one(readers="self", path="x", restated=True), ["restated asks for the digest"]),
+                (one(readers="self", path="x", restated=True, pushed=False),
+                 ["restated asks for the digest"]),
                 (one(silence_penalty_percent=101), ["between 0 and 100"]),
                 (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
                 (parsed(funded_by="loud"), ["funded_by must be one of"]),
@@ -114,7 +115,7 @@ def check_a_channel_table_is_validated():
         assert [c.name for c in table] == ["journal", "identity", "noticeboard", "letters", "brief"]
         assert hf == {"balance": "balance", "digest": "m"}, "an overlay, key by key"
         assert table[4].readers == "all" and table[4].source == "studio-brief"
-        assert not table[0].pushed and not table[1].pushed and table[2].pushed
+        assert all(c.pushed for c in table),             "every channel is quoted unless the manifest says otherwise, a private store included"
         assert harness.schema_channel(table) is None and harness.mailbox_channel(table) is table[3]
         assert [c.name for c in harness.channels()] == ["notes", "blackboard", "mail", "transfer"], \
             "validating sets nothing"
@@ -148,7 +149,7 @@ def check_the_default_table_is_todays_environment():
         assert harness.HARNESS_FILES == {"balance": "n", "digest": "m"}
         assert harness.observation() == "ls -la . ./state; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
-        {"name": "notes", "writer": "self", "readers": "self", "path": "state", "pushed": False},
+        {"name": "notes", "writer": "self", "readers": "self", "path": "state"},
         {"name": "blackboard", "writer": "self", "readers": "all", "path": "{label}",
          "measured": True},
         {"name": "mail", "writer": "self", "readers": "addressee", "shape": "mailbox",

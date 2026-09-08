@@ -21,6 +21,7 @@ from checks.lanes import (
     elements_of,
     episode_once,
     ground_truth,
+    manifest_file,
     pinned,
     quiet,
     reconciled,
@@ -91,27 +92,21 @@ def check_config_is_validated():
         assert harness.DIGEST_FILE_LIMIT >= harness.DIGEST_FILE_FLOOR
         assert harness.OBSERVATION_LIMIT >= harness.TOOL_RESULT_LIMIT
 
+    def declared(**values):
+        """One experiment setting, applied the way a manifest's defaults are."""
+        harness.apply_config(values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST)
+
     with tempfile.TemporaryDirectory(prefix="mtr-cfg-") as tmp:
         f = Path(tmp) / "config.toml"
+        # config.toml holds the process parameters and refuses everything else by name:
+        # an unknown key, a wrong type, a value out of range, a key that became a channel
+        # field, and every setting an experiment owns.
         for bad in ('turn_cpa = 5', 'system = "hi"', 'max_turns = "many"',
-                    'model = "no-such-model"', 'context_fraction = 2.0', 'budget = 0',
-                    'rebate_percent = 101', 'live_balance = "yes"',
-                    # A transfer is the giver's own budget moving; a rebate on top
-                    # would mint. No share for a transfer nobody can make.
-                    channel_toml(tables(transfer={"funded_by": "giver", "rebate_percent": 75})),
-                    channel_toml(tables(transfer={"funded_by": "loud"})),
-                    channel_toml(tables(transfer={"funded_by": 3})),
-                    channel_toml(tables(transfer={"funded_by": "none", "silence_penalty_percent": 50})),
-                    # The keys that moved onto channels are refused by their old names.
-                    'transfer_funded_by = "harness"', 'shared_files = "brief"',
-                    'delivery = "fetch"', 'delivery = 1',
-                    # Above the ceiling the harness would time out mid-episode.
                     f'max_tokens = {harness.MAX_TOKENS_CEILING + 1}',
-                    # Below this a clipped message says less than its own marker.
-                    f'digest_file_limit = {harness.DIGEST_FILE_FLOOR - 1}',
-                    # The initial observation carries the whole record and is never smaller
-                    # than what one ordinary call may return.
-                    f'observation_limit = {harness.TOOL_RESULT_LIMIT - 1}'):
+                    'transfer_funded_by = "harness"', 'shared_files = "brief"',
+                    'model = "claude-sonnet-5"', 'budget = 1', 'context_fraction = 0.5',
+                    'system_prompt = "hi"', 'delivery = "push"', 'starter_files = "s"',
+                    channel_toml(tables()), '[harness_files]' + chr(10) + 'balance = "n"'):
             f.write_text(bad, encoding="utf-8")
             with pinned():
                 refused(lambda: harness.load_config(f), because=f"accepted bad config: {bad}")
@@ -121,21 +116,42 @@ def check_config_is_validated():
             refused(lambda: harness.load_config(Path(tmp) / "confg.toml"), "no such config",
                     because="a missing --config path was ignored")
 
-        f.write_text("max_turns = 7\ncontext_fraction = 1\n", encoding="utf-8")
+        f.write_text("max_turns = 7" + chr(10) + "command_timeout = 30", encoding="utf-8")
         with pinned():
             assert harness.load_config(f) == f, "the file used is reported back"
-            assert harness.MAX_TURNS == 7, "a good value must actually apply"
-            assert harness.CONTEXT_FRACTION == 1.0, "an int must widen into a float field"
-        f.write_text(channel_toml(tables(transfer={"funded_by": "giver", "rebate_percent": 0})),
-                     encoding="utf-8")
+            assert harness.MAX_TURNS == 7 and harness.COMMAND_TIMEOUT == 30, \
+                "a good value must actually apply"
+
+    # An experiment owns the rest, and its values are held to the same ranges.
+    for bad in ({"model": "no-such-model"}, {"context_fraction": 2.0}, {"budget": 0},
+                {"live_balance": "yes"}, {"delivery": "fetch"}, {"delivery": 1},
+                {"digest_file_limit": harness.DIGEST_FILE_FLOOR - 1},
+                # The initial observation carries the whole digest and is never smaller
+                # than what one ordinary call may return.
+                {"observation_limit": harness.TOOL_RESULT_LIMIT - 1},
+                # The process parameters are refused here, saying where they live.
+                {"max_turns": 7}, {"image": "x"}, {"tool_result_limit": 2000}):
         with pinned():
-            harness.load_config(f)
-            assert harness.channel("transfer").funded_by == "giver", \
-                "the pairing the rule asks for is accepted"
+            refused(lambda: declared(**bad), "manifest", because=f"a manifest accepted {bad}")
+    with pinned():
+        declared(context_fraction=1)
+        assert harness.CONTEXT_FRACTION == 1.0, "an int must widen into a float field"
+
+    # A transfer is the giver's own budget moving; a rebate on top would mint. No
+    # share for a transfer nobody can make.
+    for table in (tables(transfer={"funded_by": "giver", "rebate_percent": 75}),
+                  tables(transfer={"funded_by": "loud"}),
+                  tables(transfer={"funded_by": 3}),
+                  tables(transfer={"funded_by": "none", "silence_penalty_percent": 50}),
+                  tables(transfer={"rebate_percent": 101})):
         with pinned():
-            refused(lambda: harness.apply_channels(tables(transfer={"rebate_percent": 101}), None,
-                                                   "manifest"),
-                    "manifest:", because="values applied by name are not checked")
+            refused(lambda: harness.apply_channels(table, None, "manifest"), "manifest:",
+                    because="a bad channel table was accepted")
+    with pinned():
+        harness.apply_channels(tables(transfer={"funded_by": "giver", "rebate_percent": 0}),
+                               None, "manifest")
+        assert harness.channel("transfer").funded_by == "giver", \
+            "the pairing the rule asks for is accepted"
 
 
 def check_lapsed_rates_are_refused():
@@ -158,10 +174,11 @@ def check_lapsed_rates_are_refused():
     # start() exits and does not return a code, so every driver refuses
     # identically. The throwaway root holds no config, so the model asked for is
     # the default; the box refuses to build anything should the guard let it.
-    with rooted(NoBox):
+    with rooted(NoBox) as root:
+        p = manifest_file(root, 'system_prompt = ""' + chr(10) + "[[agent]]" + chr(10) + 'id = "t"' + chr(10))
         harness.PRICES_EXPIRE = {harness.MODEL: ("2000-01-01", "something newer")}
         with quiet() as buf:
-            refused(lambda: harness.main(["--agent", "t"]), code=2,
+            refused(lambda: harness.main(["--agent", "t", "--manifest", str(p)]), code=2,
                     because="a lapsed rate started an agent")
     assert "expired 2000-01-01" in buf.getvalue(), buf.getvalue()
 

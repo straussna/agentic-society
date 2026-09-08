@@ -43,6 +43,16 @@ def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
             "details": details, "model": model}
 
 
+def use(name, u=None, id=None, stop="tool_use", **args):
+    """A scripted step: reply with one call to a declared tool, carrying `args`.
+
+    The other side of run(): the bash tool takes a command, and a tool an
+    experiment declared takes whatever its own schema says.
+    """
+    return {"kind": "call", "name": name, "args": args, "u": u, "id": id, "stop": stop,
+            "details": None, "model": None}
+
+
 def refuse(*cmds, category="cyber", u=None, id=None, **detail):
     """A scripted refusal, in either shape the API sends one.
 
@@ -99,6 +109,11 @@ def fake(*steps, seen=None):
                       stop_details=s.get("details"),
                       content=[NS(type="tool_use", id=f"t{n[0]}_{i}", name="bash", input={"command": c})
                                for i, c in enumerate(s["cmds"])])
+        if s["kind"] == "call":
+            return NS(id=rid, model=model, stop_reason=s["stop"], usage=u,
+                      stop_details=None,
+                      content=[NS(type="tool_use", id=f"t{n[0]}_0", name=s["name"],
+                                  input=dict(s["args"]))])
         content = [NS(type="text", text=s["text"])]
         if s["kind"] == "think":
             content.insert(0, NS(type="thinking", thinking=s["thinking"]))
