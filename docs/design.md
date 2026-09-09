@@ -96,7 +96,8 @@ record makes acquisition a constant so that use can be the variable.
   only bytes the harness authors in it are the `=== <path> ===` separators between one
   file and the next, which is the shape `head` prints a set of files in.
 - **3 — The harness acts only on messages in a fixed, checkable format, never on free
-  text.** One line in `out/transfer`, `<label> <amount>`, is the whole grammar of a transfer. A
+  text.** A transfer is either one line `<label> <amount>` in a parsed file or one
+  addressed mailbox slot containing `<amount>`. A
   file holding anything else moves nothing, and the trace records what it held and why
   it moved nothing. Nothing an agent writes anywhere else changes what the harness does.
 - **4 — Every limit is enforced by the harness, and none relies on the agent's

@@ -365,7 +365,7 @@ class Channel:
     ledger: str = ""                 # transfer: the harness file holding every transfer
     receipt: str = ""                # transfer: where the parse result is written back
     source: str = ""                 # experimenter channels: a directory under files/
-    agent_view: str = "paths"         # "paths" | "memory" | "letters" | "board"
+    agent_view: str = "paths"         # "paths" | "memory" | "letters" | "board" | "transfer"
 
     def path_for(self, label: str) -> str:
         """The path one agent's instance sits at."""
@@ -449,7 +449,8 @@ def schema_channel(table: Iterable[Channel]) -> Channel | None:
 
 
 def mailbox_channel(table: Iterable[Channel]) -> Channel | None:
-    return next((c for c in table if c.shape == "mailbox"), None)
+    """The first unparsed mailbox, used for private messages."""
+    return next((c for c in table if c.shape == "mailbox" and not c.schema), None)
 
 
 def blackboard_channel(table: Iterable[Channel]) -> Channel | None:
@@ -579,6 +580,25 @@ def check_path(refuse: Callable[[str], None], name: str, key: str, path: Any,
                f"so its path must name {{label}}")
 
 
+def validate_agent_view(channel: Channel, refuse: Callable[[str], None]) -> None:
+    """Require each semantic view to describe the channel shape it names."""
+    view = channel.agent_view
+    valid = (
+        view == "paths"
+        or (view == "memory" and channel.shape == "directory"
+            and ((channel.writer == "self" and channel.readers == "self")
+                 or channel.writer == "experimenter"))
+        or (view == "letters" and channel.shape == "mailbox")
+        or (view == "board" and channel.shape == "directory"
+            and channel.writer == "self" and channel.readers == "all")
+        or (view == "transfer" and channel.schema == "transfer"
+            and channel.shape in ("file", "mailbox"))
+    )
+    if not valid:
+        refuse(f"channel {channel.name}: agent_view {view!r} does not describe its "
+               f"{channel.writer}/{channel.readers}/{channel.shape} channel")
+
+
 def experimenter_channel(name: str, raw: dict, refuse: Callable[[str], None]) -> Channel:
     """A channel the experimenter writes and every agent reads: a source and a path.
 
@@ -597,14 +617,17 @@ def experimenter_channel(name: str, raw: dict, refuse: Callable[[str], None]) ->
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     agent_view = raw.get("agent_view", "paths")
-    if agent_view not in ("paths", "memory", "letters", "board"):
-        refuse(f"channel {name}: agent_view must be one of ['paths', 'memory', 'letters', 'board'], "
+    if agent_view not in ("paths", "memory", "letters", "board", "transfer"):
+        refuse(f"channel {name}: agent_view must be one of "
+               "['paths', 'memory', 'letters', 'board', 'transfer'], "
                f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
                f"episode, and pushed is false, so the digest carries none of it")
-    return Channel(name, "experimenter", "all", "directory", path=raw["path"],
-                   pushed=pushed, restated=restated, source=src, agent_view=agent_view)
+    channel = Channel(name, "experimenter", "all", "directory", path=raw["path"],
+                      pushed=pushed, restated=restated, source=src, agent_view=agent_view)
+    validate_agent_view(channel, refuse)
+    return channel
 
 
 def mailbox_paths(name: str, raw: dict, readers: str, shape: str,
@@ -711,18 +734,22 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
         if schema not in SCHEMAS:
             refuse(f"channel {name}: schema must be one of {sorted(SCHEMAS)}, got {schema!r}")
     else:
-        if schema:
-            refuse(f"channel {name}: only a channel written by self and read by the harness "
-                   f"has a schema")
+        if schema and not (schema == "transfer" and readers == "addressee"
+                           and shape == "mailbox"):
+            refuse(f"channel {name}: a schema is either one file read by the harness or "
+                   f"a transfer mailbox read by its addressee")
+        if schema and schema not in SCHEMAS:
+            refuse(f"channel {name}: schema must be one of {sorted(SCHEMAS)}, got {schema!r}")
         for key in SCHEMAS["transfer"]:
-            if key in raw:
+            if not schema and key in raw:
                 refuse(f"channel {name}: {key} is a field of the transfer schema, and this "
                        f"channel has none")
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     agent_view = raw.get("agent_view", "paths")
-    if agent_view not in ("paths", "memory", "letters", "board"):
-        refuse(f"channel {name}: agent_view must be one of ['paths', 'memory', 'letters', 'board'], "
+    if agent_view not in ("paths", "memory", "letters", "board", "transfer"):
+        refuse(f"channel {name}: agent_view must be one of "
+               "['paths', 'memory', 'letters', 'board', 'transfer'], "
                f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
@@ -733,10 +760,12 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
         refuse(f"channel {name}: silence_penalty_percent must be between 0 and 100, got {penalty}")
     if readers == "self" and penalty:
         refuse(f"channel {name}: nothing is owed to a channel nobody else reads")
-    return Channel(name, writer, readers, shape, **paths, pushed=pushed,
-                   restated=restated, measured=measured,
-                   silence_penalty_percent=penalty, schema=schema, agent_view=agent_view,
-                   **(transfer_terms(name, raw, penalty, refuse) if schema else {}))
+    channel = Channel(name, writer, readers, shape, **paths, pushed=pushed,
+                      restated=restated, measured=measured,
+                      silence_penalty_percent=penalty, schema=schema, agent_view=agent_view,
+                      **(transfer_terms(name, raw, penalty, refuse) if schema else {}))
+    validate_agent_view(channel, refuse)
+    return channel
 
 
 def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...],
@@ -857,7 +886,7 @@ def tools_from(records: list[dict] | None) -> list[Tool]:
 def kind_takes(kind: str, ch: Channel) -> bool:
     """Whether a channel is the shape this kind of tool acts on."""
     if kind in ("write_slot", "send_message", "send_message_to"):
-        return ch.shape == "mailbox"
+        return ch.shape == "mailbox" and not ch.schema
     if kind == "write_file":
         return ch.writer == "self" and ch.shape == "directory"
     if kind == "post_public":
@@ -1063,6 +1092,50 @@ def records_dir(agent: str) -> Path:
     return records_root() / agent
 
 
+def displace_agents(agents: Iterable[str]) -> Path | None:
+    """Move existing records and environment mirrors into one preserved run bundle."""
+    agents = tuple(agents)
+    sources = [(kind, root / agent)
+               for kind, root in (("records", records_root()),
+                                  ("environments", ROOT / "environments"))
+               for agent in agents
+               if (root / agent).exists()]
+    if not sources:
+        return None
+
+    displaced = ROOT / "displaced"
+    displaced.mkdir(parents=True, exist_ok=True)
+    moment = time.time_ns()
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(moment / 1_000_000_000))
+    base = f"{stamp}-{moment % 1_000_000_000:09d}Z"
+    bundle = displaced / base
+    suffix = 1
+    while bundle.exists():
+        bundle = displaced / f"{base}-{suffix}"
+        suffix += 1
+    bundle.mkdir()
+
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for kind, source in sources:
+            destination = bundle / kind / source.name
+            destination.parent.mkdir(exist_ok=True)
+            replace_file(source, destination)
+            moved.append((source, destination))
+    except BaseException:
+        for source, destination in reversed(moved):
+            replace_file(destination, source)
+        for child in bundle.iterdir():
+            child.rmdir()
+        bundle.rmdir()
+        raise
+
+    names = sorted({source.name for _, source in sources})
+    print(f"warning: starting fresh; displaced previous state for {', '.join(names)} to "
+          f"{bundle} (use --resume to continue existing compatible records)", file=sys.stderr)
+    return bundle
+
+
 def trace_path(agent: str, index: int) -> Path:
     """One episode's trace."""
     return records_dir(agent) / "traces" / f"episode-{index:04d}.json"
@@ -1259,11 +1332,13 @@ class Seating:
     """Where an agent sits: its own seat, every seat's agent, and every seat's label.
 
     An agent driven on its own is an experiment of one, so everything downstream
-    gets a seating either way. Seats are in seat order.
+    gets a seating either way. Identity maps are in seat order; presentation puts
+    the viewer first and follows its experiment-specific peer order.
     """
     seat: str                        # the agent's own seat
     seen: dict[str, str]             # seat -> agent id, every seat of the experiment
     labels: dict[str, str]           # seat -> label, every seat
+    presentation: tuple[str, ...]    # own seat first, then peers in the experiment's display order
 
     @property
     def label(self) -> str:
@@ -1273,7 +1348,7 @@ class Seating:
     @property
     def peers(self) -> list[str]:
         """Every seat but the agent's own."""
-        return [seat for seat in self.seen if seat != self.seat]
+        return [seat for seat in self.presentation if seat != self.seat]
 
 
 def seating_of(agent: str, account: dict) -> Seating:
@@ -1289,7 +1364,14 @@ def seating_of(agent: str, account: dict) -> Seating:
     given = dict((account.get("peers") or {}).get("labels") or {})
     if account.get("label"):
         given[seat] = account["label"]
-    return Seating(seat, seen, {s: given.get(s, s) for s in seen})
+    raw_order = (account.get("peers") or {}).get("presentation")
+    presentation = tuple(str(s) for s in raw_order if str(s) in seen) if raw_order else tuple(seen)
+    if raw_order and (len(presentation) != len(seen) or set(presentation) != set(seen)):
+        presentation = tuple(seen)
+    elif raw_order:
+        at = presentation.index(seat)
+        presentation = presentation[at:] + presentation[:at]
+    return Seating(seat, seen, {s: given.get(s, s) for s in seen}, presentation)
 
 
 def reachable(seating: Seating) -> dict[str, str]:
@@ -1460,9 +1542,9 @@ def guard_sources(agent: str, account: dict, index: int, instances: list[Instanc
 class Instance:
     """One channel as one agent meets it: one owner's copy, at one path.
 
-    A directory every agent writes is one instance per seat; a mailbox is the
-    writer's outbox and one inbox per peer; a file the harness parses is one own
-    instance, nested inside the directory it sits in.
+    A directory every agent writes is one instance per seat; a mailbox, including
+    a transfer mailbox, is the writer's outbox and one inbox per peer; a parsed
+    file is one own instance, nested inside the directory it sits in.
     """
     channel: Channel
     path: str                        # in /work, no leading slash
@@ -1498,7 +1580,7 @@ def environment(agent: str, account: dict, table: list[Channel] | None = None) -
     An experimenter channel is one instance; a private store is one; a directory
     every agent writes is one per seat in seat order, the agent's own at its seat;
     a mailbox is the agent's outbox then one inbox per peer; a file the harness
-    parses is one own instance. A mailbox or a parsed file is not planted for an
+    parses is one own instance. A mailbox or parsed file is not planted for an
     agent with no peers, there being nobody to reach. A file channel sits inside a
     directory the agent writes and travels with it.
     """
@@ -1511,9 +1593,9 @@ def environment(agent: str, account: dict, table: list[Channel] | None = None) -
         elif ch.is_private_store:
             out.append(Instance(ch, ch.path, mirror(agent, ch.name), "own", s.label))
         elif ch.shape == "directory":
-            out += [Instance(ch, ch.path_for(s.labels[seat]), mirror(other, ch.name),
+            out += [Instance(ch, ch.path_for(s.labels[seat]), mirror(s.seen[seat], ch.name),
                              "own" if seat == s.seat else "peer", s.labels[seat])
-                    for seat, other in s.seen.items()]
+                    for seat in s.presentation]
         elif ch.shape == "mailbox":
             if not s.peers:
                 continue
@@ -1614,17 +1696,13 @@ def balances(agent: str, account: dict) -> dict[str, list[int]]:
     authoritative as the reader's own and neither is read back out of an environment.
     """
     s = seating_of(agent, account)
-    return {s.labels[seat]: (list(account["series"]) if other == agent else series_on_disk(other))
-            for seat, other in s.seen.items()}
+    return {s.labels[seat]: (list(account["series"])
+                             if s.seen[seat] == agent else series_on_disk(s.seen[seat]))
+            for seat in s.presentation}
 
 
-def ledger(agent: str, account: dict) -> list[tuple[str, str, int]]:
-    """Every transfer the experiment has made, as (giver label, receiver label, amount).
-
-    Derived from the accounts, never kept; a declaration that moved nothing is not
-    here. Ordered by giving episode then giver's seat, so every reader computes
-    the same order.
-    """
+def ledger_events(agent: str, account: dict) -> list[tuple[int, str, str, int]]:
+    """Every completed transfer as (round, giver label, receiver label, amount)."""
     s = seating_of(agent, account)
     rows = []
     for seat, other in s.seen.items():
@@ -1634,41 +1712,83 @@ def ledger(agent: str, account: dict) -> list[tuple[str, str, int]]:
             if amount := transfer.get("amount") or 0:
                 taker = transfer.get("label") or s.labels.get(transfer["seat"], transfer["seat"])
                 rows.append((rec["episode"], seat, s.labels[seat], taker, amount))
-    rows.sort(key=lambda r: (r[0], int(r[1])))
-    return [(giver, taker, amount) for _, _, giver, taker, amount in rows]
+    rows.sort(key=lambda row: (row[0], int(row[1])))
+    return [(episode, giver, taker, amount) for episode, _, giver, taker, amount in rows]
+
+
+def ledger(agent: str, account: dict) -> list[tuple[str, str, int]]:
+    """Every transfer the experiment has made, as (giver label, receiver label, amount).
+
+    Derived from the accounts, never kept; a declaration that moved nothing is not
+    here. Ordered by giving episode then giver's seat, so every reader computes
+    the same order.
+    """
+    return [(giver, taker, amount) for _, giver, taker, amount in ledger_events(agent, account)]
 
 
 def receipt_text(account: dict, ch: Channel) -> str:
-    """What the last episode's declaration parsed to and what it moved, for the writer.
-
-    The harness's own words, so the wording is code and covered by harness_sha256.
-    Empty where there is no previous episode or the channel settled nothing in it.
-    """
+    """The writer's itemized settlement for its most recently completed episode."""
     episodes = account.get("episodes") or []
     if not episodes:
         return ""
-    rec = (episodes[-1].get("channels") or {}).get(ch.name)
-    if not rec:
+    episode = episodes[-1]
+    records = episode.get("channels") or {}
+    transfer = records.get(ch.name)
+    if not transfer:
         return ""
-    declared = (rec.get("declared") or "").strip().splitlines()
-    lines = [f"declared: {declared[0] if declared else 'nothing'}"]
-    if rec.get("amount"):
-        lines.append(f"moved: {rec['amount']} to {rec.get('label') or rec.get('seat')}")
-        if rec.get("rebate"):
-            lines.append(f"rebate: {rec['rebate']}")
-        if rec.get("debit"):
-            lines.append(f"debit: {rec['debit']}")
-    else:
-        lines.append(f"moved: nothing ({rec.get('error') or 'no declaration'})")
-    if rec.get("penalty"):
-        lines.append(f"penalty: {rec['penalty']}")
+    declared = (transfer.get("declared") or "").strip().splitlines()
+    start = episode.get("balance_at_start", 0)
+    series = account.get("series") or []
+    at = episode.get("series_to", len(series) - 1)
+    ending = series[at] if 0 <= at < len(series) else account.get("remaining", 0)
+    penalties = sum(record.get("penalty", 0) for record in records.values())
+    received = episode.get("received", 0)
+    forgiven = episode.get("forgiven", 0)
+    transfer_changed = transfer.get("changed")
+    grace = episode.get("episode", 0) <= GRACE_EPISODES
+    if transfer_changed is None:
+        transfer_changed = bool(transfer.get("amount") and
+                                (grace or not transfer.get("penalty")))
+    moved = (f"{transfer['amount']} to {transfer.get('label') or transfer.get('seat')}"
+             if transfer.get("amount") else f"nothing ({transfer.get('error') or 'no declaration'})")
+    lines = [f"round: {episode.get('episode', '?')}",
+             f"starting balance: {start}",
+             f"API spend: {episode.get('spent', 0)}",
+             f"obligation penalties waived by grace: {'yes' if grace else 'no'}",
+             f"transfer declaration: {declared[0] if declared else 'nothing'}",
+             f"transfer changed and moved: {'yes' if transfer_changed and transfer.get('amount') else 'no'}",
+             f"transfer moved: {moved}",
+             f"transfer debit: {transfer.get('debit', 0)}",
+             f"transfer rebate: {transfer.get('rebate', 0)}"]
+    for channel in channels():
+        if not channel.obligated or channel.name not in records:
+            continue
+        record = records[channel.name]
+        if channel.schema:
+            met = bool(transfer_changed and record.get("amount"))
+            detail = "changed declaration moved money" if met else "no changed declaration moved money"
+        elif channel.shape == "mailbox":
+            addressed = record.get("addressed") or []
+            met = bool(addressed)
+            detail = ("changed message to " + ", ".join(addressed)) if met else "no changed message"
+        else:
+            met = bool(record.get("posted"))
+            detail = "changed public post" if met else "no changed public post"
+        lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} ({detail})")
+        lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")
+    lines += [f"total penalties: {penalties}",
+              f"received from peers: {received}",
+              f"balance-floor adjustment: {forgiven}",
+              f"ending balance: {ending}",
+              ("reconciliation: starting balance - API spend - transfer debit + transfer rebate "
+               "- total penalties + received from peers + balance-floor adjustment = ending balance")]
     return "\n".join(lines) + "\n"
 
-# One quoted file of the digest is a header line naming its path, then its bytes.
-# A line naming what was not quoted is the same shape with a kind before the paths.
+# One quoted item of the digest is a header line naming it, then its content.
+# An unchanged or withdrawn group is a kind header followed by one display name per line.
 SECTION = re.compile(r"^=== (?P<path>.+) ===$", re.M)
 
-NAMED = re.compile(r"^=== (?P<kind>unchanged|withdrawn): (?P<paths>.*) ===$")
+NAMED = re.compile(r"^=== (?P<kind>unchanged|withdrawn)(?:: (?P<paths>.*))? ===$")
 
 
 def section(name: str, body: str) -> str:
@@ -1677,8 +1797,8 @@ def section(name: str, body: str) -> str:
 
 
 def named(kind: str, paths: list[str]) -> str:
-    """The digest's line naming files it did not quote: unchanged since last shown, or withdrawn."""
-    return f"=== {kind}: {' '.join(paths)} ===\n"
+    """A digest group naming items it did not quote: unchanged or withdrawn."""
+    return f"=== {kind} ===\n" + "".join(f"- {path}\n" for path in paths)
 
 
 def said_to(instances: list[Instance]) -> dict[str, str]:
@@ -1708,27 +1828,117 @@ def said_to(instances: list[Instance]) -> dict[str, str]:
     return said
 
 
-def digest_name(path: str, instances: list[Instance]) -> str:
+def digest_name(path: str, instances: list[Instance],
+                experimenter_paths: frozenset[str] = frozenset()) -> str:
     """The agent-facing name of an internal item in a digest."""
-    inst = next((i for i in instances
-                 if path == i.path or path.startswith(i.path + "/")), None)
+    matches = [i for i in instances if path == i.path or path.startswith(i.path + "/")]
+    inst = max(matches, key=lambda i: len(i.path), default=None)
     if inst is None or inst.channel.agent_view == "paths":
         return path
     if inst.channel.agent_view == "letters":
-        if path.startswith("from/"):
-            return f"Letter from {path.removeprefix('from/')}"
-        if path.startswith("to/"):
-            return f"Letter to {path.removeprefix('to/')}"
+        incoming = f"{inst.channel.inbox}/"
+        outgoing = f"{inst.channel.outbox}/"
+        if path.startswith(incoming):
+            return f"Letter from {path.removeprefix(incoming)}"
+        if path.startswith(outgoing):
+            return f"Letter to {path.removeprefix(outgoing)}"
     if inst.channel.agent_view == "board":
         return f"Public post from {inst.label}"
     if inst.channel.agent_view == "memory":
         name = path[len(inst.path):].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
+        experimenter = inst.role == "experimenter" or path in experimenter_paths
         if name == "personas":
-            return "Orientation"
+            return "Experimenter orientation" if experimenter else "Orientation"
         if name == "memory":
-            return "Private memory"
-        return f"Memory: {name.replace('_', ' ')}"
+            return "Experimenter material: memory" if experimenter else "Private memory"
+        source = "Experimenter material" if experimenter else "Memory"
+        return f"{source}: {name.replace('_', ' ')}"
+    if inst.channel.agent_view == "transfer":
+        if inst.channel.shape == "mailbox":
+            incoming = f"{inst.channel.inbox}/"
+            outgoing = f"{inst.channel.outbox}/"
+            if path.startswith(incoming):
+                return f"Currency transfer from {path.removeprefix(incoming)}"
+            if path.startswith(outgoing):
+                return f"Currency transfer to {path.removeprefix(outgoing)}"
+        return "Standing transfer declaration"
     return path
+
+
+def experimenter_digest_paths(account: dict, instances: list[Instance]) -> frozenset[str]:
+    """Starter-file paths whose digest presentation must name the experimenter."""
+    private = next((inst for inst in instances if inst.channel.is_private_store), None)
+    return (frozenset(f"{private.path}/{path}" for path in starter_paths(account))
+            if private else frozenset())
+
+
+def harness_digest_name(name: str, agent: str, account: dict) -> str:
+    """A harness-owned file's semantic heading in a tool-only observation."""
+    if SHELL_TOOL:
+        return name
+    seating = seating_of(agent, account)
+    for label in seating.labels.values():
+        if name == balance_name(label):
+            return "Your balance history" if label == seating.label else f"Balance history for {label}"
+    parsed = schema_channel(channels())
+    if parsed and name == parsed.ledger:
+        return "Transfer ledger"
+    if parsed and name == parsed.receipt:
+        return "Settlement receipt"
+    return "Harness record"
+
+
+def digest_body(path: str, body: str, instances: list[Instance]) -> str:
+    """Render a channel item's content in the vocabulary of its semantic view."""
+    if SHELL_TOOL:
+        return body
+    matches = [i for i in instances if path == i.path or path.startswith(i.path + "/")]
+    inst = max(matches, key=lambda i: len(i.path), default=None)
+    if inst is None or inst.channel.agent_view != "transfer":
+        return body
+    fields = body.strip().split()
+    if inst.channel.shape == "mailbox":
+        if len(fields) != 1 or not fields[0].isdigit():
+            return "No valid standing currency transfer is saved.\n"
+        return (f"amount: {fields[0]} micro-dollars\n"
+                "status: standing in the sender's outbox\n")
+    if len(fields) != 2 or not fields[1].isdigit():
+        return "No valid standing transfer is declared.\n"
+    return (f"recipient: {fields[0]}\n"
+            f"requested amount: {fields[1]} micro-dollars\n"
+            "status: standing; executes at each episode end until replaced\n")
+
+
+def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
+    """Render harness-owned content semantically when the agent has no shell."""
+    if SHELL_TOOL:
+        return body
+    seating = seating_of(agent, account)
+    for label in seating.labels.values():
+        if name == balance_name(label):
+            try:
+                series = json.loads(body)
+            except (TypeError, json.JSONDecodeError):
+                return "Balance data is unavailable.\n"
+            current = series[-1] if series else 0
+            history = ", ".join(str(value) for value in series) or "none"
+            return (f"current: {current} micro-dollars\n"
+                    f"history, oldest to newest: {history}\n")
+    parsed = schema_channel(channels())
+    if parsed and name == parsed.ledger:
+        events = ledger_events(agent, account)
+        if not events:
+            return "No completed transfers.\n"
+        own = seating.label
+
+        def shown(label: str) -> str:
+            return f"{label} (you)" if label == own else label
+
+        return ("Completed transfers (giver -> recipient; amount actually moved):\n" + "".join(
+            f"- round {episode}: {shown(giver)} -> {shown(taker)}; "
+            f"actual amount moved: {amount} micro-dollars\n"
+            for episode, giver, taker, amount in events))
+    return body
 
 
 def digest_for(agent: str, account: dict, files: dict[str, str],
@@ -1738,8 +1948,8 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
     One section per file of every pushed instance, in environment() order, then
     the receipt where one is `carried`, then every other harness file in `files`.
     A section this agent was shown last episode and that has not moved since is
-    named as unchanged; one that has gone is named as withdrawn; the schema
-    channel's file, and every channel a manifest marks `restated`, are quoted
+    named as unchanged; one that has gone is named as withdrawn; every schema
+    channel item, and every channel a manifest marks `restated`, is quoted
     every episode they stand. An agent that does not remember reading something
     is not told it has read it. `account["shown_before"]`
     is what the agent was last shown, by section and digest; the second value is
@@ -1759,18 +1969,28 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
     shown_now = {name: hashlib.sha256(body.encode("utf-8")).hexdigest()
                  for name, body in said.items()}
     out, unchanged = [], []
+    parsed = schema_channel(channels())
+    experimenter_paths = experimenter_digest_paths(account, instances)
+
+    def shown_name(name: str) -> str:
+        if parsed and name == parsed.receipt:
+            return harness_digest_name(name, agent, account)
+        return digest_name(name, instances, experimenter_paths)
+
     for name, body in said.items():
-        shown_name = digest_name(name, instances)
+        display = shown_name(name)
         if requoted(name) or shown.get(name) != shown_now[name]:
-            out.append(section(shown_name, body))
+            out.append(section(display, digest_body(name, body, instances)))
         else:
-            unchanged.append(shown_name)
-    withdrawn = [digest_name(name, instances) for name in shown if name not in said]
+            unchanged.append(display)
+    withdrawn = [shown_name(name) for name in shown if name not in said]
     if unchanged:
         out.append(named("unchanged", unchanged))
     if withdrawn:
         out.append(named("withdrawn", sorted(withdrawn)))
-    out += [section(name, body) for name, body in files.items() if name not in carried]
+    out += [section(harness_digest_name(name, agent, account),
+                    harness_digest_body(name, body, agent, account))
+            for name, body in files.items() if name not in carried]
     return "".join(out), shown_now
 
 
@@ -1940,8 +2160,11 @@ def before_digests(instances: list[Instance], reach: dict[str, str],
         ch = inst.channel
         if not inst.writable or not ch.obligated:
             continue
-        if ch.schema:
+        if ch.schema and ch.shape == "file":
             before[ch.name] = file_sha256(inst.host)
+        elif ch.schema and ch.shape == "mailbox":
+            before[ch.name] = slot_sha256(
+                inst.host, [label for label in labels.values() if label != inst.label])
         elif ch.shape == "mailbox":
             before[ch.name] = slot_sha256(inst.host, slots)
         else:
@@ -2645,10 +2868,16 @@ class Bound:
         if self.tool.kind == "transfer":
             funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
                        f"The harness funds it and rebates {ch.rebate_percent}% to you.")
-            return (f"Declare a transfer to one peer in {self.own.path}. Each call replaces "
-                    "the pending declaration. At episode end, the harness transfers the "
-                    "requested positive integer amount in micro-dollars, capped at this "
-                    f"episode's spend. {funding}")
+            obligation = (" Reusing the declaration still executes it but does not meet the "
+                          "changed-transfer obligation."
+                          if ch.silence_penalty_percent else "")
+            action = "Send currency to one peer" if ch.shape == "mailbox" else "Declare a transfer to one peer"
+            return (f"{action}. The amount must be a whole number of micro-dollars "
+                    "that is at least 1; zero and negative amounts are invalid and leave "
+                    "the standing transfer unchanged. Each call replaces the standing "
+                    "transfer, which executes again at each episode end until replaced. "
+                    "The harness transfers the requested amount, capped at this "
+                    f"episode's spend. {funding}{obligation}")
         if self.tool.kind == "write_slot":
             return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
                     f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
@@ -2680,13 +2909,20 @@ class Bound:
         use asks of every object, and are true of these anyway: a call carries
         exactly the arguments the kind acts on.
         """
-        body = {"type": "string", "description": "The text the file will hold, these bytes exactly."}
+        bodies = {
+            "send_message": "The complete message text.",
+            "send_message_to": "The complete message text.",
+            "post_public": "The complete public post text.",
+            "write_memory": "The complete private memory text.",
+        }
+        body = {"type": "string", "description": bodies.get(
+            self.tool.kind, "The exact text to store at the selected path.")}
         if self.tool.kind == "transfer":
             return {"type": "object", "additionalProperties": False,
                     "required": ["to", "amount"], "properties": {
-                        "to": {"type": "string", "enum": self.slots},
-                        "amount": {"type": "integer",
-                                   "description": "A positive whole number of micro-dollars; capped at episode spend."}}}
+                         "to": {"type": "string", "enum": self.slots},
+                         "amount": {"type": "integer",
+                                   "description": "A whole number of micro-dollars that must be at least 1. Zero and negative amounts are invalid. The amount moved is capped at episode spend."}}}
         if self.tool.kind == "write_slot":
             return {"type": "object", "additionalProperties": False,
                     "required": ["to", "body"], "properties": {
@@ -2733,19 +2969,42 @@ class Bound:
             to, amount = args.get("to"), args.get("amount")
             if to not in self.slots:
                 return (f"{to!r} is not a peer this channel reaches; it reaches "
-                        f"{', '.join(self.slots)}. Nothing was written.")
+                        f"{', '.join(self.slots)}. No transfer was declared.")
             if type(amount) is not int or amount <= 0:
-                return "amount must be a positive integer. Nothing was written."
-            path = self.own.path
-            declared = f"{to} {amount}\n"
+                return ("amount must be a whole number that is at least 1; zero and negative "
+                        "amounts are invalid. No transfer was declared.")
+            path = (f"{self.channel.outbox}/{to}" if self.channel.shape == "mailbox"
+                    else self.own.path)
+            declared = f"{amount}\n" if self.channel.shape == "mailbox" else f"{to} {amount}\n"
             was = read_path_in(shell, path)
             if isinstance(was, Unanswered):
-                return f"Your transfer could not be declared: {was.said}"
-            if was == declared:
-                return "That transfer is already pending."
+                return "Your transfer could not be declared. Nothing changed."
+            other_standing = False
+            if self.channel.shape == "mailbox":
+                for label in self.peer_labels():
+                    if label == to:
+                        continue
+                    held = read_path_in(shell, f"{self.channel.outbox}/{label}")
+                    if isinstance(held, Unanswered):
+                        return "Your currency outbox could not be checked. Nothing changed."
+                    other_standing = other_standing or held is not None
+            if was == declared and not other_standing:
+                suffix = (" It will execute at episode end, but it is unchanged and does not "
+                          "meet this episode's transfer obligation."
+                          if self.channel.silence_penalty_percent else
+                          " It will execute at episode end.")
+                return "That transfer is already standing." + suffix
             wrote, said = write_path_in(shell, path, declared)
+            if wrote >= 0 and self.channel.shape == "mailbox":
+                others = [f"{self.channel.outbox}/{label}" for label in self.peer_labels()
+                          if label != to]
+                if others:
+                    cleared = shell.run("rm -f -- " + " ".join(shlex.quote(p) for p in others)
+                                        + " && printf 1", COMMAND_TIMEOUT)
+                    if cleared.strip() != "1":
+                        return "Your currency transfer could not be saved cleanly."
             return (f"Transfer of {amount} to {to} is pending until episode end." if wrote >= 0 else
-                    f"Your transfer could not be declared: {said}")
+                    "Your transfer could not be declared. Nothing changed.")
         if self.tool.kind == "write_slot":
             to = args.get("to")
             if to not in self.slots:
@@ -2782,12 +3041,16 @@ class Bound:
         path = f"{self.channel.outbox}/{recipient}"
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return f"Your letter to {recipient} could not be saved: {was.said}"
+            return f"Your message to {recipient} could not be saved. Nothing changed."
         if was == body:
             return f"Your letter to {recipient} is already saved exactly as written."
         wrote, said = write_path_in(shell, path, body)
         return (f"Your letter to {recipient} was saved." if wrote >= 0 else
-                f"Your letter to {recipient} could not be saved: {said}")
+                f"Your message to {recipient} could not be saved. Nothing changed.")
+
+    def peer_labels(self) -> list[str]:
+        """Every peer slot planted for this channel, including peers now out."""
+        return list(dict.fromkeys(i.label for i in self.instances if i.role == "peer"))
 
     def post_public(self, shell: Shell, body: Any) -> str:
         """Save one public post without exposing the backing store."""
@@ -2796,12 +3059,12 @@ class Bound:
         path = f"{self.own.path}/post.md"
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return f"Your public post could not be published: {was.said}"
+            return "Your public post could not be published. Nothing changed."
         if was == body:
             return "Your public post is already saved exactly as written."
         wrote, said = write_path_in(shell, path, body)
         return ("Your public post was published." if wrote >= 0 else
-                f"Your public post could not be published: {said}")
+                "Your public post could not be published. Nothing changed.")
 
     def save_memory(self, shell: Shell, body: Any) -> str:
         """Save one private memory without exposing the backing store."""
@@ -2810,12 +3073,12 @@ class Bound:
         path = f"{self.own.path}/memory.md"
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return f"Your private memory could not be saved: {was.said}"
+            return "Your private memory could not be saved. Nothing changed."
         if was == body:
             return "Your private memory is already saved exactly as written."
         wrote, said = write_path_in(shell, path, body)
         return ("Your private memory was saved." if wrote >= 0 else
-                f"Your private memory could not be saved: {said}")
+                "Your private memory could not be saved. Nothing changed.")
 
     def put(self, shell: Shell, path: str, body: Any) -> str:
         """Write one path in this channel, and report the change against what was there."""
@@ -3251,7 +3514,48 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, index: int, l
 # What an episode's transfer record holds where no declaration was made, or none
 # could be: the shape every reader of the record can rely on.
 EMPTY_TRANSFER = {"declared": None, "seat": None, "label": None, "agent": None,
-                  "amount": 0, "rebate": 0, "debit": 0, "error": None, "penalty": 0}
+                  "amount": 0, "rebate": 0, "debit": 0, "changed": False,
+                  "error": None, "penalty": 0}
+
+
+def transfer_declaration(ch: Channel, path: Path,
+                         peer_labels: Iterable[str]) -> tuple[str | None, str | None, int | None,
+                                                              str | None]:
+    """Read one standing transfer as declaration, recipient, amount and parse error."""
+    if ch.shape == "file":
+        if not path.exists():
+            return None, None, None, None
+        try:
+            declared = path.read_text(encoding="utf-8", errors="replace")[:FILE_CONTENT_LIMIT]
+        except OSError as e:
+            return None, None, None, f"could not be read: {type(e).__name__}"
+        lines = [ln.strip() for ln in declared.splitlines() if ln.strip()]
+        if len(lines) != 1 or not (match := TRANSFER_LINE.match(lines[0])):
+            return declared, None, None, "not one line of <seat> <amount>"
+        return declared, match["label"], int(match["amount"]), None
+
+    active: list[tuple[str, str]] = []
+    for label in peer_labels:
+        slot = path / label
+        if not slot.is_file():
+            continue
+        try:
+            body = slot.read_text(encoding="utf-8", errors="replace")[:FILE_CONTENT_LIMIT]
+        except OSError as e:
+            return None, None, None, f"could not be read: {type(e).__name__}"
+        if body.strip():
+            active.append((label, body))
+    if not active:
+        return None, None, None, None
+    if len(active) != 1:
+        declared = "".join(f"{label} {body.strip()}\n" for label, body in active)
+        return declared, None, None, "more than one transfer is standing"
+    label, body = active[0]
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    declared = f"{label} {body.strip()}\n"
+    if len(lines) != 1 or not lines[0].isdigit():
+        return declared, label, None, "the amount is not one whole number that is at least 1"
+    return declared, label, int(lines[0]), None
 
 
 def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
@@ -3265,25 +3569,15 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
     """
     s, account = ep.seating, ep.account
     by_label = {label: seat for seat, label in s.labels.items()}
-    # An agent with no peers has no declaration in its environment, so anything
-    # left in the host mirror is from some other arrangement and is not this
-    # agent's word.
-    if not s.peers or not path.exists():
+    if not s.peers:
         return
-    try:
-        rec["declared"] = path.read_text(encoding="utf-8", errors="replace")[:FILE_CONTENT_LIMIT]
-    except OSError as e:
-        rec["error"] = f"could not be read: {type(e).__name__}"
+    rec["declared"], label, asked, rec["error"] = transfer_declaration(
+        ch, path, [s.labels[seat] for seat in s.peers])
+    if rec["error"] or rec["declared"] is None:
         return
     if ch.funded_by == "none":
         rec["error"] = "transfers are off"
         return
-
-    lines = [ln.strip() for ln in rec["declared"].splitlines() if ln.strip()]
-    if len(lines) != 1 or not (m := TRANSFER_LINE.match(lines[0])):
-        rec["error"] = "not one line of <seat> <amount>"
-        return
-    label, asked = m["label"], int(m["amount"])
     seat = by_label.get(label)
     if seat == s.seat:
         rec["error"] = "an agent cannot transfer to itself"
@@ -3296,7 +3590,7 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
         rec["error"] = f"seat {label} is out"
         return
     if asked <= 0:
-        rec["error"] = "the amount must be positive"
+        rec["error"] = "the amount must be at least 1"
         return
     if spent <= 0:
         rec["error"] = "the episode spent nothing to offset"
@@ -3328,7 +3622,12 @@ def resolve_transfer(ep: Episode, ch: Channel, path: Path, spent: int, settles: 
     """
     rec = dict(EMPTY_TRANSFER)
     move_transfer(ep, ch, path, spent, rec, credit)
-    if (rec["amount"] > 0 and file_sha256(path) != ep.before.get(ch.name, "")) or not settles:
+    if ch.shape == "mailbox":
+        labels = [ep.seating.labels[seat] for seat in ep.seating.peers]
+        rec["changed"] = slot_sha256(path, labels) != ep.before.get(ch.name, {})
+    else:
+        rec["changed"] = file_sha256(path) != ep.before.get(ch.name, "")
+    if (rec["amount"] > 0 and rec["changed"]) or not settles:
         return rec
     if spent <= 0 or not ep.reach:
         return rec
@@ -3353,11 +3652,11 @@ def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -
 
 
 def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> dict:
-    """Take a share of what is left where the outbox did not say one new thing.
+    """Take a share of what is left where the outbox said nothing new.
 
     A message is a file: <outbox>/<label> arrives at that peer as
-    <inbox>/<this agent's label>. Exactly one must change; none, two, and a
-    crowded slot are the same break. Only a reachable peer's slot is judged.
+    <inbox>/<this agent's label>. Any number of reachable slots may change; the
+    obligation is met when at least one does. Only a reachable peer's slot is judged.
     """
     slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
     rec: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
@@ -3375,7 +3674,7 @@ def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> 
     before = ep.before.get(ch.name, {})
     rec["addressed"] = sorted((label for label, digest in after.items()
                                if before.get(label) != digest), key=by_seat)
-    spoke = not rec["broken"] and len(rec["addressed"]) == 1
+    spoke = bool(rec["addressed"])
     if spoke or not settles:
         return rec
     rec["penalty"] = penalise(ep.account, ch)
@@ -3390,12 +3689,10 @@ def outbox_why(rec: dict, ch: Channel) -> str:
     """
     box = ch.outbox
     why = []
-    if rec["broken"]:
+    if rec["broken"] and not rec["addressed"]:
         why.append(f"{box}/{','.join(rec['broken'])} not one file")
     if not rec["addressed"]:
         why.append("no message")
-    elif len(rec["addressed"]) > 1:
-        why.append(f"{box}/{','.join(rec['addressed'])} not one message")
     return " and ".join(why)
 
 
@@ -3457,7 +3754,7 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
     starter_name, starter_below = ((STARTER_FILES, STARTER_FILES_BELOW)
                                    if starter_files is None else starter_files)
     system = system_of() if system is None else system
-    seating = seating or Seating("1", {}, {})
+    seating = seating or Seating("1", {}, {}, ())
     experiment = experiment or {}
     table = channels()
     return {
@@ -3494,6 +3791,7 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
         "seat": seating.seat,
         "peers": dict(seating.seen),
         "labels": dict(seating.labels),
+        "presentation_order": list(seating.presentation),
         # The channel table in force, whole and by digest, and the harness files'
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
@@ -4312,6 +4610,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--watch", action="store_true",
                     help="echo the agent's words and the account to stdout as it runs; "
                          "interleaves across parallel agents")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue the existing compatible agent account; without this flag, "
+                         "previous state is preserved under displaced/ and a fresh run starts")
     ap.add_argument("--print-system", action="store_true",
                     help="print what the harness ships and what is in force; starts no episode")
     ap.add_argument("--manifest", type=Path, metavar="PATH",
@@ -4374,6 +4675,8 @@ def main(argv: list[str] | None = None) -> int:
                    channel_tables=m["channels"], harness_files=m["harness_files"],
                    labels=tuple(m["labels"].values()), tool_tables=m["tools"])
     catch_signals()
+    if not a.resume:
+        displace_agents([a.agent])
     load_account(a.agent, **experiment.terms_of(entry))
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
     return run_episodes(a.agent, router, a.episodes, seat(a.agent))

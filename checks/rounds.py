@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
 import threading
+from pathlib import Path
 import experiment
 import harness
 
@@ -49,6 +51,80 @@ def check_the_experiment_rotates_and_validates():
     with quiet():
         refused(lambda: experiment.main(["--manifest", "no-such-experiment.toml"]), "no such manifest",
                 because="a manifest that is not there was accepted")
+
+
+def check_peer_presentation_is_stable_and_balanced():
+    """Each viewer sees itself first and a different peer first, reproducibly."""
+    agents = ["g01", "g02", "g03", "g04", "g05"]
+    seats = experiment.seats_of(agents)
+    stamp = {"schedule": "simultaneous", "stop_when_one_remains": True,
+             "manifest_sha256": "stable-treatment"}
+    orders = {}
+    for agent in agents:
+        account = {}
+        prepare = experiment.preparer(agent, seats, stamp)
+        prepare(account)
+        prepare(account)
+        order = account["peers"]["presentation"]
+        own = next(seat for seat, occupant in seats.items() if occupant == agent)
+        assert order[0] == own and set(order) == set(seats), (agent, order)
+        orders[agent] = order
+
+    first_peers = [order[1] for order in orders.values()]
+    assert len(set(first_peers)) == len(agents), first_peers
+
+
+def check_the_competition_delivers_its_complete_mechanics_brief():
+    """The shipped competition's per-file bound carries its full agent contract."""
+    manifest = experiment.load_manifest(experiment.manifest_path("competition"))
+    brief = Path(manifest["overrides"]["starter_files"])
+    text = brief.read_text(encoding="utf-8")
+    assert manifest["overrides"]["digest_file_limit"] >= len(text), (
+        manifest["overrides"]["digest_file_limit"], len(text))
+    for statement in ("There is no action that subtracts balance from a peer",
+                      "nobody wins", "giver ->", "amount that actually moved",
+                      "settlement receipt", "API spending"):
+        assert statement in text, statement
+    for hidden_horizon in ("fixed number of rounds", "requested rounds"):
+        assert hidden_horizon not in text, hidden_horizon
+    transfer = next(channel for channel in manifest["channels"]
+                    if channel.get("schema") == "transfer")
+    assert transfer["receipt"] == "r", transfer
+    tool = next(tool for tool in manifest["tools"] if tool["kind"] == "transfer")
+    assert "at least 1" in tool["description"] and "Zero and negative" in tool["description"]
+
+
+def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
+    """Fresh launches preserve matching state elsewhere; --resume continues compatible state."""
+    with temp_root() as root:
+        old_account = root / "records" / "g01" / "account.json"
+        old_account.parent.mkdir(parents=True)
+        old_account.write_text(json.dumps({"agent": "g01", "model": "claude-sonnet-5"}),
+                               encoding="utf-8")
+        old_note = harness.mirror("g01", "notes") / "old.txt"
+        old_note.parent.mkdir(parents=True)
+        old_note.write_text("previous run\n", encoding="utf-8")
+        manifest = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "g01"\n')
+        harness.start = lambda config=None, **kw: fake(*DEFAULT)
+
+        with quiet() as warning:
+            assert experiment.main(["--manifest", str(manifest)]) == 0
+        bundles = list((root / "displaced").iterdir())
+        account = ground_truth("g01")
+
+        assert len(bundles) == 1, bundles
+        assert json.loads((bundles[0] / "records" / "g01" / "account.json").read_text(
+            encoding="utf-8"))["agent"] == "g01"
+        assert (bundles[0] / "environments" / "g01" / "notes" / "old.txt").read_text(
+            encoding="utf-8") == "previous run\n"
+        assert account["account_version"] == 2 and len(account["episodes"]) == 1, account
+        assert "warning: starting fresh" in warning.getvalue()
+        assert str(bundles[0]) in warning.getvalue() and "--resume" in warning.getvalue()
+
+        with quiet():
+            assert experiment.main(["--manifest", str(manifest), "--resume"]) == 0
+        assert len(ground_truth("g01")["episodes"]) == 2
+        assert list((root / "displaced").iterdir()) == bundles
 
 
 def check_an_experiment_gives_a_failed_environment_one_more_go():
@@ -119,7 +195,8 @@ def check_an_interrupt_ends_the_whole_experiment():
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(run("echo one"), KeyboardInterrupt())
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5",
+                                    "--resume"])
         took = episodes_taken(ids)
     assert code == 130, code
     assert took == {"g01": 1, "g02": 0, "g03": 0}, "no round after the one it landed in"
@@ -157,7 +234,8 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5",
+                                    "--resume"])
         took = episodes_taken(ids)
         rested = {r: harness.load_account(r)["remaining"] for r in ids}
     assert code == 0, code
@@ -176,7 +254,8 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         put_out("g03")
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5"])
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5",
+                                    "--resume"])
         took = episodes_taken(ids)
         alone = harness.load_account("g01")["episodes"][-1]
     assert code == 0, code
@@ -195,7 +274,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
                             encoding="utf-8", newline="\n")
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(manifest), "--rounds", "5"])
+            code = experiment.main(["--manifest", str(manifest), "--rounds", "5", "--resume"])
         took = episodes_taken(ids)
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
@@ -282,7 +361,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
                                                            'starter_files = "b"'),
                      encoding="utf-8", newline="\n")
         with quiet():
-            refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1"]), "starter_files",
+            refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]), "starter_files",
                     because="an agent was re-created on different terms")
     assert code == 0, buf.getvalue()
     assert asked[0] == ({"grace_episodes": 2, "system_prompt": ""},
@@ -424,7 +503,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
                           + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids))
         harness.start = lambda config=None, **kw: stopping_create()
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(p), "--rounds", "5"])
+            code = experiment.main(["--manifest", str(p), "--rounds", "5", "--resume"])
         took = episodes_taken(ids)
     assert code == 130, code
     assert took == {"g01": 1, "g02": 1, "g03": 1}, took
@@ -590,13 +669,13 @@ def check_a_manifest_declares_what_the_harness_says():
         original = p.read_text(encoding="utf-8")
         p.write_text(original.replace(mine, mine + " Again."), encoding="utf-8", newline="\n")
         with quiet():
-            refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1"]), "system_prompt",
+            refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]), "system_prompt",
                     because="an agent was re-created on a different system prompt")
         # The experiment's default is read at creation like every other setting, so a
         # seat that took it keeps what it was told and a later manifest does not resay it.
         p.write_text(original.replace(ours, ours + " Again."), encoding="utf-8", newline="\n")
         with quiet():
-            assert experiment.main(["--manifest", str(p), "--rounds", "1"]) == 0
+            assert experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]) == 0
         kept = ground_truth("g02")["system_prompt"]
     assert code == 0, buf.getvalue()
     assert sent == {mine, ours}, "each seat was told what it declared"

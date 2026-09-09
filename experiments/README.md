@@ -16,7 +16,7 @@ the keys nothing shipped uses.
 
 | manifest | what it is | seats | schedule |
 |---|---|---|---|
-| [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The prompt establishes continuity, competition.md supplies the objective and shared rules, and tool descriptions define messages, posts and sender-funded transfers. Bash is also available. | `comp01`–`comp05` | simultaneous |
+| [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The complete brief states the sole-survivor win condition and no-winner fixed-horizon result; round-labelled ledgers and settlement receipts expose the accounting; tool descriptions define billed messages, posts and sender-funded transfers. | `comp01`–`comp05` | simultaneous |
 | [`examples/sandbox.toml`](examples/sandbox.toml) | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. | `sandbox01` | sequential |
 | [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private memory and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
 
@@ -122,6 +122,7 @@ default set whole, so every channel an experiment wants is written out.
 | `funded_by` | `"harness"`, `"giver"`, `"none"` | Who pays for a transfer: the harness (rebated), the giver, or nobody |
 | `rebate_percent` | 0–100 | What a harness-funded transfer gives back to the giver |
 | `ledger` | a filename | The harness file carrying every transfer made, rebuilt from the accounts each episode |
+| `receipt` | a path | A read-only next-episode settlement receipt with spend, transfer, obligations, penalties, peer receipts, floor and ending-balance reconciliation |
 
 The three transfer fields have to agree: `funded_by = "giver"` takes `rebate_percent = 0`,
 there being nothing to rebate, and `funded_by = "none"` takes `silence_penalty_percent = 0`,
@@ -134,7 +135,7 @@ Every action must be declared, including bash.   manifest with no tools is refus
 | key | values | what it decides |
 |---|---|---|
 | `name` | letters, digits, `_`, `-` | What the model calls. `bash` requires kind `bash` |
-| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` writes a pending declaration for episode-end settlement |
+| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` replaces the standing transfer applied at episode-end settlement, in either a parsed file or a transfer mailbox |
 | `channel` | a channel this manifest declares | Omitted for bash. What the action acts on.   kind takes the shape it fits: `write_slot` a mailbox, `write_file` a directory the agent writes, `read_path` any channel, `transfer` an enabled transfer schema channel |
 | `description` | any string, optional | Omitted for bash. What the model is told the action is for. Omitted, the harness writes one from the channel and the seating |
 

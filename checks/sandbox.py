@@ -163,7 +163,7 @@ def check_a_message_already_shown_is_named_and_not_repeated():
         "an agent that has been shown nothing is shown everything"
     assert "the standing position" not in again and "the standing note" not in again, \
         f"and is not told the same thing twice: {again}"
-    assert "=== unchanged: " in again, f"what it was not told, it is told the name of: {again}"
+    assert "=== unchanged ===" in again, f"what it was not told, it is told the name of: {again}"
     assert "2/message" in again and "in/2" in again, again
     assert "the standing position" in fetched, \
         "and the environment still holds it at the name it was named by"
@@ -220,7 +220,7 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
     obs = third["observation"]
     assert "=== state/WHO.md ===" in obs, obs
     assert "=== 1/a ===" in obs, obs
-    assert "unchanged:" not in obs, "restated is never named instead of said"
+    assert "=== unchanged ===" not in obs, "restated is never named instead of said"
 
     # Without it, both are named at the third episode and not said again.
     plain = tables(notes={"pushed": True})
@@ -231,7 +231,7 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
         third = episode_once(run("ls"), say())
     obs = third["observation"]
     assert "=== state/WHO.md ===" not in obs, obs
-    assert "unchanged:" in obs and "state/WHO.md" in obs, obs
+    assert "=== unchanged ===" in obs and "- state/WHO.md\n" in obs, obs
 
 
 def check_a_message_that_moved_is_carried_again():
@@ -267,7 +267,7 @@ def check_the_declaration_is_carried_however_long_it_stands():
 
     assert "=== out/transfer ===" in said and "2 5" in said, \
         f"the declaration is quoted though it has not moved: {said}"
-    assert "out/transfer" not in said.partition("=== unchanged: ")[2].partition("\n")[0], \
+    assert "- out/transfer\n" not in said, \
         "and is never one of the names"
 
 
@@ -285,7 +285,7 @@ def check_a_message_taken_away_is_named_as_withdrawn():
         second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
-    assert "=== withdrawn: in/2 ===" in said, f"a message taken away is named: {said}"
+    assert "=== withdrawn ===\n- in/2\n" in said, f"a message taken away is named: {said}"
     assert "here for now" not in said, "and its text is not carried once it is gone"
 
 

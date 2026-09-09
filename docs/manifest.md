@@ -48,7 +48,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Shape** | `directory` (any files, any layout), `mailbox` (one file per peer, an outbox on the writer's side and an inbox on each reader's), or `file` (one file at a fixed path) |
 | **Blackboard** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
 | **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's inbox and nowhere else |
-| **Schema** | A fixed format the harness parses from a `self`-written, `harness`-read file and acts on. A fixed menu in code |
+| **Schema** | A fixed format the harness parses and acts on, either from a `self`-written, `harness`-read file or from a schema-defined mailbox. A fixed menu in code |
 | **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
 | **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `read_path`, `transfer`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its private directory when its balance first falls to a chosen level |
@@ -65,7 +65,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Delivery** | `push`: pushed channels are quoted in the digest at episode start. `pull`: nothing is quoted; the agent reads what it chooses at the ordinary price |
 | **Pushed** | A channel property: whether it is part of the digest under push delivery |
 | **Silence penalty** | A channel property: the share of the remaining balance taken from an episode that added nothing new to the channel |
-| **Transfer** | The one schema today: a line `<label> <amount>` that credits a peer with no more than the episode spent |
+| **Transfer** | The one schema today: either one line `<label> <amount>` or one addressed mailbox slot containing `<amount>`, crediting that peer with no more than the episode spent |
 | **Funded by** | Who pays for a transfer. `harness`: the receiver is credited from nowhere and the giver rebated; the total grows. `giver`: the amount leaves the giver; the total is conserved |
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
@@ -131,6 +131,13 @@ Three principles bind the language:
 
 Unknown keys are refused, naming the key; so is a `config.toml` key, saying where it
 lives. The file's digest is stamped in every episode's provenance.
+
+Seat order determines identity and settlement order, not display salience. For each
+agent the manifest digest deterministically shuffles the seats, rotates that order to
+put the agent's own seat first, and presents peers in the remaining order. The same
+agent keeps that presentation throughout the experiment, while different agents do not
+share a first-listed peer. Every episode records the resulting `presentation_order` in
+provenance.
 
 ## 3. Settings
 
@@ -234,7 +241,7 @@ shape = "directory"         # directory | mailbox | file
 path = "{label}"            # where it sits in /work; see 4.2
 pushed = true               # quoted in the digest under push delivery
 measured = true             # the episode records what this channel gained; see 4.4
-agent_view = "paths"        # paths | memory | letters | board; labels in the agent's digest
+agent_view = "paths"        # paths | memory | letters | board | transfer; digest labels
 silence_penalty_percent = 50
 ```
 
@@ -244,7 +251,7 @@ silence_penalty_percent = 50
 |---|---|---|---|
 | self | self | The agent's private store; nobody else ever sees it | `state/` |
 | self | all | A blackboard: one per agent, written by its owner, read by every seat | the directories named by label |
-| self | addressee | A mailbox: one file per peer, each reaching that peer alone | `out/` and `in/` |
+| self | addressee | A mailbox: one file per peer, each reaching that peer alone; a transfer mailbox may also be parsed by the harness | `out/` and `in/` |
 | self | harness | One file the harness parses; a schema is required | `out/transfer` |
 | experimenter | all | Placed by the experimenter, identical in every seat, read-only | none |
 
@@ -268,7 +275,9 @@ channel sits inside a directory the agent writes and comes and goes with it.
 
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
-unchanged content by name. Every channel defaults to `true`, a private store included.
+unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
+labelled group, so semantic names containing spaces remain distinct. Every channel
+defaults to `true`, a private store included.
 Under pull delivery nothing is quoted whatever this says.
 
 `restated = true` quotes the channel in full every episode it stands, never naming it
@@ -284,12 +293,28 @@ whether it goes looking or not, so the choice is only whether it pays a turn fir
 what it wrote to itself last episode is the thing it most needs this one. An experiment
 that wants a store written and never read back declares `pushed = false` and says so.
 
-`agent_view` changes only the labels in the agent's digest. `"paths"` is the default.
+`agent_view` changes only the presentation in the agent's digest; storage and traces keep
+their native paths and bytes. `"paths"` is the default.
 `"memory"` presents private records as orientation and memory, `"letters"` presents
-mailbox records as letters from or to the named agent, and `"board"` presents public
-records as posts from their authors. Storage and access rules
+mailbox records as letters from or to the named agent, `"board"` presents public
+records as posts from their authors, and `"transfer"` presents a schema file or
+transfer mailbox as outgoing and incoming currency transfers. Storage and access rules
 remain the same, so an experiment can give agents persistent memory without making a
 filesystem part of their world.
+
+The semantic views are checked against the channel they describe: `"letters"` requires
+a mailbox without a schema, `"board"` a self-written public directory, `"transfer"` an
+enabled transfer schema file or mailbox, and `"memory"` a private or experimenter-written directory. Experimenter
+material in a memory view is labelled as such rather than presented as the agent's memory.
+
+When no Bash tool is declared, harness-owned balance, ledger and receipt files also use
+semantic digest headings. Their configured filenames remain implementation details and
+do not enter the model's observation. Balance bodies state the current value and label
+their oldest-to-newest history; ledger rows name round, giver, recipient and amount;
+standing transfers name their recipient, requested amount and execution status. A
+settlement receipt itemizes the preceding episode's starting balance, API spend,
+transfer, every obligation result and penalty, peer receipts, floor adjustment, ending
+balance, and the reconciliation equation.
 
 ### 4.4 Measured, and the silence penalty
 
@@ -311,30 +336,36 @@ declares no penalties anywhere has none.
 
 `silence_penalty_percent` is the share of the remaining balance taken from an episode
 that added nothing new to the channel: no path carrying content no path of that name
-carried at episode start. For a mailbox the rule is exactly one new file, and a slot
-holding anything but one file is the same break. Zero is no penalty. Penalties are taken
+carried at episode start. For a mailbox, one or more changed nonempty peer slots meet the
+obligation; additional recipients carry no penalty. A slot holding anything but one file
+reaches nobody, but does not negate a valid changed message to another peer. Zero is no
+penalty. Penalties are taken
 in declaration order, after the transfer channel's.
 
 ### 4.5 Schema
 
-A self-written, harness-read channel names a `schema` from the fixed menu and carries
-that schema's fields. The harness acts on a file that parses and on nothing else; a file
-that does not parse moves nothing and is recorded with why.
+A schema channel names a `schema` from the fixed menu and carries that schema's fields.
+The harness acts only on content that parses and records why malformed content moved
+nothing. A transfer uses either a self-written, harness-read file or a self-written,
+addressee-read mailbox. The file form names recipient and amount in one line. The mailbox
+form stores the amount in the recipient's outbox slot, mirrors it into that recipient's
+inbox, and permits only one nonempty recipient slot at a time.
 
 | Schema | Form | Effect | Fields |
 |---|---|---|---|
-| `transfer` | one line, `<label> <amount>` | Credits the peer, for no more than the episode spent | `funded_by` (`harness` \| `giver` \| `none`), `rebate_percent` (0 to 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none), `receipt` |
+| `transfer` | one line, `<label> <amount>`, or one mailbox slot `<outbox>/<label>` containing `<amount>` | Credits the peer, for no more than the episode spent | `funded_by` (`harness` \| `giver` \| `none`), `rebate_percent` (0 to 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none), `receipt` |
 
 Setting `funded_by = "none"` disables the schema: the file is recorded and moves
 nothing, and `silence_penalty_percent` must be 0. One schema channel per experiment. New
 schemas are code, with a check each, and are listed here when they land.
 
-A `receipt = "<path>"` on a schema channel asks the harness to plant its account of the
-last episode's declaration at that path at the next episode start: what parsed, what it
-moved and to whom, the rebate or debit, and any penalty; or that nothing moved, and why.
+A `receipt = "<path>"` on a schema channel asks the harness to plant an itemized settlement
+receipt at that path at the next episode start. It states the round, starting balance,
+API spend, grace status, declaration and transfer result, every measured obligation and penalty,
+amount received from peers, floor adjustment, ending balance, and reconciliation.
 It is a harness file like a balance: root-owned, quoted in the digest once and named as
 unchanged after, in no file record, and scrubbed before the next one is planted. Off by
-default, since it is a third thing the harness says.
+default, since it is an additional statement from the harness.
 
 ### 4.6 Experimenter channels
 
@@ -381,14 +412,14 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `kind` | Takes | Input | What the harness does |
 |---|---|---|---|
 | `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
-| `write_slot` | a mailbox channel | `to` (a peer's label), `body` | Replaces what `<outbox>/<to>` holds |
-| `send_message` | a mailbox channel with one reachable peer | `body` | Replaces the message to that peer without exposing the mailbox path |
-| `send_message_to` | a mailbox channel | `to` (a peer label), `body` | Replaces the message to that peer without exposing the mailbox path |
+| `write_slot` | a mailbox channel without a schema | `to` (a peer's label), `body` | Replaces what `<outbox>/<to>` holds |
+| `send_message` | a mailbox channel without a schema and with one reachable peer | `body` | Replaces the message to that peer without exposing the mailbox path |
+| `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Replaces the message to that peer without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Replaces the agent's public post without exposing storage paths |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
-| `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a positive integer in micro-dollars) | Replaces the pending declaration; episode-end settlement moves at most the episode spend, using the channel funding and rebate settings |
+| `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Replaces the one standing transfer; in mailbox form it clears the other peer slots. Each episode-end settlement moves at most the episode spend, using the channel funding and rebate settings |
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the
 one instance the agent writes, there being only one place it could mean. A `read_path`'s
@@ -399,6 +430,11 @@ the harness's says which of them it means; the generated ones already do.
 The menu is code, like the schema menu: a manifest names a kind and a channel and
 invents no behaviour. A new kind is a change to `harness.py` with a check of its own,
 and is listed here when it lands.
+
+The schemas and results for `send_message`, `send_message_to`, `post_public`,
+`write_memory` and `transfer` use the action's vocabulary. They do not describe backing
+files or return shell diagnostics; an internal failure is recorded as an unchanged
+action without revealing its storage path to the model.
 
 **Bash is opt-in**, using this declaration:
 
@@ -519,7 +555,9 @@ digest = "m"        # the digest under push delivery; "" is the same as delivery
 
 A transfer channel's `ledger` names its ledger file, `"g"` today: three integers a line,
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
-path segments and must not collide with a channel path.
+path segments and must not collide with a channel path. In a tool-only agent's semantic
+digest, the same events are rendered as `giver -> recipient`, its own label is marked
+`(you)`, and the amount is identified as the amount actually moved.
 
 ## 6. The agent object
 
@@ -696,8 +734,9 @@ Every refusal is a `SystemExit` naming the file and the key.
   `/`; `..`; a first segment ending in a sidecar suffix; `{label}` missing from a
   directory every agent writes, present anywhere else, or present twice.
 - A file channel outside every directory the agent writes.
-- A schema on anything but a self-written, harness-read file; a schema outside the
-  menu; schema fields on a channel with no schema; a second schema channel.
+- A schema on anything but a self-written, harness-read file or a self-written,
+  addressee-read transfer mailbox; a schema outside the menu; schema fields on a
+  channel with no schema; a second schema channel.
 - Under `transfer`: a funding outside `harness`, `giver`, `none`; a rebate outside 0 to
   100; giver funding with a nonzero rebate; `none` with a nonzero penalty; a `ledger`
   that is not one segment; a `receipt` outside the path grammar.
@@ -730,7 +769,7 @@ Every refusal is a `SystemExit` naming the file and the key.
 Every episode's provenance stamps: the harness digest, the system prompt in force whole
 and by digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
-channel's source digest, the seating and labels, the schedule, the manifest's digest, the
+channel's source digest, the seating, labels and per-agent presentation order, the schedule, the manifest's digest, the
 harness files' names, the channel table in force, whole and by digest, and the tool
 table in force, whole and by digest, each tool's declared description among its fields,
 and whether the shell was offered.
@@ -748,7 +787,8 @@ Every episode record carries `transfer`, what the schema channel parsed and move
 schema, `measured = true`, or a penalty above 0. A channel that asked for none of them
 has no entry. A directory
 every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
-and `penalty`; the schema channel records its declaration, what moved, and `penalty`. The
+and `penalty`; the schema channel records its declaration, whether it changed, what moved,
+and `penalty`. The
 account keeps `penalised`, the running total per channel.
 
 Every tool record carries `tool` (`bash` or the declared name), `result`, and then
@@ -756,8 +796,9 @@ Every tool record carries `tool` (`bash` or the declared name), `result`, and th
 `trace_version` is 4. The trace names `provider`, `requested_model`, and
 `resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
 native stop reasons, and the provider provenance. Raw logs write the provider and complete
-native response before their canonical normalized event. Version-3 traces and accounts are
-not mixed with this format; use fresh agent ids.
+native response before their canonical normalized event. A fresh CLI run moves matching prior
+records and environment mirrors under `displaced/<timestamp>/`; `--resume` instead requires
+compatible version-4 accounts and never mixes version-3 records with this format.
 
 ## 12. Invariants, restated in this vocabulary
 

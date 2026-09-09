@@ -151,7 +151,7 @@ def check_the_page_fetches_nothing():
     the machine to have or not, never linked.
     """
     page = view.PAGE
-    assert "<title>agent-society</title>" in page
+    assert "<title>agentic-society</title>" in page
     assert "//cdn" not in page and "<script src" not in page, "nothing is fetched"
     for fetches in ("@import", "url(http", "url(//", "url('", 'url("', "<link", "fonts.googleapis"):
         assert fetches not in page, f"the page reaches out with {fetches}"

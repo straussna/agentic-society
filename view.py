@@ -286,8 +286,9 @@ def digest_name(agent: str, t: dict, path: str) -> str:
     name = getattr(harness, "digest_name", None)
     if name is None:
         return path
-    instances = harness.environment(agent, account_of(agent), harness.table_of(t))
-    return name(path, instances)
+    account = account_of(agent)
+    instances = harness.environment(agent, account, harness.table_of(t))
+    return name(path, instances, harness.experimenter_digest_paths(account, instances))
 
 
 def inbox_prefix(mail: harness.Channel | None) -> str | None:
@@ -593,9 +594,9 @@ def round_now(exp: dict, rows: list[dict]) -> int:
 
 def standing_transfer(agent: str, account: dict, latest: dict,
                       table: list[harness.Channel]) -> dict | None:
-    """The declaration sitting in the parsed channel, and what the last episode made of it.
+    """The transfer sitting in the parsed channel, and what the last episode made of it.
 
-    A declaration re-applies every episode it is left in place. resolve_transfer's
+    A transfer re-applies every episode it is left in place. resolve_transfer's
     reason is the only statement anywhere of why one moved nothing. `latest` is
     the account's last episode record. None where the table has no parsed
     channel, or nothing is declared and nothing was.
@@ -605,8 +606,10 @@ def standing_transfer(agent: str, account: dict, latest: dict,
         return None
     inst = next((i for i in harness.environment(agent, account, table)
                  if i.writable and i.channel is schema), None)
-    got = read_file(inst.host) if inst else None
-    declared = got[1] if got else None
+    seating = harness.seating_of(agent, account)
+    declared = (harness.transfer_declaration(
+        schema, inst.host, [seating.labels[seat] for seat in seating.peers])[0]
+                if inst else None)
     resolved = latest.get("transfer") or {}
     if declared is None and not resolved.get("declared"):
         return None
@@ -790,21 +793,32 @@ def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
         account = account_of(agent)
         inst = next((i for i in harness.environment(agent, account, experiment_table(room.exp))
                      if i.writable and i.channel.name == room.schema.name), None)
-        got = read_file(inst.host) if inst else None
-        if got is not None:
-            out[room.schema.path] = got[1]
+        if inst and room.schema.shape == "mailbox":
+            root = inst.host
+            for p in sorted(root.iterdir()) if root.is_dir() else []:
+                got = read_file(p) if p.is_file() else None
+                if got is not None:
+                    out[f"{room.schema.outbox}/{p.name}"] = got[1]
+        else:
+            got = read_file(inst.host) if inst else None
+            if got is not None:
+                out[room.schema.path] = got[1]
     return out
 
 
 def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
-    """The seat and label a path in an outbox reaches; (None, None) for the declaration.
+    """The seat and label a path in an outbox reaches; absent for a parsed file.
 
     <outbox>/<label> arrives at that label's seat as <inbox>/<this agent's label>
-    and nowhere else. The parsed file reaches no one; what it moves shows up in
-    the ledger.
+    and nowhere else. A parsed file reaches no one; what it moves shows up in the
+    ledger. A transfer-mailbox slot reaches its addressee as well as settlement.
     """
-    if room.schema and path == room.schema.path:
-        return None, None
+    if room.schema:
+        if room.schema.shape == "file" and path == room.schema.path:
+            return None, None
+        if room.schema.shape == "mailbox" and path.startswith(room.schema.outbox + "/"):
+            label = path[len(room.schema.outbox) + 1:]
+            return seat_of_label(room.exp, label), label
     if room.mail and path.startswith(room.mail.outbox + "/"):
         label = path[len(room.mail.outbox) + 1:]
         return seat_of_label(room.exp, label), label
@@ -833,7 +847,10 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         "from_seat": from_seat, "from_label": exp["labels"].get(from_seat or "", from_seat),
         "from_agent": row["agent"],
         "to_seat": seat, "to_label": label, "to_agent": exp["seats"].get(seat) if seat else None,
-        "path": path, "kind": "transfer" if room.schema and path == room.schema.path else "message",
+        "path": path, "kind": ("transfer" if room.schema and
+                                  (path == room.schema.path or
+                                   (room.schema.shape == "mailbox" and
+                                    path.startswith(room.schema.outbox + "/"))) else "message"),
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text, "binary": after is not ABSENT and after is None,
@@ -843,7 +860,9 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         ev["diff"] = analyze.state_changes({path: before}, {path: after})
     if ev["kind"] == "transfer":
         resolved = (row["trace"] or {}).get("transfer") or {}
-        line = harness.TRANSFER_LINE.match((text or "").strip())
+        raw = ((f"{ev['to_label']} {(text or '').strip()}")
+               if room.schema and room.schema.shape == "mailbox" else (text or "").strip())
+        line = harness.TRANSFER_LINE.match(raw)
         ev["transfer"] = resolved
         ev["to_label"] = resolved.get("label") or (line.group("label") if line else None)
         ev["to_seat"] = resolved.get("seat") or seat_of_label(exp, ev["to_label"])

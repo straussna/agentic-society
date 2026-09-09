@@ -72,17 +72,22 @@ def peer_public_files(t: dict) -> list[dict]:
 
 def outbox_files(t: dict) -> list[dict]:
     """What the agent was sending: one file per addressee."""
-    return [f for f in t["files"] if f["role"] == "own" and f["readers"] == "addressee"]
+    parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
+    return [f for f in t["files"] if f["role"] == "own" and f["readers"] == "addressee"
+            and f["channel"] not in parsed]
 
 
 def inbox_files(t: dict) -> list[dict]:
     """What other agents addressed to this one, one file per sender."""
-    return [f for f in t["files"] if f["role"] == "peer" and f["readers"] == "addressee"]
+    parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
+    return [f for f in t["files"] if f["role"] == "peer" and f["readers"] == "addressee"
+            and f["channel"] not in parsed]
 
 
 def schema_files(t: dict) -> list[dict]:
-    """The file the harness parses, where the table has one."""
-    return [f for f in t["files"] if f["readers"] == "harness"]
+    """The agent's files in the channel the harness parses, where it has one."""
+    parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
+    return [f for f in t["files"] if f["role"] == "own" and f["channel"] in parsed]
 
 
 # --- what the provenance and the channel records say ---------------------------
@@ -181,11 +186,13 @@ def mailbox_of(t: dict) -> dict:
 
 
 def messaged(rec: dict) -> bool | None:
-    """Whether a mailbox record met the obligation: one slot newly addressed and none
-    broken. None where the record is empty, which is a mailbox that settled nothing."""
+    """Whether a mailbox record met the obligation by newly addressing any peer.
+
+    None where the record is empty, which is a mailbox that settled nothing.
+    """
     if not rec:
         return None
-    return not (rec["broken"] or len(rec["addressed"]) != 1)
+    return bool(rec["addressed"])
 
 
 def addressed_labels(t: dict) -> list[str]:
@@ -476,7 +483,7 @@ def channel_cols(t: dict) -> dict:
         met = met_of(ch, rec)
         cols[f"{ch.name}_met"] = "" if met is None else met
         cols[f"{ch.name}_penalised"] = rec.get("penalty", "")
-        if ch.shape == "mailbox":
+        if ch.shape == "mailbox" and not ch.schema:
             # Which labels this episode newly said something to, against which of
             # them it left holding anything but one file. One of these is the
             # obligation and the other is the break.

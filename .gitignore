@@ -4,6 +4,9 @@ records/
 # Per-agent mirrors of what each episode wrote; copied in and out of the container.
 environments/
 
+# Preserved records and mirrors displaced when a command starts a fresh run.
+displaced/
+
 # Working notes and assessments written during a session. Not part of the harness.
 Claude outputs/
 

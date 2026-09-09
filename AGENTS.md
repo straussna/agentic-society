@@ -38,7 +38,7 @@ What only a container can show — modes, ownership, the dead network, what the
 image has and lacks — takes a real one. That includes the checks that an inbox
 and the transfer ledger really are root's and really do refuse every route into
 them. Those are the checks that skip when Docker is down, and the reason
-`--no-docker` still runs 209 of 234.
+`--no-docker` still runs 215 of 240.
 
 `--real` puts every check in a container. It is what says the two lanes still
 agree, so run it after changing how an episode is set up or torn down. It is not

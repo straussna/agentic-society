@@ -34,6 +34,121 @@ LOOK = {"name": "look", "kind": "read_path", "channel": "blackboard"}
 BASH = {"name": "bash", "kind": "bash"}
 
 
+def check_semantic_summaries_and_failures_expose_no_storage_details():
+    """Tool-only labels and failures describe actions rather than their backing paths."""
+    summary = harness.named("unchanged", ["Private memory", "Letter to 2"])
+    assert summary == "=== unchanged ===\n- Private memory\n- Letter to 2\n", summary
+    assert harness.NAMED.match(summary.splitlines()[0])
+
+    class Proc:
+        @staticmethod
+        def poll():
+            return None
+
+    class BrokenShell:
+        restarts = 0
+        proc = Proc()
+
+        @staticmethod
+        def run(command, timeout):
+            return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+
+    declared = offers("write_memory:notes", "send_message_to:mail",
+                      "post_public:blackboard", "transfer:transfer")
+    with temp_root(tools=declared) as root:
+        seated(root, "t", other={})
+        account = ground_truth("t")
+        actions = {item.tool.kind: item for item in harness.bind_tools(
+            harness.tools(), harness.channels(), harness.environment("t", account), ["2"])}
+        shell = BrokenShell()
+        results = [
+            actions["write_memory"].call(shell, {"body": "memory"}),
+            actions["send_message_to"].call(shell, {"to": "2", "body": "message"}),
+            actions["post_public"].call(shell, {"body": "post"}),
+            actions["transfer"].call(shell, {"to": "2", "amount": 1}),
+            actions["transfer"].call(shell, {"to": "2", "amount": 0}),
+        ]
+
+    joined = "\n".join(results)
+    assert "out/" not in joined and "state/" not in joined and "permission denied" not in joined, joined
+    assert "Nothing was written" not in joined and "No transfer was declared" in joined, joined
+
+
+def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
+    """A model acting through declared actions sees concepts, not their storage names."""
+    channels = tables(notes={"pushed": True, "restated": True, "agent_view": "memory"},
+                      blackboard={"restated": True, "agent_view": "board"},
+                      mail={"restated": True, "agent_view": "letters"},
+                      transfer={"agent_view": "transfer"})
+    declared = offers("write_memory:notes", "send_message_to:mail",
+                      "post_public:blackboard", "transfer:transfer")
+    with temp_root(channels=channels, tools=declared) as root:
+        seated(root, "t", t={"brief.md": "rules\n", "memory.md": "remembered\n"},
+               other={"group/post.md": "public\n", "out/1": "private\n"})
+        account = ground_truth("t")
+        account["series"] = [1_500_000, 1_499_000]
+        account["remaining"] = account["series"][-1]
+        account["starter_files_landed"] = {"name": "brief", "paths": ["brief.md"]}
+        harness.save_account("t", account)
+        standing = harness.mirror("t", "mail") / "transfer"
+        standing.write_text("2 1\n", encoding="utf-8", newline="\n")
+        seen = []
+        t = episode_once(say(), seen=seen)
+        again = episode_once(say())
+
+    observation = t["observation"]
+    for heading in ("Experimenter material: brief", "Private memory",
+                    "Public post from 2", "Letter from 2",
+                    "Standing transfer declaration", "Your balance history",
+                    "Balance history for 2", "Transfer ledger"):
+        assert f"=== {heading} ===" in observation, (heading, observation)
+    for path in ("state/", "out/", "in/", "=== n1 ===", "=== n2 ===", "=== g ==="):
+        assert path not in observation, (path, observation)
+    request = next(item for item in seen if item["kind"] == "session")
+    descriptions = "\n".join(tool["description"] for tool in request["tools"])
+    assert "out/transfer" not in descriptions and " n1" not in descriptions, descriptions
+    body_descriptions = [tool["input_schema"]["properties"]["body"]["description"]
+                         for tool in request["tools"] if "body" in tool["input_schema"]["properties"]]
+    assert body_descriptions and not any("file" in text or "bytes" in text
+                                         for text in body_descriptions), body_descriptions
+    assert "current: 1499000 micro-dollars" in observation, observation
+    assert "history, oldest to newest: 1500000, 1499000" in observation, observation
+    assert "No completed transfers." in observation, observation
+    assert "recipient: 2" in observation and "requested amount: 1 micro-dollars" in observation
+    for text in ("rules\n", "remembered\n", "public\n", "private\n"):
+        assert text in again["observation"], (text, again["observation"])
+
+
+def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
+    """Semantic records identify transfer rounds and itemize the preceding settlement."""
+    channels = tables(blackboard={"restated": True, "agent_view": "board"},
+                      mail={"restated": True, "agent_view": "letters"},
+                      transfer={"agent_view": "transfer", "funded_by": "giver",
+                                "rebate_percent": 0, "receipt": "r"})
+    declared = [
+        {"name": "send_message", "kind": "send_message_to", "channel": "mail"},
+        {"name": "post_to_blackboard", "kind": "post_public", "channel": "blackboard"},
+        {"name": "transfer_balance", "kind": "transfer", "channel": "transfer"},
+    ]
+    with temp_root(channels=channels, tools=declared) as root:
+        seated(root, "t", other={})
+        first = episode_once(use("send_message", to="2", body="hello"),
+                             use("post_to_blackboard", body="hello all"),
+                             use("transfer_balance", to="2", amount=1), say())
+        second = episode_once(say())
+
+    assert first["transfer"]["changed"] is True, first["transfer"]
+    observation = second["observation"]
+    assert "=== Settlement receipt ===" in observation, observation
+    for item in ("round: 1", "API spend:", "transfer changed and moved: yes",
+                 "blackboard obligation: met", "mail obligation: met",
+                 "total penalties: 0", "ending balance:", "reconciliation:"):
+        assert item in observation, (item, observation)
+    assert "Completed transfers (giver -> recipient; amount actually moved):" in observation
+    assert "- round 1: 1 (you) -> 2; actual amount moved: 1 micro-dollars" in observation
+    assert "=== r ===" not in observation and "=== g ===" not in observation, observation
+
+
 def check_a_transfer_tool_declares_and_settles_from_the_giver():
     """A transfer action replaces one declaration and settles through the ledger."""
     transfer = {"name": "transfer_balance", "kind": "transfer", "channel": "transfer"}
@@ -54,6 +169,8 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
                 say(), seen=seen))
         spec = next(x for x in seen if x["kind"] == "session")["tools"][1]
         assert spec["input_schema"]["properties"]["to"]["enum"] == ["2"]
+        amount_help = spec["input_schema"]["properties"]["amount"]["description"]
+        assert "at least 1" in amount_help and "Zero and negative" in amount_help
         t = trace_on_disk("t", 1)
         assert files_by_path(t)["out/transfer"]["text"] == "2 1000000\n"
         moved = t["transfer"]
@@ -63,7 +180,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         results = [c["result"] for turn in t["turns"] for c in turn["tools"]]
         assert "episode end" in results[0]
         assert all("not a peer" in result for result in results[2:4])
-        assert all("positive integer" in result for result in results[4:])
+        assert all("at least 1" in result for result in results[4:])
 
     chans = list(harness.DEFAULT_CHANNELS)
     refused(lambda: harness.validate_tools([transfer | {"channel": "notes"}], chans, "check"),
@@ -73,6 +190,34 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
             account = harness.load_account("t")
         assert harness.bind_tools(harness.tools(), harness.channels(),
                                   harness.environment("t", account), []) == []
+
+
+def check_a_currency_mailbox_parallels_messages_without_adding_transfers():
+    """One addressed currency slot stands, settles, and appears in the recipient's inbox."""
+    channels = tables()
+    transfer_channel = next(ch for ch in channels if ch["name"] == "transfer")
+    transfer_channel.pop("path")
+    transfer_channel.update(readers="addressee", shape="mailbox",
+                            outbox="currency/outbox", inbox="currency/inbox",
+                            agent_view="transfer", funded_by="giver", rebate_percent=0)
+    transfer = {"name": "send_currency", "kind": "transfer", "channel": "transfer"}
+    with temp_root(channels=channels, tools=[transfer]) as root:
+        seated(root, "t", t={}, o={}, d={})
+        first = episode_once(use("send_currency", to="2", amount=10),
+                             use("send_currency", to="3", amount=20), say())
+        received = harness.run_once("d", fake(say()))
+
+    files = files_by_path(first)
+    assert "currency/outbox/2" not in files, files
+    assert files["currency/outbox/3"]["text"] == "20\n", files
+    assert first["transfer"]["label"] == "3" and first["transfer"]["amount"] > 0, first["transfer"]
+    assert "=== Currency transfer from 1 ===" in received["observation"], received["observation"]
+    assert "amount: 20 micro-dollars" in received["observation"], received["observation"]
+
+    refused(lambda: harness.validate_tools(
+        [{"name": "wrong", "kind": "send_message_to", "channel": "transfer"}],
+        harness.validate_channels(channels, None, "check", ("1", "2", "3"))[0], "check"),
+        "mailbox channel")
 
 
 def check_bash_requires_an_explicit_declaration():

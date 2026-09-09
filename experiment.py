@@ -246,12 +246,17 @@ def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
     every other agent is called, and how the experiment is being driven. Nothing is
     copied into anything the agent can write, so there is nothing to revert afterwards."""
     named = {seat: (labels or {}).get(seat, seat) for seat in seats}
+    seed = str(stamp.get("manifest_sha256") or "").encode("utf-8")
+    shuffled = sorted(seats, key=lambda seat: hashlib.sha256(
+        seed + b":" + seat.encode("utf-8")).digest())
 
     def prepare(account: dict) -> None:
         seat = next(s for s, a in seats.items() if a == agent)
+        at = shuffled.index(seat)
+        presentation = shuffled[at:] + shuffled[:at]
         account["seat"] = seat
         account["label"] = named[seat]
-        account["peers"] = {"seen": seats, "labels": named}
+        account["peers"] = {"seen": seats, "labels": named, "presentation": presentation}
         account["experiment"] = dict(stamp)
     return prepare
 
@@ -495,8 +500,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--provider", metavar="PROVIDER",
                     help="use PROVIDER for every seat together with --model")
     ap.add_argument("--model", metavar="MODEL",
-                    help="use MODEL for every seat together with --provider; both must match "
-                         "existing agent accounts")
+                    help="use MODEL for every seat together with --provider; under --resume, both "
+                         "must match existing agent accounts")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue existing compatible agent accounts; without this flag, "
+                         "previous state is preserved under displaced/ and a fresh run starts")
     ap.add_argument("-c", "--config", type=Path, help="default: config.toml beside harness.py")
     a = ap.parse_args(argv)
 
@@ -525,6 +533,8 @@ def main(argv: list[str] | None = None) -> int:
     live = set(agents)
     stamp = stamp_of(manifest)
     a_round = simultaneous_round if manifest["schedule"] == "simultaneous" else sequential_round
+    if not a.resume:
+        harness.displace_agents(agents)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.

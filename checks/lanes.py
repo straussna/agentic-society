@@ -100,6 +100,10 @@ def host_bash() -> str | None:
     An absolute path: on Windows PATH can resolve `bash` to Git's or WSL's, which
     disagree about what a path is and what /tmp means.
     """
+    if os.name == "nt" and (git := shutil.which("git")):
+        installed = Path(git).resolve().parent.parent / "bin" / "bash.exe"
+        if installed.is_file():
+            return str(installed)
     return shutil.which("bash")
 
 

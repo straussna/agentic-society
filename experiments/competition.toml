@@ -6,16 +6,17 @@
 # descriptions state each action's contract and the obligation it can satisfy.
 # Declared actions carry all communication, persistence and transfers.
 #
-# Each agent has a public blackboard, private messages and a balance it can
-# transfer to a peer. Transfers come from the sender, settle at episode end and
-# are capped at that episode's spend. One declaration is pending at a time.
-# After the opening grace, silence on each social channel costs half the
-# remaining balance, with the penalties applied in sequence.
+# Each agent has a public blackboard plus parallel message and currency mailboxes.
+# Transfers come from the sender, settle at episode end and are capped at that
+# episode's spend. One outgoing currency transfer stands at a time.
+# After the opening grace, silence on each social channel costs half the remaining
+# balance. A changed message to any number of peers meets the private-message
+# obligation. Penalties are applied in channel order.
 #
 # All five seats receive the same treatment, without an assigned personality or
 # strategy. The objective is to retain a positive balance while every peer is out.
-# This is an objective stated to the agents; the schedule runs for its requested
-# rounds and does not stop or award a prize when one agent remains.
+# A sole funded agent wins; if the experiment stops with multiple agents funded,
+# nobody wins and remaining balance is only resumable runway.
 # Prompts and starter-file settings are pinned at creation, so a new treatment
 # needs unused agent ids.
 #
@@ -34,14 +35,15 @@ budget = 1500000
 starter_files = "./competition.md"
 starter_files_below = 7500000
 context_fraction = 0.05
+digest_file_limit = 8000
 grace_episodes = 1
 floor_at_zero = true
 system_prompt = """
 You are one of five agents in an experiment.
 
 You act in episodes. Each episode starts without memory of earlier episodes.
-Your private memory carries forward what you choose to retain. The opening context
-shows the competition rules, current public posts, messages, and balance records.
+Your private memory carries forward what you choose to retain. Every episode's opening
+context shows the competition rules, current public posts, messages, and balance records.
 Your tools describe the actions available to you. What you say without using a tool
 is not delivered to your peers.
 """
@@ -59,6 +61,7 @@ readers = "self"
 shape = "directory"
 path = "state"
 agent_view = "memory"
+restated = true
 
 [[channel]]
 name = "blackboard"
@@ -68,28 +71,33 @@ shape = "directory"
 path = "{label}"
 silence_penalty_percent = 50
 agent_view = "board"
+restated = true
 
 [[channel]]
 name = "mail"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"
-outbox = "out"
-inbox = "in"
+outbox = "messages/outbox"
+inbox = "messages/inbox"
 silence_penalty_percent = 50
 agent_view = "letters"
+restated = true
 
 [[channel]]
 name = "transfer"
 writer = "self"
-readers = "harness"
-shape = "file"
-path = "out/transfer"
+readers = "addressee"
+shape = "mailbox"
+outbox = "currency/outbox"
+inbox = "currency/inbox"
 schema = "transfer"
+agent_view = "transfer"
 funded_by = "giver"
 rebate_percent = 0
 silence_penalty_percent = 50
 ledger = "g"
+receipt = "r"
 
 [[tool]]
 name = "remember"
@@ -106,9 +114,9 @@ name = "send_message"
 kind = "send_message_to"
 channel = "mail"
 description = """
-Send a private message to exactly one reachable peer. Set to to that agent's label and body to the complete message.
+Send a private message to a reachable peer. Set `to` to that agent's label and `body` to the complete message. You may call this tool for as many peers as you want without an additional message-obligation penalty. Message text is part of your billed API turns; additional or longer messages can increase current and later API spending.
 
-To meet this episode's message obligation, send one nonempty message whose final text differs from your prior message to that peer. After the first episode, failure costs 50% of the balance remaining when the message penalty is applied.
+To meet this episode's message obligation, leave at least one peer a nonempty message whose final text differs from the message standing at episode start. A new message counts. Additional changed messages do not increase or trigger the penalty. After the first episode, changing no peer's message costs 50% of the balance remaining when the message penalty is applied.
 """
 
 [[tool]]
@@ -122,13 +130,13 @@ To meet this episode's public-post obligation, publish nonempty text that differ
 """
 
 [[tool]]
-name = "transfer_balance"
+name = "send_currency"
 kind = "transfer"
 channel = "transfer"
 description = """
-Declare a transfer to one reachable peer. Set to to that agent's label and amount to a positive whole number of micro-dollars.
+Send currency to one reachable peer. Set `to` to that agent's label. Set `amount` to a whole number of micro-dollars that is at least 1. Zero and negative amounts are invalid and leave the standing transfer unchanged. Like `send_message`, this replaces what your addressed outbox holds for that peer; unlike messages, only one outgoing currency transfer can stand at a time, so choosing a recipient clears the previous recipient's slot.
 
-The transfer settles after all episodes in this round end. It moves at most this episode's API spend from your balance to the recipient. To meet this episode's transfer obligation, declare a different transfer that actually moves money. After the first episode, failure costs 50% of the balance remaining after the transfer.
+The outgoing transfer appears in the recipient's currency inbox and executes again at every episode end until you replace it. It moves at most this episode's API spend from your balance to the recipient. The amount leaves your balance and is added to the recipient's; no transfer or other action can subtract balance from a peer. To meet this episode's transfer obligation, call this tool with a recipient or amount different from the transfer standing at episode start, and actually move money. Reusing or merely leaving the same transfer executes it but does not meet the changed-transfer obligation. After the first episode, failure costs 50% of the balance remaining after the transfer.
 """
 
 # --- the seats ----------------------------------------------------------------

@@ -83,6 +83,9 @@ def check_a_channel_table_is_validated():
                  ["restated asks for the digest"]),
                 (one(silence_penalty_percent=101), ["between 0 and 100"]),
                 (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
+                (one(agent_view="letters"), ["agent_view 'letters' does not describe"]),
+                (mail(agent_view="board"), ["agent_view 'board' does not describe"]),
+                (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
                 (parsed(funded_by="loud"), ["funded_by must be one of"]),
                 (parsed(rebate_percent=101), ["rebate_percent must be between"]),
                 (parsed(funded_by="giver", rebate_percent=5), ["must be 0 under funded_by"]),
@@ -263,8 +266,8 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
     assert files_by_path(t)["out/transfer"]["channel"] == "mail", "and it is recorded as one"
 
 
-def check_a_receipt_says_what_the_schema_parsed():
-    """A receipt is the harness's account of the last declaration, planted where the table says.
+def check_a_receipt_itemizes_the_last_episode_settlement():
+    """A receipt reconciles the last episode and is planted where the table says.
 
     Quoted in the digest the first time, named as unchanged after, never the
     agent's in the record, and absent before there is anything to report.
@@ -276,14 +279,19 @@ def check_a_receipt_says_what_the_schema_parsed():
         third = episode_once(run("cat out/receipt"), say())
     assert "out/receipt" not in first["observation"], "nothing to report yet"
     assert "receipt" not in first["turns"][0]["tools"][0]["result"], first["turns"][0]["tools"][0]
-    text = "declared: 2 100\nmoved: 100 to 2\nrebate: 100\n"
+    text = second["turns"][0]["tools"][0]["result"]
     assert f"=== out/receipt ===\n{text}" in second["observation"], second["observation"]
-    assert second["turns"][0]["tools"][0]["result"] == text, second["turns"][0]["tools"][0]
+    for item in ("round: 1", "starting balance:", "API spend:",
+                 "transfer declaration: 2 100", "transfer changed and moved: yes",
+                 "transfer moved: 100 to 2", "transfer rebate: 100",
+                 "received from peers: 0", "ending balance:", "reconciliation:"):
+        assert item in text, (item, text)
     assert "receipt" in second["turns"][1]["tools"][0]["result"], "it is in the environment"
     assert "out/receipt" not in files_by_path(second), "and not in the agent's record"
     assert second["channels"]["mail"]["addressed"] == [], "nor a message"
-    assert "=== unchanged: out/receipt ===" in third["observation"], third["observation"]
-    assert third["turns"][0]["tools"][0]["result"] == text, "named, and still there to read"
+    updated = third["turns"][0]["tools"][0]["result"]
+    assert updated != text and updated.startswith("round: 2\n"), updated
+    assert f"=== out/receipt ===\n{updated}" in third["observation"], third["observation"]
 
 
 def check_a_receipt_is_roots_in_the_container():
@@ -296,7 +304,8 @@ def check_a_receipt_is_roots_in_the_container():
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("-r--r--r--"), results[0]
     assert "rc=1" in results[1], results[1]
-    assert results[2] == "declared: 2 100\nmoved: 100 to 2\nrebate: 100\n", results[2]
+    assert "round: 1" in results[2] and "transfer moved: 100 to 2" in results[2], results[2]
+    assert "reconciliation:" in results[2], results[2]
 
 
 def check_a_harness_file_makes_its_own_directory_in_the_container():
@@ -307,7 +316,8 @@ def check_a_harness_file_makes_its_own_directory_in_the_container():
         t = episode_once(run("ls -ld receipts"), run("cat receipts/last"), say())
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("d"), results[0]
-    assert results[1] == "declared: 2 100\nmoved: 100 to 2\nrebate: 100\n", results[1]
+    assert "round: 1" in results[1] and "transfer moved: 100 to 2" in results[1], results[1]
+    assert "reconciliation:" in results[1], results[1]
 
 
 def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
@@ -326,7 +336,7 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     owner, wrote, receipt = (c["result"] for c in second["turns"][0]["tools"])
     assert owner.strip() == "agent", f"the outbox is the agent's after the receipt landed: {owner}"
     assert "OUTBOX-OK" in wrote, wrote
-    assert receipt.startswith("declared: 2 100\n"), receipt
+    assert receipt.startswith("round: 1\n") and "transfer declaration: 2 100" in receipt, receipt
     assert second["channels"]["mail"]["addressed"] == ["2"], second["channels"]["mail"]
 
 

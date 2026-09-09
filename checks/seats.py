@@ -192,7 +192,8 @@ def check_an_experimenter_channel_is_quoted_once_and_then_named_unchanged():
     assert "=== shared/BRIEF ===" in one and "read me first" in one, one
     assert "=== shared/more/DETAIL ===" in one and "and then this" in one, one
     assert "read me first" not in again and "and then this" not in again, again
-    assert "=== unchanged: " in again and "shared/BRIEF" in again and "shared/more/DETAIL" in again, again
+    assert "=== unchanged ===" in again, again
+    assert "- shared/BRIEF\n" in again and "- shared/more/DETAIL\n" in again, again
     assert fetched.strip() == "read me first", fetched
 
 
@@ -309,14 +310,12 @@ def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
     assert "1" not in listing.split(), f"in/ holds nothing at all: {listing!r}"
 
 
-def check_the_outbox_costs_one_share_however_it_broke():
-    """However many ways one outbox broke, what is left is halved exactly once.
+def check_the_outbox_costs_one_share_when_it_says_nothing_new():
+    """A silent or wholly malformed outbox costs one share; multiple messages do not.
 
-    The obligation is the post's twin: one agent told one thing it was not told
-    before. Four ways to miss it, one share each: two seats held as directories,
-    an outbox that said nothing, one that said something new to two agents, and
-    one that crowded a seat and addressed nobody at once. Every episode posts, so
-    the share being read is the outbox's alone; it is taken after the post
+    The obligation is the post's twin: at least one agent was told something it
+    was not told before. A wholly malformed outbox and a silent one miss it. Every
+    episode posts, so the share being read is the outbox's alone; it is taken after the post
     penalty and appended to the series like every other movement, and the
     console line names every break.
     """
@@ -324,7 +323,6 @@ def check_the_outbox_costs_one_share_however_it_broke():
         (("mkdir -p out/2 out/3 && echo hi > out/2/a && echo hi > out/3/a",),
          ["2", "3"], [], "out/2,3 not one file and no message, took"),
         ((), [], [], "no message, took"),
-        (("echo hi > out/2 && echo hi > out/3",), [], ["2", "3"], "out/2,3 not one message, took"),
         (("mkdir -p out/2 && echo hi > out/2/a",), ["2"], [], "out/2 not one file and no message, took"),
     )
     for commands, broken, addressed, fragment in rows:
@@ -344,6 +342,17 @@ def check_the_outbox_costs_one_share_however_it_broke():
         assert account["penalised"]["mail"] == mail["penalty"], (commands, account)
         assert account["episodes"][-1]["channels"]["mail"] == mail, "and the episode records it"
         assert fragment in buf.getvalue(), (commands, buf.getvalue())
+
+    with temp_root(channels=tables(mail=HALF, blackboard=HALF)) as root:
+        seated(root, other={}, third={})
+        with quiet() as buf:
+            t = harness.run_once("t", fake(run("echo two > out/2 && echo three > out/3",
+                                               "echo posted > 1/RESULT"), say()))
+        account = ground_truth()
+    assert t["channels"]["mail"] == {"broken": [], "addressed": ["2", "3"], "penalty": 0}
+    assert analyze.messaged(t["channels"]["mail"]) is True
+    assert "mail" not in account.get("penalised", {}), account
+    assert "not one message" not in buf.getvalue(), buf.getvalue()
 
 
 def check_a_crowded_seat_costs_again_every_episode_it_stands():
@@ -371,7 +380,7 @@ def check_a_crowded_seat_costs_again_every_episode_it_stands():
 
 
 def check_one_new_message_an_episode_costs_nothing():
-    """Exactly one out/<i> holding something new is the obligation met."""
+    """One out/<i> holding something new is enough to meet the obligation."""
     with temp_root(channels=tables(mail=HALF, blackboard=HALF)) as root:
         seated(root, other={}, third={})
         t = episode_once(run("echo for two > out/2", "echo posted > 1/RESULT"), say())
