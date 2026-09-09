@@ -21,6 +21,7 @@ import threading
 import urllib.request
 import experiment
 import harness
+import providers
 import view
 
 from checks.fake import fake, usage
@@ -255,6 +256,13 @@ def leaked_containers() -> str:
 
 def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
     """Write an experiment manifest under a temporary ROOT, for the manifest checks to use."""
+    head = text.split("[[agent]]", 1)[0]
+    prefix = ""
+    if not re.search(r"(?m)^provider\s*=", head):
+        prefix += 'provider = "anthropic"\n'
+    if not re.search(r"(?m)^model\s*=", head):
+        prefix += 'model = "claude-sonnet-5"\n'
+    text = prefix + text
     p = root / "experiments" / name
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8", newline="\n")
@@ -344,7 +352,7 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 # Every harness global a check is allowed to move, and therefore every one pinned()
 # puts back. temp_root refuses any name outside this set.
 RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
-                                "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PRICES_EXPIRE", "PINNED",
+                                "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PINNED", "load_account",
                                 "replace_file",
                             # Set per check and put back by pinned(), so no check
                             # carries into the next in the same worker.
@@ -375,12 +383,23 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     duration, and pinned() puts every one of them back. `tools` are [[tool]] tables,
     decided against whatever channel table is then in force.
     """
+    provider = overrides.pop("PROVIDER", "anthropic")
+    model = overrides.pop("MODEL", "claude-sonnet-5")
     unknown = set(overrides) - RESTORED
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
     with pinned(), tempfile.TemporaryDirectory(
             prefix="mtr-check-", ignore_cleanup_errors=True) as d:
         harness.ROOT = Path(d)
         harness.BOX = box
+        load_account = harness.load_account
+
+        def load_test_account(agent, **terms):
+            existing = harness.account_on_disk(agent)
+            terms.setdefault("provider", existing.get("provider", provider))
+            terms.setdefault("model", existing.get("model", model))
+            return load_account(agent, **terms)
+
+        harness.load_account = load_test_account
         for k, v in overrides.items():
             setattr(harness, k, v)
         if channels is not None or harness_files is not None:
@@ -594,7 +613,10 @@ def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None,
 
 def turn_cost() -> int:
     """What one scripted turn costs, in micro-dollars."""
-    return harness.measure(usage(), harness.MODEL)["centi"] // 100
+    raw = usage()
+    spec = providers.model_spec("anthropic", "claude-sonnet-5")
+    return (raw.input_tokens * spec.rate("uncached_input") +
+            raw.output_tokens * spec.rate("output")) // 100
 
 
 def put_out(agent: str) -> None:

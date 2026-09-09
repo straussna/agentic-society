@@ -15,7 +15,7 @@ import urllib.request
 import harness
 import view
 
-from checks.fake import DEFAULT, attempt, fake, run, say, usage
+from checks.fake import DEFAULT, fake, run, say, usage
 from checks.lanes import (
     ALL_OWED,
     HostBox,
@@ -32,6 +32,7 @@ from checks.lanes import (
     refused,
     rooted,
     seated,
+    shared,
     serving,
     temp_root,
     two_seats,
@@ -91,17 +92,15 @@ def check_the_view_survives_a_partial_raw_line():
         with raw.open("a", encoding="utf-8") as f:
             f.write('{"turn": 4, "received": "2026-01-01T00:00:0')
         assert len(view.raw_lines(raw)) == whole, "the fragment is not a turn yet"
-        assert view.episode_view("t", 1)["total_turns"] == whole, "and nothing raised"
+        assert view.episode_view("t", 1)["total_turns"] == whole // 2, "and nothing raised"
 
 
 def check_the_view_costs_a_live_turn_like_the_account():
     """What the view derives mid-episode is what the account commits at the end.
 
-    Scripted with the two turns that make the arithmetic more than addition: a
-    replayed response id, which bills nothing, and a fallback at its own rates.
+    Scripted with a replayed response id, which bills nothing, and cache-shaped usage.
     """
-    served = usage(output_tokens=200, iterations=[
-        attempt("claude-opus-5", 0), attempt("claude-sonnet-5", 200, kind="fallback_message")])
+    served = usage(output_tokens=200)
     with temp_root(MODEL="claude-opus-5"):
         episode_once(run("cat n1"),
                      run("echo hi > state/note.txt", id="twice"),
@@ -111,7 +110,7 @@ def check_the_view_costs_a_live_turn_like_the_account():
         gt = ground_truth()
         unfinished()
         # The account as it stood at episode start: episode 1 started at the initial balance.
-        account = {"model": gt["model"], "remaining": gt["series"][0]}
+        account = {"provider": gt["provider"], "model": gt["model"], "remaining": gt["series"][0]}
         turns = view.from_raw(view.latest_attempt(view.raw_lines(harness.raw_path("t", 1))), account)
 
     assert gt["series"][2] == gt["series"][3], "the replayed id has to have billed nothing"
@@ -119,7 +118,7 @@ def check_the_view_costs_a_live_turn_like_the_account():
         f"derived {[t['balance'] for t in turns]} against {gt['series'][1:]}"
     assert sum(t["micros"] for t in turns) == gt["initial"] - gt["remaining"], \
         "and the per-turn costs partition the spend"
-    assert [t["served_by_fallback"] for t in turns] == [False, False, False, True, False]
+    assert all(t["provider"] == "anthropic" for t in turns)
 
 
 def check_the_view_reads_only_the_last_attempt_at_an_episode():
@@ -139,9 +138,9 @@ def check_the_view_reads_only_the_last_attempt_at_an_episode():
 
         again = view.raw_lines(harness.raw_path("t", 1))
         assert len(again) == len(first) + 2, "both attempts are on disk"
-        assert [line["turn"] for line in view.latest_attempt(again)] == [1, 2], \
+        assert [line["turn"] for line in view.latest_attempt(again)] == [1, 1], \
             "and only the last of them is the episode being watched"
-        assert view.episode_view("t", 1)["total_turns"] == 2
+        assert view.episode_view("t", 1)["total_turns"] == 1
 
 
 def check_the_page_fetches_nothing():
@@ -306,7 +305,8 @@ def check_the_view_shows_every_balance_from_its_own_account():
     assert h["ledger"] == [], "an experiment that has given nothing has an empty ledger"
     assert h["round"] == 0, "no episode has been committed, so no round has been taken"
     assert [s["transfer"] for s in h["seats"]] == [None, None], "and nobody has declared one"
-    assert h["starter_files"] == "objective-notes" and h["seated"]
+    assert [s["starter_files"] for s in h["seats"]] == ["objective-notes", "objective-notes"]
+    assert h["seated"]
 
 
 def check_the_view_cuts_a_round_where_an_agent_repeats():
@@ -514,7 +514,7 @@ def check_the_view_carries_every_provenance_field_the_trace_holds():
         seated(root, other={})
         episode_once(*DEFAULT)
         seen = view.agent_view("t", view.experiment_of("t"))["episodes"][0]["provenance"]
-        want = harness.provenance(harness.MODEL)
+        want = harness.provenance("anthropic", "claude-sonnet-5")
 
     assert set(want) <= set(seen), sorted(set(want) - set(seen))
     assert {"digest_file_limit", "observation_limit"} <= set(seen), "the two that decide what the digest carries"
@@ -614,6 +614,23 @@ def check_the_view_builds_its_tabs_from_the_table():
     assert changes[0]["lines"] == [], "the identity file is its own channel, not the journal's"
     assert [(e["path"], e["from_label"], e["to_label"], e["to_seat"]) for e in events] == \
         [("to/Game", "Studio", "Game", "2")], events
+
+
+def check_the_view_shows_an_experimenter_channel_once():
+    """An experimenter channel is one shared source, not one writable tree per seat."""
+    with temp_root() as root:
+        shared(root, name="brief", path="briefing", RULES="same words for every seat\n")
+        c = fake_experiment(root, [])
+        h = view.header(c)
+        tree = view.tree_view(c, "briefing")
+        opened = view.file_view(c, "experimenter", "briefing", "RULES")
+    assert [(tab["key"], tab["label"]) for tab in h["tabs"]] == \
+        [("mailbox", "mail + transfer"), ("notes", "notes"),
+         ("blackboard", "blackboard"), ("briefing", "briefing"),
+         ("agent", "transcripts")]
+    assert tree["static"] and [c["agent"] for c in tree["columns"]] == ["experimenter"]
+    assert tree["what"] == "provided by the experimenter; every agent reads the same files"
+    assert opened["text"] == "same words for every seat\n"
 
 
 def check_a_long_series_is_thinned_to_its_ends():

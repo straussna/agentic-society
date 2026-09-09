@@ -83,9 +83,8 @@ record makes acquisition a constant so that use can be the variable.
   episodes end when context is exhausted, and in practice they ended when a turn ran no
   command; a claim the harness cannot keep is not one it makes, so the line went, and
   every trace records which prompt started it in `system_sha256`. The tool is the
-  Anthropic-defined schema-less bash
-  tool, because a custom tool needs an author-written name and description and both are
-  prompt surface. The harness speaks in one other place, and only one: a refused turn
+  harness-owned strict `bash` function, represented identically to each provider beside
+  the other declared functions. The harness speaks in one other place, and only one: a refused turn
   receives `"The turn was refused. No command was run."`, 41 bytes, pinned the same way
   and declarable by nobody — it is the harness reporting a fact about a turn, not a
   treatment. It is held to the same bar — two facts, no cause, no instruction, nothing
@@ -114,7 +113,7 @@ record makes acquisition a constant so that use can be the variable.
   a transfer reaches its seat and the public ledger, and there is no other route: the
   container has no network and holds no other agent's private tree.
 - **6 — Every cost is counted exactly and the books always balance.** Integer
-  micro-dollars, billed per attempt at the rates of whichever model answered, so
+  micro-dollars, billed from provider-normalized itemized charges, so
   `sum(spent) == initial - remaining` holds exactly. Metering money and not tokens keeps
   caching, prompt structure, and model choice live strategies instead of collapsing to
   "do less".
@@ -129,10 +128,10 @@ record makes acquisition a constant so that use can be the variable.
   report from the traces each time it runs.
 - **9 — Every episode is stamped with everything it ran under, and any difference from
   the previous episode splits the agent.** The harness's own digest, the image, the
-  rates, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
+  provider, requested model, rate catalog, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
   seating, its schedule and its manifest's digest, and how much of each file `m` carried
   are in every episode's provenance, along with the system prompt in force, whole and by
-  digest. The terms an agent is created on - the system prompt, budget, model, starter
+  digest. The terms an agent is created on - the system prompt, budget, provider, model, starter
   files and threshold - are pinned in its account, so a manifest that later says
   otherwise is refused. `drift()` reports what changed since the last episode, and an agent whose
   material changed mid-flight is two agents.
@@ -180,9 +179,9 @@ agent, which is the one kind this experiment cannot afford. So nothing runs, and
 takes the place of the results, and the agent learns that the turn was refused and that
 `state/` is as it left it.
 
-The episode ends there. A refusal that reaches the harness has already been declined by
-every model the fallback chain offered, so sending the same context on is sending the
-context the classifier just turned down — and a refused turn still costs its prefix.
+The episode ends there. A refusal comes from the exact configured model. Sending the same
+context on is sending the context the classifier just turned down, and a refused turn is
+charged according to the provider's reported usage.
 `REFUSAL_TURNS` is what sets that: at 1 the first refusal ends the episode, and raising
 it restores the continuation path, where the notice enters the prefix and makes the next
 request a different question instead of a replay.

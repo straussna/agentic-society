@@ -203,7 +203,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
 
 def check_a_manifest_is_validated():
     """A manifest names a schedule, the experiment's defaults, and each agent's terms, or is refused."""
-    other_model = next(m for m in harness.PRICES if m != harness.MODEL)
+    other_model = "claude-opus-5"
     good = (f'schedule = "simultaneous"\ngrace_episodes = 1\nsystem_prompt = ""\n'
             f'[[agent]]\nid = "g01"\nstarter_files = "s"\nstarter_files_below = 400000\n'
             f'[[agent]]\nid = "g02"\nbudget = 7\nmodel = "{other_model}"\n')
@@ -233,20 +233,22 @@ def check_a_manifest_is_validated():
 
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
+        expected_sha = hashlib.sha256(p.read_bytes()).hexdigest()
     assert m["schedule"] == "simultaneous"
     want = {"grace_episodes": 1, "system_prompt": ""}
     assert m["overrides"] == want, "everything else is an experiment default"
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
-    assert m["sha256"] == hashlib.sha256(good.encode("utf-8")).hexdigest()
-    assert experiment.terms_of(m["agents"][0]) == {"model": None, "budget": None, "starter_files": "s",
+    assert m["sha256"] == expected_sha
+    assert experiment.terms_of(m["agents"][0]) == {"provider": "anthropic", "model": "claude-sonnet-5", "budget": None, "starter_files": "s",
                                                    "starter_files_below": 400000,
                                                    "system_prompt": None}
-    assert experiment.terms_of(m["agents"][1]) == {"model": other_model, "budget": 7, "starter_files": None,
+    assert experiment.terms_of(m["agents"][1]) == {"provider": "anthropic", "model": other_model, "budget": 7, "starter_files": None,
                                                    "starter_files_below": None, "system_prompt": None}
     short = experiment.shorthand(["a", "b"])
     assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
-    assert experiment.stamp_of(m) == {"schedule": "simultaneous", "manifest_sha256": m["sha256"]}
+    assert experiment.stamp_of(m) == {"schedule": "simultaneous", "stop_when_one_remains": False,
+                                      "manifest_sha256": m["sha256"]}
 
 
 def check_a_manifest_gives_each_agent_its_own_starter_files():
@@ -263,8 +265,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         digest = hashlib.sha256(p.read_bytes()).hexdigest()
         asked = []
 
-        def start(config=None, overrides=None, models=(), **kw):
-            asked.append((overrides, set(models)))
+        def start(config=None, overrides=None, requirements=(), **kw):
+            asked.append((overrides, set(requirements)))
             harness.apply_config(overrides or {}, "manifest")
             return fake(*DEFAULT)
 
@@ -276,12 +278,15 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
                    if (harness.mirror(r, "notes") / "m1").exists() else None for r in accounts}
         traces = {r: trace_on_disk(r, 1) for r in accounts}
 
-        p.write_text(text.replace('starter_files = "a"', 'starter_files = "b"'), encoding="utf-8", newline="\n")
+        p.write_text(p.read_text(encoding="utf-8").replace('starter_files = "a"',
+                                                           'starter_files = "b"'),
+                     encoding="utf-8", newline="\n")
         with quiet():
             refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1"]), "starter_files",
                     because="an agent was re-created on different terms")
     assert code == 0, buf.getvalue()
-    assert asked[0] == ({"grace_episodes": 2}, set()) and len(asked) == 2, asked
+    assert asked[0] == ({"grace_episodes": 2, "system_prompt": ""},
+                        {("anthropic", "claude-sonnet-5")}) and len(asked) == 2, asked
     assert {r: m["starter_files"] for r, m in accounts.items()} == {"g01": "a", "g02": "b", "g03": ""}
     assert accounts["g02"]["initial"] == 600000 and accounts["g01"]["initial"] == harness.BUDGET
     assert starter == {"g01": "alpha\n", "g02": "bravo\n", "g03": None}, starter
@@ -297,11 +302,9 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
     """Under a simultaneous schedule every container is up and loaded before the first API call."""
     with recording() as events, temp_root(BOX=RecordingBox) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        inner = per_agent(default=DEFAULT)
-
-        def create(**params):
+        def opened():
             RecordingBox.note("create", threading.current_thread().name)
-            return inner(**params)
+        create = per_agent(default=DEFAULT, on_open=opened)
 
         live = set(ids)
         with quiet():
@@ -319,12 +322,9 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
 def check_a_simultaneous_round_runs_its_episodes_at_once():
     """The episodes of a simultaneous round are in flight together, not one after another."""
     gate = threading.Barrier(3, timeout=10)
-    inner = per_agent(default=(say(),))
-
-    def create(**params):
-        # Passes only if all three episodes reach their first call together.
+    def requested(_):
         gate.wait()
-        return inner(**params)
+    create = per_agent(default=(say(),), on_request=requested)
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -394,14 +394,12 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
     """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are committed."""
     def stopping_create():
         gate = threading.Barrier(3, timeout=10)
-        inner = per_agent(default=(run("echo one"), run("echo two"), say()))
-
-        def create(**params):
-            gate.wait()                     # all three in flight together
-            r = inner(**params)
-            harness.STOPPING = True            # read at the top of everyone's next turn
-            return r
-        return create
+        def requested(turn):
+            if turn == 1:
+                gate.wait()
+                harness.STOPPING = True
+        return per_agent(default=(run("echo one"), run("echo two"), say()),
+                         on_request=requested)
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -531,10 +529,11 @@ def check_labels_are_validated():
 
 def check_a_manifest_table_replaces_the_whole_set():
     """A manifest's [[channel]] tables are the whole table; its [harness_files] overlay one key at a time."""
-    two = 'system_prompt = ""\n[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
+    agents = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
     with temp_root() as root:
-        p = manifest_file(root, 'schedule = "sequential"\n[[channel]]\nname = "notes"\n'
-                                'writer = "self"\nreaders = "self"\npath = "state"\n' + two)
+        p = manifest_file(root, 'schedule = "sequential"\nsystem_prompt = ""\n'
+                                '[[channel]]\nname = "notes"\nwriter = "self"\n'
+                                'readers = "self"\npath = "state"\n' + agents)
         m = experiment.load_manifest(p)
         table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p),
                                               tuple(m["labels"].values()))
@@ -543,7 +542,8 @@ def check_a_manifest_table_replaces_the_whole_set():
         assert [c.name for c in harness.channels()] == ["notes", "blackboard", "mail", "transfer"], \
             "loading a manifest sets nothing; start() does"
 
-        p = manifest_file(root, '[harness_files]\ndigest = ""\n' + two, name="d.toml")
+        p = manifest_file(root, 'system_prompt = ""\n[harness_files]\ndigest = ""\n' + agents,
+                          name="d.toml")
         m = experiment.load_manifest(p)
         assert m["channels"] is None, "no [[channel]], and the table in force stays"
         table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p))
@@ -575,25 +575,26 @@ def check_a_manifest_declares_what_the_harness_says():
         p = manifest_file(root, text)
         seen = []
 
-        def start(config=None, overrides=None, models=(), **kw):
+        def start(config=None, overrides=None, requirements=(), **kw):
             harness.apply_config(overrides or {}, "manifest")
             return fake(*DEFAULT, seen=seen)
 
         harness.start = start
         with quiet() as buf:
             code = experiment.main(["--manifest", str(p), "--rounds", "1"])
-        sent = {r["system"] for r in seen}
+        sent = {r["system"] for r in seen if r.get("kind") == "session"}
         accounts = {r: ground_truth(r) for r in ("g01", "g02")}
         traces = {r: trace_on_disk(r, 1) for r in accounts}
 
         # A seat's own declaration is one of its pinned settings.
-        p.write_text(text.replace(mine, mine + " Again."), encoding="utf-8", newline="\n")
+        original = p.read_text(encoding="utf-8")
+        p.write_text(original.replace(mine, mine + " Again."), encoding="utf-8", newline="\n")
         with quiet():
             refused(lambda: experiment.main(["--manifest", str(p), "--rounds", "1"]), "system_prompt",
                     because="an agent was re-created on a different system prompt")
         # The experiment's default is read at creation like every other setting, so a
         # seat that took it keeps what it was told and a later manifest does not resay it.
-        p.write_text(text.replace(ours, ours + " Again."), encoding="utf-8", newline="\n")
+        p.write_text(original.replace(ours, ours + " Again."), encoding="utf-8", newline="\n")
         with quiet():
             assert experiment.main(["--manifest", str(p), "--rounds", "1"]) == 0
         kept = ground_truth("g02")["system_prompt"]

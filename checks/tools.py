@@ -52,7 +52,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
                 use("transfer_balance", to="2", amount=0),
                 use("transfer_balance", to="2", amount="10"),
                 say(), seen=seen))
-        spec = seen[0]["tools"][1]
+        spec = next(x for x in seen if x["kind"] == "session")["tools"][1]
         assert spec["input_schema"]["properties"]["to"]["enum"] == ["2"]
         t = trace_on_disk("t", 1)
         assert files_by_path(t)["out/transfer"]["text"] == "2 1000000\n"
@@ -77,7 +77,6 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
 
 def check_bash_requires_an_explicit_declaration():
     """Only a declared bash tool enables shell requests, including across manifests."""
-    assert harness.request("claude-sonnet-5", [], "")["tools"] == []
     with temp_root():
         chans = harness.channels()
         harness.apply_tools([BASH], chans, "manifest")
@@ -98,7 +97,7 @@ def check_declared_bash_and_channel_tools_are_offered_together():
         seated(root, "t", t={}, o={})
         with quiet():
             harness.run_once("t", fake(run("ls"), say(), seen=seen))
-    for params in seen:
+    for params in (x for x in seen if x["kind"] == "session"):
         assert [t["name"] for t in params["tools"]] == ["bash", "post"]
     refused(lambda: harness.validate_tools([BASH | {"kind": "read_path", "channel": "notes"}],
                                            list(harness.DEFAULT_CHANNELS), "check"),
@@ -201,7 +200,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        spec = seen[0]["tools"][0]
+        spec = next(x for x in seen if x["kind"] == "session")["tools"][0]
         assert spec["description"] == said, spec["description"]
         assert "channel" not in spec["description"], "the harness adds nothing to them"
         # The schema is still the harness's, whatever the words say.
@@ -220,7 +219,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
             account = harness.load_account("t")
         bound = harness.bind_tools(harness.tools(), harness.channels(),
                                    harness.environment("t", account), ["2"])
-        said = {b.tool.name: b.spec() for b in bound}
+        said = {b.tool.name: b.spec().as_dict() for b in bound}
         assert set(said) == {"send", "post", "look"}, sorted(said)
         assert all(b.description() == b.generated() for b in bound), \
             "an experiment that writes no words is given the harness's"
@@ -239,10 +238,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         assert "1/, 2/" in said["look"]["description"], said["look"]["description"]
         assert said["send"]["input_schema"]["properties"]["to"]["description"] ==             "The peer's label. Yours is 1.", "the agent is told which label is its own"
 
-        # The same table, and so the same words, whatever the model.
-        for model in ("claude-sonnet-5", "claude-haiku-4-5"):
-            sent = harness.request(model, [], "", [b.spec() for b in bound])["tools"]
-            assert sent == [said[n] for n in ("send", "post", "look")], model
+        assert [b.spec().as_dict() for b in bound] == [said[n] for n in ("send", "post", "look")]
 
 
 def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
@@ -342,13 +338,15 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        assert [t["name"] for t in seen[0]["tools"]] == ["post", "look"], seen[0]["tools"]
+        offered = next(x for x in seen if x["kind"] == "session")["tools"]
+        assert [t["name"] for t in offered] == ["post", "look"], offered
 
         seated(root, "t", t={}, o={})
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        assert [t["name"] for t in seen[0]["tools"]] == ["send", "post", "look"], \
+        offered = next(x for x in seen if x["kind"] == "session")["tools"]
+        assert [t["name"] for t in offered] == ["send", "post", "look"], \
             "the mailbox is planted once there is a peer to reach"
         assert ground_truth()["episodes"][-1]["stop"] == "no_tool_call", \
             "a turn that calls nothing still reads as calling nothing"
@@ -383,25 +381,15 @@ def check_a_tool_never_offers_a_seat_that_is_out():
             account = harness.load_account("t")
         instances = harness.environment("t", account)
         both = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2", "3"])
-        assert both[0].spec()["input_schema"]["properties"]["to"]["enum"] == ["2", "3"]
+        assert both[0].spec().input_schema["properties"]["to"]["enum"] == ["2", "3"]
         one = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
-        assert one[0].spec()["input_schema"]["properties"]["to"]["enum"] == ["2"]
+        assert one[0].spec().input_schema["properties"]["to"]["enum"] == ["2"]
         assert harness.bind_tools(harness.tools(), harness.channels(), instances, []) == [], \
             "a mailbox with nobody left to reach is not an affordance"
 
 
-def check_every_priced_model_takes_a_strict_tool():
-    """Every model with rates accepts strict tool use, and every declared tool carries it.
-
-    `strict` guarantees the arguments validate, so a call naming a peer outside
-    the enumeration costs no turn. It is only sendable because every priced model
-    takes it: a model that did not would make the tool set differ by model, which
-    is the one thing the request may never do. A model added to PRICES and not to
-    STRICT_MODELS fails here rather than 400-ing an episode's first turn.
-    """
-    assert set(harness.PRICES) <= harness.STRICT_MODELS, \
-        f"priced but not known to take strict tool use: {sorted(set(harness.PRICES) - harness.STRICT_MODELS)}"
-
+def check_every_provider_receives_a_strict_compatible_tool():
+    """Every declared tool has the complete object schema required by strict mode."""
     with temp_root(tools=[SEND, POST, LOOK]) as root:
         seated(root, "t", t={}, o={})
         with quiet():
@@ -409,17 +397,13 @@ def check_every_priced_model_takes_a_strict_tool():
         for b in harness.bind_tools(harness.tools(), harness.channels(),
                                     harness.environment("t", account), ["2"]):
             spec = b.spec()
-            assert spec["strict"] is True, spec
-            schema = spec["input_schema"]
-            # What strict asks of every object it validates.
+            schema = spec.input_schema
             assert schema["additionalProperties"] is False, schema
             assert set(schema["required"]) == set(schema["properties"]), schema
 
-    # The shell is Anthropic-defined and schema-less, so it carries neither.
-    assert set(harness.TOOL) == {"type", "name"}, harness.TOOL
+    assert harness.SHELL_SPEC.input_schema["additionalProperties"] is False
 
-    # And the harness checks the arguments anyway: a limit does not rest on the
-    # model keeping to a schema it was handed.
+    # Tool execution validates arguments independently of request-schema enforcement.
     with temp_root(tools=[SEND]) as root:
         seated(root, "t", t={}, o={})
         with quiet():
@@ -449,9 +433,9 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
             harness.run_once("t", fake(use("post", path="plan.md", body="mine\n"),
                                        use("send", to="2", body="hello\n"),
                                        use("look", path="2/note"), say(), seen=seen))
-        sent = seen[0]["tools"]
+        sent = next(item["tools"] for item in seen if item.get("kind") == "session")
         assert [t["name"] for t in sent] == ["send", "post", "look"], sent
-        assert harness.TOOL not in sent, "the shell was withheld, so it is not offered"
+        assert harness.SHELL_SPEC.name not in [tool["name"] for tool in sent], "the shell was withheld"
 
         t = trace_on_disk("t", 1)
         assert t["commands"] == ["cat m"], \

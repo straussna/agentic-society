@@ -60,7 +60,7 @@ are committed and traced before the rounds end.
 
 **A manifest** under `experiments/` chooses the schedule, sets the experiment's defaults (any
 `config.toml` key, applied after `config.toml`), and gives each agent its own `starter_files`,
-`starter_files_below`, `budget` and `model`. Those four are pinned in the agent's account when it is
+`starter_files_below`, `budget`, `provider` and `model`. Those five are pinned in the agent's account when it is
 created; the schedule and the manifest's digest are in every episode's provenance.
 Every run names its manifest, so there is no way to start one without saying which
 experiment it is part of.
@@ -314,4 +314,3 @@ balance at every moment a reader could look and the identity `remaining == initi
 + rebated + received - debited - sum(penalised) + forgiven` closes exactly, `penalised`
 being the running total per channel. The transfer is the only one of them
 corroborated anywhere; the rest the agent has to account for from the movement alone.
-

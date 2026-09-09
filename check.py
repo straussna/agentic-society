@@ -21,6 +21,7 @@ import traceback
 from typing import Callable
 
 import harness
+import providers
 from checks import checks
 from checks.lanes import WIDE_SWEEP, Skip, configure, docker_ready, sweep_filter
 
@@ -42,8 +43,8 @@ def episodes_in(fn: Callable) -> int:
     # An episode inside a loop costs once an iteration. Only the two forms that
     # state their own length are read; anything else counts as written.
     for over in re.findall(r"\bfor\s+\w+\s+in\s+(.+?):", src):
-        if "harness.PRICES" in over:
-            n += len(harness.PRICES)
+        if "providers.CATALOGS" in over:
+            n += sum(len(catalog) for catalog in providers.CATALOGS.values())
         elif m := re.search(r"\brange\((\d+)\)", over):
             n += int(m.group(1))
     return max(1, n)

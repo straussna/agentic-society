@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import analyze
 import harness
 import view
 
-from checks.fake import attempt, refuse, run, say, usage
+from checks.fake import refuse, run, say, usage
 from checks.lanes import (
     HALF,
     episode_once,
@@ -18,13 +20,12 @@ from checks.lanes import (
     temp_root,
 )
 
-# A turn a fallback answered: the requested model declined, sonnet served 200 tokens.
-SERVED = usage(output_tokens=200, iterations=[attempt("claude-opus-5", 0),
-                                              attempt("claude-sonnet-5", 200, kind="fallback_message")])
+# Usage with an output-heavy turn for report coverage.
+SERVED = usage(output_tokens=200)
 
 # A root under which an agent meets its starter files at once, carries on past
 # one refusal, and is priced at opus-5's rates.
-BUSY = {"MODEL": "claude-opus-5", "REFUSAL_TURNS": 2, "BUDGET": 500_000,
+BUSY = {"REFUSAL_TURNS": 2, "BUDGET": 500_000,
         "STARTER_FILES": "s", "STARTER_FILES_BELOW": 500_000}
 
 
@@ -32,7 +33,7 @@ def busy_episodes(root) -> list[dict]:
     """Two episodes of an agent that did everything the report has a line for.
 
     In the first it received the starter files and changed one, sent a message,
-    declared a transfer, was refused a turn and was served one by a fallback; in
+    declared a transfer, was refused a turn and later produced an output-heavy turn; in
     the second it withdrew the declaration. Inside a root the caller holds;
     returns the two traces.
     """
@@ -41,7 +42,7 @@ def busy_episodes(root) -> list[dict]:
     first = episode_once(run("echo changed > state/m1", "echo hi > out/2",
                              "echo '2 100' > out/transfer"),
                          refuse(),
-                         run("echo served", u=SERVED, model="claude-sonnet-5"),
+                         run("echo served", u=SERVED),
                          say())
     second = episode_once(run("rm out/transfer"), say())
     return [first, second]
@@ -79,10 +80,9 @@ def check_the_identity_delta_counts_changed_lines():
             assert analyze.main(["--agent", "t", "--identity", path]) == 0
         csv_text = (harness.records_dir("t") / "analysis" / "episodes.csv").read_text(encoding="utf-8")
     assert "ep1:2 ep2:3" in buf.getvalue(), buf.getvalue()
-    header, first, second = csv_text.splitlines()[:3]
-    cols = header.split(",")
-    assert first.split(",")[cols.index("identity_delta")] == "2"
-    assert second.split(",")[cols.index("identity_delta")] == "3"
+    rows = list(csv.DictReader(io.StringIO(csv_text)))
+    assert rows[0]["identity_delta"] == "2"
+    assert rows[1]["identity_delta"] == "3"
 
 
 def check_the_report_names_what_the_traces_hold():
@@ -111,7 +111,6 @@ def check_the_report_names_what_the_traces_hold():
                          ("refused", "1 turns in 1 of 2 episodes"),
                          ("  carried on after", "1 of 1 - episodes [1]"),
                          ("  by category", {"cyber": 1}),
-                         ("served by fallback", "1 turns in 1 of 2 episodes"),
                          ("starter_files", f"s ({digest[:12]}), configured to land below 500000"),
                          ("starter_files first seen", 1),
                          ("first named a starter", 1),
@@ -125,8 +124,9 @@ def check_the_report_names_what_the_traces_hold():
     assert "    ep0001  1 of 4 turns  cyber  ended end_turn  declined" in text, text
     assert "claude-sonnet-5" in text and "s1" not in text, text
 
-    assert f"  $ {harness.observation()}" in spoken, spoken
-    assert "agent t  episode 1  stop=end_turn" in spoken and "agent t  episode 2" in spoken
+    assert f"  $ {harness.observation(shell=True)}" in spoken, spoken
+    assert "agent t  episode 1  anthropic/claude-sonnet-5  stop=end_turn" in spoken
+    assert "agent t  episode 2  anthropic/claude-sonnet-5" in spoken
     assert "    $ echo '2 100' > out/transfer" in spoken and "    $ echo served" in spoken, spoken
     assert "  changes:" in spoken and "+2 100" in spoken and "-2 100" in spoken, \
         "the declaration arriving and going are both in the diffs"
@@ -146,9 +146,9 @@ def check_the_csv_row_flattens_a_trace():
         r1, r2 = analyze.row(first), analyze.row(second, first)
 
     assert r1["agent"] == "t" and r1["episode"] == 1 and r1["stop"] == "end_turn", r1
-    assert r1["served_models"] == "claude-opus-5-20990101;claude-sonnet-5", r1["served_models"]
+    assert r1["served_models"] == "claude-sonnet-5-20990101", r1["served_models"]
     assert r1["refusal_category"] == "cyber" and r1["refused_turns"] == 1, r1
-    assert r1["fallback_turns"] == 1 and r1["unpriced_models"] == "", r1
+    assert r1["provider"] == "anthropic" and r1["resolved_model"], r1
     assert r1["sent_to"] == "2" and r1["mail_addressed"] == "2" and r1["mail_crowded"] == "", r1
     assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, "the declaration is the schema channel's, not a slot"
     assert (r1["transfer_to"], r1["transfer_amount"], r1["transfer_rebate"]) == ("2", 100, 100), r1
@@ -157,12 +157,13 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["touched_starter"] is True, r1
     assert r1["peers"] == "1=t;2=other" and r1["identity_delta"] == "", r1
     assert r1["turns"] == 4 and r1["spent"] == first["spent"], r1
-    assert sum(r1[k] for k in harness.BILLABLE) == sum(x[k] for x in first["turns"] for k in harness.BILLABLE)
+    assert sum(r1[k] for k in analyze.USAGE_FIELDS) == sum(
+        x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS)
 
     # The message left standing is still in the outbox and no longer something said.
     assert r2["sent_to"] == "2" and r2["mail_addressed"] == "", r2
     assert r2["transfer_amount"] == 0 and r2["transfer_to"] == "", r2
-    assert r2["refusal_category"] == "" and r2["served_models"] == "claude-opus-5-20990101", r2
+    assert r2["refusal_category"] == "" and r2["served_models"] == "claude-sonnet-5-20990101", r2
     assert r2["touched_starter"] is False, r2
     assert r2["ledger_lines"] == 1, "the transfer is on the ledger this episode opened on"
     assert list(r1) == list(r2), "every row has the same columns in the same order"

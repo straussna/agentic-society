@@ -50,7 +50,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's inbox and nowhere else |
 | **Schema** | A fixed format the harness parses from a `self`-written, `harness`-read file and acts on. A fixed menu in code |
 | **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
-| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `write_file`, `read_path`. A fixed menu in code |
+| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `read_path`, `transfer`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its private directory when its balance first falls to a chosen level |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
 | **Harness file** | A file the harness renders from the accounts and plants read-only: a balance per seat, a ledger per transfer channel, and the digest |
@@ -77,7 +77,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | Term | Definition |
 |---|---|
 | **Account** | An agent's ground truth on disk: pinned settings, balance history, episodes, transfers in and out |
-| **Pinned settings** | The five things fixed when an agent is created: the system prompt, budget, model, starter files, and the balance they land at |
+| **Pinned settings** | The six things fixed when an agent is created: the system prompt, budget, provider, model, starter files, and the balance they land at |
 | **Trace** | One episode's complete record: what the agent saw, said, ran and left behind, every file with its author, and the provenance |
 | **Author** | Who wrote a captured file: `experimenter`, `self`, or `peer:<label>` |
 | **Provenance** | Everything an episode ran under, stamped on its trace: digests, rates, every setting, the seating, the schedule, the manifest and channel table digests |
@@ -95,7 +95,7 @@ machine, the API, the safety stops — and nothing an agent's situation is made 
 sets are disjoint and each file refuses the other's keys by name.
 
 ```
-config.toml               the machine and the API: image, limits, timeouts, fallbacks
+config.toml               the machine and the API: image, limits and timeouts
 experiments/<name>.toml   one experiment: schedule, settings, channels, agents
 experiments/examples/     the shipped examples, the shape to copy
 experiments/README.md     the index: every shipped experiment and the arm it pairs with
@@ -168,7 +168,8 @@ pinned by digest like the shipped prompt.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `budget` | int > 0 | 500000 | Micro-dollars an agent starts with. Pinned |
-| `model` | key of `PRICES` | `claude-sonnet-5` | The model asked for. Pinned. Every priced model accepts strict tool use, which is what lets a declared tool carry it |
+| `provider` | `"anthropic"` \| `"openai"` | none | Named first-party adapter. Required with `model` and pinned |
+| `model` | model in the provider catalog | none | Exact model requested on every turn. Required with `provider` and pinned |
 | `floor_at_zero` | bool | false | A balance below zero is put back to zero |
 | `grace_episodes` | int ≥ 0 | 0 | Episodes that take no silence penalty |
 
@@ -201,8 +202,8 @@ Both clips are bounded against `tool_result_limit`, which `config.toml` owns.
 
 ### Refused: what config.toml owns
 
-`image`, `max_tokens`, `max_turns`, `command_timeout`, `tool_result_limit` and
-`fallbacks` are the process parameters: the machine, the API and the safety stops, true
+`image`, `max_tokens`, `max_turns`, `command_timeout` and `tool_result_limit` are the
+process parameters: the machine, the API and the safety stops, true
 of every run whatever the experiment is. They live in `config.toml`, and a manifest
 naming one is refused saying so — no setting is given in two places, and no run's terms
 depend on which file was read last.
@@ -233,6 +234,7 @@ shape = "directory"         # directory | mailbox | file
 path = "{label}"            # where it sits in /work; see 4.2
 pushed = true               # quoted in the digest under push delivery
 measured = true             # the episode records what this channel gained; see 4.4
+agent_view = "paths"        # paths | memory | letters | board; labels in the agent's digest
 silence_penalty_percent = 50
 ```
 
@@ -281,6 +283,13 @@ start instead of leaving them to be found and paid for. An agent is read the sam
 whether it goes looking or not, so the choice is only whether it pays a turn first, and
 what it wrote to itself last episode is the thing it most needs this one. An experiment
 that wants a store written and never read back declares `pushed = false` and says so.
+
+`agent_view` changes only the labels in the agent's digest. `"paths"` is the default.
+`"memory"` presents private records as orientation and memory, `"letters"` presents
+mailbox records as letters from or to the named agent, and `"board"` presents public
+records as posts from their authors. Storage and access rules
+remain the same, so an experiment can give agents persistent memory without making a
+filesystem part of their world.
 
 ### 4.4 Measured, and the silence penalty
 
@@ -373,7 +382,11 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 |---|---|---|---|
 | `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
 | `write_slot` | a mailbox channel | `to` (a peer's label), `body` | Replaces what `<outbox>/<to>` holds |
+| `send_message` | a mailbox channel with one reachable peer | `body` | Replaces the message to that peer without exposing the mailbox path |
+| `send_message_to` | a mailbox channel | `to` (a peer label), `body` | Replaces the message to that peer without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
+| `post_public` | a public directory channel the agent writes | `body` | Replaces the agent's public post without exposing storage paths |
+| `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a positive integer in micro-dollars) | Replaces the pending declaration; episode-end settlement moves at most the episode spend, using the channel funding and rebate settings |
 
@@ -472,9 +485,8 @@ enumeration of the peers that channel actually reaches, as this agent names them
 
 Every declared tool carries `strict`, which makes the API guarantee the arguments
 validate: a call naming a peer outside the enumeration or leaving out a body costs no
-turn. It is sendable only because every model in `PRICES` accepts it - a model that did
-not would make the tool set differ by model, which is the one thing the request may never
-do, so such a model is not priced. The harness checks every argument anyway (invariant
+turn. Every registered model accepts the same strict function schema, so the tool set
+does not differ by provider or model. The harness checks every argument anyway (invariant
 4): a limit it enforces does not rest on the model keeping to a schema it was handed.
 
 #### What a result says
@@ -519,7 +531,8 @@ system_prompt = "You run a studio."
 starter_files = "persona-studio"
 starter_files_below = 1500000
 budget = 2000000            # optional
-model = "claude-sonnet-5"   # optional
+provider = "anthropic"      # required here or at top level, together with model
+model = "claude-sonnet-5"
 ```
 
 A label is how the agent is named to its peers: in `{label}` paths, in mailbox slots, in
@@ -527,8 +540,8 @@ its balance file, in the transfer line and in `peer:<label>` authors. Seats stay
 order. A label is letters, digits, `.`, `_` and `-`, distinct from every other after
 defaults, and a path too, so one that lands on a channel's path is refused.
 
-The five pinned settings are fixed in the agent's account when it is created. An agent
-that exists already must have been created on the same five, or the manifest is refused.
+The six pinned settings are fixed in the agent's account when it is created. An agent
+that exists already must have been created on the same six, or the manifest is refused.
 Everything else about an agent comes from the experiment's settings.
 
 ## 7. Schedule
@@ -609,18 +622,12 @@ balance = "balance"
 digest = "digest"
 
 [[channel]]
-name = "journal"
+name = "memory"
 writer = "self"
 readers = "self"
 shape = "directory"
 path = "journal"
-
-[[channel]]
-name = "identity"
-writer = "self"
-readers = "self"
-shape = "file"
-path = "journal/IDENTITY.md"
+agent_view = "memory"
 
 [[channel]]
 name = "noticeboard"
@@ -636,6 +643,7 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "to"
 inbox = "from"
+agent_view = "letters"
 
 [[channel]]
 name = "brief"
@@ -745,7 +753,11 @@ account keeps `penalised`, the running total per channel.
 
 Every tool record carries `tool` (`bash` or the declared name), `result`, and then
 `command` for the shell or `input` for a declared tool, the other being null.
-`trace_version` is 3.
+`trace_version` is 4. The trace names `provider`, `requested_model`, and
+`resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
+native stop reasons, and the provider provenance. Raw logs write the provider and complete
+native response before their canonical normalized event. Version-3 traces and accounts are
+not mixed with this format; use fresh agent ids.
 
 ## 12. Invariants, restated in this vocabulary
 

@@ -112,7 +112,8 @@ def check_no_setting_is_given_in_two_places():
     for m in manifests:
         top = tomllib.loads(m.read_text(encoding="utf-8"))
         assert top.get("agent"), f"{m.name}: an experiment seats agents"
-        stray = sorted(set(top) - {"schedule", "agent", "channel", "harness_files", "tool"}
+        stray = sorted(set(top) - {"schedule", "stop_when_one_remains", "provider", "model",
+                                  "agent", "channel", "harness_files", "tool"}
                        - treatment)
         assert not stray, f"{m.name} sets {stray}, which config.toml owns"
         told = "system_prompt" in top or all("system_prompt" in a for a in top["agent"])

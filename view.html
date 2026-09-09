@@ -199,7 +199,7 @@ h2 { margin:16px 0 8px; font:600 11.5px/1 var(--sans); letter-spacing:.16em;
 .sys { margin-top:10px; text-align:center; color:var(--faint); font-size:12.5px; }
 .sys b { font:400 12.5px/1.5 var(--mono); font-weight:400; }
 
-/* --- the blackboards and the private stores, side by side --- */
+/* --- directory channels, side by side --- */
 /* The listing is an index and stays a column a seat; what a file says is read
    below it, across the whole window, in as many columns as there are files
    open. A file's contents are the reason the tab exists, so they get the room. */
@@ -258,7 +258,8 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
          font-size:13.5px; border-left:1px solid var(--line2); padding-left:11px;
          max-width:110ch; }
 .cmd { margin:9px 0 0; color:var(--accent); white-space:pre-wrap; font:400 13px/1.55 var(--mono); }
-.cmd::before { content:"$ "; color:var(--faint); }
+.cmd.shell::before { content:"$ "; color:var(--faint); }
+.cmd.tool::before { content:"↳ "; color:var(--accent); }
 .out { margin:5px 0 0; padding:8px 11px; white-space:pre-wrap; color:var(--dim);
        font:400 13px/1.5 var(--mono); background:var(--sunk); border-radius:8px;
        max-height:26em; overflow:auto; }
@@ -292,7 +293,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const num = (n) => n == null ? "–" : Number(n).toLocaleString();
 const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status));
-// One provenance answer as a line. Rates and fallbacks are lists and an experiment's
+// One provenance answer as a line. Lists and an experiment's
 // seating is a mapping, and both read as what they are, not as JSON.
 const provValue = (v) => Array.isArray(v) ? v.join(", ")
   : v && typeof v === "object"
@@ -462,6 +463,8 @@ function tileHtml(s, i) {
   const transfer = g && g.standing && !g.amount
     ? `<span class="tag warn" title="${esc(g.error || "")}">transfer declared, moved nothing</span>`
     : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} → ${esc(g.label || g.seat)}</span>` : "";
+  const terms = [s.model ? esc(`${s.provider || ""}/${s.model}`.replace(/^\//, "")) : "",
+    s.starter_files ? `<span class="tag starter">${esc(s.starter_files)}</span>` : ""].filter(Boolean).join(" · ");
   const state = running(s)
       ? `<span class="tag live"><i class="dot"></i>ep${s.live} · ${s.live_turns}t · derived</span>`
     : s.live != null
@@ -476,7 +479,7 @@ function tileHtml(s, i) {
       <b>${esc(s.agent)}</b></div>
     <div class="v ${n < 0 ? "neg" : ""}">${num(n)}</div>
     <div class="bar ${n < 0 ? "over" : ""}"><i style="width:${(left * 100).toFixed(1)}%"></i></div>
-    <div class="m">${state}<i>|</i>
+    <div class="m">${terms ? `${terms}<i>|</i>` : ""}${state}<i>|</i>
       <span title="spent this round">round ${num(s.spent_this_round)}</span>
       <span title="spent in all, summed from its episodes; the bar above is how
         far the balance itself has fallen, which transfers and shares also move"
@@ -508,19 +511,19 @@ function renderHeader() {
   renderFold();
   document.getElementById("whosub").innerHTML =
     `${h.seats.length} ${h.seated ? "seats" : "agents"} · round ${h.round}` +
-    (h.model ? ` · ${esc(h.model)}` : "") +
-    (h.starter_files ? ` · <span class="tag starter" style="vertical-align:middle">${esc(h.starter_files)}</span>` : "") +
+    (h.schedule ? ` · ${esc(h.schedule)}` : "") +
+    (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no blackboard or mailbox between them`);
   document.getElementById("seats").innerHTML = h.seats.map(tileHtml).join("");
-  // g reads the same three bare numbers for everyone, the agent it was aimed
-  // against included. The gloss is the page's, not the environment's.
+  // The ledger reads the same three bare numbers for everyone, including the
+  // agent a transfer was aimed at. The gloss is the page's.
   const rows = h.ledger.map(([giver, taker, amount]) => `<tr>
       <td class="num">${esc(giver)} ${esc(taker)} ${num(amount)}</td>
       <td class="note">${esc(seatName(giver) || "")} → ${esc(seatName(taker) || "")}</td></tr>`).join("");
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
-    <div class="kv"><div class="k">g · the transfer ledger</div></div>
+    ${h.ledger_name ? `<div class="kv"><div class="k">${esc(h.ledger_name)} · the transfer ledger</div></div>
     ${rows ? `<div class="led"><table>${rows}</table></div>`
-           : `<div class="note" style="margin-top:8px">no transfer has moved</div>`}
+           : `<div class="note" style="margin-top:8px">no transfer has moved</div>`}` : ""}
     <div style="margin-top:10px">${overlay(h.seats)}</div></div>`);
   const tabs = h.tabs || [];
   if (!tabs.some(t => t.key === S.tab)) S.tab = (tabs[0] || {}).key;
@@ -538,7 +541,7 @@ function renderHeader() {
   });
 }
 
-// --- the message log -----------------------------------------------------
+// --- mailbox and schema activity ----------------------------------------
 
 // A thread is the pair of seats a channel runs between: out/1 written by seat 0
 // and out/0 written by seat 1 are the two directions of one conversation, so
@@ -600,7 +603,7 @@ const whenOf = (e) => e.tip ? "not traced yet" : `round ${e.round}`;
 // Naming the inbox in a command is a second thing either way - a turn spent on
 // a read, beside a delivery that cost nothing.
 function gotHtml(d, from) {
-  const box = esc(d.box || `in/${from}`);
+  const box = esc(d.shown_as || d.box || `in/${from}`);
   const again = d.named ? ` · <span class="tag">read ${box}${
     d.shown_before === true ? " again" : ""}</span>` : "";
   if (d.shown_before === true) {
@@ -715,8 +718,8 @@ function renderMessages() {
       ${S.standing ? "checked" : ""}>show the ${same} round${same === 1 ? "" : "s"} an outbox
       was left alone</label>` : ""}
     </div>`;
-  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">one file a seat
-      in the outbox · an outbox left alone is delivered again every round</div>
+  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">messages and harness-readable
+      declarations · unchanged files apply again every round</div>
     <div class="chat ${S.rail ? "narrow" : ""}"><div class="pairs">${side}</div>
       <div class="thread">${head}<div id="thread">${threadHtml(t)}</div></div></div></div>`);
   el.querySelectorAll(".pair").forEach(b => b.onclick = () => {
@@ -734,7 +737,7 @@ function renderMessages() {
   };
 }
 
-// --- the blackboards and the private stores -----------------------------------
+// --- directory channels -------------------------------------------------------
 
 function keyOf(kind, agent) { return kind + ":" + agent; }
 
@@ -747,7 +750,7 @@ function renderTree(kind) {
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   const what = d.what || "";
-  const stamp = (c) => `${c.seat == null ? "" : esc(c.agent) + " · "}as of ep${c.committed}${
+  const stamp = (c) => d.static ? "the manifest's source" : `${c.seat == null ? "" : esc(c.agent) + " · "}as of ep${c.committed}${
     c.live == null ? "" : running(c)
       ? " · an episode is running" : " · an episode never finished"}`;
   const index = d.columns.map(c => {
@@ -777,9 +780,9 @@ function renderTree(kind) {
         : got.text == null ? `<div class="note">binary</div>`
         : `<pre class="out">${esc(got.text)}</pre>`}</div></div>`;
   }).join("");
-  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">${what} ·
+  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">${what}${d.static ? "" : ` ·
       mirrored back when an episode ends, so each column is as of that agent's own last
-      committed one</div>
+      committed one`}</div>
     <div class="trees">
       <div class="cols">${index}</div>
       ${shown.length ? `<div class="bodies">${bodies}</div>` : ""}
@@ -935,18 +938,17 @@ function turnHtml(t, pend) {
   if (t.prefix) bits.push(`ctx ${num(t.prefix)}`);
   const tags = [
     t.stop_reason ? `<span class="tag">${esc(t.stop_reason)}</span>` : "",
-    t.served_by_fallback ? `<span class="tag warn">fallback · ${esc(t.model)}</span>` : "",
-    t.stop_details ? `<span class="tag bad">refused${t.stop_details.category ? " · " + esc(t.stop_details.category) : ""}</span>` : "",
-    (t.unpriced_model || []).length ? `<span class="tag warn">unpriced ${esc((t.unpriced_model || []).join(", "))}</span>` : "",
+    t.provider && t.model ? `<span class="tag">${esc(t.provider)}/${esc(t.model)}</span>` : "",
+    t.refusal ? `<span class="tag bad">refused${t.refusal.kind ? " · " + esc(t.refusal.kind) : ""}</span>` : "",
   ].join(" ");
   const tools = (t.tools || []).map(c =>
-    `<div class="cmd">${esc(c.call)}</div>` +
+    `<div class="cmd ${c.shell ? "shell" : "tool"}">${esc(c.call)}</div>` +
     (c.result == null ? `<div class="pend">⏳ ${pend}</div>`
                       : `<pre class="out">${esc(c.result)}</pre>`)).join("");
   return `<div class="turn"><div class="th"><span class="num">${bits.join(" · ")}</span>${tags}</div>
     ${t.thinking ? `<div class="think">${esc(t.thinking)}</div>` : ""}
     ${t.text ? `<div class="say">${esc(t.text)}</div>` : ""}
-    ${t.stop_details && t.stop_details.explanation ? `<div class="note">${esc(t.stop_details.explanation)}</div>` : ""}
+    ${t.refusal && t.refusal.explanation ? `<div class="note">${esc(t.refusal.explanation)}</div>` : ""}
     ${tools}</div>`;
 }
 
@@ -972,7 +974,7 @@ function carriedHtml(o) {
   if (!o.shown_before || !o.shown_before.length) return "";
   const bytes = o.shown_before.reduce((n, s) => n + s.bytes, 0);
   const files = o.shown_before.map(s =>
-    `<details class="sec" ${o.inbox && s.path.startsWith(o.inbox + "/") ? "open" : ""}>
+    `<details class="sec" ${o.inbox_prefix && s.path.startsWith(o.inbox_prefix) ? "open" : ""}>
        <summary>=== ${esc(s.path)} === <i>${num(s.bytes)} B</i></summary>
        <pre class="out">${esc(s.text)}</pre></details>`).join("");
   return `<div class="turn"><div class="th">${esc(o.name)} · the record it started holding
@@ -1011,7 +1013,7 @@ function renderTranscript(fresh) {
     redraw(tx,
       `<div class="turn"><div class="th">start · ${esc(nameOf(S.detail.seat))} at start ${
         v.series_before.length ? num(v.series_before[v.series_before.length - 1]) : "–"}</div>
-        <div class="cmd">${esc(o.command)}</div>` +
+        <div class="cmd ${o.shell ? "shell" : "tool"}">${esc(o.command)}</div>` +
         (o.listing == null ? `<div class="pend">⏳ ${pend}</div>`
                            : `<pre class="out">${esc(o.listing)}</pre>`) + `</div>` +
       carriedHtml(o) +

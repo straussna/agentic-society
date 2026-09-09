@@ -13,6 +13,8 @@
 
 schedule = "sequential"
 stop_when_one_remains = false
+provider = "anthropic"
+model = "claude-sonnet-5"
 system_prompt = ""
 budget = 1500000
 starter_files = ""

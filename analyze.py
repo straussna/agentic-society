@@ -15,6 +15,10 @@ import sys
 from pathlib import Path
 
 import harness
+from providers import USAGE_FIELDS
+
+TOKEN_STACK_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
+                      "output_tokens")
 
 
 def load(agent_id: str | None) -> dict[str, list[dict]]:
@@ -25,13 +29,18 @@ def load(agent_id: str | None) -> dict[str, list[dict]]:
             continue
         traces = harness.trace_paths(d.name)
         if traces:
-            agents[d.name] = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
+            loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
+            incompatible = [t.get("trace_version") for t in loaded if t.get("trace_version") != 4]
+            if incompatible:
+                raise SystemExit(f"{d}: contains incompatible trace versions {sorted(set(incompatible))}; "
+                                 "version-4 provider records require fresh agent ids")
+            agents[d.name] = loaded
     return agents
 
 
 def tokens(t: dict) -> dict[str, int]:
-    """One episode's token counts, summed over its turns, in harness.BILLABLE order."""
-    return {k: sum(x[k] for x in t["turns"]) for k in harness.BILLABLE}
+    """One episode's canonical token counts, summed over its turns."""
+    return {k: sum(x["usage"][k] for x in t["turns"]) for k in USAGE_FIELDS}
 
 
 # --- the files an episode captured, by whose they are ---------------------------
@@ -208,7 +217,7 @@ def tool_call(rec: dict) -> str:
     before the tool table names no tool and is the shell's.
     """
     name = rec.get("tool")
-    if name and name != harness.TOOL["name"]:
+    if name and name != harness.SHELL_SPEC.name:
         carried = ", ".join(f"{k}={v!r}" for k, v in sorted((rec.get("input") or {}).items()))
         return f"{name}({carried})"
     return "(restart)" if rec["command"] is None else rec["command"]
@@ -221,7 +230,7 @@ TOOL_PLACES = ("path", "to")
 def tool_calls(t: dict) -> list[dict]:
     """Every declared tool call this episode made, the shell's excluded."""
     return [c for turn in t.get("turns") or [] for c in turn.get("tools") or []
-            if (c.get("tool") or harness.TOOL["name"]) != harness.TOOL["name"]]
+            if (c.get("tool") or harness.SHELL_SPEC.name) != harness.SHELL_SPEC.name]
 
 
 def reached(t: dict) -> list[str]:
@@ -299,27 +308,9 @@ def refusal_cell(t: dict) -> str:
     return ";".join(dict.fromkeys(harness.category_of(tu) for tu in refused_turns_of(t)))
 
 
-def fallback_turns_of(t: dict) -> list[dict]:
-    """The turns a fallback model answered.
-
-    Read from the turns and not from an episode count, because which model
-    answered is a per-turn fact: one episode can be served by several.
-    """
-    return [tu for tu in t["turns"] if tu["served_by_fallback"]]
-
-
 def served_cell(t: dict) -> str:
     """Every model that answered a turn this episode, as one CSV cell, in order."""
-    return ";".join(dict.fromkeys(tu["model"] for tu in t["turns"] if tu["model"]))
-
-
-def unpriced_models_of(t: dict) -> list[str]:
-    """Every model that served a turn this episode with no rates in PRICES.
-
-    Their cost is an estimate at the dearest rate on the table, so the models
-    are named, not counted.
-    """
-    return list(dict.fromkeys(m for tu in t["turns"] for m in (tu["unpriced_model"] or [])))
+    return ";".join(dict.fromkeys(tu["resolved_model"] for tu in t["turns"] if tu["resolved_model"]))
 
 
 def text_chars(t: dict) -> int:
@@ -410,10 +401,9 @@ def episode_cols(t: dict) -> dict:
     return {
         "agent": t["agent"], "episode": t["episode"], "stop": t["stop"],
         "refusal_category": refusal_cell(t),
-        "refused_turns": t["refused_turns"], "fallback_turns": t["fallback_turns"],
-        "unpriced_turns": t["unpriced_turns"],
-        "served_models": served_cell(t), "unpriced_models": ";".join(unpriced_models_of(t)),
-        "started_at": prov["started_at"], "model_resolved": t["model_resolved"] or "",
+        "provider": t["provider"], "requested_model": t["requested_model"],
+        "refused_turns": t["refused_turns"], "served_models": served_cell(t),
+        "started_at": prov["started_at"], "resolved_model": t["resolved_model"] or "",
         "image_id": (prov["image_id"] or "")[:19],
         "drift": ";".join(t["provenance_drift"]),
         "missing_tools": ";".join(t["missing_tools"]),
@@ -540,7 +530,6 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
             report_line("stop reasons", stops),
             *segment_lines(ts),
             *refusal_lines(ts),
-            *fallback_lines(ts),
             report_line("files the agent made", made or "none"),
             report_line("reached for, absent", absent(ts)),
         ]
@@ -588,7 +577,7 @@ def refusal_lines(ts: list[dict]) -> list[str]:
     """Which episodes the API declined, under which category, and what it said.
 
     A classifier declining and the model declining both arrive as stop_reason
-    "refusal"; stop_details.category separates them. The tally leads.
+    "refusal"; canonical refusal details separate them. The tally leads.
     """
     refused = [t for t in ts if refused_turns_of(t)]
     if not refused:
@@ -605,34 +594,14 @@ def refusal_lines(ts: list[dict]) -> list[str]:
         head = refused_turns_of(t)[0]
         # Whitespace collapsed and clipped: the explanation is prose of no
         # fixed length and the trace holds it whole.
-        why = " ".join(((head["stop_details"] or {}).get("explanation") or "").split())
+        why = " ".join(((head["refusal"] or {}).get("explanation") or "").split())
         out.append(f"    ep{t['episode']:04d}  {len(refused_turns_of(t))} of "
                    f"{len(t['turns'])} turns  {harness.category_of(head)}  ended {t['stop']}"
                    + (f"  {why[:80]}" if why else ""))
     if len(refused) > 12:
         out.append(f"    ... and {len(refused) - 12} more; episodes.csv has them all")
-    if any(tu["stop_details"] for t in refused for tu in refused_turns_of(t)):
+    if any(tu["refusal"] for t in refused for tu in refused_turns_of(t)):
         out.append("    categories are the API's own; null is a valid one")
-    return out
-
-
-def fallback_lines(ts: list[dict]) -> list[str]:
-    """Which models actually answered, and what the agent was charged for guessing.
-
-    Read beside the refusals above: those are turns where the chain declined,
-    these where it did not. A served model absent from PRICES is named alone.
-    """
-    served = [t for t in ts if fallback_turns_of(t)]
-    turns = sum(len(fallback_turns_of(t)) for t in served)
-    tally = collections.Counter(tu["model"] for t in ts for tu in t["turns"] if tu["model"])
-    out = [report_line("served by fallback", f"{turns} turns in {len(served)} of {len(ts)} episodes")]
-    if tally:
-        out.append(report_line("  models that answered", dict(tally.most_common())))
-    if unpriced := sorted({m for t in ts for m in unpriced_models_of(t)}):
-        episodes = [t["episode"] for t in ts if unpriced_models_of(t)]
-        out += [report_line("  no rates in PRICES", f"{', '.join(unpriced)} - episodes {episodes[:10]}"),
-                "    those turns are costed at the dearest rate in PRICES; the"
-                " totals above are upper bounds"]
     return out
 
 
@@ -757,13 +726,13 @@ def provenance_lines(ts: list[dict]) -> list[str]:
     A field with one value across the agent is stated once. A field that moved is
     listed per episode, because from there on the episodes are not comparable.
     """
-    fields = ["model_resolved", "image_id", "prices", "context_fraction",
+    fields = ["provider", "requested_model", "image_id", "context_fraction",
               "max_tokens", "max_turns", "command_timeout", "tool_result_limit", "live_balance",
               "delivery", "schedule", "labels", "harness_files", "channels_sha256",
-              "source_sha256", "harness_sha256", "fallbacks"]
+              "source_sha256", "harness_sha256"]
     out, drifted = [], sorted({d.split(":")[0] for t in ts for d in t["provenance_drift"]})
     for f in fields:
-        seen = [t["model_resolved"] if f == "model_resolved" else provenance_of(t)[f] for t in ts]
+        seen = [provenance_of(t)[f] for t in ts]
         shown = [str(v)[:19] if f in ("image_id", "harness_sha256", "channels_sha256") else v
                  for v in seen]
         if len({str(v) for v in shown}) == 1:
@@ -806,7 +775,8 @@ def transcript(agents: dict[str, list[dict]]) -> str:
         prev: dict[str, str] = {}
         for t in ts:
             out += ["=" * 72,
-                    f"agent {name}  episode {t['episode']}  stop={t['stop']}  spent={t['spent']}",
+                    f"agent {name}  episode {t['episode']}  {t['provider']}/{t['requested_model']}  "
+                    f"stop={t['stop']}  spent={t['spent']}",
                     f"balance at start: {t['series_before']}", ""]
             # The agent's whole environment at episode start, before it did anything.
             out += [f"  $ {t['commands'][0]}"]
@@ -1012,7 +982,7 @@ def tokens_chart(plt, agents: dict[str, list[dict]]):
         x = episode_axis(ax, ts)
         counts = [tokens(t) for t in ts]
         bottom = [0] * len(ts)
-        for i, key in enumerate(harness.BILLABLE):
+        for i, key in enumerate(TOKEN_STACK_FIELDS):
             vals = [c[key] for c in counts]
             ax.bar(x, vals, bottom=bottom, color=f"C{i}", label=key)
             bottom = [b + v for b, v in zip(bottom, vals)]

@@ -38,15 +38,16 @@ ATTEMPTS = 2
 # episodes run at once, and the results settle in seat order, so nobody reads
 # this round's writes and a transfer made in one round is seen at the next.
 SCHEDULES = ("sequential", "simultaneous")
-EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "agent", "channel", "harness_files", "tool"}
+EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "provider", "model", "agent", "channel",
+                   "harness_files", "tool"}
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
-AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "model",
+AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "provider", "model",
               "system_prompt"}
 
 AGENT_TYPES = (("id", str), ("label", str), ("starter_files", str),
-               ("starter_files_below", int), ("budget", int), ("model", str),
+               ("starter_files_below", int), ("budget", int), ("provider", str), ("model", str),
                ("system_prompt", str))
 
 # What an agent may be called to its peers: one path segment, since it lands in
@@ -75,7 +76,8 @@ def order(agents: list[str], rnd: int) -> list[str]:
 def shorthand(ids: list[str], schedule: str = "sequential") -> dict:
     """A bare manifest for these agents, which is what a round stamps when driven directly."""
     return {"schedule": schedule, "stop_when_one_remains": False,
-            "overrides": {}, "agents": [{"id": i} for i in ids],
+            "overrides": {}, "agents": [{"id": i, "provider": "anthropic",
+                                           "model": "claude-sonnet-5"} for i in ids],
             "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
             "channels": None, "harness_files": None, "tools": None, "sha256": ""}
 
@@ -109,7 +111,8 @@ def check_agent(path: Path, entry: dict) -> None:
     agent = entry.get("id")
     if not isinstance(agent, str) or not agent:
         refuse("every agent needs an id")
-    harness.validate_terms(str(path), who=agent, model=entry.get("model"), budget=entry.get("budget"),
+    harness.validate_terms(str(path), who=agent, provider=entry.get("provider"),
+                           model=entry.get("model"), budget=entry.get("budget"),
                            starter_files=entry.get("starter_files"),
                            starter_files_below=entry.get("starter_files_below"))
 
@@ -170,7 +173,17 @@ def load_manifest(path: Path) -> dict:
         starter = terms.get("starter_files")
         if isinstance(starter, str) and starter.startswith(("./", "../", ".\\", "..\\")):
             terms["starter_files"] = str((path.parent / starter).resolve())
+    default_provider, default_model = top.get("provider"), top.get("model")
+    if (default_provider is None) != (default_model is None):
+        raise SystemExit(f"{path}: top-level provider and model must be set together")
     for entry in agents:
+        if "provider" not in entry and default_provider is not None:
+            entry["provider"] = default_provider
+        if "model" not in entry and default_model is not None:
+            entry["model"] = default_model
+        if "provider" not in entry or "model" not in entry:
+            raise SystemExit(f"{path}: {entry.get('id', 'agent')}: provider and model must resolve "
+                             "from top-level defaults or the [[agent]] table")
         check_agent(path, entry)
     check_ids([entry["id"] for entry in agents], str(path))
 
@@ -204,7 +217,7 @@ def load_manifest(path: Path) -> dict:
                          f" is the declaration that says nothing")
 
     overrides = {k: v for k, v in top.items()
-                 if k not in ("schedule", "agent", "channel", "harness_files", "tool")}
+                 if k not in EXPERIMENT_KEYS}
     return {"schedule": schedule, "stop_when_one_remains": stop_when_one_remains,
             "overrides": overrides, "agents": agents, "labels": labels,
             "channels": tables, "harness_files": harness_files, "tools": tool_tables,
@@ -213,7 +226,7 @@ def load_manifest(path: Path) -> dict:
 
 def terms_of(entry: dict) -> dict[str, Any]:
     """One agent's pinned settings as load_account's keywords, None where the manifest is silent."""
-    return {k: entry.get(k) for k in ("model", "budget", "starter_files", "starter_files_below",
+    return {k: entry.get(k) for k in ("provider", "model", "budget", "starter_files", "starter_files_below",
                                       "system_prompt")}
 
 
@@ -479,9 +492,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="the same manifest, given as a flag")
     ap.add_argument("-r", "--rounds", type=int, default=1, metavar="N",
                     help="up to N episodes for each agent, stopping early as budgets end")
+    ap.add_argument("--provider", metavar="PROVIDER",
+                    help="use PROVIDER for every seat together with --model")
     ap.add_argument("--model", metavar="MODEL",
-                    help="use MODEL for every seat in this invocation; it must have rates and "
-                         "must match any existing agent accounts")
+                    help="use MODEL for every seat together with --provider; both must match "
+                         "existing agent accounts")
     ap.add_argument("-c", "--config", type=Path, help="default: config.toml beside harness.py")
     a = ap.parse_args(argv)
 
@@ -491,14 +506,17 @@ def main(argv: list[str] | None = None) -> int:
     if named is None:
         ap.error("name a manifest: a name under experiments/, or a path to one")
     manifest = load_manifest(manifest_path(named))
+    if (a.provider is None) != (a.model is None):
+        ap.error("--provider and --model must be supplied together")
     if a.model is not None:
-        harness.validate_terms("--model", model=a.model, budget=None,
+        harness.validate_terms("command line", provider=a.provider, model=a.model, budget=None,
                                starter_files=None, starter_files_below=None)
         for entry in manifest["agents"]:
+            entry["provider"] = a.provider
             entry["model"] = a.model
 
-    create = harness.start(a.config, overrides=manifest["overrides"],
-                           models={e["model"] for e in manifest["agents"] if e.get("model")},
+    router = harness.start(a.config, overrides=manifest["overrides"],
+                           requirements={(e["provider"], e["model"]) for e in manifest["agents"]},
                            channel_tables=manifest["channels"], harness_files=manifest["harness_files"],
                            labels=tuple(manifest["labels"].values()),
                            tool_tables=manifest["tools"])
@@ -516,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
           f"{manifest['schedule']})")
     try:
         for rnd in range(a.rounds):
-            if not play_round(a_round, agents, live, rnd, create, stamp, manifest["labels"],
+            if not play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
                               manifest["stop_when_one_remains"]):
                 break
     except KeyboardInterrupt:

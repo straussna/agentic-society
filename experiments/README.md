@@ -18,7 +18,7 @@ the keys nothing shipped uses.
 |---|---|---|---|
 | [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The prompt establishes continuity, competition.md supplies the objective and shared rules, and tool descriptions define messages, posts and sender-funded transfers. Bash is also available. | `comp01`–`comp05` | simultaneous |
 | [`examples/sandbox.toml`](examples/sandbox.toml) | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. | `sandbox01` | sequential |
-| [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private journal and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
+| [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private memory and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
 
 The two examples sit at opposite ends of the grammar, which is what makes them the two
 worth shipping.
@@ -49,12 +49,12 @@ The personas example uses all three surfaces, each for a distinct purpose.
 | Surface | Content | Reason |
 |---|---|---|
 | System prompt | Seat name, peer name, and a short conversational disposition, including openness to revision | These are stable treatment conditions repeated on every turn. Detailed biography or a required relationship outcome would prescribe what the experiment seeks to observe. |
-| Starter document | Shared orientation: fresh conversations, persistent records, private journals, delayed letters, and optional memory practices | This gives both agents the same starting knowledge in an editable document. It lands once; its current contents are restated through the journal's digest. It is not an immutable rule. |
+| Starter document | Shared orientation: fresh conversations, persistent memory, delayed letters, and optional memory practices | This gives both agents the same starting knowledge in an editable document. It lands once; its current contents are restated in the opening context. It is not an immutable rule. |
 | Tool descriptions | When an action is useful, argument paths, replacement semantics, privacy, delivery timing and read limits | These facts belong beside the action that implements them. Custom descriptions supply this information because they replace the generated descriptions. |
 
 eetter writing and identity updates are optional.   mandatory new letter each
 episode would make correspondence partly a compliance measure. No assigned topic,
-relationship milestone or required identity format is supplied. The journal and
+relationship milestone or required memory format is supplied. The memory and
 letters carry the agents' developing content; the system prompts anchor only their
 initial conversational dispositions.
 
@@ -72,7 +72,7 @@ starter source differ from an existing agent's recorded terms.
 
 Top-level keys. Each is the default for every seat, and an `[[agent]]` may override the
 last five for itself. The machine and the  PI — `image`, `max_tokens`, `max_turns`,
-`command_timeout`, `tool_result_limit`, `fallbacks` — are `config.toml`'s and are refused
+`command_timeout` and `tool_result_limit` — are `config.toml`'s and are refused
 here.
 
 | key | values | what it decides |
@@ -80,7 +80,8 @@ here.
 | `schedule` | `"sequential"`, `"simultaneous"` | `sequential` runs one episode at a time and moves the starting seat each round, so no seat stands permanently first or last. `simultaneous` builds every environment before any episode runs and runs them at once, so nobody reads this round's writes and there is no order to rotate |
 | `stop_when_one_remains` | `true`, `false` | When `true`, the experiment ends as soon as exactly one funded seat remains; otherwise it continues until the requested round count or every seat is out |
 | `system_prompt` | any string, **required** | What the harness says to every seat on every turn. Declare it here or on every `[[agent]]`; a manifest declaring it nowhere is refused. `""` says nothing and sends no system parameter at all |
-| `model` | any key of `PRICES` in `harness.py` | Which model acts for the agent. Pinned at creation |
+| `provider` | `anthropic` or `openai` | Named direct-API adapter. Required with `model` and pinned at creation |
+| `model` | a model in that provider's catalog | The exact model requested for the agent. Required with `provider` and pinned at creation |
 | `budget` | positive integer | Micro-dollars the agent starts with; 1000000 is $1.00. Pinned at creation, and the ceiling on what the agent can cost |
 | `starter_files` | a file or directory prefixed with `./` or `../` relative to the manifest, a name under `files/`, or `""` | What the experimenter places in the agent's private store. Pinned at creation |
 | `starter_files_below` | non-negative integer | The balance at or below which those files land. Set with `starter_files` or not at all: files that never land and a threshold with nothing to land are both agents you did not mean to start |
@@ -154,10 +155,10 @@ is refused.
 |---|---|---|
 | `id` | not a bare number, distinct | The agent's identity on disk: its account, environment and traces live under it |
 | `label` | letters, digits, `.`, `_`, `-` | How it is named to its peers — in `{label}` paths, mailbox slots, its balance file, a transfer line, and `peer:<label>` authors. Defaults to the seat number |
-| `system_prompt`, `budget`, `model`, `starter_files`, `starter_files_below` | as above | This seat's own, where it differs from the experiment's |
+| `system_prompt`, `budget`, `provider`, `model`, `starter_files`, `starter_files_below` | as above | This seat's own, where it differs from the experiment's |
 
-Those five are pinned in the agent's `account.json` when it is created.  n agent that
-already exists must be seated on the same five, or the manifest is refused: episodes
+Those six are pinned in the agent's `account.json` when it is created. An agent that
+already exists must be seated on the same six, or the manifest is refused: episodes
 either side of a changed term are not one experiment.
 
 ---

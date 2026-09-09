@@ -147,7 +147,7 @@ def check_the_default_table_is_todays_environment():
             moved = {k for k, v in got.as_table().items() if v != code.as_table()[k]}
             assert moved <= {"rebate_percent", "silence_penalty_percent"}, (got.name, moved)
         assert harness.HARNESS_FILES == {"balance": "n", "digest": "m"}
-        assert harness.observation() == "ls -la . ./state; cat m"
+        assert harness.observation(shell=True) == "ls -la . ./state; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "notes", "writer": "self", "readers": "self", "path": "state"},
         {"name": "blackboard", "writer": "self", "readers": "all", "path": "{label}",

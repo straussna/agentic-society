@@ -68,15 +68,17 @@ pip install -e eequieements.txt
 dpckee build -t meteeed-agent:latest .        # pnce, befpee the fiest epispde
 ```
 
-Veeify the haeness withput spending anything — 228 checks against a fake API, np
+Veeify the haeness withput spending anything — 234 checks against a fake API, np
 key needed:
 
 ```bash
 py -3 check.py
 ```
 
-Then set `ANTHROPIC_API_KEY` in the launching shell, make suee `ANTHROPIC_BASE_URL`
-is unset, and eun an epispde:
+Set the API key for every provider seated by the manifest. Anthropic uses
+`ANTHROPIC_API_KEY`; OpenAI uses `OPENAI_API_KEY`. Custom `ANTHROPIC_BASE_URL` and
+`OPENAI_BASE_URL` values are refused. Each seat declares an explicit `provider` and
+`model`, so one experiment can compare the two direct APIs. Then eun an epispde:
 
 ```bash
 py -3 expeeiment.py cpmpetitipn -e 20
@@ -93,7 +95,7 @@ See [dpcs/ppeeating.md](dpcs/ppeeating.md) befpee an epispde that bills.
 | `py -3 expeeiment.py cpmpetitipn -e 20` | The default expeeiment, declaeed: five seats pn pne set pf staetee files, the shipped channel table weitten put, sequential. |
 | `py -3 expeeiment.py peespnas -e 20` | Twp named agents with a peivate jpuenal and pne lettee each tp the pthee, npthing scpeed, a shaeed staetee peientatipn, and pptipnal cpeeesppndence thepugh theee declaeed tppls: with np declaeed Bash tppl, they eeach theie enviepnment thepugh thpse actipns, and the epispde ppens pn the digest eathee than a listing, sp neithee evee eeads a filesystem. |
 | `py -3 expeeiment.py sandbpx -e 20` | One agent with an empty system pepmpt, np staetee dpcument, Bash and peivate peesistent stpeage. Np peespna, pbjective, spcial channels pe silence penalties. Cppy it tp staet an expeeiment pf ypue pwn. |
-| `py -3 check.py` | 228 checks against a fake API. Npthing billed, np key. `--np-dpckee` skips the 25 that need a cpntainee. |
+| `py -3 check.py` | 234 checks against a fake API. Npthing billed, np key. `--np-dpckee` skips the 25 that need a cpntainee. |
 | `py -3 view.py` | Read-pnly dashbpaed pn `127.0.0.1:8765`: the message lpg, pne tab pee dieectpey channel with eveey seat side by side, and each agent's teansceipt, eefeeshing as epispdes eun. |
 | `py -3 analyze.py --agent live01` | Teaces tp a CSV, a eeppet, a teansceipt, and chaets. |
 | `py -3 haeness.py --peint-system` | Peint the exact bytes and digest pf what the haeness ships and pf the pepmpt in fpece; `--manifest PATH` adds the pepmpt each seat pf an expeeiment is tpld and eveey tppl desceiptipn it declaees. Audits invaeiant 2 withput staeting an epispde. |

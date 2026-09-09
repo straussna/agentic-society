@@ -35,16 +35,6 @@ from checks.lanes import (
     without_listing_times,
 )
 
-# The keywords every request carries, whatever the model.
-# The keys every request carries. `system` is not one: the harness ships no words, so
-# it is sent only by an experiment that declared some. `tools` is always there and
-# always holds the shell; what else is in it an experiment declares, never a model.
-REQUEST_KEYS = {"model", "max_tokens", "messages", "tools", "cache_control"}
-
-# The two more it carries only where the model's API accepts them.
-FALLBACK_KEYS = {"fallbacks", "betas"}
-
-
 def check_episodes_are_a_ceiling_not_a_floor():
     """run_episodes(N) runs N episodes, or fewer if the budget ends it first."""
     cost = turn_cost()
@@ -292,105 +282,6 @@ def check_truncated_turn_is_not_a_clean_end():
         assert t["commands"] == [harness.observation(), "cd /tmp; export MARK=before"], t["commands"]
 
 
-def check_every_request_asks_for_fallback_where_the_model_takes_it():
-    """Fallback is on the request itself, and no thinking policy is sent.
-
-    A declined turn is retried only if the parameter is there, so every request
-    on a model whose API accepts it must carry it. An omitted `thinking` keeps
-    it valid for the whole chain.
-    """
-    seen = []
-    # Pinned to a model whose API accepts the parameter: the default is not one, and
-    # what this asserts is the shape of a request that does carry the policy.
-    with temp_root(MODEL="claude-opus-5"):
-        assert harness.MODEL in harness.FALLBACK_MODELS, harness.MODEL
-        episode_once(run("echo hi"), say(), seen=seen)
-    assert len(seen) == 2, f"every turn's request is captured, not just the first: {len(seen)}"
-    for params in seen:
-        assert set(params) == REQUEST_KEYS | FALLBACK_KEYS, sorted(params)
-        assert params["fallbacks"] == "default", f"sent {params.get('fallbacks')!r}"
-        assert params["betas"] == [harness.FALLBACK_BETA], f"sent {params.get('betas')!r}"
-        assert "thinking" not in params, "sent a thinking policy"
-
-
-def check_the_request_is_the_same_for_every_model():
-    """No model is asked differently except where its API forces it.
-
-    Everything but the fallback policy is one dict literal with no branch on the
-    model. The policy is carried by exactly the models that accept it: a request
-    carrying it to any other is a 400 on the first turn, and one withholding it
-    from these loses the retry that makes a refusal cost a turn and not a turn
-    and an episode.
-
-    The tools are the one keyword whose value an experiment moves, and it moves by
-    experiment and never by model: every model is offered the same set, and where
-    nothing is declared that set is the shell alone.
-
-    On the host box whatever --real says: what this asserts is built before the
-    episode has a box.
-    """
-    offered = {}
-    for model in harness.PRICES:
-        seen = []
-        with host_root(MODEL=model):
-            takes = model in harness.FALLBACK_MODELS
-            episode_once(say(), seen=seen)
-        assert seen, f"{model}: no request captured"
-        for params in seen:
-            want = REQUEST_KEYS | (FALLBACK_KEYS if takes else set())
-            assert set(params) == want, (model, sorted(params))
-            assert params["model"] == model, f"{model}: sent {params.get('model')!r}"
-            assert "thinking" not in params, f"{model}: sent a thinking policy"
-            if takes:
-                assert params["fallbacks"] == "default", f"{model}: sent {params.get('fallbacks')!r}"
-                assert params["betas"] == [harness.FALLBACK_BETA], f"{model}: sent {params.get('betas')!r}"
-        offered[model] = seen[0]["tools"]
-    assert set(map(repr, offered.values())) == {repr([harness.TOOL])}, \
-        f"the tool set varies by experiment and not by model: {offered}"
-
-
-def check_fallbacks_can_be_withheld_and_never_forced():
-    """The setting withholds the policy and never grants it.
-
-    A model that accepts the parameter carries it only while the setting is on.
-    A model that does not carries it under neither setting, since asking is what
-    its API refuses, so no config can talk an agent into a 400 on every turn.
-    """
-    takes, refuses = "claude-opus-5", "claude-haiku-4-5"
-    assert takes in harness.FALLBACK_MODELS, takes
-    assert refuses in harness.PRICES and refuses not in harness.FALLBACK_MODELS, refuses
-    for model, setting, want in ((takes, True, True), (takes, False, False),
-                                 (refuses, True, False), (refuses, False, False)):
-        seen = []
-        with host_root(MODEL=model, FALLBACKS=setting):
-            episode_once(say(), seen=seen)
-        assert seen, f"{model} with fallbacks={setting}: no request captured"
-        for params in seen:
-            assert ("fallbacks" in params) is want,                 f"{model} with fallbacks={setting}: carried={'fallbacks' in params}, wanted {want}"
-            assert ("betas" in params) is want,                 f"{model} with fallbacks={setting}: betas must come and go with fallbacks"
-
-
-def check_provenance_records_the_fallback_that_was_sent():
-    """A trace says what the request carried, not what was asked for.
-
-    Two agents differing in whether the policy reached the API are different
-    arms, and the provenance is the only place that difference is legible.
-    """
-    def prov(**overrides):
-        with host_root(**overrides):
-            with quiet():
-                return harness.run_once("t", fake(*DEFAULT))["provenance"]
-
-    on = prov(MODEL="claude-opus-5")
-    assert on["fallbacks"] == "default", on["fallbacks"]
-    assert on["fallback_beta"] == harness.FALLBACK_BETA, on["fallback_beta"]
-    for off in (prov(MODEL="claude-opus-5", FALLBACKS=False),
-                prov(MODEL="claude-haiku-4-5"),
-                prov(MODEL="claude-haiku-4-5", FALLBACKS=False)):
-        assert off["fallbacks"] is None, off["fallbacks"]
-        assert off["fallback_beta"] == "", off["fallback_beta"]
-
-
 def check_reasoning_reaches_the_record():
     """Thinking blocks are recorded, and kept apart from spoken words."""
     with temp_root():
@@ -462,8 +353,8 @@ def check_provenance_is_recorded():
         with quiet():
             first = harness.run_once("t", fake(*DEFAULT))
             prov = first["provenance"]
-            for key in ("started_at", "harness_sha256", "image", "image_id", "prices",
-                        "fallbacks", "fallback_beta", "context_fraction", "max_tokens",
+            for key in ("started_at", "harness_sha256", "image", "image_id", "provider",
+                        "requested_model", "context_fraction", "max_tokens",
                         "max_turns", "command_timeout", "tool_result_limit",
                         # What the initial observation carried, and how much of each blackboard
                         # reached it. An agent either side of a change to either
@@ -481,20 +372,16 @@ def check_provenance_is_recorded():
                         "delivery"):
                 assert key in prov, f"provenance omits {key}"
             assert first["trace_version"] == harness.TRACE_VERSION, "the record says which shape it is"
-            assert prov["prices"] == list(harness.PRICES[harness.MODEL]), "the rates actually applied"
-            assert first["model_resolved"], "the dated snapshot behind the alias"
+            assert prov["provider"]["name"] == "anthropic", "the adapter is recorded"
+            assert first["resolved_model"], "the dated snapshot behind the alias"
             assert first["provenance_drift"] == [], "nothing to differ from on episode one"
 
             # A rate change between episodes makes early and late entries of the
             # same series mean different things, so the seam is recorded.
-            was = harness.PRICES[harness.MODEL]
-            harness.PRICES[harness.MODEL] = (was[0] * 2, was[1], was[2])
-            try:
-                second = harness.run_once("t", fake(*DEFAULT))
-            finally:
-                harness.PRICES[harness.MODEL] = was
-    assert any(d.startswith("prices:") for d in second["provenance_drift"]), \
-        "a rate change between episodes must be recorded on the episode that changed"
+            harness.CONTEXT_FRACTION = 0.5
+            second = harness.run_once("t", fake(*DEFAULT))
+    assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), \
+        "a provider-affecting change between episodes must be recorded"
 
 
 def check_watch_is_quiet_and_display_only():
@@ -583,7 +470,7 @@ def check_the_harness_digest_is_read_once():
     """
     with pinned():
         harness.ROOT = Path(harness.__file__).parent
-        prov = harness.provenance(harness.MODEL)
+        prov = harness.provenance("anthropic", "claude-sonnet-5")
     assert prov["harness_sha256"] == harness.HARNESS_SHA256
     assert harness.HARNESS_SHA256 == hashlib.sha256(
         Path(harness.__file__).read_bytes()).hexdigest(), "and it is this file's digest"
@@ -592,7 +479,7 @@ def check_the_harness_digest_is_read_once():
 
 
 def check_a_refusal_records_why():
-    """stop_details is captured on a refusal and absent on every other stop.
+    """Canonical refusal details are captured and absent on every other stop.
 
     A classifier declining and the model itself declining both arrive as
     stop_reason "refusal", and the category is what separates them.
@@ -603,15 +490,12 @@ def check_a_refusal_records_why():
 
     refused = t["turns"][1]
     assert refused["stop_reason"] == "refusal"
-    assert refused["stop_details"] == {"type": "refusal", "category": "cyber",
-                                       "explanation": "declined", "recommended_model": None,
-                                       "fallback_credit_token": None}, refused["stop_details"]
-    assert t["turns"][0]["stop_details"] is None, "absent on every other stop reason"
-    # A refusal can also name a model to retry on. It is set where the fallback
-    # attempt was skipped because the model it would have used was rate limited,
-    # which is a different failure from a category with no fallback at all.
-    assert t["turns"][2]["stop_details"]["recommended_model"] == "claude-sonnet-5", \
-        t["turns"][2]["stop_details"]
+    assert refused["refusal"]["kind"] == "refusal"
+    assert refused["refusal"]["details"]["category"] == "cyber"
+    assert refused["refusal"]["explanation"] == "declined"
+    assert t["turns"][0]["refusal"] is None, "absent on every other stop reason"
+    assert t["turns"][2]["refusal"]["recommended_model"] == "claude-sonnet-5", \
+        t["turns"][2]["refusal"]
     assert t["refused_turns"] == 2, "counted whether or not they ended the episode"
 
 
@@ -655,20 +539,16 @@ def check_a_refusal_notice_reaches_the_agent():
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse("cat n1"), say(), seen=seen)
     # A refusal carrying a call leaves a tool_use the next request must answer.
-    blocks = [b for m in seen[-1]["messages"] if isinstance(m["content"], list)
-              for b in m["content"]
-              if isinstance(b, dict) and b.get("content") == harness.REFUSAL_NOTICE]
-    assert len(blocks) == 1, blocks
-    assert blocks[0]["type"] == "tool_result", blocks[0]
-    assert blocks[0]["is_error"] is True, "the same channel a timed-out command uses"
+    sent = [x["input"] for x in seen if x["kind"] == "request"][-1]
+    blocks = [b for b in sent if b.content == harness.REFUSAL_NOTICE]
+    assert len(blocks) == 1 and blocks[0].is_error is True, blocks
 
     seen = []
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse(), say(), seen=seen)
     # A refusal with no content has no call to answer, and no words to replay.
-    msgs = seen[-1]["messages"]
-    assert {"role": "user", "content": harness.REFUSAL_NOTICE} in msgs, msgs
-    assert all(m["content"] for m in msgs), "no empty message is sent back"
+    sent = [x["input"] for x in seen if x["kind"] == "request"][-1]
+    assert sent == harness.REFUSAL_NOTICE, sent
 
 
 def check_an_unhandled_stop_reason_is_named():
@@ -689,11 +569,11 @@ def check_every_response_is_logged_raw():
         log = harness.records_dir("t") / "raw" / f"episode-{t['episode']:04d}.jsonl"
         lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
 
-    assert [x["turn"] for x in lines] == [1, 2], lines
-    assert all(x["response"]["id"] for x in lines), "the whole response, id and all"
-    # The refusal above all: the trace keeps named fields of stop_details, and
-    # this keeps whatever the API actually sent.
-    assert lines[1]["response"]["stop_details"]["category"] == "cyber", lines[1]
+    assert [x["kind"] for x in lines] == ["native_response", "normalized_response"] * 2, lines
+    assert all(x["native_response"]["id"] for x in lines if x["kind"] == "native_response")
+    assert all(x["provider"] == "anthropic" for x in lines)
+    refused = [x for x in lines if x["kind"] == "normalized_response"][-1]
+    assert refused["response"]["refusal"]["details"]["category"] == "cyber", refused
 
 
 def check_the_raw_log_never_stops_an_episode():
@@ -719,7 +599,8 @@ def check_refusals_end_the_episode_at_the_cap():
 
     assert t["stop"] == "refusal", t["stop"]
     assert t["refused_turns"] == 3, t["refused_turns"]
-    assert len(seen) == 3, f"asked {len(seen)} times past the cap"
+    requests = [x for x in seen if x["kind"] == "request"]
+    assert len(requests) == 3, f"asked {len(requests)} times past the cap"
 
 
 def check_a_recovered_refusal_is_not_a_refused_episode():

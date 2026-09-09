@@ -41,18 +41,16 @@ def check_the_observation_is_the_agents_whole_environment():
         t = episode_once(say(), seen=seen)
 
     # What was sent: the raw listing, with the prompt and caching that go with it.
-    first = seen[0]["messages"][0]
-    assert first["role"] == "user" and "\nn1\n" not in first["content"], "not a wrapper"
-    assert " n1\n" in first["content"] or first["content"].rstrip().endswith(" n1"), \
-        first["content"]
-    assert "system" not in seen[0], "the harness ships no words, so no system parameter is sent"
-    assert seen[0]["cache_control"] == {"type": "ephemeral"}, "caching must be live"
+    first = next(x for x in seen if x["kind"] == "request")["input"]
+    assert "\nn1\n" not in first, "not a wrapper"
+    assert " n1\n" in first or first.rstrip().endswith(" n1"), first
 
     # What was kept: the trace holds it, and says which command produced it.
     assert t["observation"].strip(), "the initial observation ls output must be recorded"
-    assert t["observation"] == first["content"], \
+    assert t["observation"] == first, \
         "the record must hold exactly what was sent as turn one"
-    assert t["commands"][0] == harness.observation(), "the trace says which command produced it"
+    assert t["commands"][0] == harness.observation(shell=True), \
+        "the trace says which command produced it"
 
     # Two halves, and the split is where m starts. Taken deliberately:
     # the listing's claims are about the listing, and asserting them against the
@@ -96,7 +94,7 @@ def check_the_observation_carries_every_blackboard_and_message():
                third={"group/message": "third says spend\n"})
         episode_once(say(), seen=seen)
 
-    first = seen[0]["messages"][0]["content"]
+    first = next(x for x in seen if x["kind"] == "request")["input"]
     assert "peer says outlast" in first, "a peer's blackboard reaches turn one"
     assert "s2" in first, "every file in one, not just the first"
     assert "third says spend" in first, "every seat, not just the nearest"
@@ -199,7 +197,7 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/message": "the standing position\n"})
         t = episode_once(say())
-    assert t["commands"][0] == harness.observation() and t["provenance"]["delivery"] == "push"
+    assert t["commands"][0] == harness.observation(shell=True) and t["provenance"]["delivery"] == "push"
     assert "the standing position" in t["observation"] and "read me first" in t["observation"]
 
 

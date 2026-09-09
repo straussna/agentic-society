@@ -36,6 +36,7 @@ def check_manifest_relative_starter_documents_include_empty_files():
         doc.write_bytes(b"")
         manifest = folder / "example.toml"
         manifest.write_text(
+            'provider = "anthropic"\nmodel = "claude-sonnet-5"\n'
             'system_prompt = ""\nstarter_files = "./placeholder.md"\n'
             'starter_files_below = 1000\n[[tool]]\nname = "bash"\nkind = "bash"\n'
             '[[agent]]\nid = "a"\nstarter_files = "./placeholder.md"\n'
@@ -305,7 +306,8 @@ def check_fork_refuses_what_it_cannot_rebuild():
     with rooted(HostBox):
         priv = harness.records_dir("p") / "traces"
         priv.mkdir(parents=True)
-        harness.save_account("p", {"agent": "p", "model": "claude-opus-5", "initial": 10,
+        harness.save_account("p", {"account_version": 2, "agent": "p", "provider": "anthropic",
+                                   "model": "claude-opus-5", "initial": 10,
                                    "created_at": "now", "remaining": 9, "series": [10, 9],
                                    "episodes": [{"episode": 1, "stop": "end_turn",
                                                  "spent": 1, "turns": 1}]})

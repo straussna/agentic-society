@@ -2,8 +2,8 @@
 # whatever the experiment. Everything an agent's situation is made of - what is said
 # to it, the money, the files it is given, the channels it reaches its peers through -
 # is an experiment's, declared in a manifest under experiments/, and refused here.
-# Unknown keys and wrong types are refused at startup; token rates live in PRICES in
-# harness.py and docs/manifest.md is the full grammar.
+# Unknown keys and wrong types are refused at startup; provider catalogs own token rates
+# and docs/manifest.md is the full grammar.
 
 # The sandbox image; rebuild it after editing the Dockerfile.
 # Any tag you have built.
@@ -24,8 +24,3 @@ command_timeout = 60
 # Characters of each tool result the agent receives, and the ceiling on what a call costs.
 # Positive integer, at least 1000; roughly 6.7 micro-dollars per character.
 tool_result_limit = 8000
-
-# Whether a request asks for fallback routing, retrying a declined turn in the call.
-# true or false; only claude-fable-5 and claude-opus-5 accept the parameter, so under
-# any other model this asks for nothing.
-fallbacks = true

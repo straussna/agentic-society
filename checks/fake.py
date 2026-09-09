@@ -1,160 +1,172 @@
-"""The fake API: scripted responses, and a create() that plays them."""
+"""Provider-neutral scripted sessions for harness checks."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace as NS
 import threading
+
 import harness
+import providers
+from providers import Charge, NormalizedTurn, PendingResponse, Refusal, ToolCall, Usage
 
 
 def usage(**kw):
-    """A usage object shaped like the API's, with overridable token counts."""
     return NS(**{"input_tokens": 100, "output_tokens": 50, "cache_creation_input_tokens": 0,
                  "cache_read_input_tokens": 0, "cache_creation": None, "iterations": None, **kw})
 
 
 def attempt(model, output_tokens, kind="message", **kw):
-    """One entry of usage.iterations: what a single model's attempt cost.
-
-    The declining attempts of a chain are `message`; the last is
-    `fallback_message`. An attempt with no output declined before producing any.
-    """
-    return NS(**{"type": kind, "model": model, "input_tokens": 100, "output_tokens": output_tokens,
-                 "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
-                 "cache_creation": None, **kw})
+    return NS(**{"type": kind, "model": model, "input_tokens": 100,
+                 "output_tokens": output_tokens, **kw})
 
 
 def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None):
-    """A scripted step: reply with text and stop.
-
-    `details` stands in for stop_details, sent only alongside a refusal.
-    `model` overrides what the response reports, scripting a fallback-served turn.
-    """
-    return {"kind": "say", "text": text, "u": u, "id": id, "stop": stop, "details": details,
-            "model": model}
+    return {"kind": "say", "text": text, "u": u, "id": id, "stop": stop,
+            "details": details, "model": model}
 
 
 def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
-    """A scripted step: reply with one bash tool call per command.
-
-    `stop` is the response's stop_reason, so a truncated turn can be scripted.
-    """
     return {"kind": "agent", "cmds": list(cmds), "u": u, "id": id, "stop": stop,
             "details": details, "model": model}
 
 
 def use(name, u=None, id=None, stop="tool_use", **args):
-    """A scripted step: reply with one call to a declared tool, carrying `args`.
-
-    The other side of run(): the bash tool takes a command, and a tool an
-    experiment declared takes whatever its own schema says.
-    """
-    return {"kind": "call", "name": name, "args": args, "u": u, "id": id, "stop": stop,
-            "details": None, "model": None}
+    return {"kind": "call", "name": name, "args": args, "u": u, "id": id,
+            "stop": stop, "details": None, "model": None}
 
 
 def refuse(*cmds, category="cyber", u=None, id=None, **detail):
-    """A scripted refusal, in either shape the API sends one.
-
-    With commands it carries the tool calls emitted before the block landed;
-    with none its content is empty. `detail` adds fields to stop_details.
-    """
     return run(*cmds, u=u, id=id, stop="refusal",
                details=NS(type="refusal", category=category, explanation="declined", **detail))
 
 
 def restart(u=None, id=None):
-    """A scripted step: the {"restart": true} form of the bash tool."""
     return run(None, u=u, id=id)
 
 
 def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
-    """A scripted step: a thinking block plus text, as fable-5 replies."""
-    return {"kind": "think", "thinking": thinking, "text": text, "u": u, "id": id, "stop": stop}
+    return {"kind": "think", "thinking": thinking, "text": text, "u": u,
+            "id": id, "stop": stop}
 
 
-class Err(Exception):
-    """An API error carrying a status code."""
-
+class Err(providers.ProviderError):
     def __init__(self, status):
-        super().__init__(f"status {status}")
-        self.status_code = status
+        retryable = status in (408, 409, 429) or status >= 500
+        super().__init__(f"status {status}", category="retryable_api" if retryable else "permanent_api",
+                         provider="anthropic", status_code=status, native_type="FakeError")
+
+
+def _usage(raw, provider, model):
+    raw = raw or usage()
+    read = int(getattr(raw, "cache_read_input_tokens", 0) or 0)
+    uncached = int(getattr(raw, "input_tokens", 0) or 0)
+    write = int(getattr(raw, "cache_creation_input_tokens", 0) or 0)
+    output = int(getattr(raw, "output_tokens", 0) or 0)
+    normalized = Usage(uncached + read + write, uncached, read, write, output, 0)
+    spec = providers.model_spec(provider, model)
+    write_kind = "cache_write_5m" if provider == "anthropic" else "cache_write"
+    charges = (
+        Charge("uncached_input", uncached, spec.rate("uncached_input"), uncached * spec.rate("uncached_input")),
+        Charge("cache_read", read, spec.rate("cache_read"), read * spec.rate("cache_read")),
+        Charge(write_kind, write, spec.rate(write_kind), write * spec.rate(write_kind)),
+        Charge("output", output, spec.rate("output"), output * spec.rate("output")),
+    )
+    return normalized, charges
+
+
+class FakeSession:
+    def __init__(self, steps, provider, model, seen=None, on_request=None):
+        self.steps = steps
+        self.provider = provider
+        self.requested_model = model
+        self.seen = seen
+        self.on_request = on_request
+        self.n = 0
+
+    def request(self, content):
+        self.n += 1
+        if self.on_request:
+            self.on_request(self.n)
+        if self.seen is not None:
+            self.seen.append({"kind": "request", "provider": self.provider,
+                              "model": self.requested_model, "input": content})
+        step = self.steps.pop(0) if self.steps else say()
+        if isinstance(step, BaseException):
+            raise step
+        rid = step["id"] or f"msg{self.n}"
+        resolved = step.get("model") or f"{self.requested_model}-20990101"
+        normalized_usage, charges = _usage(step.get("u"), self.provider, self.requested_model)
+        if step["kind"] == "agent":
+            calls = tuple(ToolCall(f"t{self.n}_{i}", "bash", {"command": command})
+                          for i, command in enumerate(step["cmds"]))
+            texts, reasoning = (), ()
+        elif step["kind"] == "call":
+            calls = (ToolCall(f"t{self.n}_0", step["name"], dict(step["args"])),)
+            texts, reasoning = (), ()
+        else:
+            calls = ()
+            texts = (step["text"],)
+            reasoning = (step["thinking"],) if step["kind"] == "think" else ()
+        detail = step.get("details")
+        refusal = None if step["stop"] != "refusal" else Refusal(
+            getattr(detail, "type", "refusal"), getattr(detail, "explanation", None),
+            getattr(detail, "recommended_model", None), getattr(detail, "__dict__", None))
+        if step["stop"] == "refusal" and not calls:
+            charges = ()
+        turn = NormalizedTurn(rid, self.provider, self.requested_model, resolved, step["stop"],
+                              step["stop"], texts, reasoning, calls, normalized_usage,
+                              charges, refusal, getattr(detail, "__dict__", None))
+        native = {"id": rid, "model": resolved, "stop_reason": step["stop"],
+                  "content": [call.as_dict() for call in calls], "usage": normalized_usage.as_dict()}
+        return PendingResponse(self.provider, native, lambda: turn)
+
+
+class FakeRouter:
+    def __init__(self, steps=(), seen=None, scripts=None, default=(), on_request=None,
+                 on_open=None):
+        self.steps = list(steps)
+        self.seen = seen
+        self.scripts = {name: list(values) for name, values in (scripts or {}).items()}
+        self.default = list(default)
+        self.on_request = on_request
+        self.on_open = on_open
+
+    def preflight(self):
+        return None
+
+    def open_session(self, provider, model, system, tools, max_tokens):
+        if self.on_open:
+            self.on_open()
+        if self.seen is not None:
+            self.seen.append({"kind": "session", "provider": provider, "model": model,
+                              "system": system, "tools": [tool.as_dict() for tool in tools],
+                              "max_tokens": max_tokens})
+        name = threading.current_thread().name
+        steps = self.scripts.get(name)
+        if steps is None:
+            steps = self.steps if self.steps else list(self.default)
+            if self.scripts:
+                self.scripts[name] = steps
+        return FakeSession(steps, provider, model, self.seen, self.on_request)
+
+    def provenance(self, provider, model):
+        return providers.provenance(provider, model)
 
 
 def fake(*steps, seen=None):
-    """Build a `create` that plays the given steps, one per call.
-
-    Steps run out into a plain "done." reply. `seen` captures the request params.
-    """
-    q, n = list(steps), [0]
-
-    def create(**params):
-        """Stands in for client.messages.create: plays one step per call.
-
-        Refuses a request without the SDK's conversation keyword, as the SDK would.
-        """
-        assert "messages" in params, f"no messages= in the request: {sorted(params)}"
-        n[0] += 1
-        if seen is not None:
-            seen.append(params)
-        s = q.pop(0) if q else say()
-        if isinstance(s, BaseException):
-            raise s
-        rid, u = s["id"] or f"msg{n[0]}", s["u"] or usage()
-        # The real API answers with the dated snapshot the alias resolved to,
-        # which is the fallback's name on a turn a fallback served.
-        model = s.get("model") or f"{params['model']}-20990101"
-        if s["kind"] == "agent":
-            return NS(id=rid, model=model, stop_reason=s["stop"], usage=u,
-                      stop_details=s.get("details"),
-                      content=[NS(type="tool_use", id=f"t{n[0]}_{i}", name="bash", input={"command": c})
-                               for i, c in enumerate(s["cmds"])])
-        if s["kind"] == "call":
-            return NS(id=rid, model=model, stop_reason=s["stop"], usage=u,
-                      stop_details=None,
-                      content=[NS(type="tool_use", id=f"t{n[0]}_0", name=s["name"],
-                                  input=dict(s["args"]))])
-        content = [NS(type="text", text=s["text"])]
-        if s["kind"] == "think":
-            content.insert(0, NS(type="thinking", thinking=s["thinking"]))
-        return NS(id=rid, model=model, stop_reason=s["stop"], usage=u, content=content,
-                  stop_details=s.get("details"))
-
-    return create
+    return FakeRouter(steps, seen)
 
 
-def per_agent(default=(), **scripts):
-    """A create that plays one fake() per episode, chosen by the thread's name.
-
-    A simultaneous round names each episode's thread after its agent, so `scripts`
-    keyed by agent id give each its own steps; anything else gets `default`.
-    """
-    fakes = {agent: fake(*steps) for agent, steps in scripts.items()}
-    lock = threading.Lock()
-
-    def create(**params):
-        name = threading.current_thread().name
-        with lock:
-            # An episode not scripted by name gets its own copy of `default`,
-            # so no two episodes ever draw from one queue.
-            mine = fakes.get(name) or fakes.setdefault(name, fake(*default))
-        return mine(**params)
-    return create
+def per_agent(default=(), on_request=None, on_open=None, **scripts):
+    return FakeRouter(scripts=scripts, default=default, on_request=on_request,
+                      on_open=on_open)
 
 
 def stopping_at(turn: int, *steps):
-    """A create that plays `steps` and raises STOPPING as it serves turn `turn`.
-
-    Stands in for a signal landing mid-call: the flag is read at the top of the
-    next turn, so the episode finishes a turn before it can answer.
-    """
-    inner, n = fake(*steps), [0]
-
-    def create(**params):
-        n[0] += 1
-        if n[0] == turn:
+    def stop(n):
+        if n == turn:
             harness.STOPPING = True
-        return inner(**params)
-    return create
+    return FakeRouter(steps, on_request=stop)
+
 
 DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())

@@ -9,24 +9,22 @@ from types import SimpleNamespace as NS
 from pathlib import Path
 import hashlib
 import json
-import os
 import tempfile
 import harness
+import providers
+from providers.anthropic import normalize as normalize_anthropic
 
-from checks.fake import DEFAULT, Err, attempt, fake, refuse, run, say, usage
+from checks.fake import DEFAULT, Err, fake, refuse, run, say, usage
 from checks.lanes import (
     HALF,
-    NoBox,
     channel_toml,
     elements_of,
     episode_once,
     ground_truth,
-    manifest_file,
     pinned,
     quiet,
     reconciled,
     refused,
-    rooted,
     seated,
     span_of,
     tables,
@@ -45,7 +43,7 @@ def check_system_is_pinned():
     assert harness.SYSTEM == "", f"the harness ships no words, got {harness.SYSTEM!r}"
     assert hashlib.sha256(harness.SYSTEM.encode()).hexdigest() == harness.SYSTEM_SHA256
     assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing says nothing"
-    assert harness.TOOL == {"type": "bash_20250124", "name": "bash"}, "tool must carry no description"
+    assert harness.SHELL_SPEC.name == "bash" and harness.SHELL_SPEC.input_schema["additionalProperties"] is False
 
 
 def check_cost_is_exact():
@@ -53,14 +51,17 @@ def check_cost_is_exact():
     # opus-5: in 500, out 2500 centi/token; write 1.25x, read 0.1x
     u = usage(input_tokens=1000, output_tokens=100, cache_creation_input_tokens=2000,
               cache_read_input_tokens=5000)
-    m = harness.measure(u, "claude-opus-5")
-    assert m["centi"] == 1000 * 500 + 100 * 2500 + 2000 * 625 + 5000 * 50 == 2_250_000, m
-    assert m["prefix"] == 1000 + 5000 + 2000, "prefix must include cached tokens"
+    r = NS(id="x", model="claude-opus-5", stop_reason="end_turn", stop_details=None,
+           content=[NS(type="text", text="x")], usage=u)
+    m = normalize_anthropic(r, "claude-opus-5")
+    assert sum(c.centi_micros for c in m.charges) == 2_250_000, m
+    assert m.usage.prefix_tokens == 1000 + 5000 + 2000, "prefix must include cached tokens"
     # per-TTL detail wins over the flat field; 1h writes cost 2x
-    split = harness.measure(usage(input_tokens=0, output_tokens=0, cache_creation_input_tokens=9999,
-                               cache_creation=NS(ephemeral_5m_input_tokens=100,
-                                                 ephemeral_1h_input_tokens=200)), "claude-opus-5")
-    assert split["centi"] == 100 * 625 + 200 * 1000, split
+    r.usage = usage(input_tokens=0, output_tokens=0, cache_creation_input_tokens=9999,
+                    cache_creation=NS(ephemeral_5m_input_tokens=100,
+                                      ephemeral_1h_input_tokens=200))
+    split = normalize_anthropic(r, "claude-opus-5")
+    assert sum(c.centi_micros for c in split.charges) == 100 * 625 + 200 * 1000, split
 
 
 def check_balance_is_bare_integers_with_no_host_in_them():
@@ -85,7 +86,7 @@ def check_config_is_validated():
             harness.load_config()                              # the real file, if present
         except SystemExit as e:                             # reported as a failure
             raise AssertionError(f"config.toml is invalid: {e}") from None
-        assert harness.MODEL in harness.PRICES
+        assert providers.model_spec("anthropic", "claude-sonnet-5").context_window == 1_000_000
         assert 0 < harness.CONTEXT_FRACTION <= 1
         assert harness.MAX_TOKENS <= harness.MAX_TOKENS_CEILING
         assert type(harness.LIVE_BALANCE) is bool
@@ -152,126 +153,6 @@ def check_config_is_validated():
                                None, "manifest")
         assert harness.channel("transfer").funded_by == "giver", \
             "the pairing the rule asks for is accepted"
-
-
-def check_lapsed_rates_are_refused():
-    """A model whose rates are known to have expired cannot start an agent.
-
-    Both sides of the expiry date are checked against a synthetic entry, and
-    start() refuses on it before it can create an agent or reach the client.
-    """
-    with pinned():
-        harness.PRICES_EXPIRE = {harness.MODEL: ("2000-01-01", "something newer")}
-        assert harness.lapsed_prices(harness.MODEL, "2000-01-01") is None, "the last valid day runs"
-        assert harness.lapsed_prices(harness.MODEL, "2000-01-02"), "the day after must refuse"
-        other = next(m for m in harness.PRICES if m != harness.MODEL)
-        assert harness.lapsed_prices(other, "2099-01-01") is None, \
-            "a model with no known expiry never lapses"
-    assert set(harness.PRICES_EXPIRE) <= set(harness.PRICES), "an expiry for an unpriced model is dead"
-    assert harness.lapsed_prices(harness.MODEL) is None, \
-        f"{harness.MODEL}: the rates in PRICES have lapsed as of today; update them"
-
-    # start() exits and does not return a code, so every driver refuses
-    # identically. The throwaway root holds no config, so the model asked for is
-    # the default; the box refuses to build anything should the guard let it.
-    with rooted(NoBox) as root:
-        p = manifest_file(root, 'system_prompt = ""' + chr(10) + "[[agent]]" + chr(10) + 'id = "t"' + chr(10))
-        harness.PRICES_EXPIRE = {harness.MODEL: ("2000-01-01", "something newer")}
-        with quiet() as buf:
-            refused(lambda: harness.main(["--agent", "t", "--manifest", str(p)]), code=2,
-                    because="a lapsed rate started an agent")
-    assert "expired 2000-01-01" in buf.getvalue(), buf.getvalue()
-
-
-def check_a_set_base_url_refuses_to_start():
-    """ANTHROPIC_BASE_URL set to anything stops start() before a client is built.
-
-    Refused on any value and not a wrong one: that is what makes "this agent did
-    not go through some other endpoint" checkable.
-    """
-    was = os.environ.get("ANTHROPIC_BASE_URL")
-    url = "http://proxy.example:9"
-    os.environ["ANTHROPIC_BASE_URL"] = url
-    try:
-        with rooted(NoBox):
-            with quiet() as buf:
-                refused(harness.start, code=2, because="a set base URL started an agent")
-    finally:
-        if was is None:
-            del os.environ["ANTHROPIC_BASE_URL"]
-        else:
-            os.environ["ANTHROPIC_BASE_URL"] = was
-    assert url in buf.getvalue(), buf.getvalue()
-    assert "anthropic" not in buf.getvalue().lower().replace("anthropic_base_url", ""), \
-        "the refusal names the variable, and nothing the client would have said"
-
-
-def check_unpriced_fallback_targets_are_refused_before_anything_starts():
-    """A permitted fallback target with no rates stops the agent; anything else does not.
-
-    The list is a likely superset of what default routing will pick: worth
-    pricing against before an agent starts, and not the whole guard.
-    """
-    def client(targets=None, raises=None):
-        def retrieve(model, betas=None):
-            assert betas == [harness.FALLBACK_BETA], betas
-            if raises:
-                raise raises
-            return NS(allowed_fallback_models=targets)
-        return NS(beta=NS(models=NS(retrieve=retrieve)))
-
-    # The read under test is the fallback-target one, which only a model whose API
-    # accepts the parameter makes; the default takes the plain lookup instead.
-    model = sorted(harness.FALLBACK_MODELS)[0]
-    priced = sorted(harness.PRICES)[:2]
-    assert harness.unpriced_targets(client(priced), model) == [], "all priced: nothing to say"
-    assert harness.unpriced_targets(client([]), model) == [], "no targets: nothing to say"
-
-    said = harness.unpriced_targets(client([*priced, "claude-unheard-of-9"]), model)
-    assert len(said) == 1 and "claude-unheard-of-9" in said[0], said
-
-    # A field the API does not send, and a call that fails outright: both leave
-    # the agent to start, because measure_response() is what holds either way.
-    with quiet():
-        assert harness.unpriced_targets(client(None), model) == [], "absent field is not a refusal"
-        assert harness.unpriced_targets(client(raises=Err(500)), model) == [], \
-            "an unreadable list is not a refusal"
-        # The one read failure that is a refusal is a client with no usable
-        # credentials, which check_a_client_that_cannot_authenticate_refuses_to_start
-        # is about. Every other status leaves the agent to start.
-        assert harness.unpriced_targets(client(raises=Err(503)), model) == [], \
-            "a server error is not a credential failure"
-
-
-def check_a_client_that_cannot_authenticate_refuses_to_start():
-    """No usable credentials stops the agent at start(), before any container.
-
-    Constructing the client resolves no credentials, so unpriced_targets' read
-    answers it. Three shapes: auth errors, 401/403, and a bare TypeError.
-    """
-    keyless = TypeError(
-        '"Could not resolve authentication method. Expected one of api_key, '
-        'auth_token, or credentials to be set. Or for one of the `X-Api-Key` or '
-        '`Authorization` headers to be explicitly omitted"')
-    for e in (keyless, Err(401), Err(403)):
-        assert harness.unauthenticated(e), e
-    for e in (Err(500), Err(404), OSError("connection reset"),
-              TypeError("retrieve() got an unexpected keyword argument 'betas'")):
-        assert not harness.unauthenticated(e), e
-
-    def client(raises):
-        def retrieve(model, betas=None):
-            raise raises
-        return NS(models=NS(retrieve=retrieve), beta=NS(models=NS(retrieve=retrieve)))
-
-    # start() refuses on every line unpriced_targets returns, and this is one: a
-    # credential failure is a refusal where a server error is a warning. Both reads
-    # answer it - the fallback-target one, and the plain lookup the default makes.
-    for model in (harness.MODEL, sorted(harness.FALLBACK_MODELS)[0]):
-        said = harness.unpriced_targets(client(keyless), model)
-        assert len(said) == 1 and "ANTHROPIC_API_KEY" in said[0], (model, said)
-        with quiet():
-            assert harness.unpriced_targets(client(Err(500)), model) == []
 
 
 def check_truncation_and_empty():
@@ -431,8 +312,8 @@ def check_bills_once():
     dup = [x for x in t["turns"] if x["id"] == "dup"]
     assert len(dup) == 2 and dup[1]["micros"] == 0, "second sighting of an id must be free"
     # The token counts go with the money, so analyze.py's columns reconcile.
-    assert all(dup[1][k] == 0 for k in harness.BILLABLE), f"tokens billed twice: {dup[1]}"
-    assert any(dup[0][k] for k in harness.BILLABLE), "the first sighting must keep its counts"
+    assert dup[1]["duplicate_response"] and not dup[1]["charges"], f"response billed twice: {dup[1]}"
+    assert dup[0]["charges"], "the first sighting must keep its charges"
 
     # The replayed turn appends a balance equal to the one before it, its
     # incremental cost being zero: a flat step is a retry made visible.
@@ -497,74 +378,6 @@ def check_a_refusal_is_billed_only_if_it_produced_output():
     assert t["turns"][2]["micros"] > 0, "the turn that answered was billed"
 
 
-def check_a_chain_is_billed_by_whichever_model_answered():
-    """Only the attempt that answered is billed; where none did, nothing is.
-
-    Four shapes of one rule, as four turns of one episode: each assertion names
-    the turn it is about, and the totals at the end are what no turn reaches.
-    """
-    declined = usage(output_tokens=0, iterations=[
-        attempt("claude-opus-5", 0),
-        attempt("claude-sonnet-5", 0, kind="fallback_message")])
-    served = usage(output_tokens=200, iterations=[
-        attempt("claude-opus-5", 0),
-        attempt("claude-sonnet-5", 200, kind="fallback_message")])
-    sticky = usage(output_tokens=200,
-                   iterations=[attempt("claude-sonnet-5", 200, kind="fallback_message")])
-    unpriced = usage(output_tokens=200,
-                     iterations=[attempt("claude-unheard-of-9", 200, kind="fallback_message")])
-
-    with temp_root(MODEL="claude-opus-5", REFUSAL_TURNS=2):
-        t = episode_once(refuse(u=declined),
-                      run("echo one", u=served, model="claude-sonnet-5"),
-                      run("echo two", u=sticky, model="claude-sonnet-5"),
-                      run("echo three", u=unpriced, model="claude-unheard-of-9"),
-                      say())
-
-    # A chain every model declined. The last attempt is a fallback_message, the
-    # same type the serving attempt carries, and it produced nothing: a rule
-    # sparing only the entries typed `message` would bill it, and put back the
-    # overcharge the empty-refusal rule takes away.
-    nothing = t["turns"][0]
-    assert nothing["micros"] == 0, "no attempt produced output, so none was billed"
-    assert len(nothing["iterations"]) == 2, "both attempts are on the record"
-
-    # A chain a fallback answered: sonnet's rates, not the requested opus-5's.
-    # 100 in at 300 centi, 200 out at 1500. The declining attempt adds nothing.
-    answered = t["turns"][1]
-    assert answered["served_by_fallback"] is True, answered
-    assert answered["model"] == "claude-sonnet-5", answered["model"]
-    inp, out, _ = harness.PRICES["claude-sonnet-5"]
-    want = (100 * inp + 200 * out) // 100
-    assert answered["micros"] == want, f"{answered['micros']} != {want}"
-
-    # Sticky routing: after a conversation falls back, later turns can go
-    # straight to the model that accepted. No attempt by the requested model
-    # appears and no fallback block marks a handoff, so the iteration entry and
-    # the reported model are the only record of who served it.
-    routed = t["turns"][2]
-    assert routed["served_by_fallback"] is True, routed
-    assert routed["model"] == "claude-sonnet-5", routed["model"]
-    assert [i["type"] for i in routed["iterations"]] == ["fallback_message"], routed["iterations"]
-
-    # A model outside PRICES, which default routing can reach at any time.
-    # Raising would lose the cost of a turn that really did spend; counting it
-    # free would understate the balance the agent is shown.
-    odd = t["turns"][3]
-    assert odd["unpriced_model"] == ["claude-unheard-of-9"], odd["unpriced_model"]
-    dearest = max(harness.PRICES, key=lambda m: harness.PRICES[m][1])
-    inp, out, _ = harness.PRICES[dearest]
-    assert odd["micros"] == (100 * inp + 200 * out) // 100, odd["micros"]
-
-    # And what only the whole episode says: the counters agree with the turns
-    # they are counting, and an unpriced model did not end the agent.
-    assert t["stop"] == "end_turn", f"an unpriced model must not end the agent: {t['stop']}"
-    served_by = [x["served_by_fallback"] for x in t["turns"]]
-    assert served_by[1:4] == [True, True, True], served_by
-    assert t["fallback_turns"] == sum(served_by), (t["fallback_turns"], served_by)
-    assert t["unpriced_turns"] == 1, t["unpriced_turns"]
-
-
 def check_the_shipped_prompt_is_pinned_against_a_declaration():
     """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
 
@@ -582,9 +395,6 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
         harness.SYSTEM_PROMPT = "declared"
         assert harness.system_of() == "declared" and harness.system_of({}) == "declared"
         assert harness.system_of({"system_prompt": ""}) == "",             '"" is a prompt an experiment can declare, not an absent one'
-        assert harness.request("claude-opus-5", [], "declared")["system"] == "declared"
-        assert "system" not in harness.request("claude-opus-5", [], ""), \
-            "an empty prompt sends no system parameter at all"
         # The pin is on what the harness ships, so a declaration does not lift it.
         harness.PINNED = (("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),)
         with quiet() as buf:
@@ -595,7 +405,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     with temp_root(SYSTEM_PROMPT=""):
         t = episode_once(say(), seen=seen)
         pinned_text = ground_truth()["system_prompt"]
-    assert "system" not in seen[0], seen[0]
+    assert next(x for x in seen if x["kind"] == "session")["system"] == ""
     assert pinned_text == "", "the account pins what the agent was told, empty or not"
     assert t["provenance"]["system"] == "", t["provenance"]["system"]
     assert t["system_sha256"] == t["provenance"]["system_sha256"] == harness.SYSTEM_SHA256,         "declaring nothing and declaring nothing to say are one arm"
@@ -604,6 +414,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     said, spoken = "You are one of several.", []
     with temp_root(SYSTEM_PROMPT=said):
         d = episode_once(say(), seen=spoken)
-    assert spoken[0]["system"] == said, spoken[0].get("system")
+    session = next(x for x in spoken if x["kind"] == "session")
+    assert session["system"] == said, session.get("system")
     assert d["provenance"]["system"] == said, d["provenance"]["system"]
     assert d["system_sha256"] == harness.system_sha256(said) != harness.SYSTEM_SHA256

@@ -7,8 +7,8 @@ docs/manifest.md defines every term; docs/design.md gives the reasons.
 
 Sections, in the order an episode meets them:
 
-  1. What the harness says          SYSTEM, REFUSAL_NOTICE, PINNED, TOOL, system_of
-  2. Rates                          PRICES, PRICES_EXPIRE, FALLBACK_BETA
+  1. What the harness says          SYSTEM, REFUSAL_NOTICE, PINNED, SHELL_SPEC, system_of
+  2. Providers                      providers package catalogs and adapters
   3. Tunables                       defaults, load_config, apply_config
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
                                     Tool, TOOL_KINDS, validate_tools
@@ -19,7 +19,7 @@ Sections, in the order an episode meets them:
   9. What the agent's channels held before_digests
  10. The container and the shell    Container, Shell, load_state, save_state, clip,
                                     Bound, bind_tools
- 11. The API                        measure_response, call, log_raw, watch
+ 11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
                                     resolve_mailbox
@@ -56,6 +56,10 @@ import tomllib
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import providers
+from providers import (NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult,
+                       ToolSpec, Usage)
+
 
 # --- 1. What the harness says ----------------------------------------------------
 
@@ -82,7 +86,12 @@ REFUSAL_NOTICE_SHA256 = "4263e6bab90f883bbbcb2a9676a27a4aef7bde825461b3f56a2b266
 PINNED = (("SYSTEM", SYSTEM, SYSTEM_SHA256),
           ("REFUSAL_NOTICE", REFUSAL_NOTICE, REFUSAL_NOTICE_SHA256))
 
-TOOL = {"type": "bash_20250124", "name": "bash"}
+SHELL_SPEC = ToolSpec(
+    "bash",
+    "Run a command in the episode shell. Set command to null to restart the shell.",
+    {"type": "object", "properties": {"command": {"type": ["string", "null"]}},
+     "required": ["command"], "additionalProperties": False},
+)
 
 
 def system_sha256(text: str) -> str:
@@ -101,47 +110,6 @@ def system_of(account: dict | None = None) -> str:
     return SYSTEM_PROMPT
 
 
-# --- 2. Rates --------------------------------------------------------------------
-
-# model -> (input, output, context window). Rates are centi-micro-dollars per
-# token: $5/MTok == 5 micro-dollars/token == 500 centi. Integers throughout, so
-# sum(spent) == initial - remaining exactly. Cache rates are fixed multiples of
-# the input rate - 1.25x to write for five minutes, 2x for an hour, 0.1x to read
-# - which measure() applies. Every model the first-party API serves is here.
-PRICES = {
-    "claude-fable-5": (1000, 5000, 1_000_000),
-    "claude-mythos-5": (1000, 5000, 1_000_000),
-    "claude-opus-5": (500, 2500, 1_000_000),
-    "claude-opus-4-8": (500, 2500, 1_000_000),
-    "claude-opus-4-5": (500, 2500, 200_000),
-    "claude-sonnet-5": (300, 1500, 1_000_000),
-    "claude-haiku-4-5": (100, 500, 200_000),
-}
-
-# Every model in PRICES accepts strict tool use, which is what lets a declared
-# tool carry `strict` without the request differing by model. A model that does
-# not take it is not priced: a tool set that varied by model would make two seats
-# of one experiment two arms for a reason the experimenter never declared. Adding
-# a model to PRICES without adding it here fails check_every_priced_model_takes_a_strict_tool.
-STRICT_MODELS = frozenset({"claude-fable-5", "claude-mythos-5", "claude-opus-5",
-                           "claude-opus-4-8", "claude-opus-4-5", "claude-sonnet-5",
-                           "claude-haiku-4-5"})
-
-# model -> (last day the rate above holds, what replaces it). Only for rates
-# already known to change; lapsed_prices() refuses to start an agent on a model
-# whose entry here has passed, and one model's expiry never blocks another.
-PRICES_EXPIRE: dict[str, tuple[str, str]] = {}
-
-# The beta that enables the `fallbacks` parameter. Under any other
-# server-side-fallback-* value the parameter is rejected with a 400.
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
-
-# The models whose API accepts the `fallbacks` parameter. Every other model in
-# PRICES serves an ordinary request and answers one carrying the parameter with a
-# 400, which ends the episode on its first turn having spent nothing.
-FALLBACK_MODELS = frozenset({"claude-fable-5", "claude-opus-5"})
-
-
 # --- 3. Tunables -----------------------------------------------------------------
 
 # Defaults; config.toml overlays them at startup. SYSTEM_PROMPT is the one of them
@@ -154,7 +122,6 @@ FALLBACK_MODELS = frozenset({"claude-fable-5", "claude-opus-5"})
 SYSTEM_PROMPT = SYSTEM
 
 BUDGET = 500_000              # micro-dollars per agent, at creation only
-MODEL = "claude-sonnet-5"     # must be a key of PRICES
 CONTEXT_FRACTION = 0.85       # of the model's window; crossing it ends the episode
 MAX_TOKENS = 8_192            # output ceiling per turn
 MAX_TURNS = 200               # safety stop
@@ -164,12 +131,6 @@ GRACE_EPISODES = 0            # episodes at the start of an agent that answer fo
 FLOOR_AT_ZERO = False         # put a balance below zero back to zero
 STARTER_FILES = ""            # a directory under files/; "" is an empty environment
 STARTER_FILES_BELOW = 0       # the starter files land at the first episode at or below this balance
-
-# Whether a request asks for fallback routing. A declined turn is retried inside
-# the same call only under the parameter, so with this off a refusal ends the
-# turn where it stands. A model outside FALLBACK_MODELS never carries it whatever
-# this says, since asking is what its API refuses.
-FALLBACKS = True
 
 # Characters per tool result, in what the agent receives and in the trace. Also
 # the ceiling on what one call can cost, since the model is billed on what
@@ -206,12 +167,11 @@ IMAGE = "metered-agent:latest"
 
 # config.toml's, and refused in a manifest: the machine, the API and the safety
 # stops, true of every run whatever the experiment is.
-PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_LIMIT",
-           "FALLBACKS"}
+PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_LIMIT"}
 
 # An experiment's, and refused in config.toml: everything an agent's situation is
 # made of, alongside the [[channel]] tables and [harness_files] that go with it.
-TREATMENT = {"SYSTEM_PROMPT", "MODEL", "BUDGET", "STARTER_FILES", "STARTER_FILES_BELOW",
+TREATMENT = {"SYSTEM_PROMPT", "BUDGET", "STARTER_FILES", "STARTER_FILES_BELOW",
              "CONTEXT_FRACTION", "DELIVERY", "DIGEST_FILE_LIMIT", "OBSERVATION_LIMIT",
              "LIVE_BALANCE", "GRACE_EPISODES", "FLOOR_AT_ZERO"}
 
@@ -224,6 +184,7 @@ NOT_MANIFEST = "config.toml's, and true of every run whatever the experiment dec
 # Keys config.toml once held that are now fields of a channel. Refused by name, so
 # the message says where each went.
 RETIRED = {
+    "fallbacks": "removed; every turn requests the provider and model pinned to its seat",
     "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": "rebate_percent on the channel with schema = \"transfer\"",
@@ -317,7 +278,7 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
         if type(value) is not type(default):
             refuse(f"{key} must be {type(default).__name__}, got {type(value).__name__}")
         globals()[name] = value
-    validate_terms(f, model=MODEL, budget=BUDGET, starter_files=STARTER_FILES,
+    validate_terms(f, provider=None, model=None, budget=BUDGET, starter_files=STARTER_FILES,
                    starter_files_below=STARTER_FILES_BELOW)
     if not 0 < CONTEXT_FRACTION <= 1:
         refuse(f"context_fraction must be in (0, 1], got {CONTEXT_FRACTION}")
@@ -344,7 +305,7 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
                f"not stream, and larger values hit the SDK's HTTP timeout mid-episode")
 
 
-def validate_terms(source: str, *, model: str | None, budget: int | None,
+def validate_terms(source: str, *, provider: str | None, model: str | None, budget: int | None,
                    starter_files: str | None, starter_files_below: int | None,
                    who: str = "") -> None:
     """Refuse pinned settings that cannot stand, naming the file and the key.
@@ -353,8 +314,13 @@ def validate_terms(source: str, *, model: str | None, budget: int | None,
     per-agent terms. None is a term the caller did not set.
     """
     lead = f"{source}: {who}: " if who else f"{source}: "
-    if model is not None and model not in PRICES:
-        raise SystemExit(f"{lead}model {model!r} has no rates; add it to PRICES in harness.py")
+    if (provider is None) != (model is None):
+        raise SystemExit(f"{lead}provider and model must be set together")
+    if provider is not None:
+        try:
+            providers.model_spec(provider, model or "")
+        except providers.ProviderConfigurationError as error:
+            raise SystemExit(f"{lead}{error}") from None
     if budget is not None and budget <= 0:
         raise SystemExit(f"{lead}budget must be positive, got {budget}")
     if (starter_files is None) != (starter_files_below is None) or \
@@ -399,6 +365,7 @@ class Channel:
     ledger: str = ""                 # transfer: the harness file holding every transfer
     receipt: str = ""                # transfer: where the parse result is written back
     source: str = ""                 # experimenter channels: a directory under files/
+    agent_view: str = "paths"         # "paths" | "memory" | "letters" | "board"
 
     def path_for(self, label: str) -> str:
         """The path one agent's instance sits at."""
@@ -518,13 +485,14 @@ TRANSFER_FUNDERS = ("harness", "giver", "none")
 SCHEMAS = {"transfer": ("funded_by", "rebate_percent", "ledger", "receipt")}
 
 CHANNEL_KEYS = {"name", "writer", "readers", "shape", "path", "outbox", "inbox", "source", "pushed",
-                "restated", "measured", "silence_penalty_percent", "schema", *SCHEMAS["transfer"]}
+                "restated", "measured", "silence_penalty_percent", "schema", "agent_view",
+                *SCHEMAS["transfer"]}
 
 CHANNEL_TYPES = (("shape", str), ("path", str), ("outbox", str), ("inbox", str), ("source", str),
                  ("schema", str), ("funded_by", str), ("ledger", str), ("receipt", str),
                  ("pushed", bool), ("restated", bool), ("measured", bool),
                  ("silence_penalty_percent", int),
-                 ("rebate_percent", int))
+                 ("rebate_percent", int), ("agent_view", str))
 
 NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -628,11 +596,15 @@ def experimenter_channel(name: str, raw: dict, refuse: Callable[[str], None]) ->
     check_path(refuse, name, "path", raw.get("path"), False)
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
+    agent_view = raw.get("agent_view", "paths")
+    if agent_view not in ("paths", "memory", "letters", "board"):
+        refuse(f"channel {name}: agent_view must be one of ['paths', 'memory', 'letters', 'board'], "
+               f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
                f"episode, and pushed is false, so the digest carries none of it")
     return Channel(name, "experimenter", "all", "directory", path=raw["path"],
-                   pushed=pushed, restated=restated, source=src)
+                   pushed=pushed, restated=restated, source=src, agent_view=agent_view)
 
 
 def mailbox_paths(name: str, raw: dict, readers: str, shape: str,
@@ -748,6 +720,10 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
                        f"channel has none")
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
+    agent_view = raw.get("agent_view", "paths")
+    if agent_view not in ("paths", "memory", "letters", "board"):
+        refuse(f"channel {name}: agent_view must be one of ['paths', 'memory', 'letters', 'board'], "
+               f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
                f"episode, and pushed is false, so the digest carries none of it")
@@ -759,7 +735,7 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
         refuse(f"channel {name}: nothing is owed to a channel nobody else reads")
     return Channel(name, writer, readers, shape, **paths, pushed=pushed,
                    restated=restated, measured=measured,
-                   silence_penalty_percent=penalty, schema=schema,
+                   silence_penalty_percent=penalty, schema=schema, agent_view=agent_view,
                    **(transfer_terms(name, raw, penalty, refuse) if schema else {}))
 
 
@@ -841,7 +817,11 @@ class Tool:
 TOOL_KINDS: dict[str, str] = {
     "bash": "no channel",
     "write_slot": "a mailbox channel",
+    "send_message": "a mailbox channel",
+    "send_message_to": "a mailbox channel",
     "write_file": "a directory channel the agent writes",
+    "post_public": "a public directory channel the agent writes",
+    "write_memory": "a private directory channel",
     "transfer": "an enabled transfer schema channel",
     "read_path": "any channel the environment plants",
 }
@@ -876,10 +856,14 @@ def tools_from(records: list[dict] | None) -> list[Tool]:
 
 def kind_takes(kind: str, ch: Channel) -> bool:
     """Whether a channel is the shape this kind of tool acts on."""
-    if kind == "write_slot":
+    if kind in ("write_slot", "send_message", "send_message_to"):
         return ch.shape == "mailbox"
     if kind == "write_file":
         return ch.writer == "self" and ch.shape == "directory"
+    if kind == "post_public":
+        return ch.writer == "self" and ch.readers == "all" and ch.shape == "directory"
+    if kind == "write_memory":
+        return ch.writer == "self" and ch.readers == "self" and ch.shape == "directory"
     if kind == "transfer":
         return ch.schema == "transfer" and ch.funded_by != "none"
     return True                      # read_path takes whatever the environment plants
@@ -1003,7 +987,7 @@ FILE_CONTENT_LIMIT = 100_000
 
 # The shape of a trace: every file record names its channel, writer, readers,
 # role and author, and every episode record settles its channels by name.
-TRACE_VERSION = 3
+TRACE_VERSION = 4
 
 # --watch only. Not in TUNABLES, so config.toml cannot set it, and it never
 # reaches the agent.
@@ -1033,9 +1017,8 @@ DETACHED = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
 # refused and carried on is not part of a streak. See stalled().
 REFUSAL_STREAK = 8
 
-# Consecutive refused turns after which an episode stops. A refusal that reaches
-# the harness has already been through the fallback chain, so the same context
-# sent again is the same context the classifier just declined. At 1 the episode
+# Consecutive refused turns after which an episode stops. The same context sent
+# again is the same context the configured model just declined. At 1 the episode
 # ends on the first one. See run_turns().
 REFUSAL_TURNS = 1
 
@@ -1055,7 +1038,7 @@ STOPS_THE_EXPERIMENT = {"interrupted"}
 # whole, and what happens next is decided by whether it called a tool. Anything
 # outside this set ends the episode as unhandled:<reason> instead of being read
 # as an ordinary finished turn.
-HANDLED_STOPS = {"end_turn", "tool_use", "stop_sequence", "max_tokens", "refusal", None}
+HANDLED_STOPS = {"end_turn", "tool_use", "max_tokens", "refusal", "other"}
 
 COST_WORDS = re.compile(r"\b(cost|price|token|budget|dollar|spend|spent|charge|consum\w*)\b", re.I)
 
@@ -1086,7 +1069,7 @@ def trace_path(agent: str, index: int) -> Path:
 
 
 def raw_path(agent: str, index: int) -> Path:
-    """One episode's raw log: every API response verbatim, one JSON line each."""
+    """One episode's raw log: a native event then canonical event for each response."""
     return records_dir(agent) / "raw" / f"episode-{index:04d}.jsonl"
 
 
@@ -1130,10 +1113,9 @@ def replace_file(src: Path, dest: Path) -> None:
                 raise
             time.sleep(RENAME_WAIT_S)
 
-# The pinned settings, as load_account's keyword -> the account key that holds
-# each. Each defaults to the tunable of the same name, so an agent made with no
-# settings given is made on config.toml.
-CREATION_TERMS = {"system_prompt": "system_prompt", "model": "model", "budget": "initial",
+# The pinned settings, as load_account's keyword -> the account key that holds each.
+CREATION_TERMS = {"system_prompt": "system_prompt", "provider": "provider", "model": "model",
+                  "budget": "initial",
                   "starter_files": "starter_files",
                   "starter_files_below": "starter_files_below"}
 
@@ -1143,29 +1125,38 @@ def term_shown(key: str, value: Any) -> str:
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
 
 
-def load_account(agent: str, *, model: str | None = None, budget: int | None = None,
+def load_account(agent: str, *, provider: str | None = None, model: str | None = None,
+                 budget: int | None = None,
                  starter_files: str | None = None, starter_files_below: int | None = None,
                  system_prompt: str | None = None) -> dict:
     """Read the agent's ground truth, creating the agent on first use.
 
-    The pinned settings - the system prompt, model, budget, starter files and their
-    threshold - are read once, from the keywords where given and the tunables where
-    not, and recorded in account.json, which is what the agent uses from then on. A
-    setting given for an agent that already exists must match what it was created
-    on; an account that predates the setting takes it.
+    The pinned settings - the system prompt, provider, model, budget, starter files and
+    their threshold - are read once and recorded in account.json, which is what the agent
+    uses from then on. Provider and model are always explicit; other omitted terms use
+    their experiment tunables. A setting given for an existing agent must match what it
+    was created on.
     """
-    given = {"model": model, "budget": budget, "starter_files": starter_files,
+    given = {"provider": provider, "model": model, "budget": budget, "starter_files": starter_files,
              "starter_files_below": starter_files_below, "system_prompt": system_prompt}
-    terms = {k: (globals()[k.upper()] if v is None else v) for k, v in given.items()}
+    defaults = {"budget": BUDGET, "starter_files": STARTER_FILES,
+                "starter_files_below": STARTER_FILES_BELOW, "system_prompt": SYSTEM_PROMPT}
+    terms = {k: (defaults[k] if v is None and k in defaults else v) for k, v in given.items()}
     records = records_dir(agent)
     f = records / "account.json"
     if not f.exists():
+        if provider is None or model is None:
+            raise SystemExit(f"agent {agent} needs an explicit provider and model before it can be created")
+        validate_terms("account", provider=provider, model=model, budget=terms["budget"],
+                       starter_files=terms["starter_files"],
+                       starter_files_below=terms["starter_files_below"], who=agent)
         for d in (records / "traces", *(mirror(agent, c.name) for c in channels() if c.mirrored)):
             d.mkdir(parents=True, exist_ok=True)
         # Element 0 of the series is the initial balance; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
-        save_account(agent, {"agent": agent, "model": terms["model"], "initial": terms["budget"],
+        save_account(agent, {"account_version": 2, "agent": agent, "provider": terms["provider"],
+                             "model": terms["model"], "initial": terms["budget"],
                              "seat": "1",
                              "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                              "remaining": terms["budget"], "series": [terms["budget"]],
@@ -1180,12 +1171,15 @@ def load_account(agent: str, *, model: str | None = None, budget: int | None = N
         declared = ("" if terms["system_prompt"] == SYSTEM else
                     f", system prompt sha256={system_sha256(terms['system_prompt'])[:12]}")
         print(f"created agent {agent}: {terms['budget']} micro-dollars, "
-              f"{terms['model']}{declared}{starter}")
+              f"{terms['provider']}/{terms['model']}{declared}{starter}")
     account = json.loads(f.read_text(encoding="utf-8"))
-    if account["model"] not in PRICES:
-        raise SystemExit(f"agent {agent} was created on {account['model']!r}, which has no rates; "
-                         f"add it to PRICES in harness.py or start a new agent")
-    adopted = False
+    if account.get("account_version") != 2 or "provider" not in account:
+        raise SystemExit(f"agent {agent} has an account from the version-3 record format; "
+                         "start a fresh agent id for provider-neutral records")
+    try:
+        providers.model_spec(account["provider"], account["model"])
+    except providers.ProviderConfigurationError as error:
+        raise SystemExit(f"agent {agent}: {error}; start a fresh agent id") from None
     for term, key in CREATION_TERMS.items():
         if given[term] is None:
             continue
@@ -1195,9 +1189,8 @@ def load_account(agent: str, *, model: str | None = None, budget: int | None = N
                 f"asked to run with {term_shown(key, given[term])}. Episodes either side of that "
                 f"are not one experiment; start a new agent")
         if key not in account:
-            account[key], adopted = given[term], True
-    if adopted:
-        save_account(agent, account)
+            raise SystemExit(f"agent {agent} has an incompatible account missing {key!r}; "
+                             "start a fresh agent id")
     return account
 
 
@@ -1715,6 +1708,29 @@ def said_to(instances: list[Instance]) -> dict[str, str]:
     return said
 
 
+def digest_name(path: str, instances: list[Instance]) -> str:
+    """The agent-facing name of an internal item in a digest."""
+    inst = next((i for i in instances
+                 if path == i.path or path.startswith(i.path + "/")), None)
+    if inst is None or inst.channel.agent_view == "paths":
+        return path
+    if inst.channel.agent_view == "letters":
+        if path.startswith("from/"):
+            return f"Letter from {path.removeprefix('from/')}"
+        if path.startswith("to/"):
+            return f"Letter to {path.removeprefix('to/')}"
+    if inst.channel.agent_view == "board":
+        return f"Public post from {inst.label}"
+    if inst.channel.agent_view == "memory":
+        name = path[len(inst.path):].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
+        if name == "personas":
+            return "Orientation"
+        if name == "memory":
+            return "Private memory"
+        return f"Memory: {name.replace('_', ' ')}"
+    return path
+
+
 def digest_for(agent: str, account: dict, files: dict[str, str],
                carried: set[str]) -> tuple[str, dict[str, str]]:
     """The digest: what has been said to this agent, and the digests of what it quotes.
@@ -1744,11 +1760,12 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
                  for name, body in said.items()}
     out, unchanged = [], []
     for name, body in said.items():
+        shown_name = digest_name(name, instances)
         if requoted(name) or shown.get(name) != shown_now[name]:
-            out.append(section(name, body))
+            out.append(section(shown_name, body))
         else:
-            unchanged.append(name)
-    withdrawn = [name for name in shown if name not in said]
+            unchanged.append(shown_name)
+    withdrawn = [digest_name(name, instances) for name in shown if name not in said]
     if unchanged:
         out.append(named("unchanged", unchanged))
     if withdrawn:
@@ -2596,16 +2613,15 @@ class Bound:
         """
         return ", ".join(i.path + ("" if i.is_file else "/") for i in self.instances)
 
-    def spec(self) -> dict:
+    def spec(self) -> ToolSpec:
         """The tool as the request carries it.
 
         `strict` guarantees the arguments validate against the schema, so a call
         that names a peer outside the enumeration or leaves out a body costs no
-        turn. Every model in PRICES accepts it, so the tool set still varies by
-        experiment and never by model.
+        turn. Every cataloged model accepts it, so the tool set varies by
+        experiment and never by provider or model.
         """
-        return {"name": self.tool.name, "description": self.description(),
-                "input_schema": self.schema(), "strict": True}
+        return ToolSpec(self.tool.name, self.description(), self.schema())
 
     def description(self) -> str:
         """What the agent is told this tool does.
@@ -2637,6 +2653,14 @@ class Bound:
             return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
                     f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
                     f"read it, and reads it at {ch.inbox}/{self.own.label}.")
+        if self.tool.kind == "send_message":
+            return "Send a message to the other agent. Each call replaces your previous message."
+        if self.tool.kind == "send_message_to":
+            return "Send a message to one named peer. Each call replaces your previous message to that peer."
+        if self.tool.kind == "post_public":
+            return "Publish a post that every peer can read in the next episode. Each call replaces your previous post."
+        if self.tool.kind == "write_memory":
+            return "Save your private memory. Each call replaces its contents."
         if self.tool.kind == "write_file":
             return (f"Write a file in the {ch.name!r} channel, at {self.own.path}/<path>. "
                     f"It replaces whatever that path holds. {self.readers_said()}")
@@ -2669,6 +2693,20 @@ class Bound:
                         "to": {"type": "string", "enum": self.slots,
                                "description": f"The peer's label. Yours is {self.own.label}."},
                         "body": body}}
+        if self.tool.kind == "send_message":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["body"], "properties": {"body": body}}
+        if self.tool.kind == "send_message_to":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["to", "body"], "properties": {
+                        "to": {"type": "string", "enum": self.slots,
+                               "description": "The peer's label."}, "body": body}}
+        if self.tool.kind == "post_public":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["body"], "properties": {"body": body}}
+        if self.tool.kind == "write_memory":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["body"], "properties": {"body": body}}
         if self.tool.kind == "write_file":
             return {"type": "object", "additionalProperties": False,
                     "required": ["path", "body"], "properties": {
@@ -2698,14 +2736,35 @@ class Bound:
                         f"{', '.join(self.slots)}. Nothing was written.")
             if type(amount) is not int or amount <= 0:
                 return "amount must be a positive integer. Nothing was written."
-            result = self.put(shell, self.own.path, f"{to} {amount}\n")
-            return result + " Transfers settle at episode end, capped at the episode's spend."
+            path = self.own.path
+            declared = f"{to} {amount}\n"
+            was = read_path_in(shell, path)
+            if isinstance(was, Unanswered):
+                return f"Your transfer could not be declared: {was.said}"
+            if was == declared:
+                return "That transfer is already pending."
+            wrote, said = write_path_in(shell, path, declared)
+            return (f"Transfer of {amount} to {to} is pending until episode end." if wrote >= 0 else
+                    f"Your transfer could not be declared: {said}")
         if self.tool.kind == "write_slot":
             to = args.get("to")
             if to not in self.slots:
                 return (f"{to!r} is not a peer this channel reaches; it reaches "
                         f"{', '.join(self.slots)}. Nothing was written.")
             return self.put(shell, f"{self.channel.outbox}/{to}", args.get("body"))
+        if self.tool.kind == "send_message":
+            if len(self.slots) != 1:
+                return "A message needs exactly one recipient. Nothing was sent."
+            return self.send_message(shell, self.slots[0], args.get("body"))
+        if self.tool.kind == "send_message_to":
+            to = args.get("to")
+            if to not in self.slots:
+                return "That agent cannot receive a message now. Nothing was sent."
+            return self.send_message(shell, to, args.get("body"))
+        if self.tool.kind == "post_public":
+            return self.post_public(shell, args.get("body"))
+        if self.tool.kind == "write_memory":
+            return self.save_memory(shell, args.get("body"))
         if self.tool.kind == "write_file":
             rel = args.get("path")
             if fault := path_fault(rel):
@@ -2715,6 +2774,48 @@ class Bound:
                         f"a path here. Nothing was written.")
             return self.put(shell, f"{self.own.path}/{rel}", args.get("body"))
         return self.fetch(shell, args.get("path"))
+
+    def send_message(self, shell: Shell, recipient: str, body: Any) -> str:
+        """Save one message without exposing the backing store."""
+        if not isinstance(body, str):
+            return "The letter must be text. Nothing was sent."
+        path = f"{self.channel.outbox}/{recipient}"
+        was = read_path_in(shell, path)
+        if isinstance(was, Unanswered):
+            return f"Your letter to {recipient} could not be saved: {was.said}"
+        if was == body:
+            return f"Your letter to {recipient} is already saved exactly as written."
+        wrote, said = write_path_in(shell, path, body)
+        return (f"Your letter to {recipient} was saved." if wrote >= 0 else
+                f"Your letter to {recipient} could not be saved: {said}")
+
+    def post_public(self, shell: Shell, body: Any) -> str:
+        """Save one public post without exposing the backing store."""
+        if not isinstance(body, str):
+            return "The public post must be text. Nothing was published."
+        path = f"{self.own.path}/post.md"
+        was = read_path_in(shell, path)
+        if isinstance(was, Unanswered):
+            return f"Your public post could not be published: {was.said}"
+        if was == body:
+            return "Your public post is already saved exactly as written."
+        wrote, said = write_path_in(shell, path, body)
+        return ("Your public post was published." if wrote >= 0 else
+                f"Your public post could not be published: {said}")
+
+    def save_memory(self, shell: Shell, body: Any) -> str:
+        """Save one private memory without exposing the backing store."""
+        if not isinstance(body, str):
+            return "Your private memory must be text. Nothing was saved."
+        path = f"{self.own.path}/memory.md"
+        was = read_path_in(shell, path)
+        if isinstance(was, Unanswered):
+            return f"Your private memory could not be saved: {was.said}"
+        if was == body:
+            return "Your private memory is already saved exactly as written."
+        wrote, said = write_path_in(shell, path, body)
+        return ("Your private memory was saved." if wrote >= 0 else
+                f"Your private memory could not be saved: {said}")
 
     def put(self, shell: Shell, path: str, body: Any) -> str:
         """Write one path in this channel, and report the change against what was there."""
@@ -2785,141 +2886,34 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
 
 # --- 11. The API -----------------------------------------------------------------
 
-# The token counts that carry cost. Zeroed alongside centi on a response we
-# have already billed, so the CSV's token columns reconcile with spent.
-BILLABLE = ("cache_read", "input_tokens", "cache_write_5m", "cache_write_1h", "output_tokens")
+def bill_once(turn: NormalizedTurn, seen: set[str]) -> tuple[tuple, int, bool]:
+    """Return charges and their total once per response id."""
+    if turn.id in seen:
+        return (), 0, True
+    seen.add(turn.id)
+    return turn.charges, sum(item.centi_micros for item in turn.charges), False
 
 
-def lapsed_prices(model: str, today: str | None = None) -> str | None:
-    """Why this model's rates cannot be trusted today, or None if they can."""
-    entry = PRICES_EXPIRE.get(model)
-    if not entry:
-        return None
-    until, successor = entry
-    if (today or time.strftime("%Y-%m-%d", time.gmtime())) <= until:
-        return None
-    return (f"{model}: PRICES still holds the rate that expired {until}; the successor "
-            f"is {successor}. Update PRICES and PRICES_EXPIRE in harness.py, or every "
-            f"number this agent writes to account.json and to n is costed wrong.")
-
-
-def measure(usage: Any, model: str) -> dict:
-    """Cost in centi-micro-dollars, prompt size, and the billable token counts."""
-    inp, out, _ = PRICES[model]
-
-    def g(key, obj=usage):
-        return int(getattr(obj, key, 0) or 0)
-
-    # Cache creation is per-TTL where the SDK reports it, flat otherwise.
-    detail = getattr(usage, "cache_creation", None)
-    w5, w1h = (g("ephemeral_5m_input_tokens", detail), g("ephemeral_1h_input_tokens", detail)) if detail else (0, 0)
-    if not (w5 or w1h):
-        w5 = g("cache_creation_input_tokens")
-
-    read, i, o_ = g("cache_read_input_tokens"), g("input_tokens"), g("output_tokens")
-    return {
-        "centi": i * inp + w5 * inp * 125 // 100 + w1h * inp * 2 + read * inp // 10 + o_ * out,
-        "prefix": i + read + w5 + w1h,    # input_tokens alone omits the cached part
-        "input_tokens": i, "output_tokens": o_,
-        "cache_read": read, "cache_write_5m": w5, "cache_write_1h": w1h,
-    }
-
-
-def priced(model: str) -> tuple[str, bool]:
-    """`model` if PRICES has rates for it, else the dearest model that does.
-
-    Default routing can serve a turn with a model that has no entry, so it is
-    costed at the highest rate on the table. The bool records the substitution.
-    """
-    if model in PRICES:
-        return model, False
-    return max(PRICES, key=lambda m: PRICES[m][1]), True
-
-
-def measure_response(r: Any, model: str) -> dict:
-    """Cost a whole response, one attempt at a time.
-
-    usage.iterations is the per-attempt record, each billed at its own model's
-    rates; one with no output is not billed. `prefix` is the context served.
-    """
-    usage = getattr(r, "usage", None)
-    top = measure(usage, priced(model)[0])
-    iterations = list(getattr(usage, "iterations", None) or [])
-
-    if not iterations:
-        # No chain ran. A refusal that arrives before any output is not billed;
-        # its token counts are reported all the same, and are kept here.
-        empty = getattr(r, "stop_reason", None) == "refusal" and not (getattr(r, "content", None) or [])
-        return {**top, "centi": 0 if empty else top["centi"], "unpriced": []}
-
-    centi, unpriced = 0, []
-    for it in iterations:
-        served, substituted = priced(getattr(it, "model", None) or model)
-        if substituted:
-            unpriced.append(getattr(it, "model", None))
-        # No output, no charge: the attempt declined before producing any.
-        if int(getattr(it, "output_tokens", 0) or 0):
-            centi += measure(it, served)["centi"]
-    return {**top, "centi": centi, "unpriced": unpriced}
-
-
-def bill_once(r: Any, model: str, rid: str, seen: set[str]) -> dict:
-    """measure_response, charged once per response id.
-
-    A retried request the server had already served, or a replayed id, moves
-    nothing: its cost and its token counts are zeroed, so the per-turn columns
-    reconcile with the spend. `seen` is the ids billed so far.
-    """
-    u = measure_response(r, model)
-    if rid in seen:
-        return {**u, "centi": 0, **dict.fromkeys(BILLABLE, 0)}
-    seen.add(rid)
-    return u
-
-
-def served_by_fallback(r: Any) -> bool:
-    """Whether a fallback model produced this response.
-
-    A fallback_message entry means a fallback attempt ran; the stop reason
-    separates one that answered from one that declined. True for sticky routing.
-    """
-    usage = getattr(r, "usage", None)
-    ran = any(getattr(it, "type", None) == "fallback_message"
-              for it in (getattr(usage, "iterations", None) or []))
-    return ran and getattr(r, "stop_reason", None) != "refusal"
-
-
-def call(create: Callable, params: dict, log: list) -> Any:
+def call(request: Callable[[], Any], log: list) -> Any:
     """Retry 429/5xx/network up to RETRY_ATTEMPTS with jittered backoff.
 
     The client is built with max_retries=0, so this is the only retry layer.
     """
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
-            return create(**params)
+            return request()
         except Exception as e:
             status = getattr(e, "status_code", None)
-            retryable = status in (408, 409, 429) or (status or 0) >= 500 or type(e).__name__ in RETRYABLE
+            retryable = isinstance(e, ProviderError) and e.retryable
             if not retryable or attempt == RETRY_ATTEMPTS:
                 raise
-            log.append({"attempt": attempt, "error": type(e).__name__, "status": status})
+            log.append({"attempt": attempt, "provider": getattr(e, "provider", None),
+                        "error": type(e).__name__, "category": getattr(e, "category", None),
+                        "status": status})
             time.sleep(min(RETRY_CAP_S, RETRY_BASE ** attempt) * (1 + random.random() * RETRY_JITTER))
 
 
-def dump(r: Any) -> Any:
-    """A response as JSON-able data, whatever kind of object carried it.
-
-    The SDK's models serialise themselves; the fake API in check.py answers with
-    a plain namespace and does not. Both end up as the same shape of data here.
-    """
-    for name in ("to_dict", "model_dump"):
-        fn = getattr(r, name, None)
-        if callable(fn):
-            return fn(mode="json") if name == "model_dump" else fn()
-    return json.loads(json.dumps(r, default=lambda o: getattr(o, "__dict__", None) or str(o)))
-
-
-def log_raw(path: Path | None, turn: int, r: Any) -> None:
+def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) -> None:
     """Append one response to the episode's raw log, verbatim.
 
     Written before the response is read for anything else, so a turn that goes
@@ -2929,25 +2923,26 @@ def log_raw(path: Path | None, turn: int, r: Any) -> None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        line = {"turn": turn, "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "response": dump(r)}
+        line = {"kind": "native_response", "turn": turn,
+                "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "provider": pending.provider, "native_response": pending.native}
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, default=str) + "\n")
     except Exception as e:                     # noqa: BLE001 - see docstring
         print(f"  raw log: {type(e).__name__}: {e}", file=sys.stderr)
 
 
-def refusal_detail(r: Any) -> dict | None:
-    """Why the API declined, when it did. None on every other stop reason.
-
-    stop_details accompanies only stop_reason "refusal". `category` separates a
-    classifier declining from the model; `recommended_model` names a retry.
-    """
-    d = getattr(r, "stop_details", None)
-    if d is None:
-        return None
-    return {k: getattr(d, k, None) for k in
-            ("type", "category", "explanation", "recommended_model", "fallback_credit_token")}
+def log_normalized(path: Path | None, turn: int, response: NormalizedTurn) -> None:
+    """Append the canonical response after the preceding native response was persisted."""
+    if path is None:
+        return
+    try:
+        line = {"kind": "normalized_response", "turn": turn,
+                "provider": response.provider, "response": response.as_dict()}
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(line, default=str) + "\n")
+    except Exception as e:
+        print(f"  raw log: {type(e).__name__}: {e}", file=sys.stderr)
 
 
 def category_of(turn: dict) -> str:
@@ -2956,10 +2951,10 @@ def category_of(turn: dict) -> str:
     Three outcomes worth separating: a category, a refusal the API gave without
     one, and a turn carrying no stop_details at all.
     """
-    d = turn.get("stop_details")
+    d = turn.get("refusal")
     if d is None:
         return "not recorded"
-    return d.get("category") or "null"
+    return (d.get("details") or {}).get("category") or d.get("kind") or "null"
 
 
 def refusal_category(turns: list[dict]) -> str:
@@ -2970,12 +2965,6 @@ def refusal_category(turns: list[dict]) -> str:
     """
     refused = next((t for t in turns if t.get("stop_reason") == "refusal"), None)
     return "not recorded" if refused is None else category_of(refused)
-
-
-def blocks(content: list, kind: str, field: str) -> str:
-    """Join one kind of content block from a response - text, or thinking."""
-    return "\n".join(getattr(b, field, "") or "" for b in content
-                     if getattr(b, "type", "") == kind)
 
 
 def watch(line: str = "") -> None:
@@ -3010,80 +2999,44 @@ def new_episode_record(floor: int) -> dict:
 
     stop: how the episode ended, harness_error until something else is known.
     spent: micro-dollars, committed on every path. turns, commands, retries,
-    observation: what happened. model_resolved: the dated snapshot behind the
+    observation: what happened. resolved_model: the dated snapshot behind the
     alias. live_balance_writes/errors/tampered: how the per-turn writes of the
     balance file went. refused_turns: turns the API declined, whether or not they
-    ended the episode. fallback_turns, unpriced_turns: turns a fallback answered,
-    and turns costed at a substitute rate. balances: the balance after each
+    ended the episode. balances: the balance after each
     billed turn, the elements this episode adds to the series.
     """
     return {"stop": "harness_error", "spent": 0, "turns": [], "commands": [], "retries": [],
-            "error": None, "observation": "", "model_resolved": None,
+            "error": None, "observation": "", "resolved_model": None,
             "live_balance_writes": 0, "live_balance_errors": 0, "live_balance_tampered": 0,
-            "balance_floor": floor, "refused_turns": 0, "fallback_turns": 0, "unpriced_turns": 0,
+            "balance_floor": floor, "refused_turns": 0,
             "balances": []}
 
 
-def fallbacks_for(model: str) -> bool:
-    """Whether this model's requests carry the fallback policy.
-
-    Asked for by FALLBACKS and granted only where the model's API accepts the
-    parameter. The two are separate so a trace says which of them decided it:
-    the model is in the provenance beside the answer.
-    """
-    return FALLBACKS and model in FALLBACK_MODELS
-
-
-def request(model: str, messages: list[dict], system: str,
-            tools: Iterable[dict] = (), shell: bool = False) -> dict:
-    """The parameters of one API call.
-
-    One dict literal and two branches, so two models are asked differently only
-    where the API forces it. `system` is what this agent's experiment declared, and
-    an empty one is sent as no system parameter at all. `tools` are the specs of
-    whatever the experiment declared, and `shell` whether the agent is offered the
-    shell as well: it comes first when explicitly declared. The tools vary by experiment
-    and never by model. Caching
-    auto-places on the newest turn. A declined turn is retried inside the same call
-    on whichever model the category recommends, which is what the fallback policy
-    asks for.
-    """
-    params = {"model": model, "max_tokens": MAX_TOKENS,
-              "messages": messages, "tools": ([TOOL] if shell else []) + list(tools),
-              "cache_control": {"type": "ephemeral"}}
-    if system:
-        params["system"] = system
-    if fallbacks_for(model):
-        params["fallbacks"] = "default"
-        params["betas"] = [FALLBACK_BETA]
-    return params
-
-
-def turn_record(turn: int, rid: str, r: Any, u: dict, previous: int, balance: int,
-                fallback: bool) -> dict:
+def turn_record(turn: int, response: NormalizedTurn, charges: tuple, duplicate: bool,
+                previous: int, balance: int) -> dict:
     """One turn as the trace keeps it.
 
     micros is the drop in the balance, so the column partitions the spend and a
     duplicate reads 0. Reasoning is kept apart from spoken words. stop_reason and
-    model are the API's own, per turn: the model that answers can change partway
-    through an episode, and one that is not the requested one without the
-    fallback mark is a sticky-routed turn.
+    resolved model and stop details are the provider's own values for the turn.
     """
-    content = list(r.content or [])
-    return {"turn": turn, "id": rid, "micros": previous - balance, "prefix": u["prefix"],
-            "stop_reason": getattr(r, "stop_reason", None), "stop_details": refusal_detail(r),
-            "balance": balance, "model": getattr(r, "model", None),
-            "served_by_fallback": fallback, "unpriced_model": u["unpriced"] or None,
-            # The per-attempt billing record behind micros.
-            "iterations": [dump(it) for it in
-                           (getattr(getattr(r, "usage", None), "iterations", None) or [])],
-            "text": clip(blocks(content, "text", "text"), TURN_TEXT_LIMIT),
-            "thinking": clip(blocks(content, "thinking", "thinking"), TURN_TEXT_LIMIT),
-            "tools": [], **{k: u[k] for k in BILLABLE}}
+    return {"turn": turn, "id": response.id, "micros": previous - balance,
+            "provider": response.provider, "requested_model": response.requested_model,
+            "resolved_model": response.resolved_model,
+            "stop_reason": response.stop_reason,
+            "native_stop_reason": response.native_stop_reason,
+            "native_stop_details": response.native_stop_details,
+            "refusal": response.refusal.as_dict() if response.refusal else None,
+            "balance": balance, "usage": response.usage.as_dict(),
+            "duplicate_response": duplicate,
+            "charges": [item.as_dict() for item in charges],
+            "text": clip("\n".join(response.text), TURN_TEXT_LIMIT),
+            "thinking": clip("\n".join(response.reasoning), TURN_TEXT_LIMIT),
+            "tools": []}
 
 
-def run_tools(shell: Shell, calls: list, rec: dict, out: dict,
-              bound: Iterable[Bound] = ()) -> list[dict]:
+def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
+              bound: Iterable[Bound] = ()) -> tuple[ToolResult, ...]:
     """Run every tool call of a turn and return the tool_result blocks to send back.
 
     A bash call carrying no command is the {"restart": true} form: the shell is
@@ -3095,12 +3048,12 @@ def run_tools(shell: Shell, calls: list, rec: dict, out: dict,
     offered = {b.tool.name: b for b in bound}
     results = []
     for b in calls:
-        name = getattr(b, "name", "") or TOOL["name"]
-        args = getattr(b, "input", None) or {}
+        name = b.name or SHELL_SPEC.name
+        args = b.input or {}
         if action := offered.get(name):
             text = clip(action.call(shell, args), TOOL_RESULT_LIMIT)
             rec["tools"].append({"tool": name, "command": None, "input": args, "result": text})
-        elif name == TOOL["name"] and SHELL_TOOL:
+        elif name == SHELL_SPEC.name and SHELL_TOOL:
             cmd = args.get("command")
             if cmd is None:
                 shell.restart()
@@ -3112,12 +3065,12 @@ def run_tools(shell: Shell, calls: list, rec: dict, out: dict,
             # Nothing the request offered, so nothing to do but say so.
             text = f"there is no tool named {name!r}. Nothing was done."
             rec["tools"].append({"tool": name, "command": None, "input": args, "result": text})
-        results.append({"type": "tool_result", "tool_use_id": b.id, "content": text})
-    return results
+        results.append(ToolResult(b.id, text))
+    return tuple(results)
 
 
-def open_episode(shell: Shell, index: int, model: str, remaining: int,
-                 floor: int) -> tuple[dict, list[dict]]:
+def open_episode(shell: Shell, index: int, provider: str, model: str, remaining: int,
+                 floor: int) -> tuple[dict, str]:
     """The episode's record, and the first user turn it opens on.
 
     Invariant 2: the first user turn is the raw stdout of the initial observation
@@ -3129,9 +3082,9 @@ def open_episode(shell: Shell, index: int, model: str, remaining: int,
     out["commands"].append(first)
     out["observation"] = sh(shell, first, OBSERVATION_LIMIT)
     watch(f"\n=== episode {index} ===")
-    watch(f"=== {shell.container}  {model}  {remaining:,} micro-dollars remaining"
+    watch(f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining"
           f"  (floor {floor:,}) ===")
-    return out, [{"role": "user", "content": out["observation"]}]
+    return out, out["observation"]
 
 
 def republish(shell: Shell, label: str, account: dict, out: dict) -> None:
@@ -3149,15 +3102,7 @@ def republish(shell: Shell, label: str, account: dict, out: dict) -> None:
         out["live_balance_tampered"] += status == "tampered"
 
 
-def warn_unpriced(models: list, out: dict) -> None:
-    """Say that a model with no rates served a turn, and count the turn."""
-    out["unpriced_turns"] += 1
-    print(f"  {', '.join(str(m) for m in models)} served a turn and has no "
-          f"rates; costed at the dearest in PRICES. Add it to PRICES in harness.py.",
-          file=sys.stderr)
-
-
-def refusal_reply(calls: list) -> list[dict] | str:
+def refusal_reply(calls: Iterable[ToolCall]) -> tuple[ToolResult, ...] | str:
     """What a refused turn is answered with in place of the results it would have had.
 
     The tool_result form is required wherever the turn carried calls: the API
@@ -3165,8 +3110,7 @@ def refusal_reply(calls: list) -> list[dict] | str:
     """
     if not calls:
         return REFUSAL_NOTICE
-    return [{"type": "tool_result", "tool_use_id": b.id,
-             "content": REFUSAL_NOTICE, "is_error": True} for b in calls]
+    return tuple(ToolResult(call.id, REFUSAL_NOTICE, True) for call in calls)
 
 
 def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
@@ -3183,7 +3127,7 @@ def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
     return None
 
 
-def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: str,
+def run_turns(router: ProviderRouter, shell: Shell, account: dict, index: int, label: str,
               raw: Path | None, bound: Iterable[Bound] = ()) -> dict:
     """Drive one episode's turns. API failures are recorded in the returned dict.
 
@@ -3192,18 +3136,19 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
     `bound` are the declared tools this environment can offer, empty for the shell
     alone. Their specs are built once: the tool set stands for the episode.
     """
-    model, remaining = account["model"], account["remaining"]
+    provider, model, remaining = account["provider"], account["model"], account["remaining"]
     bound = list(bound)
-    specs = [b.spec() for b in bound]
+    specs = tuple(([SHELL_SPEC] if SHELL_TOOL else []) + [b.spec() for b in bound])
     system = system_of(account)
-    limit = int(PRICES[model][2] * CONTEXT_FRACTION)
+    limit = int(providers.model_spec(provider, model).context_window * CONTEXT_FRACTION)
     # admits() starts no episode at or below zero, so every episode begins with
     # something to spend and stops at the same place.
     floor = 0
     centi, balance = 0, remaining
     refused = 0                              # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
-    out, messages = open_episode(shell, index, model, remaining, floor)
+    out, next_input = open_episode(shell, index, provider, model, remaining, floor)
+    session = router.open_session(provider, model, system, specs, MAX_TOKENS)
 
     try:
         for turn in range(1, MAX_TURNS + 1):
@@ -3217,30 +3162,24 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
                 out["stop"] = "budget_exhausted"
                 break
 
-            r = call(create, request(model, messages, system, specs, SHELL_TOOL),
-                     out["retries"])
+            pending = call(lambda: session.request(next_input), out["retries"])
             # Before the response is read for anything: a turn that fails below is
             # still on disk exactly as it arrived.
-            log_raw(raw, turn, r)
+            log_raw(raw, turn, pending)
+            response = pending.normalize()
+            log_normalized(raw, turn, response)
 
-            rid = getattr(r, "id", None) or f"anon-{turn}"
-            stop_reason = getattr(r, "stop_reason", None)
-            out["model_resolved"] = out["model_resolved"] or getattr(r, "model", None)
-            u = bill_once(r, model, rid, seen)
-            centi += u["centi"]
-            fallback = served_by_fallback(r)
-            out["fallback_turns"] += fallback
-            if u["unpriced"]:
-                warn_unpriced(u["unpriced"], out)
+            rid = response.id or f"anon-{turn}"
+            if not response.id:
+                response = dataclasses.replace(response, id=rid)
+            stop_reason = response.stop_reason
+            out["resolved_model"] = out["resolved_model"] or response.resolved_model
+            charges, billed_centi, duplicate = bill_once(response, seen)
+            centi += billed_centi
             previous, balance = balance, remaining - centi // 100
-            content = list(r.content or [])
-            calls = [b for b in content if getattr(b, "type", "") == "tool_use"]
-            rec = turn_record(turn, rid, r, u, previous, balance, fallback)
+            calls = list(response.tool_calls)
+            rec = turn_record(turn, response, charges, duplicate, previous, balance)
             out["turns"].append(rec)
-            # An empty assistant message is not one the API takes back, so a refusal
-            # that arrived with nothing in it is recorded above and not replayed.
-            if content:
-                messages.append({"role": "assistant", "content": content})
 
             # One element per turn, appended and never rewritten. A replay appends a
             # flat step, findable as micros == 0. Under LIVE_BALANCE the element
@@ -3250,10 +3189,10 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
                 republish(shell, label, account, out)
 
             watch(f"\n--- turn {turn}   spent {centi // 100:,}/{remaining:,}"
-                  f"   balance {rec['balance']:,}   context {u['prefix']:,}/{limit:,}")
+                  f"   balance {rec['balance']:,}   context {response.usage.prefix_tokens:,}/{limit:,}")
             if rec["text"]:
                 watch_text(rec["text"])
-            at_limit = u["prefix"] >= limit
+            at_limit = response.usage.prefix_tokens >= limit
 
             if stop_reason == "max_tokens":
                 # A turn cut off mid-JSON carries no whole tool call, so the
@@ -3269,19 +3208,22 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
                     break
                 # Nothing of a refused turn is executed, and the notice takes the
                 # place of the results it would have returned.
-                messages.append({"role": "user", "content": refusal_reply(calls)})
+                next_input = refusal_reply(calls)
                 if at_limit:
                     out["stop"] = "context_threshold"
                     break
                 continue
             refused = 0
 
+            if stop_reason == "other":
+                out["stop"] = f"unhandled:{response.native_stop_reason}"
+                break
+
             if ended := stop_of(stop_reason, calls, turn):
                 out["stop"] = ended
                 break
 
-            messages.append({"role": "user",
-                             "content": run_tools(shell, calls, rec, out, bound)})
+            next_input = run_tools(shell, calls, rec, out, bound)
             if at_limit:
                 out["stop"] = "context_threshold"
                 break
@@ -3292,8 +3234,11 @@ def run_turns(create: Callable, shell: Shell, account: dict, index: int, label: 
         out["stop"] = "interrupted"
         out["error"] = "KeyboardInterrupt"
     except Exception as e:
-        out["stop"] = "api_error" if getattr(e, "status_code", None) or type(e).__name__ in RETRYABLE else "harness_error"
+        out["stop"] = ("api_error" if isinstance(e, ProviderError) and e.category != "adapter"
+                       else "harness_error")
         out["error"] = f"{type(e).__name__}: {e}"
+        if isinstance(e, ProviderError):
+            out["provider_error"] = e.as_dict()
     finally:
         # Committed on every path: an episode that cost money appears in the series.
         out["spent"] = centi // 100
@@ -3498,7 +3443,7 @@ def image_id(image: str) -> str | None:
     return r.stdout.strip() or None
 
 
-def provenance(model: str, seating: Seating | None = None,
+def provenance(provider: str, model: str, seating: Seating | None = None,
                starter_files: tuple[str, int] | None = None, experiment: dict | None = None,
                system: str | None = None) -> dict:
     """Everything outside account.json that decided what this episode was.
@@ -3523,11 +3468,8 @@ def provenance(model: str, seating: Seating | None = None,
         "system_sha256": system_sha256(system),
         "image": IMAGE,
         "image_id": image_id(IMAGE),
-        "prices": list(PRICES[model]),
-        # No thinking parameter is sent; the fallback policy is what decides which
-        # model answers a declined turn, so it is recorded like a rate.
-        "fallbacks": "default" if fallbacks_for(model) else None,
-        "fallback_beta": FALLBACK_BETA if fallbacks_for(model) else "",
+        "provider": providers.provenance(provider, model),
+        "requested_model": model,
         "context_fraction": CONTEXT_FRACTION,
         "max_tokens": MAX_TOKENS,
         "max_turns": MAX_TURNS,
@@ -3584,7 +3526,11 @@ def drift(agent: str, index: int, now: dict) -> list[str]:
     f = trace_path(agent, index - 1)
     if index < 2 or not f.exists():
         return []
-    was = json.loads(f.read_text(encoding="utf-8")).get("provenance") or {}
+    previous = json.loads(f.read_text(encoding="utf-8"))
+    if previous.get("trace_version") != TRACE_VERSION:
+        raise SystemExit(f"agent {agent} has incompatible version-{previous.get('trace_version')} "
+                         "traces; start a fresh agent id")
+    was = previous.get("provenance") or {}
     # system_sha256 names a changed prompt in one line; the text would arrive as
     # two whole prompts in a banner.
     skip = {"started_at", "system"}
@@ -3770,8 +3716,8 @@ def build_episode(agent: str) -> Episode:
     # and the episode they land in is the one that most needs them.
     shown, shown_now = render_harness_files(agent, account)
 
-    prov = provenance(account["model"], seating, starter_terms(account), account.get("experiment"),
-                      system_of(account))
+    prov = provenance(account["provider"], account["model"], seating, starter_terms(account),
+                      account.get("experiment"), system_of(account))
     drifted = drift(agent, index, prov)
     for line in drifted:
         print(f"  provenance drift, {agent} episode {index}: {line}", file=sys.stderr)
@@ -3830,7 +3776,7 @@ def assert_writable(shell: Shell, instances: list[Instance]) -> None:
                                     f"the agent could not persist anything")
 
 
-def run_episode(ep: Episode, create: Callable) -> dict:
+def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     """Run the episode in a built environment, then mirror the environment back and reap it.
 
     The one phase that bills. Whatever run_turns returns - a whole episode, or
@@ -3840,7 +3786,7 @@ def run_episode(ep: Episode, create: Callable) -> dict:
     WATCH_AGENT.set(f"{ep.agent}| ")
     out: dict = {}
     try:
-        out = run_turns(create, ep.shell, ep.account, ep.index, ep.seating.label,
+        out = run_turns(router, ep.shell, ep.account, ep.index, ep.seating.label,
                         raw_path(ep.agent, ep.index), ep.bound)
     finally:
         # While the container is still up, and after the last billed turn: this
@@ -3972,7 +3918,8 @@ def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int,
     ref = patterns[0] if patterns else None
     forms = balance_forms(ep.canonical)
     return {"trace_version": TRACE_VERSION,
-            "agent": ep.agent, "episode": ep.index, "model": account["model"],
+            "agent": ep.agent, "episode": ep.index, "provider": account["provider"],
+            "requested_model": account["model"], "resolved_model": out.get("resolved_model"),
             "system_sha256": ep.prov["system_sha256"],
             "provenance": ep.prov, "provenance_drift": ep.drifted,
             "missing_tools": ep.missing,     # reached for; the image does not have it
@@ -4016,12 +3963,6 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     # them and went on stops for its own reason.
     if trace["refused_turns"]:
         line += f"  refused={trace['refused_turns']}x  why={refusal_category(trace['turns'])}"
-    # Turns a fallback served, beside the refusals: the gap between the two is what
-    # says whether the fallback is working, and neither is in any error count.
-    if trace["fallback_turns"]:
-        line += f"  fallback={trace['fallback_turns']}x"
-    if trace["unpriced_turns"]:
-        line += f"  unpriced={trace['unpriced_turns']}x"
     if transfer["amount"]:
         line += f"  transfer={transfer['amount']}->{transfer['label']}"
     line += settled_why(settled["settled"])
@@ -4035,10 +3976,10 @@ def commit_episode(ep: Episode, out: dict) -> dict:
     return close_episode(ep, out, settle_episode(ep, out))
 
 
-def run_once(agent: str, create: Callable) -> dict:
+def run_once(agent: str, router: ProviderRouter) -> dict:
     """Build the environment, run an episode in a fresh container, commit, trace."""
     ep = build_episode(agent)
-    return commit_episode(ep, run_episode(ep, create))
+    return commit_episode(ep, run_episode(ep, router))
 
 
 def ready(agent: str, prepare: Callable | None = None) -> Episode | None:
@@ -4058,28 +3999,20 @@ def ready(agent: str, prepare: Callable | None = None) -> Episode | None:
     return build_episode(agent)
 
 
-def drive(agent: str, create: Callable, prepare: Callable | None = None) -> dict | None:
+def drive(agent: str, router: ProviderRouter, prepare: Callable | None = None) -> dict | None:
     """One episode for `agent`, if its account admits one. The trace, or None."""
     ep = ready(agent, prepare)
-    return None if ep is None else commit_episode(ep, run_episode(ep, create))
+    return None if ep is None else commit_episode(ep, run_episode(ep, router))
 
 
 # --- 16. Many episodes -----------------------------------------------------------
 
 
 def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
-          models: Iterable[str] = (), channel_tables: list[dict] | None = None,
+          requirements: Iterable[tuple[str, str]] = (), channel_tables: list[dict] | None = None,
           harness_files: dict | None = None, labels: Iterable[str] = ("1",),
-          tool_tables: list[dict] | None = None) -> Callable:
-    """Read the config, refuse an agent that would mean something else, return `create`.
-
-    The checks a live agent must pass before it costs anything: the prompt is
-    pinned, the rates have not lapsed, the endpoint is real. Exits on failure.
-    `overrides` are a manifest's experiment-level defaults, applied after config.toml
-    and held to the same rules; `models` are the per-agent models a manifest names,
-    each checked as the default is. `tool_tables` are the actions it offers beside
-    bash, decided against the channel table it declared.
-    """
+          tool_tables: list[dict] | None = None) -> ProviderRouter:
+    """Read configuration and preflight every provider/model used by a seat."""
     def refuse(why: str) -> None:
         print(why, file=sys.stderr)
         raise SystemExit(2)
@@ -4098,68 +4031,19 @@ def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
     # After the channels, and whether or not this manifest declares any: a tool
     # points at a channel, so a table that replaced the channels re-decides them.
     apply_tools(tool_tables, channels(), "manifest")
-    asked = {MODEL, *models}
-    for model in sorted(asked):
-        if lapsed := lapsed_prices(model):
-            refuse(lapsed)
-    # Refused on any value, not a wrong one: that is what makes "this agent did
-    # not go through some other endpoint" checkable.
-    if url := os.environ.get("ANTHROPIC_BASE_URL"):
-        refuse(f"ANTHROPIC_BASE_URL is set ({url!r}); unset it first.")
-
-    import anthropic
-    client = anthropic.Anthropic(max_retries=0)
-    for model in sorted(asked):
-        for line in unpriced_targets(client, model):
-            refuse(line)
-    return client.beta.messages.create
-
-
-def unpriced_targets(client: Any, model: str) -> list[str]:
-    """Reasons not to start this agent, found in the first request it makes.
-
-    Under the fallback policy allowed_fallback_models is a likely superset of
-    what can serve a turn: a missing price refuses, anything else warns. Without
-    it only this model can serve a turn and there is nothing to price, so the
-    lookup is the plain one and it is made for what it still catches. No usable
-    key refuses either way.
-    """
+    requirements = tuple(requirements)
+    if not requirements:
+        refuse("every seated agent needs an explicit provider and model")
+    for line in providers.lapsed_prices(requirements):
+        refuse(line)
     try:
-        if fallbacks_for(model):
-            entry = client.beta.models.retrieve(model, betas=[FALLBACK_BETA])
-            targets = list(getattr(entry, "allowed_fallback_models", None) or [])
-        else:
-            client.models.retrieve(model)
-            targets = []
-    except Exception as e:                     # noqa: BLE001 - see docstring
-        if unauthenticated(e):
-            return [f"this client cannot authenticate ({type(e).__name__}: {e}). "
-                    f"Set ANTHROPIC_API_KEY in the shell this agent is launched from; "
-                    f"every request the agent would make fails the same way, and each "
-                    f"one costs a container and an episode record."]
-        print(f"could not read {model}'s fallback targets ({type(e).__name__}: {e}); "
-              f"a fallback to a model with no rates will be costed at the dearest in PRICES.",
-              file=sys.stderr)
-        return []
-    if unpriced := [m for m in targets if m not in PRICES]:
-        return [f"{model} may fall back to {', '.join(unpriced)}, which have no rates. "
-                f"Add them to PRICES in harness.py, or every number this agent writes to "
-                f"account.json and to n is costed wrong."]
-    return []
-
-
-def unauthenticated(e: BaseException) -> bool:
-    """Whether an API error says this client has no usable credentials.
-
-    Three shapes: AuthenticationError, PermissionDeniedError, and anything
-    carrying 401 or 403. No key at all raises a bare TypeError instead.
-    """
-    if getattr(e, "status_code", None) in (401, 403):
-        return True
-    if isinstance(e, TypeError):
-        return "could not resolve authentication method" in str(e).lower()
-    import anthropic
-    return isinstance(e, (anthropic.AuthenticationError, anthropic.PermissionDeniedError))
+        router = providers.DirectProviderRouter(requirements)
+        router.preflight()
+    except ProviderError as error:
+        key = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}.get(error.provider)
+        suffix = f" Set {key} in the shell this experiment is launched from." if key else ""
+        refuse(f"{error.provider} preflight failed ({error}).{suffix}")
+    return router
 
 
 def catch_signals() -> None:
@@ -4179,7 +4063,7 @@ def catch_signals() -> None:
     signal.signal(signal.SIGTERM, stop)
 
 
-def run_episodes(agent: str, create: Callable, count: int,
+def run_episodes(agent: str, router: ProviderRouter, count: int,
                  prepare: Callable | None = None) -> int:
     """Run up to `count` episodes back to back. Returns the exit status.
 
@@ -4194,7 +4078,7 @@ def run_episodes(agent: str, create: Callable, count: int,
             print(f"stopping after {ran} of {count} episodes", file=sys.stderr)
             break
         try:
-            trace = drive(agent, create, prepare)
+            trace = drive(agent, router, prepare)
         except BUILD_FAILURES as e:
             # Starting the container, copying state in, and starting the shell all
             # happen before the first API call, so nothing reaching here was billed
@@ -4254,7 +4138,11 @@ def fork(parent: str, index: int, new: str) -> int:
     at_head = index == len(parent_account["episodes"])
     seat = parent_account.get("seat") or "1"
     label = (trace.get("provenance", {}).get("labels") or {}).get(seat) or parent_account.get("label") or seat
-    account = {"agent": new, "model": parent_account["model"], "initial": parent_account["initial"],
+    if parent_account.get("account_version") != 2 or trace.get("trace_version") != TRACE_VERSION:
+        raise SystemExit(f"{parent} cannot be forked from an incompatible account or trace; "
+                         "start a fresh agent id")
+    account = {"account_version": 2, "agent": new, "provider": parent_account["provider"],
+               "model": parent_account["model"], "initial": parent_account["initial"],
                "created_at": parent_account["created_at"], "remaining": series[-1],
                "seat": seat, "label": label,
                "series": series, "episodes": parent_account["episodes"][:index],
@@ -4481,14 +4369,14 @@ def main(argv: list[str] | None = None) -> int:
     # cannot record: an agent reading no config and one reading a config of every
     # default are the same episode. Everything else is the manifest's, and its digest
     # is in every trace.
-    create = start(a.config, overrides=m["overrides"],
-                   models={e["model"] for e in m["agents"] if e.get("model")},
+    router = start(a.config, overrides=m["overrides"],
+                   requirements={(e["provider"], e["model"]) for e in m["agents"]},
                    channel_tables=m["channels"], harness_files=m["harness_files"],
                    labels=tuple(m["labels"].values()), tool_tables=m["tools"])
     catch_signals()
     load_account(a.agent, **experiment.terms_of(entry))
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
-    return run_episodes(a.agent, create, a.episodes, seat(a.agent))
+    return run_episodes(a.agent, router, a.episodes, seat(a.agent))
 
 
 if __name__ == "__main__":

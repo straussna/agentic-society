@@ -63,49 +63,24 @@ provenance and a change to it between episodes shows up in `provenance_drift`. E
 such a change are not one record.
 
 The prompt is **not** tunable. It is pinned in `harness.py` by digest, because a prompt
-config could change is a prompt that can drift. Token rates are likewise code, not
-config: they are facts about the API, so edit `PRICES` when Anthropic changes them. It
-carries every model the API serves, not only the one selected, because the model
-that answers a turn is chosen server-side and any of them can be it; cache rates are not
-entries of their own but fixed multiples of the input rate, applied in `measure()`.
-Routing is code too. Every request carries `fallbacks: "default"` under the
-`FALLBACK_BETA` beta, so a model that declines is not the end of the turn: the API tries
-the rest of the chain and returns whichever attempt answered. A `stop_reason` of
-`refusal` therefore means every model in the chain declined, which is a stronger claim
-than one model declining and the reason `REFUSAL_STREAK` reads a streak of them as an agent
-the classifier will not let start. `check.py` validates `config.toml` and then verifies
-against the pinned defaults, so a check run means the same thing whatever you are
-currently trying.
+config could change is a prompt that can drift. Token rates and model catalogs live in
+the named provider adapters. Every request asks for the provider and model pinned in the
+account; there is no server-side fallback or sticky routing.
 
-No `thinking` parameter is sent with it. A request under `fallbacks` must be valid as a
-direct request to every model the chain can reach, and an omitted `thinking` is valid for
-all of them where a pinned one is not. So each model applies its own default — adaptive
-thinking on `claude-opus-5`, `claude-sonnet-5`, and `claude-fable-5` — and reasoning
-arrives as thinking blocks, recorded per turn in the trace's `thinking` field.
+Each provider keeps its conversation state in a per-episode session and uses the
+provider's default reasoning behavior. Anthropic maps the canonical conversation to
+Messages blocks. OpenAI uses Responses with `store=false`, carries output and reasoning
+items forward itself, and requests encrypted reasoning state. Both receive the same
+strict function tools in the same order.
 
-**A turn is billed per attempt, not per response.** `usage.iterations` is the per-attempt
-record, and `measure_response` sums over it at each attempt's own rates instead of
-costing the whole response at the requested model's. An attempt that produced no output
-is not billed, wherever it sits in the chain: a refusal arriving before any output costs
-nothing, and so does the trailing `fallback_message` left when every model declined.
+**A turn is billed from canonical usage and itemized charges.** The provider normalizes
+prefix, uncached input, cache reads, cache writes, output and the reasoning subset. It
+also emits charge entries in centi-micro-dollars. The harness sums those entries and
+retains the fractional carry; a repeated response id is recorded but billed once.
 
-Which model actually served is per turn and not per episode, because it can change
-partway through one. Each turn records `model`, `served_by_fallback`, and `iterations`;
-a turn whose `model` is not the requested one *without* the fallback mark is a
-sticky-routed turn, where the requested model was never asked at all. Per episode,
-`fallback_turns` and `unpriced_turns` count them, and both reach the console line.
-
-A model can serve that `PRICES` has no rates for — default routing chooses from a table
-that is not published anywhere. Costing it free would understate the balance the agent
-is shown and raising would lose a turn that really did spend, so `priced()` costs it at
-the dearest rate on the table and records `unpriced_model` to make the substitution
-visible, not silent. `unpriced_targets()` checks the published
-`allowed_fallback_models` at startup and refuses an agent whose targets have no rates; a
-list that cannot be read is a warning, not a refusal, because `measure_response` is what
-holds when a model outside it arrives.
-
-Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, which
-is where a routing question that the trace's derived fields cannot settle gets answered.
+Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, with
+its provider name, before provider-owned normalization is run. A second event records the
+canonical response.
 Writing it can never end an episode: a failure there is swallowed, because a lost log line
 is cheaper than a lost harness.
 
@@ -141,9 +116,12 @@ cannot see its whole history in one read. Each trace records `balance_bytes` and
 episode where `n` stops fitting prints a warning, and `report.txt` names the episode it
 happened at. Episodes either side of it are not the same environment.
 
-`claude-sonnet-5` is entered at $3/$15, its rate from 2026-09-01. `PRICES_EXPIRE` is the
-mechanism for a rate already known to change: an entry carries the date the rate lapses,
-and an agent on that model is refused at startup after it instead of costed wrong. Only
-the selected model is checked, so one model's expiry never blocks an agent on another. It
-is empty today. Any other rate going stale is still on the experimenter.
+Price expiries are part of each model specification. Only seated provider/model pairs are
+checked, so one model's expiry never blocks an experiment that does not use it.
 
+As of 2026-09-08 the OpenAI catalog is `gpt-5.6-sol`, `gpt-5.6-terra`, and
+`gpt-5.6-luna`. Their uncached-input/cached-input/cache-write/output rates in dollars per
+million tokens are respectively $4/$0.40/$5/$20, $2/$0.20/$2.50/$12, and
+$0.20/$0.02/$0.25/$1.20. Requests beyond 272000 input tokens apply the catalog's 2x
+input and 1.5x output multipliers. Sol's promotional entry expires after 2026-11-21,
+which forces verification before another experiment can seat it.
