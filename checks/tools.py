@@ -71,7 +71,7 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
 
     joined = "\n".join(results)
     assert "out/" not in joined and "state/" not in joined and "permission denied" not in joined, joined
-    assert "Nothing was written" not in joined and "No transfer was declared" in joined, joined
+    assert "Nothing was written" not in joined and "No transfer was submitted" in joined, joined
 
 
 def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
@@ -307,6 +307,12 @@ def check_a_tool_table_is_validated():
             (one(kind="write_slot", channel="blackboard"), ["takes a mailbox channel"]),
             (one(kind="write_file", channel="mail"), ["takes a directory channel"]),
             (one(kind="write_file", channel="transfer"), ["takes a directory channel"]),
+            (one(kind="vote", channel="notes"), ["requires every"]),
+            (one(kind="vote", channel="notes", every=0), ["positive integer"]),
+            (one(every=5), ["every belongs to kind 'vote'"]),
+            ([{"name": "first", "kind": "vote", "channel": "notes", "every": 5},
+              {"name": "second", "kind": "vote", "channel": "notes", "every": 5}],
+             ["at most one vote tool"]),
     ):
         refused(lambda: harness.validate_tools(declared, chans, "check"), "check:", *words)
 
@@ -587,6 +593,39 @@ def check_every_provider_receives_a_strict_compatible_tool():
         assert "is not a peer this channel reaches" in said[0], said[0]
         assert said[1] == "body must be text, and arrived as NoneType. Nothing was written.", \
             said[1]
+
+
+def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
+    """A voting episode offers the ballot and private memory, not peer communication."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
+    remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
+    with temp_root(channels=tables(ballot), tools=[BASH, remember, SEND, POST, vote]) as root:
+        seated(root, "t", o={})
+        account = harness.load_account("t")
+        instances = harness.environment("t", account)
+        assert [tool.tool.kind for tool in harness.bind_tools(
+            harness.tools(), harness.channels(), instances, ["2"], 4)] == [
+                "write_memory", "send_message_to", "post_public"]
+        table = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"], 5)
+        assert [tool.tool.kind for tool in table] == ["write_memory", "vote"]
+        spec = next(tool for tool in table if tool.tool.kind == "vote").spec()
+        assert spec.input_schema["required"] == ["to"]
+        assert spec.input_schema["properties"]["to"]["enum"] == ["2"]
+        account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 5)]
+        harness.save_account("t", account)
+
+        seen = []
+        with quiet():
+            harness.run_once("t", fake(use("vote", to="2"), say(), seen=seen))
+        offered = next(item["tools"] for item in seen if item.get("kind") == "session")
+        assert [tool["name"] for tool in offered] == ["remember", "vote"]
+        assert (harness.mirror("t", "ballot") / "vote").read_text(encoding="utf-8") == "2\n"
+        with quiet():
+            harness.run_once("t", fake(say()))
+        assert not (harness.mirror("t", "ballot") / "vote").exists(), \
+            "an omitted ballot does not carry into the next episode"
 
 
 def check_the_shell_can_be_withheld_and_the_tools_still_act():

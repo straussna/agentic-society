@@ -273,8 +273,9 @@ channel sits inside a directory the agent writes and comes and goes with it.
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
 unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
-labelled group, so semantic names containing spaces remain distinct. Every channel
-defaults to `true`, a private store included.
+labelled group, so semantic names containing spaces remain distinct. An expired item
+whose channel uses the public-board view disappears silently. Every channel defaults to
+`true`, a private store included.
 Under pull delivery nothing is quoted whatever this says.
 
 `restated = true` quotes the channel in full every episode it stands, never naming it
@@ -303,6 +304,7 @@ The semantic views are checked against the channel they describe: `"letters"` re
 a mailbox without a schema, `"board"` a self-written public directory, `"transfer"` an
 enabled transfer schema file or mailbox, and `"memory"` a private or experimenter-written directory. Experimenter
 material in a memory view is labelled as such rather than presented as the agent's memory.
+The board view marks the owning agent's own label with `(you)`.
 
 When no Bash tool is declared, harness-owned balance, ledger and receipt files also use
 semantic digest headings. Their configured filenames remain implementation details and
@@ -406,6 +408,9 @@ channel = "mail"            # required; a declared channel the kind can act on
 description = "..."         # optional; prompt surface. Omitted, the harness writes it
 ```
 
+`vote` also requires `every = N`, where `N` is a positive integer. No other kind
+accepts `every`.
+
 Every tool must be declared. No declaration means no bash; an empty tool set is refused.
 
 | `kind` | Takes | Input | What the harness does |
@@ -417,6 +422,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one episode-scoped elimination ballot. It is offered only on each `every`th episode, when the shell and peer-communication tools are withheld but private memory remains available; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; a tie for the highest total eliminates nobody by vote |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -431,7 +437,7 @@ invents no behaviour. A new kind is a change to `harness.py` with a check of its
 and is listed here when it lands.
 
 The schemas and results for `send_message`, `send_message_to`, `post_public`,
-`write_memory` and `transfer` use the action's vocabulary. They do not describe backing
+`write_memory`, `vote` and `transfer` use the action's vocabulary. They do not describe backing
 files or return shell diagnostics; an internal failure is recorded as an unchanged
 action without revealing its storage path to the model.
 
@@ -550,7 +556,15 @@ The files the harness renders from the accounts and plants read-only in every se
 [harness_files]
 balance = "n"       # one file per seat, <balance><label>: the seat's balance history; "" plants none
 digest = "m"        # the digest under push delivery; "" is the same as delivery = "pull"
+round = "round"     # round number, cycle position and discussion/voting phase; "" plants none
 ```
+
+When `round` is named, its announcement is the first section of the digest. It states
+the round, the agent's label, the agents still active and the current phase. A vote tool
+supplies the cycle length. The first round after a vote also summarizes its result.
+Rounds on the vote cadence say `vote only`, identify communication as unavailable and
+name the vote tool the agent must call before ending the episode. Private-memory tools
+remain available.
 
 A transfer channel's `ledger` names its ledger file, `"g"` today: three integers a line,
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
@@ -760,9 +774,9 @@ Every refusal is a `SystemExit` naming the file and the key.
   planted no channel for it to act on — an episode that would open on a turn the agent
   has nothing to answer with. Refused as the environment is built, before the container
   starts and before anything is billed.
-- `[harness_files]` with a key other than `balance` and `digest`, a value that is not a
-  string, a multi-segment `balance`, or a multi-segment `digest`. Either may be
-  `""`: no balance file is planted for any seat, or no digest is written.
+- `[harness_files]` with a key other than `balance`, `digest` and `round`, a value that
+  is not a string, or a multi-segment file name. Any may be `""`: no balance file is
+  planted for any seat, no digest is written, or no round announcement is written.
 - Settings' own ranges are checked once, by `apply_config`, wherever they came from.
 
 ## 11. What reaches the trace

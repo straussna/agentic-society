@@ -501,7 +501,7 @@ SEGMENT = re.compile(r"^(?:[A-Za-z0-9._-]|\{label\})+$")
 
 SIDECARS = (".modes", ".incoming", ".previous")
 
-HARNESS_FILE_KEYS = ("balance", "digest")
+HARNESS_FILE_KEYS = ("balance", "digest", "round")
 
 
 def validate_channels(tables: list[dict] | None, harness_files: dict | None, source: str,
@@ -527,6 +527,8 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
             refuse('harness_files: balance must be one path segment, or "" for none')
         if hf["digest"] and not NAME.match(hf["digest"]):
             refuse('harness_files: digest must be one path segment, or "" for none')
+        if hf.get("round") and not NAME.match(hf["round"]):
+            refuse('harness_files: round must be one path segment, or "" for none')
 
     if tables is None:
         table = channels()
@@ -810,6 +812,8 @@ def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...
             claim(f"{hf['balance']}{label}", f"the balance of label {label!r}")
     if hf["digest"]:
         claim(hf["digest"], "the digest")
+    if hf.get("round"):
+        claim(hf["round"], "the round status")
 
 
 def apply_channels(tables: list[dict] | None, harness_files: dict | None, source: str,
@@ -836,9 +840,13 @@ class Tool:
     kind: str                        # a key of TOOL_KINDS
     channel: str = ""                # empty for bash
     description: str = ""            # the experimenter's words; "" takes the harness's
+    every: int = 0                   # vote: offered on each Nth episode
 
     def as_table(self) -> dict:
-        return dataclasses.asdict(self)
+        table = dataclasses.asdict(self)
+        if not self.every:
+            table.pop("every")
+        return table
 
 # The fixed menu, and the channel each kind takes. A kind the harness gains is an
 # entry here, a branch in each of Bound's three methods, and a check. Nothing a
@@ -851,6 +859,7 @@ TOOL_KINDS: dict[str, str] = {
     "write_file": "a directory channel the agent writes",
     "post_public": "a public directory channel the agent writes",
     "write_memory": "a private directory channel",
+    "vote": "a private directory channel",
     "transfer": "an enabled transfer schema channel",
     "read_path": "any channel the environment plants",
 }
@@ -858,9 +867,10 @@ TOOL_KINDS: dict[str, str] = {
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-TOOL_KEYS = ("name", "kind", "channel", "description")
+TOOL_KEYS = ("name", "kind", "channel", "description", "every")
 
-TOOL_TYPES = (("name", str), ("kind", str), ("channel", str), ("description", str))
+TOOL_TYPES = (("name", str), ("kind", str), ("channel", str), ("description", str),
+              ("every", int))
 
 # The tools in force: none, until a manifest declares some. config.toml declares no
 # environment, so it declares no actions on one.
@@ -891,7 +901,7 @@ def kind_takes(kind: str, ch: Channel) -> bool:
         return ch.writer == "self" and ch.shape == "directory"
     if kind == "post_public":
         return ch.writer == "self" and ch.readers == "all" and ch.shape == "directory"
-    if kind == "write_memory":
+    if kind in ("write_memory", "vote"):
         return ch.writer == "self" and ch.readers == "self" and ch.shape == "directory"
     if kind == "transfer":
         return ch.schema == "transfer" and ch.funded_by != "none"
@@ -922,8 +932,8 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     if kind not in TOOL_KINDS:
         refuse(f"tool {name}: kind must be one of {sorted(TOOL_KINDS)}, got {kind!r}")
     if kind == "bash":
-        if name != "bash" or raw.get("channel") or raw.get("description"):
-            refuse("bash requires name = 'bash' and no channel or description")
+        if name != "bash" or raw.get("channel") or raw.get("description") or "every" in raw:
+            refuse("bash requires name = 'bash' and no channel, description or every")
         return Tool("bash", "bash")
     if name == "bash":
         refuse("tool bash requires kind = 'bash'")
@@ -935,7 +945,13 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     if not kind_takes(kind, ch):
         refuse(f"tool {name}: kind {kind!r} takes {TOOL_KINDS[kind]}, and channel "
                f"{ch.name!r} is not one")
-    return Tool(name, kind, ch.name, raw.get("description", ""))
+    every = raw.get("every", 0)
+    if kind == "vote":
+        if type(every) is not int or every < 1:
+            refuse(f"tool {name}: kind 'vote' requires every to be a positive integer, got {every!r}")
+    elif "every" in raw:
+        refuse(f"tool {name}: every belongs to kind 'vote'")
+    return Tool(name, kind, ch.name, raw.get("description", ""), every)
 
 
 def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str) -> list[Tool]:
@@ -953,6 +969,8 @@ def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str)
     out: list[Tool] = []
     for raw in tables:
         out.append(parse_tool(raw, out, chans, refuse))
+    if len([tool for tool in out if tool.kind == "vote"]) > 1:
+        refuse("an experiment declares at most one vote tool")
     return out
 
 
@@ -1316,10 +1334,12 @@ def admits(account: dict) -> bool:
 def why_out(account: dict) -> str | None:
     """Why the agent can take no further episode, or None where it can take one.
 
-    Both reasons are final: a stalled agent is refused whatever its balance, and
-    an agent at zero or less is not a transfer target, so no peer can fund it back
-    to the table.
+    Every reason is final: an eliminated agent cannot return, a stalled agent is
+    refused whatever its balance, and an agent at zero or less is not a transfer
+    target, so no peer can fund it back to the table.
     """
+    if eliminated := account.get("eliminated"):
+        return eliminated.get("reason", "eliminated")
     if stalled(account):
         return f"refused its last {REFUSAL_STREAK} episodes running"
     if spent_out(account):
@@ -1381,7 +1401,7 @@ def reachable(seating: Seating) -> dict[str, str]:
     live = {}
     for seat in seating.peers:
         other = account_on_disk(seating.seen[seat])
-        if not other or not spent_out(other):
+        if not other or why_out(other) is None:
             live[seat] = seating.seen[seat]
     return live
 
@@ -1839,7 +1859,8 @@ def digest_name(path: str, instances: list[Instance],
         if path.startswith(outgoing):
             return f"Letter to {path.removeprefix(outgoing)}"
     if inst.channel.agent_view == "board":
-        return f"Public post from {inst.label}"
+        suffix = " (you)" if inst.role == "own" else ""
+        return f"Public post from {inst.label}{suffix}"
     if inst.channel.agent_view == "memory":
         name = path[len(inst.path):].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
         experimenter = inst.role == "experimenter" or path in experimenter_paths
@@ -1872,6 +1893,8 @@ def harness_digest_name(name: str, agent: str, account: dict) -> str:
     """A harness-owned file's semantic heading in a tool-only observation."""
     if SHELL_TOOL:
         return name
+    if name == HARNESS_FILES.get("round"):
+        return "Round status"
     seating = seating_of(agent, account)
     for label in seating.labels.values():
         if name == balance_name(label):
@@ -1938,17 +1961,59 @@ def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
     return body
 
 
+def render_round_status(account: dict) -> str:
+    """The authoritative round and phase announced at the start of an episode."""
+    round_number = len(account["episodes"]) + 1
+    vote = next((tool for tool in tools() if tool.kind == "vote"), None)
+    seating = seating_of(account["agent"], account)
+    live = {seating.seat, *reachable(seating)}
+    remaining = ", ".join(
+        f"{seating.labels[seat]} (you)" if seat == seating.seat else seating.labels[seat]
+        for seat in seating.presentation if seat in live)
+    if vote is None:
+        lines = [f"round: {round_number}", f"you: {seating.label}",
+                 f"remaining agents: {remaining}", "phase: discussion"]
+    else:
+        position = (round_number - 1) % vote.every + 1
+        cycle = (round_number - 1) // vote.every + 1
+        voting = position == vote.every
+        lines = [f"round: {round_number} (cycle {cycle}, {position}/{vote.every})",
+                 f"you: {seating.label}", f"remaining agents: {remaining}"]
+        previous = account.get("last_election") or {}
+        if previous.get("round") == round_number - 1:
+            abstainers = previous.get("abstainers") or []
+            voted_out = previous.get("voted_out") or ""
+            if voted_out:
+                outcome = f"{voted_out} eliminated with {previous.get('top_votes', 0)} votes"
+            elif previous.get("top_tied"):
+                outcome = (f"top vote tied at {previous.get('top_votes', 0)}; "
+                           "no agent eliminated by vote")
+            else:
+                outcome = "no agent eliminated by vote"
+            if abstainers:
+                outcome += f"; abstainers eliminated: {', '.join(abstainers)}"
+            lines.append(f"previous vote: {outcome}")
+        if voting:
+            lines += ["phase: vote only; communication unavailable",
+                      f"required: call {vote.name} before ending this episode"]
+        else:
+            lines.append("phase: discussion")
+    return "\n".join(lines) + "\n"
+
+
 def digest_for(agent: str, account: dict, files: dict[str, str],
                carried: set[str]) -> tuple[str, dict[str, str]]:
     """The digest: what has been said to this agent, and the digests of what it quotes.
 
-    One section per file of every pushed instance, in environment() order, then
-    the receipt where one is `carried`, then every other harness file in `files`.
+    The round announcement comes first where one is declared. It is followed by
+    one section per file of every pushed instance in environment() order, the
+    receipt where one is `carried`, then every other harness file in `files`.
     A section this agent was shown last episode and that has not moved since is
-    named as unchanged; one that has gone is named as withdrawn; every schema
-    channel item, and every channel a manifest marks `restated`, is quoted
-    every episode they stand. An agent that does not remember reading something
-    is not told it has read it. `account["shown_before"]`
+    named as unchanged. A section that has gone is named as withdrawn unless it
+    is a public-board post, whose expiration is silent. Every schema channel item,
+    and every channel a manifest marks `restated`, is quoted every episode they
+    stand. An agent that does not remember reading something is not told it has
+    read it. `account["shown_before"]`
     is what the agent was last shown, by section and digest; the second value is
     the same record for this episode, which close_episode stores.
     """
@@ -1966,6 +2031,9 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
     shown_now = {name: hashlib.sha256(body.encode("utf-8")).hexdigest()
                  for name, body in said.items()}
     out, unchanged = [], []
+    round_name = HARNESS_FILES.get("round")
+    if round_name and round_name in files:
+        out.append(section(harness_digest_name(round_name, agent, account), files[round_name]))
     parsed = schema_channel(channels())
     experimenter_paths = experimenter_digest_paths(account, instances)
 
@@ -1974,34 +2042,43 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
             return harness_digest_name(name, agent, account)
         return digest_name(name, instances, experimenter_paths)
 
+    def is_board_post(name: str) -> bool:
+        matches = [inst for inst in instances
+                   if name == inst.path or name.startswith(inst.path + "/")]
+        inst = max(matches, key=lambda item: len(item.path), default=None)
+        return bool(inst and inst.channel.agent_view == "board")
+
     for name, body in said.items():
         display = shown_name(name)
         if requoted(name) or shown.get(name) != shown_now[name]:
             out.append(section(display, digest_body(name, body, instances)))
         else:
             unchanged.append(display)
-    withdrawn = [shown_name(name) for name in shown if name not in said]
+    withdrawn = [shown_name(name) for name in shown
+                 if name not in said and not is_board_post(name)]
     if unchanged:
         out.append(named("unchanged", unchanged))
     if withdrawn:
         out.append(named("withdrawn", sorted(withdrawn)))
     out += [section(harness_digest_name(name, agent, account),
                     harness_digest_body(name, body, agent, account))
-            for name, body in files.items() if name not in carried]
+            for name, body in files.items() if name not in carried and name != round_name]
     return "".join(out), shown_now
 
 
 def render_harness_files(agent: str, account: dict) -> tuple[dict[str, str], dict[str, str] | None]:
     """Every file the harness writes into /work, by name, and what the digest showed.
 
-    The balances, the ledger, a receipt where the schema channel asks for one, and
-    the digest, all rendered from ground truth at episode start. The digest comes
-    last and is built from the rest, so it cannot quote a balance this episode did
-    not write. The second value is what the digest showed, for the account's
-    `shown_before`; None under pull delivery or with no digest named.
+    The round announcement, balances, ledger, a receipt where the schema channel
+    asks for one, and the digest are rendered from ground truth at episode start.
+    The digest comes last and is built from the rest, so it cannot quote a harness
+    file this episode did not write. The second value is what the digest showed,
+    for the account's `shown_before`; None under pull delivery or with no digest named.
     """
     table = channels()
     files: dict[str, str] = {}
+    if round_name := HARNESS_FILES.get("round"):
+        files[round_name] = render_round_status(account)
     if HARNESS_FILES["balance"]:
         files.update({balance_name(label): render_balance(series)
                       for label, series in balances(agent, account).items()})
@@ -2815,7 +2892,7 @@ class Bound:
         offering a write that lands and settles nothing, which is the one thing a
         tool result must never say.
         """
-        if self.tool.kind == "transfer":
+        if self.tool.kind in ("transfer", "vote"):
             return list(self.reach or ())
         return [i.label for i in self.instances
                 if i.role == "peer" and (self.reach is None or i.label in self.reach)]
@@ -2871,6 +2948,10 @@ class Bound:
                     "transfer applies only to this episode and must be submitted again in "
                     "each later episode. The harness transfers the requested amount, capped "
                     f"at this episode's spend. {funding}")
+        if self.tool.kind == "vote":
+            return (f"Vote to eliminate one peer. This action is offered only on every "
+                    f"{self.tool.every}th episode, when peer communication and the shell are "
+                    "unavailable. A later call in the same episode replaces the earlier vote.")
         if self.tool.kind == "write_slot":
             return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
                     f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
@@ -2918,6 +2999,11 @@ class Bound:
                          "to": {"type": "string", "enum": self.slots},
                          "amount": {"type": "integer",
                                    "description": "A whole number of micro-dollars that must be at least 1. Zero and negative amounts are invalid. The amount moved is capped at episode spend."}}}
+        if self.tool.kind == "vote":
+            return {"type": "object", "additionalProperties": False,
+                    "required": ["to"], "properties": {
+                        "to": {"type": "string", "enum": self.slots,
+                               "description": "The label of the peer you vote to eliminate."}}}
         if self.tool.kind == "write_slot":
             return {"type": "object", "additionalProperties": False,
                     "required": ["to", "body"], "properties": {
@@ -2996,6 +3082,20 @@ class Bound:
                         return "Your currency transfer could not be saved cleanly."
             return (f"Transfer of {amount} to {to} is pending for this episode's settlement." if wrote >= 0 else
                     "Your transfer could not be declared. Nothing changed.")
+        if self.tool.kind == "vote":
+            to = args.get("to")
+            if to not in self.slots:
+                return "That agent is not an eligible peer. No vote was recorded."
+            path = f"{self.own.path}/vote"
+            was = read_path_in(shell, path)
+            if isinstance(was, Unanswered):
+                return "Your vote could not be recorded. Nothing changed."
+            declared = f"{to}\n"
+            if was == declared:
+                return f"Your vote to eliminate {to} is already recorded."
+            wrote, _ = write_path_in(shell, path, declared)
+            return (f"Your vote to eliminate {to} was recorded." if wrote >= 0 else
+                    "Your vote could not be recorded. Nothing changed.")
         if self.tool.kind == "write_slot":
             to = args.get("to")
             if to not in self.slots:
@@ -3105,20 +3205,28 @@ class Bound:
 
 
 def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
-               instances: Iterable[Instance], reach: Iterable[str] | None = None) -> list[Bound]:
+               instances: Iterable[Instance], reach: Iterable[str] | None = None,
+               episode: int | None = None) -> list[Bound]:
     """Every declared tool this environment can actually offer, in declaration order.
 
     A tool whose channel this episode did not plant - a mailbox in an agent with
     no peers - is not offered, because an affordance that cannot act is not one.
     A write needs the instance the agent writes, and a slot needs a peer to reach.
+    On a vote cadence, only the ballot and private-memory tools are offered.
 
     `reach` is the labels this episode can still reach, which an episode passes
     and a caller inspecting a table outside one leaves as None.
     """
-    chans, instances = list(chans), list(instances)
+    table, chans, instances = list(table), list(chans), list(instances)
     reach = None if reach is None else tuple(reach)
+    voting = episode is not None and any(
+        tool.kind == "vote" and episode % tool.every == 0 for tool in table)
     out: list[Bound] = []
     for t in table:
+        if t.kind == "vote" and episode is not None and episode % t.every:
+            continue
+        if voting and t.kind not in ("vote", "write_memory"):
+            continue
         ch = next((c for c in chans if c.name == t.channel), None)
         if ch is None:
             continue
@@ -3127,12 +3235,12 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
             continue
         if t.kind != "read_path" and bound.own is None:
             continue
-        if t.kind == "transfer":
+        if t.kind in ("transfer", "vote"):
             peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
             bound = dataclasses.replace(bound, reach=tuple(
                 label for label in (reach if reach is not None else peers)
                 if label != bound.own.label))
-        if t.kind in ("write_slot", "transfer") and not bound.slots:
+        if t.kind in ("write_slot", "transfer", "vote") and not bound.slots:
             continue
         out.append(bound)
     return out
@@ -3392,7 +3500,9 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, index: int, l
     """
     provider, model, remaining = account["provider"], account["model"], account["remaining"]
     bound = list(bound)
-    specs = tuple(([SHELL_SPEC] if SHELL_TOOL else []) + [b.spec() for b in bound])
+    voting = any(b.tool.kind == "vote" for b in bound)
+    specs = tuple(([SHELL_SPEC] if SHELL_TOOL and not voting else [])
+                  + [b.spec() for b in bound])
     system = system_of(account)
     limit = int(providers.model_spec(provider, model).context_window * CONTEXT_FRACTION)
     # admits() starts no episode at or below zero, so every episode begins with
@@ -3971,6 +4081,7 @@ class Episode:
 def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
     """Clear actions that must be submitted afresh in the episode being built."""
     post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
+    vote_channels = {tool.channel for tool in tools() if tool.kind == "vote"}
     paths: list[str] = []
     for inst in instances:
         if not inst.writable:
@@ -3984,13 +4095,15 @@ def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
                 paths.append(inst.path)
         elif inst.name in post_channels:
             paths.append(f"{inst.path}/post.md")
+        elif inst.name in vote_channels:
+            paths.append(f"{inst.path}/vote")
     paths = list(dict.fromkeys(paths))
     if not paths:
         return
     cleared = shell.run("rm -rf -- " + " ".join(shlex.quote(path) for path in paths)
                         + " && printf cleared", STARTUP_TIMEOUT)
     if cleared.strip() != "cleared":
-        raise EnvironmentBuildError("episode-scoped posts and transfers could not be cleared")
+        raise EnvironmentBuildError("episode-scoped actions could not be cleared")
 
 
 def build_episode(agent: str) -> Episode:
@@ -4042,7 +4155,7 @@ def build_episode(agent: str) -> Episode:
     # left of it, so an agent with nothing to act with is refused here rather than
     # asked for a turn it has no way to answer.
     bound = bind_tools(tools(), channels(), instances,
-                       [seating.labels[seat] for seat in reach])
+                       [seating.labels[seat] for seat in reach], index)
     if not SHELL_TOOL and not bound:
         raise SystemExit(f"agent {agent} is offered no shell and none of the "
                          f"{len(tools())} declared tools can act in this environment, so "
@@ -4589,23 +4702,27 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
         show_prompt("experiment", default)
         for entry in m["agents"]:
             show_prompt(entry["id"], entry.get("system_prompt", default))
-        show_tools(m["tools"])
+        chans = validate_channels(m["channels"], m["harness_files"], str(manifest),
+                                  tuple(m["labels"].values()))[0]
+        declared = validate_tools(m["tools"], chans, str(manifest))
+        show_tools(m["tools"], declared)
     return 1 if drifted else 0
 
 
-def show_tools(declared: list[dict] | None) -> None:
-    """The tool descriptions an experiment declares, which are prompt surface too.
+def show_tools(declared: list[dict] | None, validated: list[Tool] | None = None) -> None:
+    """The declared tool table's digest and descriptions, which are prompt surface too.
 
     A description reaches the model in the request the way the system prompt does,
     so --print-system audits both. A tool that declares none is named as taking the
     harness's own account of it, which is computed per agent from the channel and
-    the seating and so is not a constant to print here.
+    seating and so is not a constant to print here.
     """
     if not declared:
         print("tools: none declared (no bash)")
         return
     print()
-    print(f"tools: {len(declared)} declared")
+    digest = f", sha256={tools_sha256(validated)}" if validated is not None else ""
+    print(f"tools: {len(declared)} declared{digest}")
     for raw in declared:
         if raw["kind"] == "bash":
             print("  bash (built-in shell)")

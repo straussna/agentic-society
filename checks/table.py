@@ -77,7 +77,7 @@ def check_a_channel_table_is_validated():
                 (one(path="x.modes/{label}"), ["keeps for itself"]),
                 (parsed(shape="directory", path="x"), ["one file with a schema"]),
                 (parsed(schema="loan"), ["schema must be one of"]),
-                (one(schema="transfer"), ["only a channel written by self and read by the harness"]),
+                (one(schema="transfer"), ["a schema is either one file read by the harness"]),
                 (one(funded_by="none"), ["field of the transfer schema"]),
                 (one(readers="self", path="x", restated=True, pushed=False),
                  ["restated asks for the digest"]),
@@ -105,6 +105,7 @@ def check_a_channel_table_is_validated():
                           ({"balance": 3}, ["balance must be str"]),
                           ({"balance": "a/b"}, ["balance must be one path segment"]),
                           ({"digest": "a/b"}, ["digest must be one path segment"]),
+                          ({"round": "a/b"}, ["round must be one path segment"]),
                           ({"digest": "state"}, ["is also"])):
             refused(lambda: harness.validate_channels(None, hf, "check"), "check:", *words)
         # A label is a path too: one that lands on a channel's path is refused.

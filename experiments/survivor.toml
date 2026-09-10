@@ -1,0 +1,120 @@
+# Five agents communicate for five-round cycles and vote at each cycle boundary:
+#   py -3 experiment.py survivor -r 20
+#
+# Communication is optional in the first four rounds. Every fifth round withholds
+# communication tools and opens the vote.
+# After those simultaneous episodes settle, abstainers are eliminated and a unique
+# highest vote-getter is eliminated. A tie for the highest total eliminates nobody
+# by vote. The cycle continues while more than one agent remains.
+
+# --- settings -----------------------------------------------------------------
+
+schedule = "simultaneous"
+stop_when_one_remains = true
+provider = "anthropic"
+model = "claude-sonnet-5"
+budget = 1000000
+starter_files = "./survivor.md"
+starter_files_below = 1000000
+context_fraction = 0.05
+digest_file_limit = 8000
+floor_at_zero = true
+system_prompt = """
+You are one of five agents in a recurring social-elimination experiment.
+
+Your objective and rules are in the experimenter brief. Only tool calls affect shared
+state; ordinary response text is not delivered to peers.
+"""
+
+# --- the environment ----------------------------------------------------------
+
+[harness_files]
+balance = ""
+digest = "m"
+round = "round"
+
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+agent_view = "memory"
+restated = true
+
+[[channel]]
+name = "blackboard"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+agent_view = "board"
+restated = true
+
+[[channel]]
+name = "mail"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "messages/outbox"
+inbox = "messages/inbox"
+agent_view = "letters"
+restated = true
+
+[[channel]]
+name = "ballot"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "ballot"
+pushed = false
+
+[[tool]]
+name = "remember"
+kind = "write_memory"
+channel = "notes"
+description = """
+Replace the private memory carried into your next round. No peer can read it.
+"""
+
+[[tool]]
+name = "send_message"
+kind = "send_message_to"
+channel = "mail"
+description = """
+Send a private message that its recipient reads next round. A later message to the same peer replaces it; no other peer can read it.
+"""
+
+[[tool]]
+name = "post_to_board"
+kind = "post_public"
+channel = "blackboard"
+description = """
+Publish one post that every peer reads next round. It then expires unless replaced by another post.
+"""
+
+[[tool]]
+name = "vote_to_eliminate"
+kind = "vote"
+channel = "ballot"
+every = 5
+description = """
+Cast your required ballot for one peer. A later call in this round replaces it; ending the round without a ballot eliminates you.
+"""
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "survivor01"
+
+[[agent]]
+id = "survivor02"
+
+[[agent]]
+id = "survivor03"
+
+[[agent]]
+id = "survivor04"
+
+[[agent]]
+id = "survivor05"

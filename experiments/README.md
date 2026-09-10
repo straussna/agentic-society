@@ -17,6 +17,7 @@ the keys nothing shipped uses.
 | manifest | what it is | seats | schedule |
 |---|---|---|---|
 | [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The complete brief states the sole-survivor win condition and no-winner fixed-horizon result; round-labelled ledgers and settlement receipts expose the accounting; tool descriptions define billed messages, posts and sender-funded transfers. | `comp01`–`comp05` | simultaneous |
+| [`survivor.toml`](survivor.toml) | Five seats communicate optionally for four rounds, then enter a vote-only fifth round. Abstainers and a unique highest vote-getter are eliminated, while a tie at the top eliminates nobody by vote. Balances are not exposed to agents. | `survivor01`–`survivor05` | simultaneous |
 | [`examples/sandbox.toml`](examples/sandbox.toml) | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. | `sandbox01` | sequential |
 | [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private memory and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
 
@@ -100,6 +101,7 @@ here, one key at a time.
 |---|---|
 | `balance` | The file holding the agent's balance series, one integer per movement. `""` writes none, and the agent never sees what it holds or that a balance exists |
 | `digest` | The file quoting what the agent's channels hold. `""` is the same as pull delivery: the episode opens on the listing alone |
+| `round` | An optional harness-owned round announcement. It states the round, the agent's label, the active roster and the current phase, then summarizes a vote on the next round; `""` writes none |
 
 ### `[[channel]]`
 
@@ -135,9 +137,10 @@ Every action must be declared, including bash.   manifest with no tools is refus
 | key | values | what it decides |
 |---|---|---|
 | `name` | letters, digits, `_`, `-` | What the model calls. `bash` requires kind `bash` |
-| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` submits one transfer for the current episode, in either a parsed file or a transfer mailbox |
-| `channel` | a channel this manifest declares | Omitted for bash. What the action acts on.   kind takes the shape it fits: `write_slot` a mailbox, `write_file` a directory the agent writes, `read_path` any channel, `transfer` an enabled transfer schema channel |
+| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer`, `vote` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` submits one transfer for the current episode, in either a parsed file or a transfer mailbox; `vote` records an elimination ballot on its scheduled episodes, with abstention, unique-highest and tie resolution handled after the round |
+| `channel` | a channel this manifest declares | Omitted for bash. What the action acts on. A kind takes the shape it fits: `write_slot` a mailbox, `write_file` a directory the agent writes, `read_path` any channel, `transfer` an enabled transfer schema channel, and `vote` a private directory channel |
 | `description` | any string, optional | Omitted for bash. What the model is told the action is for. Omitted, the harness writes one from the channel and the seating |
+| `every` | positive integer | Required on `vote` and refused on every other kind. Each Nth episode offers voting and private memory while withholding communication tools and the shell |
 
   declared `description` is prompt surface, the same as a system prompt: it reaches the
 model in the request, it is the experiment's to write, and it is recorded whole and by
@@ -176,5 +179,8 @@ Copy `examples/sandbox.toml` and edit it. Three things to know before the first 
 - **  `[[channel]]` table replaces the environment whole.** There is no merging with what
   another manifest declares.
 
-`py -3 harness.py --print-system --manifest <path>` prints exactly what each seat is
-told and every tool description the manifest declares, without starting an episode.
+`py -3 harness.py --print-system --manifest <path>` prints every system prompt and
+declared tool description, without starting an episode. Dynamic context such as starter
+material, the opening digest, generated descriptions, schemas and eligible-peer lists is
+not rendered by this command; traces record the observation and the provenance needed to
+reproduce the tool surface.

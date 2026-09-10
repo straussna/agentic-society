@@ -262,7 +262,7 @@ def check_a_malformed_transfer_moves_nothing():
              "2 400\n3 400\n": "not one line",        # two of them
              "two 400": "no seat two",                # a label nobody holds
              "2 -5": "not one line",                  # a sign is not a digit
-             "2 0": "must be positive",
+             "2 0": "must be at least 1",
              "9 400": "no seat 9"}
     for text, why in cases.items():
         with temp_root() as root:

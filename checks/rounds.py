@@ -31,6 +31,7 @@ from checks.lanes import (
     rooted,
     seated,
     seats_manifest,
+    tables,
     temp_root,
     trace_on_disk,
     turn_cost,
@@ -96,6 +97,115 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
     assert "shuffl" not in agent_surface and "rotat" not in agent_surface
     assert "must call this tool again" in agent_surface
     assert "vanishes next round" in agent_surface
+
+
+def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
+    """The shipped survivor arm carries its rules without exposing accounting."""
+    manifest = experiment.load_manifest(experiment.manifest_path("survivor"))
+    brief = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
+    vote = next(tool for tool in manifest["tools"] if tool["kind"] == "vote")
+    surface = "\n".join([brief, manifest["overrides"]["system_prompt"],
+                           *(tool["description"] for tool in manifest["tools"])])
+    assert [agent["id"] for agent in manifest["agents"]] == [
+        "survivor01", "survivor02", "survivor03", "survivor04", "survivor05"]
+    assert manifest["schedule"] == "simultaneous" and manifest["stop_when_one_remains"]
+    assert vote["every"] == 5
+    assert all(tool["kind"] != "bash" for tool in manifest["tools"])
+    assert manifest["harness_files"]["balance"] == ""
+    assert manifest["harness_files"]["round"] == "round"
+    assert all(word not in surface.lower() for word in ("budget", "balance", "micro-dollar"))
+    assert "communication is optional" in surface.lower()
+    assert "did not cast a ballot is eliminated" in surface
+    assert "highest total is tied" in surface
+
+    with temp_root(channels=manifest["channels"], harness_files=manifest["harness_files"],
+                   tools=manifest["tools"]) as root:
+        seated(root, "g01", g02={})
+        for agent in ("g01", "g02"):
+            post = harness.mirror(agent, "blackboard") / "post.md"
+            post.parent.mkdir(parents=True, exist_ok=True)
+            post.write_text(f"from {agent}\n", encoding="utf-8")
+        account = harness.load_account("g01")
+        first = harness.render_harness_files("g01", account)[0]["m"]
+        assert first.startswith("=== Round status ===\nround: 1 (cycle 1, 1/5)\n"
+                                "you: 1\nremaining agents: 1 (you), 2\n"
+                                "phase: discussion\n"), first
+        assert "=== Public post from 1 (you) ===" in first, first
+        assert "=== Public post from 2 ===" in first, first
+        account["episodes"] = [{"episode": i, "stop": "no_tool_call"}
+                               for i in range(1, 5)]
+        harness.save_account("g01", account)
+        fifth = harness.render_harness_files("g01", account)[0]["m"]
+        assert fifth.startswith("=== Round status ===\nround: 5 (cycle 1, 5/5)\n"
+                                "you: 1\nremaining agents: 1 (you), 2\n"
+                                "phase: vote only; communication unavailable\n"
+                                "required: call vote_to_eliminate"), fifth
+
+
+def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
+    """At a cycle boundary abstention and the unique highest total both eliminate."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
+    with temp_root(channels=tables(ballot), tools=[vote]) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={}, g05={})
+        labels = {str(i): str(i) for i in range(1, 6)}
+        for agent in ids:
+            account = harness.load_account(agent)
+            account["episodes"] = [{"episode": i, "stop": "no_tool_call"}
+                                   for i in range(1, 6)]
+            harness.save_account(agent, account)
+        for agent, target in {"g01": "2", "g02": "1", "g03": "1", "g05": "1"}.items():
+            path = harness.mirror(agent, "ballot") / "vote"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(target + "\n", encoding="utf-8")
+
+        live = set(ids)
+        with quiet():
+            assert experiment.resolve_vote(ids, live, labels, vote) == 5
+        assert live == {"g02", "g03", "g05"}, live
+        assert "received the most votes" in harness.why_out(harness.load_account("g01"))
+        assert "did not vote" in harness.why_out(harness.load_account("g04"))
+        result = harness.load_account("g02")["last_election"]
+        assert result == {
+            "round": 5,
+            "tally": {"1": 3, "2": 1, "3": 0, "4": 0, "5": 0},
+            "abstainers": ["4"],
+            "voted_out": "1",
+            "top_votes": 3,
+            "top_tied": False,
+            "remaining": ["2", "3", "5"],
+        }, result
+        next_round = harness.render_round_status(harness.load_account("g02"))
+        assert "remaining agents: 2 (you), 3, 5" in next_round, next_round
+        assert "previous vote: 1 eliminated with 3 votes; abstainers eliminated: 4" in next_round
+        assert all(not (harness.mirror(agent, "ballot") / "vote").exists() for agent in ids)
+
+
+def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
+    """Tied leaders remain, and episode ten opens the next election."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
+    with temp_root(channels=tables(ballot), tools=[vote]) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={})
+        labels = {str(i): str(i) for i in range(1, 5)}
+        for agent, target in zip(ids, ("3", "4", "4", "3")):
+            account = harness.load_account(agent)
+            account["episodes"] = [{"episode": i, "stop": "no_tool_call"}
+                                   for i in range(1, 11)]
+            harness.save_account(agent, account)
+            path = harness.mirror(agent, "ballot") / "vote"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(target + "\n", encoding="utf-8")
+
+        live = set(ids)
+        with quiet() as output:
+            assert experiment.resolve_vote(ids, live, labels, vote) == 10
+        assert live == set(ids)
+        assert "top vote tied at 2" in output.getvalue()
+        result = harness.load_account("g01")["last_election"]
+        assert result["top_tied"] and not result["voted_out"] and not result["abstainers"]
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():

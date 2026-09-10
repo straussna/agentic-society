@@ -285,6 +285,19 @@ def check_a_message_taken_away_is_named_as_withdrawn():
     assert "here for now" not in said, "and its text is not carried once it is gone"
 
 
+def check_an_expired_public_post_disappears_silently():
+    """A missing board post leaves the digest without a withdrawal announcement."""
+    with temp_root() as root:
+        ids = seated(root, other={"group/message": "here for one round\n"})
+        episode_once(run(f"cat {digest_name()}"), say())
+        (harness.mirror(ids[1], "blackboard") / "message").unlink()
+        second = episode_once(run(f"cat {digest_name()}"), say())
+    said = second["turns"][0]["tools"][0]["result"]
+
+    assert "withdrawn" not in said, said
+    assert "Public post from 2" not in said and "here for one round" not in said, said
+
+
 def check_an_agent_with_no_peers_starts_where_it_always_did():
     """An experiment of one has no outbox, no inbox, and an m of its own record.
 

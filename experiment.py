@@ -444,8 +444,81 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
     return True
 
 
+def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
+                 vote: dict | None) -> int | None:
+    """Resolve one completed voting round and remove every eliminated agent.
+
+    The vote tool's cadence defines the cycle. A ballot is the tool's episode-scoped
+    file in the voter's own channel; its final contents are the final tool call.
+    """
+    if vote is None or not live:
+        return None
+    counts = {agent: len(harness.load_account(agent)["episodes"]) for agent in live}
+    rounds = set(counts.values())
+    every = vote["every"]
+    if len(rounds) != 1 or not (round_number := next(iter(rounds))) or round_number % every:
+        return None
+
+    electorate = [agent for agent in agents if agent in live]
+    agent_by_label = {labels[str(i)]: agent for i, agent in enumerate(agents, 1)}
+    ballots: dict[str, str] = {}
+    for agent in electorate:
+        path = harness.mirror(agent, vote["channel"]) / "vote"
+        try:
+            target = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            target = ""
+        path.unlink(missing_ok=True)
+        if target in agent_by_label and agent_by_label[target] != agent:
+            ballots[agent] = agent_by_label[target]
+
+    label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
+    tally = {agent: 0 for agent in electorate}
+    for target in ballots.values():
+        if target in tally:
+            tally[target] += 1
+    abstainers = set(electorate) - set(ballots)
+    leaders: set[str] = set()
+    if ballots:
+        most = max(tally.values())
+        leaders = {agent for agent, total in tally.items() if total == most}
+        if len(leaders) != 1:
+            print(f"election after round {round_number}: top vote tied at {most}; "
+                  "no agent is eliminated by the vote")
+            leaders.clear()
+
+    voted_out = leaders - abstainers
+    eliminated = abstainers | voted_out
+    result = {
+        "round": round_number,
+        "tally": {label_by_agent[agent]: tally[agent] for agent in electorate},
+        "abstainers": [label_by_agent[agent] for agent in electorate if agent in abstainers],
+        "voted_out": next((label_by_agent[agent] for agent in electorate
+                           if agent in voted_out), ""),
+        "top_votes": max(tally.values(), default=0),
+        "top_tied": bool(ballots and not leaders),
+        "remaining": [label_by_agent[agent] for agent in electorate if agent not in eliminated],
+    }
+    for agent in electorate:
+        account = harness.load_account(agent)
+        account["last_election"] = result
+        if agent in eliminated:
+            total = tally[agent]
+            reason = (f"did not vote in round {round_number}" if agent in abstainers else
+                      f"received the most votes ({total}) in round {round_number}")
+            account["eliminated"] = {"round": round_number, "reason": reason, "votes": total}
+        harness.save_account(agent, account)
+        if agent in eliminated:
+            live.discard(agent)
+            print(f"{agent}: eliminated after round {round_number}: {reason}")
+    if not ballots:
+        print(f"election after round {round_number}: no ballots were cast")
+    return round_number
+
+
 def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, create: Callable,
-               stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool) -> bool:
+               stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool,
+               vote: dict | None = None) -> bool:
     """One round: drop the agents that cannot act, name the round, run it, and say
     whether the rounds go on.
 
@@ -474,6 +547,13 @@ def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, c
     if not a_round(agents, live, rnd, create, stamp, labels):
         print(f"no agent could take an episode in round {rnd + 1}; "
               f"the rounds end here with {len(live)} agents at the table")
+        return False
+    election = resolve_vote(agents, live, labels, vote)
+    if election is not None and not live:
+        print(f"every agent is out after {election} rounds")
+        return False
+    if election is not None and stop_when_one_remains and len(live) == 1:
+        print(f"{next(iter(live))} is the only agent left; the competition ends")
         return False
     return True
 
@@ -526,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
     agents = [e["id"] for e in manifest["agents"]]
     live = set(agents)
     stamp = stamp_of(manifest)
+    vote = next((tool for tool in manifest["tools"] or [] if tool["kind"] == "vote"), None)
     a_round = simultaneous_round if manifest["schedule"] == "simultaneous" else sequential_round
     if not a.resume:
         harness.displace_agents(agents)
@@ -539,7 +620,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for rnd in range(a.rounds):
             if not play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
-                              manifest["stop_when_one_remains"]):
+                              manifest["stop_when_one_remains"], vote):
                 break
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,

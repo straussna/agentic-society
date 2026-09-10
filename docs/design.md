@@ -150,9 +150,10 @@ surface, so the shapes are recorded in provenance and starter files may explain 
   has been said to this agent — every agent's blackboard, every mailbox message
   addressed to it that is new to it, the ledger and every balance either way, each
   clipped at `digest_file_limit` on its own so no one seat can crowd out the rest. What it
-  has been shown before and that has not moved is named and not said again, and
-  what has gone is named as withdrawn. An agent with no peers has only its own blackboard
-  and balance there, so a single-agent experiment opens on what it always did.
+  has been shown before and that has not moved is named and not said again. What has gone
+  is named as withdrawn except for an expired public-board post, which disappears silently.
+  An agent with no peers has only its own blackboard and balance there, so a single-agent
+  experiment opens on what it always did.
 - It runs bash in a throwaway container until a turn runs no command or context is
   exhausted, then the episode ends.
 - Spend is computed from the API's own `usage`, and every turn appends the
