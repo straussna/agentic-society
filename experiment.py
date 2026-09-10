@@ -32,8 +32,8 @@ BARE_NUMBER = re.compile(r"^\d+$")
 # the daemon and not the agent. None of it is billed, so another go spends only time.
 ATTEMPTS = 2
 
-# How a round is driven. "sequential": one episode at a time, the starting agent
-# moving each round, each episode reading what the ones before it in the round
+# How a round is driven. "sequential": one episode at a time in fixed seat order,
+# each episode reading what the ones before it in the round
 # wrote. "simultaneous": every environment built before any episode runs, the
 # episodes run at once, and the results settle in seat order, so nobody reads
 # this round's writes and a transfer made in one round is seen at the next.
@@ -64,10 +64,9 @@ def seats_of(agents: list[str]) -> dict[str, str]:
     return {str(i): agent for i, agent in enumerate(agents, 1)}
 
 
-def order(agents: list[str], rnd: int) -> list[str]:
-    """The agents, rotated by the round, so no seat has a standing advantage."""
-    i = rnd % len(agents)
-    return agents[i:] + agents[:i]
+def order(agents: list[str], _rnd: int) -> list[str]:
+    """The agents in their fixed seat order."""
+    return list(agents)
 
 
 # --- the manifest -------------------------------------------------------------
@@ -246,17 +245,12 @@ def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
     every other agent is called, and how the experiment is being driven. Nothing is
     copied into anything the agent can write, so there is nothing to revert afterwards."""
     named = {seat: (labels or {}).get(seat, seat) for seat in seats}
-    seed = str(stamp.get("manifest_sha256") or "").encode("utf-8")
-    shuffled = sorted(seats, key=lambda seat: hashlib.sha256(
-        seed + b":" + seat.encode("utf-8")).digest())
-
     def prepare(account: dict) -> None:
         seat = next(s for s, a in seats.items() if a == agent)
-        at = shuffled.index(seat)
-        presentation = shuffled[at:] + shuffled[:at]
         account["seat"] = seat
         account["label"] = named[seat]
-        account["peers"] = {"seen": seats, "labels": named, "presentation": presentation}
+        account["peers"] = {"seen": seats, "labels": named,
+                            "presentation": list(seats)}
         account["experiment"] = dict(stamp)
     return prepare
 
@@ -302,7 +296,7 @@ def drop_out(agent: str, live: set[str]) -> None:
 
 def sequential_round(agents: list[str], live: set[str], rnd: int, create: Callable,
                      stamp: dict[str, str] | None = None, labels: dict[str, str] | None = None) -> bool:
-    """One episode for each agent still in the experiment, in rotated order.
+    """One episode for each agent still in the experiment, in seat order.
 
     Returns whether any of them took one; a round where none did moved nothing.
     """

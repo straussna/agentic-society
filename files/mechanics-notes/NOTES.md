@@ -13,7 +13,7 @@
    less. Nothing else scores.
 5. Reach zero, or go below it, and you are done. No more episodes, nothing more
    written, and nothing puts you back.
-6. You get one episode at a time, and so does everyone else. The order moves.
+6. You get one episode at a time, and so does everyone else, in fixed seat order.
 7. Two ways to say something, and they differ in who hears it. Your blackboard
    is your own directory - as many files as you like, and all of it read by all
    of them. A message to one is out/<i>, one file, what you say to agent i and
@@ -38,11 +38,9 @@
     done - what lands there could never be spent, so the line gives nothing. It
     costs you nothing. You cannot give more than the episode has cost, and
     giving all of it means the episode cost a quarter of what it spent. A line
-    stands until you delete it, and gives again at the end of every episode it
-    is still there - so m quotes yours every episode, moved or not.
+    applies only to this episode and is cleared before your next one.
 11. Make one transfer of your own before the episode ends - out/transfer holding
-    a line that gives and that it was not holding at the start. A line you left
-    there still gives, and is still not a transfer you made this episode.
+    a valid line submitted during that episode.
 12. Failing note 8, 9 or 11 costs half of what is left, and they are three
     separate charges. The transfer settles first, then your blackboard, then
     your message, each taking half of what is there when it is taken -

@@ -33,7 +33,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Turn** | One model call and the commands it asks for |
 | **Round** | One episode for every agent still in the experiment |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
-| **Schedule** | How a round is driven. **Sequential**: one episode at a time, the starting seat rotating. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
+| **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
 | **Grace period** | Episodes at the start of an agent's life during which no silence penalty is taken |
 
 ### Where
@@ -132,12 +132,9 @@ Three principles bind the language:
 Unknown keys are refused, naming the key; so is a `config.toml` key, saying where it
 lives. The file's digest is stamped in every episode's provenance.
 
-Seat order determines identity and settlement order, not display salience. For each
-agent the manifest digest deterministically shuffles the seats, rotates that order to
-put the agent's own seat first, and presents peers in the remaining order. The same
-agent keeps that presentation throughout the experiment, while different agents do not
-share a first-listed peer. Every episode records the resulting `presentation_order` in
-provenance.
+Seat order determines identity, presentation and settlement order. Every agent sees
+agents and records in that same order, and every episode records it as
+`presentation_order` in provenance.
 
 ## 3. Settings
 
@@ -311,7 +308,7 @@ When no Bash tool is declared, harness-owned balance, ledger and receipt files a
 semantic digest headings. Their configured filenames remain implementation details and
 do not enter the model's observation. Balance bodies state the current value and label
 their oldest-to-newest history; ledger rows name round, giver, recipient and amount;
-standing transfers name their recipient, requested amount and execution status. A
+prior-round transfer notices name their recipient, requested amount and result. A
 settlement receipt itemizes the preceding episode's starting balance, API spend,
 transfer, every obligation result and penalty, peer receipts, floor adjustment, ending
 balance, and the reconciliation equation.
@@ -335,8 +332,9 @@ that asks for neither is invisible to the settlement entirely, and an experiment
 declares no penalties anywhere has none.
 
 `silence_penalty_percent` is the share of the remaining balance taken from an episode
-that added nothing new to the channel: no path carrying content no path of that name
-carried at episode start. For a mailbox, one or more changed nonempty peer slots meet the
+that added nothing new to the channel. A channel used by `post_public` begins each
+episode without its previous `post.md`, so a nonempty post must be published each time
+and may repeat the previous text. For a mailbox, one or more changed nonempty peer slots meet the
 obligation; additional recipients carry no penalty. A slot holding anything but one file
 reaches nobody, but does not negate a valid changed message to another peer. Zero is no
 penalty. Penalties are taken
@@ -349,7 +347,8 @@ The harness acts only on content that parses and records why malformed content m
 nothing. A transfer uses either a self-written, harness-read file or a self-written,
 addressee-read mailbox. The file form names recipient and amount in one line. The mailbox
 form stores the amount in the recipient's outbox slot, mirrors it into that recipient's
-inbox, and permits only one nonempty recipient slot at a time.
+next inbox, and permits only one nonempty recipient slot at a time. Transfer declarations
+are cleared before each episode and settle only in the episode that submits them.
 
 | Schema | Form | Effect | Fields |
 |---|---|---|---|
@@ -416,10 +415,10 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `send_message` | a mailbox channel without a schema and with one reachable peer | `body` | Replaces the message to that peer without exposing the mailbox path |
 | `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Replaces the message to that peer without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
-| `post_public` | a public directory channel the agent writes | `body` | Replaces the agent's public post without exposing storage paths |
+| `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
-| `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Replaces the one standing transfer; in mailbox form it clears the other peer slots. Each episode-end settlement moves at most the episode spend, using the channel funding and rebate settings |
+| `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the
 one instance the agent writes, there being only one place it could mean. A `read_path`'s
@@ -557,7 +556,9 @@ A transfer channel's `ledger` names its ledger file, `"g"` today: three integers
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
 path segments and must not collide with a channel path. In a tool-only agent's semantic
 digest, the same events are rendered as `giver -> recipient`, its own label is marked
-`(you)`, and the amount is identified as the amount actually moved.
+`(you)`, and the amount is identified as the amount actually moved. A transfer mailbox's
+inbox and outbox items label their amount as requested and direct the agent to the ledger
+for the separately settled amount.
 
 ## 6. The agent object
 
@@ -586,7 +587,7 @@ Everything else about an agent comes from the experiment's settings.
 
 | `schedule` | Round | Who reads what |
 |---|---|---|
-| `sequential` | One episode at a time; the starting seat moves each round | Each episode reads what the ones before it in the round wrote |
+| `sequential` | One episode at a time in fixed seat order | Each episode reads what the ones before it in the round wrote |
 | `simultaneous` | Every environment built first; episodes run at once; settled in seat order | Nobody reads this round's writes; a transfer made in round *r* is credited in round *r* and visible at round *r + 1*. A BSP superstep |
 
 ## 8. The default manifest
@@ -787,7 +788,7 @@ Every episode record carries `transfer`, what the schema channel parsed and move
 schema, `measured = true`, or a penalty above 0. A channel that asked for none of them
 has no entry. A directory
 every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
-and `penalty`; the schema channel records its declaration, whether it changed, what moved,
+and `penalty`; the schema channel records its declaration, whether it was submitted, what moved,
 and `penalty`. The
 account keeps `penalised`, the running total per channel.
 
@@ -831,7 +832,7 @@ the environment did not change, except `out/gift`, which is `out/transfer`.
 | session | episode | One container lifetime, ending on a termination condition | RL's word for exactly that; "session" in observability means a longer grouping |
 | cohort | experiment | Several agents under one manifest | MLflow's unit of comparison; cohort is a statistics word with no MAS meaning |
 | world | environment | Everything the agent can see and touch | RL and MAS standard |
-| rotating, barrier | sequential, simultaneous | Order of moves within a round | Game theory's own pair; simultaneous rounds are BSP supersteps |
+| ordered, barrier | sequential, simultaneous | Order of moves within a round | Sequential and simultaneous play; simultaneous rounds are BSP supersteps |
 | seed, seed_below | starter_files, starter_files_below | Files placed once in an agent's private directory | "Seed" means RNG to every reader; starter says what the files are for |
 | `seeds/` | `files/` | Where given files live | It holds starter files and experimenter channels alike |
 | shared | shared_files, an experimenter channel | Files identical and read-only in every seat | Names the writer; the channel object makes it one case, not a special one |

@@ -1332,13 +1332,12 @@ class Seating:
     """Where an agent sits: its own seat, every seat's agent, and every seat's label.
 
     An agent driven on its own is an experiment of one, so everything downstream
-    gets a seating either way. Identity maps are in seat order; presentation puts
-    the viewer first and follows its experiment-specific peer order.
+    gets a seating either way. Identity maps and presentation are in seat order.
     """
     seat: str                        # the agent's own seat
     seen: dict[str, str]             # seat -> agent id, every seat of the experiment
     labels: dict[str, str]           # seat -> label, every seat
-    presentation: tuple[str, ...]    # own seat first, then peers in the experiment's display order
+    presentation: tuple[str, ...]    # every seat in fixed display order
 
     @property
     def label(self) -> str:
@@ -1368,9 +1367,6 @@ def seating_of(agent: str, account: dict) -> Seating:
     presentation = tuple(str(s) for s in raw_order if str(s) in seen) if raw_order else tuple(seen)
     if raw_order and (len(presentation) != len(seen) or set(presentation) != set(seen)):
         presentation = tuple(seen)
-    elif raw_order:
-        at = presentation.index(seat)
-        presentation = presentation[at:] + presentation[:at]
     return Seating(seat, seen, {s: given.get(s, s) for s in seen}, presentation)
 
 
@@ -1744,19 +1740,19 @@ def receipt_text(account: dict, ch: Channel) -> str:
     penalties = sum(record.get("penalty", 0) for record in records.values())
     received = episode.get("received", 0)
     forgiven = episode.get("forgiven", 0)
-    transfer_changed = transfer.get("changed")
+    transfer_made = bool(transfer.get("amount"))
     grace = episode.get("episode", 0) <= GRACE_EPISODES
-    if transfer_changed is None:
-        transfer_changed = bool(transfer.get("amount") and
-                                (grace or not transfer.get("penalty")))
-    moved = (f"{transfer['amount']} to {transfer.get('label') or transfer.get('seat')}"
+    giver = seating_of(account["agent"], account).label
+    recipient = transfer.get("label") or transfer.get("seat")
+    moved = (f"{giver} (you) -> {recipient}; actual amount moved: "
+             f"{transfer['amount']} micro-dollars"
              if transfer.get("amount") else f"nothing ({transfer.get('error') or 'no declaration'})")
     lines = [f"round: {episode.get('episode', '?')}",
              f"starting balance: {start}",
              f"API spend: {episode.get('spent', 0)}",
              f"obligation penalties waived by grace: {'yes' if grace else 'no'}",
              f"transfer declaration: {declared[0] if declared else 'nothing'}",
-             f"transfer changed and moved: {'yes' if transfer_changed and transfer.get('amount') else 'no'}",
+             f"transfer made: {'yes' if transfer_made else 'no'}",
              f"transfer moved: {moved}",
              f"transfer debit: {transfer.get('debit', 0)}",
              f"transfer rebate: {transfer.get('rebate', 0)}"]
@@ -1765,15 +1761,15 @@ def receipt_text(account: dict, ch: Channel) -> str:
             continue
         record = records[channel.name]
         if channel.schema:
-            met = bool(transfer_changed and record.get("amount"))
-            detail = "changed declaration moved money" if met else "no changed declaration moved money"
+            met = bool(record.get("amount"))
+            detail = "transfer moved money" if met else "no transfer moved money"
         elif channel.shape == "mailbox":
             addressed = record.get("addressed") or []
             met = bool(addressed)
             detail = ("changed message to " + ", ".join(addressed)) if met else "no changed message"
         else:
             met = bool(record.get("posted"))
-            detail = "changed public post" if met else "no changed public post"
+            detail = "public post published" if met else "no public post"
         lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} ({detail})")
         lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")
     lines += [f"total penalties: {penalties}",
@@ -1858,10 +1854,10 @@ def digest_name(path: str, instances: list[Instance],
             incoming = f"{inst.channel.inbox}/"
             outgoing = f"{inst.channel.outbox}/"
             if path.startswith(incoming):
-                return f"Currency transfer from {path.removeprefix(incoming)}"
+                return f"Currency transfer received from {path.removeprefix(incoming)} last round"
             if path.startswith(outgoing):
-                return f"Currency transfer to {path.removeprefix(outgoing)}"
-        return "Standing transfer declaration"
+                return f"Currency transfer sent to {path.removeprefix(outgoing)} last round"
+        return "Transfer submitted last round"
     return path
 
 
@@ -1899,14 +1895,15 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
     fields = body.strip().split()
     if inst.channel.shape == "mailbox":
         if len(fields) != 1 or not fields[0].isdigit():
-            return "No valid standing currency transfer is saved.\n"
-        return (f"amount: {fields[0]} micro-dollars\n"
-                "status: standing in the sender's outbox\n")
+            return "No valid currency transfer was submitted last round.\n"
+        return (f"requested amount: {fields[0]} micro-dollars\n"
+                "status: submitted in the giver's previous episode; the transfer ledger "
+                "reports the amount actually moved\n")
     if len(fields) != 2 or not fields[1].isdigit():
-        return "No valid standing transfer is declared.\n"
+        return "No valid transfer was submitted last round.\n"
     return (f"recipient: {fields[0]}\n"
             f"requested amount: {fields[1]} micro-dollars\n"
-            "status: standing; executes at each episode end until replaced\n")
+            "status: submitted last round; the transfer ledger reports the amount actually moved\n")
 
 
 def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
@@ -2868,16 +2865,12 @@ class Bound:
         if self.tool.kind == "transfer":
             funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
                        f"The harness funds it and rebates {ch.rebate_percent}% to you.")
-            obligation = (" Reusing the declaration still executes it but does not meet the "
-                          "changed-transfer obligation."
-                          if ch.silence_penalty_percent else "")
             action = "Send currency to one peer" if ch.shape == "mailbox" else "Declare a transfer to one peer"
             return (f"{action}. The amount must be a whole number of micro-dollars "
-                    "that is at least 1; zero and negative amounts are invalid and leave "
-                    "the standing transfer unchanged. Each call replaces the standing "
-                    "transfer, which executes again at each episode end until replaced. "
-                    "The harness transfers the requested amount, capped at this "
-                    f"episode's spend. {funding}{obligation}")
+                    "that is at least 1; zero and negative amounts are invalid. The "
+                    "transfer applies only to this episode and must be submitted again in "
+                    "each later episode. The harness transfers the requested amount, capped "
+                    f"at this episode's spend. {funding}")
         if self.tool.kind == "write_slot":
             return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
                     f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
@@ -2887,7 +2880,9 @@ class Bound:
         if self.tool.kind == "send_message_to":
             return "Send a message to one named peer. Each call replaces your previous message to that peer."
         if self.tool.kind == "post_public":
-            return "Publish a post that every peer can read in the next episode. Each call replaces your previous post."
+            return ("Publish a post that every peer can read in the next episode. You must "
+                    "publish in every episode; the post currently on the board expires when "
+                    "the next episode begins.")
         if self.tool.kind == "write_memory":
             return "Save your private memory. Each call replaces its contents."
         if self.tool.kind == "write_file":
@@ -2972,14 +2967,14 @@ class Bound:
                         f"{', '.join(self.slots)}. No transfer was declared.")
             if type(amount) is not int or amount <= 0:
                 return ("amount must be a whole number that is at least 1; zero and negative "
-                        "amounts are invalid. No transfer was declared.")
+                        "amounts are invalid. No transfer was submitted.")
             path = (f"{self.channel.outbox}/{to}" if self.channel.shape == "mailbox"
                     else self.own.path)
             declared = f"{amount}\n" if self.channel.shape == "mailbox" else f"{to} {amount}\n"
             was = read_path_in(shell, path)
             if isinstance(was, Unanswered):
                 return "Your transfer could not be declared. Nothing changed."
-            other_standing = False
+            other_pending = False
             if self.channel.shape == "mailbox":
                 for label in self.peer_labels():
                     if label == to:
@@ -2987,13 +2982,9 @@ class Bound:
                     held = read_path_in(shell, f"{self.channel.outbox}/{label}")
                     if isinstance(held, Unanswered):
                         return "Your currency outbox could not be checked. Nothing changed."
-                    other_standing = other_standing or held is not None
-            if was == declared and not other_standing:
-                suffix = (" It will execute at episode end, but it is unchanged and does not "
-                          "meet this episode's transfer obligation."
-                          if self.channel.silence_penalty_percent else
-                          " It will execute at episode end.")
-                return "That transfer is already standing." + suffix
+                    other_pending = other_pending or held is not None
+            if was == declared and not other_pending:
+                return "That transfer is already pending for this episode."
             wrote, said = write_path_in(shell, path, declared)
             if wrote >= 0 and self.channel.shape == "mailbox":
                 others = [f"{self.channel.outbox}/{label}" for label in self.peer_labels()
@@ -3003,7 +2994,7 @@ class Bound:
                                         + " && printf 1", COMMAND_TIMEOUT)
                     if cleared.strip() != "1":
                         return "Your currency transfer could not be saved cleanly."
-            return (f"Transfer of {amount} to {to} is pending until episode end." if wrote >= 0 else
+            return (f"Transfer of {amount} to {to} is pending for this episode's settlement." if wrote >= 0 else
                     "Your transfer could not be declared. Nothing changed.")
         if self.tool.kind == "write_slot":
             to = args.get("to")
@@ -3521,7 +3512,7 @@ EMPTY_TRANSFER = {"declared": None, "seat": None, "label": None, "agent": None,
 def transfer_declaration(ch: Channel, path: Path,
                          peer_labels: Iterable[str]) -> tuple[str | None, str | None, int | None,
                                                               str | None]:
-    """Read one standing transfer as declaration, recipient, amount and parse error."""
+    """Read this episode's transfer as declaration, recipient, amount and parse error."""
     if ch.shape == "file":
         if not path.exists():
             return None, None, None, None
@@ -3549,7 +3540,7 @@ def transfer_declaration(ch: Channel, path: Path,
         return None, None, None, None
     if len(active) != 1:
         declared = "".join(f"{label} {body.strip()}\n" for label, body in active)
-        return declared, None, None, "more than one transfer is standing"
+        return declared, None, None, "more than one transfer was submitted"
     label, body = active[0]
     lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
     declared = f"{label} {body.strip()}\n"
@@ -3616,18 +3607,14 @@ def resolve_transfer(ep: Episode, ch: Channel, path: Path, spent: int, settles: 
     """Make the episode's transfer, and take a share of what is left where it made none.
 
     Exactly one transfer an episode: no more is the grammar's, no less is this
-    share. A line left standing gives again and is not this episode's transfer;
-    `ep.before` holds the declaration's digest at episode start. `settles` is
-    false for an episode with no turn or inside the grace.
+    share. The declaration is cleared before each episode, so only a transfer
+    submitted during this episode can move money. `settles` is false for an
+    episode with no turn or inside the grace.
     """
     rec = dict(EMPTY_TRANSFER)
     move_transfer(ep, ch, path, spent, rec, credit)
-    if ch.shape == "mailbox":
-        labels = [ep.seating.labels[seat] for seat in ep.seating.peers]
-        rec["changed"] = slot_sha256(path, labels) != ep.before.get(ch.name, {})
-    else:
-        rec["changed"] = file_sha256(path) != ep.before.get(ch.name, "")
-    if (rec["amount"] > 0 and rec["changed"]) or not settles:
+    rec["changed"] = rec["declared"] is not None
+    if rec["amount"] > 0 or not settles:
         return rec
     if spent <= 0 or not ep.reach:
         return rec
@@ -3641,9 +3628,13 @@ def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -
     Something in it that was not in it before, read forward from what it holds
     now, so a path that only went away is not in the comparison at all.
     """
-    before = ep.before.get(ch.name, {})
-    posted = any(before.get(path) != digest
-                 for path, digest in tree_sha256(inst.host, inst.exclude).items())
+    post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
+    if ch.name in post_channels:
+        posted = bool(file_sha256(inst.host / "post.md"))
+    else:
+        before = ep.before.get(ch.name, {})
+        posted = any(before.get(path) != digest
+                     for path, digest in tree_sha256(inst.host, inst.exclude).items())
     rec = {"posted": posted, "penalty": 0}
     if posted or not settles:
         return rec
@@ -3965,7 +3956,7 @@ class Episode:
     misplaced: list[str] = dataclasses.field(default_factory=list)
     saved: bool = False
     # What peers settling in the same round credited to this account before it
-    # closed. Zero for an episode run on its own or in rotation, where a credit
+    # closed. Zero for an episode run on its own or sequentially, where a credit
     # lands on disk between the receiver's episodes.
     credited: int = 0
 
@@ -3975,6 +3966,31 @@ class Episode:
             self.shell.close()
         if self.container:
             self.container.close()
+
+
+def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
+    """Clear actions that must be submitted afresh in the episode being built."""
+    post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
+    paths: list[str] = []
+    for inst in instances:
+        if not inst.writable:
+            continue
+        if inst.channel.schema == "transfer":
+            if inst.channel.shape == "mailbox":
+                labels = [peer.label for peer in instances
+                          if peer.name == inst.name and peer.role == "peer"]
+                paths.extend(f"{inst.path}/{label}" for label in labels)
+            else:
+                paths.append(inst.path)
+        elif inst.name in post_channels:
+            paths.append(f"{inst.path}/post.md")
+    paths = list(dict.fromkeys(paths))
+    if not paths:
+        return
+    cleared = shell.run("rm -rf -- " + " ".join(shlex.quote(path) for path in paths)
+                        + " && printf cleared", STARTUP_TIMEOUT)
+    if cleared.strip() != "cleared":
+        raise EnvironmentBuildError("episode-scoped posts and transfers could not be cleared")
 
 
 def build_episode(agent: str) -> Episode:
@@ -4046,6 +4062,7 @@ def build_episode(agent: str) -> Episode:
         ep.container.load(instances, shown)
         built = True
         ep.shell = ep.container.shell()
+        clear_episode_actions(ep.shell, instances)
         assert_writable(ep.shell, instances)
     except BaseException:
         # No episode ran. An environment that was loaded is mirrored back all the

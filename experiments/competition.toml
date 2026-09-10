@@ -8,7 +8,7 @@
 #
 # Each agent has a public blackboard plus parallel message and currency mailboxes.
 # Transfers come from the sender, settle at episode end and are capped at that
-# episode's spend. One outgoing currency transfer stands at a time.
+# episode's spend. A transfer applies only to the episode that submits it.
 # After the opening grace, silence on each social channel costs half the remaining
 # balance. A changed message to any number of peers meets the private-message
 # obligation. Penalties are applied in channel order.
@@ -31,7 +31,7 @@ schedule = "simultaneous"
 stop_when_one_remains = true
 provider = "anthropic"
 model = "claude-sonnet-5"
-budget = 1500000
+budget = 150000
 starter_files = "./competition.md"
 starter_files_below = 7500000
 context_fraction = 0.05
@@ -41,11 +41,10 @@ floor_at_zero = true
 system_prompt = """
 You are one of five agents in an experiment.
 
-You act in episodes. Each episode starts without memory of earlier episodes.
-Your private memory carries forward what you choose to retain. Every episode's opening
-context shows the competition rules, current public posts, messages, and balance records.
-Your tools describe the actions available to you. What you say without using a tool
-is not delivered to your peers.
+You act across episodes. At the start of each episode, your context includes your
+retained private memory and the current experiment state. Your tools describe the
+actions available to you. What you say without using a tool is not delivered to your
+peers.
 """
 
 # --- the environment ----------------------------------------------------------
@@ -93,6 +92,7 @@ outbox = "currency/outbox"
 inbox = "currency/inbox"
 schema = "transfer"
 agent_view = "transfer"
+pushed = false
 funded_by = "giver"
 rebate_percent = 0
 silence_penalty_percent = 50
@@ -104,9 +104,9 @@ name = "remember"
 kind = "write_memory"
 channel = "notes"
 description = """
-Save your private memory for the next episode. Set body to the complete text you want to retain. No peer can read it.
+Update the private memory you carry into your next episode. Set body to the complete text you want to retain. No peer can read it.
 
-Each call replaces your private memory. Use it to preserve your strategy, commitments, or interpretation of earlier rounds.
+Each call replaces your private memory. Use it to preserve your strategy, commitments, relationships, and interpretation of what you have experienced.
 """
 
 [[tool]]
@@ -124,9 +124,9 @@ name = "post_to_blackboard"
 kind = "post_public"
 channel = "blackboard"
 description = """
-Publish one public post that every peer can read in the next episode. Set body to the complete post.
+Publish one public post that every peer can read in the next round. Set body to the complete post. You must call this tool in every episode. The post currently visible on the board expires after this round, whether or not you replace it, and posting the same text again still counts as a new post.
 
-To meet this episode's public-post obligation, publish nonempty text that differs from the post visible at this episode's start. After the first episode, failure costs 50% of the balance remaining when the public-post penalty is applied.
+To meet this episode's public-post obligation, publish nonempty text. After the first episode, failure costs 50% of the balance remaining when the public-post penalty is applied.
 """
 
 [[tool]]
@@ -134,9 +134,9 @@ name = "send_currency"
 kind = "transfer"
 channel = "transfer"
 description = """
-Send currency to one reachable peer. Set `to` to that agent's label. Set `amount` to a whole number of micro-dollars that is at least 1. Zero and negative amounts are invalid and leave the standing transfer unchanged. Like `send_message`, this replaces what your addressed outbox holds for that peer; unlike messages, only one outgoing currency transfer can stand at a time, so choosing a recipient clears the previous recipient's slot.
+Send currency to one reachable peer in this episode. Set `to` to that agent's label. Set `amount` to a whole number of micro-dollars that is at least 1. Zero and negative amounts are invalid. Only the final valid transfer call in an episode is settled.
 
-The outgoing transfer appears in the recipient's currency inbox and executes again at every episode end until you replace it. It moves at most this episode's API spend from your balance to the recipient. The amount leaves your balance and is added to the recipient's; no transfer or other action can subtract balance from a peer. To meet this episode's transfer obligation, call this tool with a recipient or amount different from the transfer standing at episode start, and actually move money. Reusing or merely leaving the same transfer executes it but does not meet the changed-transfer obligation. After the first episode, failure costs 50% of the balance remaining after the transfer.
+The transfer is settled once at this episode's end and then expires; you must call this tool again in every later episode. It moves at most this episode's API spend from your balance to the recipient. The amount leaves your balance and is added to the recipient's; no transfer or other action can subtract balance from a peer. To meet this episode's transfer obligation, call this tool and actually move money. After the first episode, failure costs 50% of the balance remaining after the transfer.
 """
 
 # --- the seats ----------------------------------------------------------------

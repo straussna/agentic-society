@@ -524,7 +524,7 @@ def elements_of(s: dict) -> int:
             + bool(s["transfer"]["penalty"]) + bool(s["channels"]["blackboard"]["penalty"])
             + bool(s["channels"]["mail"]["penalty"]) + bool(s["forgiven"])
             # A credit from a peer settling in the same simultaneous round lands
-            # inside the receiver's span; in rotation it lands between spans.
+            # inside the receiver's span; sequentially it lands between spans.
             + bool(s.get("received")))
 
 

@@ -253,12 +253,8 @@ def check_a_message_that_moved_is_carried_again():
         f"while what stood still is still only named: {said}"
 
 
-def check_the_declaration_is_carried_however_long_it_stands():
-    """out/transfer is quoted every episode, unchanged or not.
-
-    A standing line keeps giving, so it is the one thing an agent must not stop
-    being reminded of.
-    """
+def check_the_previous_transfer_is_shown_once_before_it_expires():
+    """The next episode reports the prior transfer before clearing its action slot."""
     with temp_root() as root:
         seated(root, other={})
         episode_once(run("echo '2 5' > out/transfer", "echo hi > 1/m", "echo yo > out/2"), say())
@@ -266,7 +262,7 @@ def check_the_declaration_is_carried_however_long_it_stands():
     said = after["turns"][0]["tools"][0]["result"]
 
     assert "=== out/transfer ===" in said and "2 5" in said, \
-        f"the declaration is quoted though it has not moved: {said}"
+        f"the previous episode's transfer is reported: {said}"
     assert "- out/transfer\n" not in said, \
         "and is never one of the names"
 

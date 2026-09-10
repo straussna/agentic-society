@@ -1,4 +1,4 @@
-"""Experiments: rotation, retries, interrupts, manifests, and simultaneous rounds."""
+"""Experiments: order, retries, interrupts, manifests, and simultaneous rounds."""
 
 from __future__ import annotations
 
@@ -37,12 +37,11 @@ from checks.lanes import (
 )
 
 
-def check_the_experiment_rotates_and_validates():
-    """Order rotates by round, and an experiment with no manifest or no rounds is refused."""
+def check_the_experiment_uses_fixed_order_and_validates():
+    """Order stays fixed, and an experiment with no manifest or no rounds is refused."""
     ids = ["g01", "g02", "g03"]
     assert [experiment.order(ids, r) for r in range(4)] == [
-        ["g01", "g02", "g03"], ["g02", "g03", "g01"],
-        ["g03", "g01", "g02"], ["g01", "g02", "g03"]], "a fixed order is a standing advantage"
+        ids, ids, ids, ids]
     for bad in ([],                                        # every run names its experiment
                 ["--rounds", "5"],                         # including this one
                 ["--manifest", "c.toml", "--rounds", "0"]):
@@ -53,25 +52,19 @@ def check_the_experiment_rotates_and_validates():
                 because="a manifest that is not there was accepted")
 
 
-def check_peer_presentation_is_stable_and_balanced():
-    """Each viewer sees itself first and a different peer first, reproducibly."""
+def check_peer_presentation_is_fixed_in_seat_order():
+    """Every viewer sees the same fixed seat order."""
     agents = ["g01", "g02", "g03", "g04", "g05"]
     seats = experiment.seats_of(agents)
     stamp = {"schedule": "simultaneous", "stop_when_one_remains": True,
              "manifest_sha256": "stable-treatment"}
-    orders = {}
     for agent in agents:
         account = {}
         prepare = experiment.preparer(agent, seats, stamp)
         prepare(account)
         prepare(account)
         order = account["peers"]["presentation"]
-        own = next(seat for seat, occupant in seats.items() if occupant == agent)
-        assert order[0] == own and set(order) == set(seats), (agent, order)
-        orders[agent] = order
-
-    first_peers = [order[1] for order in orders.values()]
-    assert len(set(first_peers)) == len(agents), first_peers
+        assert order == list(seats), (agent, order)
 
 
 def check_the_competition_delivers_its_complete_mechanics_brief():
@@ -79,12 +72,13 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
     manifest = experiment.load_manifest(experiment.manifest_path("competition"))
     brief = Path(manifest["overrides"]["starter_files"])
     text = brief.read_text(encoding="utf-8")
+    plain = " ".join(text.split())
     assert manifest["overrides"]["digest_file_limit"] >= len(text), (
         manifest["overrides"]["digest_file_limit"], len(text))
     for statement in ("There is no action that subtracts balance from a peer",
-                      "nobody wins", "giver ->", "amount that actually moved",
+                      "only one still funded", "giver ->", "amount that actually moved",
                       "settlement receipt", "API spending"):
-        assert statement in text, statement
+        assert statement in plain, statement
     for hidden_horizon in ("fixed number of rounds", "requested rounds"):
         assert hidden_horizon not in text, hidden_horizon
     transfer = next(channel for channel in manifest["channels"]
@@ -92,6 +86,16 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
     assert transfer["receipt"] == "r", transfer
     tool = next(tool for tool in manifest["tools"] if tool["kind"] == "transfer")
     assert "at least 1" in tool["description"] and "Zero and negative" in tool["description"]
+    agent_surface = "\n".join([text, manifest["overrides"]["system_prompt"],
+                                *(item["description"] for item in manifest["tools"])])
+    assert "--rounds" not in agent_surface and "-r 20" not in agent_surface
+    assert "You act across episodes" in agent_surface
+    assert "without memory of earlier episodes" not in agent_surface
+    assert "separate identities" not in agent_surface
+    assert "standing transfer" not in agent_surface
+    assert "shuffl" not in agent_surface and "rotat" not in agent_surface
+    assert "must call this tool again" in agent_surface
+    assert "vanishes next round" in agent_surface
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
@@ -431,7 +435,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             experiment.simultaneous_round(ids, live, 0, first)
         g02_first = ground_truth("g02")["episodes"][0]
         said, listed = (c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"])
-        # g01 withdraws the line, so the transfer is made once and not every round it stands.
+        # g01 submits nothing, so the transfer is made only in the episode that declared it.
         second = per_agent(g01=(run("rm out/transfer", f"cat {digest_name()}"), say()),
                            g02=(run(f"cat {digest_name()}"), say()))
         with quiet():

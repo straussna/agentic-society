@@ -282,8 +282,9 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     text = second["turns"][0]["tools"][0]["result"]
     assert f"=== out/receipt ===\n{text}" in second["observation"], second["observation"]
     for item in ("round: 1", "starting balance:", "API spend:",
-                 "transfer declaration: 2 100", "transfer changed and moved: yes",
-                 "transfer moved: 100 to 2", "transfer rebate: 100",
+                 "transfer declaration: 2 100", "transfer made: yes",
+                 "transfer moved: 1 (you) -> 2; actual amount moved: 100 micro-dollars",
+                 "transfer rebate: 100",
                  "received from peers: 0", "ending balance:", "reconciliation:"):
         assert item in text, (item, text)
     assert "receipt" in second["turns"][1]["tools"][0]["result"], "it is in the environment"
@@ -304,7 +305,8 @@ def check_a_receipt_is_roots_in_the_container():
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("-r--r--r--"), results[0]
     assert "rc=1" in results[1], results[1]
-    assert "round: 1" in results[2] and "transfer moved: 100 to 2" in results[2], results[2]
+    assert "round: 1" in results[2], results[2]
+    assert "transfer moved: 1 (you) -> 2; actual amount moved: 100 micro-dollars" in results[2]
     assert "reconciliation:" in results[2], results[2]
 
 
@@ -316,7 +318,8 @@ def check_a_harness_file_makes_its_own_directory_in_the_container():
         t = episode_once(run("ls -ld receipts"), run("cat receipts/last"), say())
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("d"), results[0]
-    assert "round: 1" in results[1] and "transfer moved: 100 to 2" in results[1], results[1]
+    assert "round: 1" in results[1], results[1]
+    assert "transfer moved: 1 (you) -> 2; actual amount moved: 100 micro-dollars" in results[1]
     assert "reconciliation:" in results[1], results[1]
 
 

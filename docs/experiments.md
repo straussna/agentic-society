@@ -7,10 +7,9 @@ the ledger, and the silence penalties.
 
 ---
 
-An agent has generations already: every episode is a fresh instance inheriting doctrine
-from a predecessor it cannot talk to. `experiment.py` adds peers. Several agents advance an
-episode at a time in rotation, each holding a seat, and a seat names both a directory
-and a balance — so doctrine stops being only inheritable and becomes contestable.
+An agent acts across episodes, carrying its account, private memory and consequences
+forward. `experiment.py` adds peers. Several agents advance an episode at a time in
+fixed seat order or simultaneously, and each seat names both a directory and a balance.
 
 ```
 g01 opens on                     g02 opens on
@@ -43,15 +42,13 @@ The mapping and the agent's own seat are recorded in `account.json` and in every
 provenance, because from outside they are the only difference between two
 identical-looking directories.
 
-Under the **sequential** schedule, the default, episodes run one at a time and the
-starting agent rotates each round. Under a fixed order the first agent would always act on
-last round's information and the last always on this round's, which over twenty rounds
-is a standing advantage and not a result.
+Under the **sequential** schedule, the default, episodes run one at a time in fixed seat
+order.
 
 Under the **simultaneous** schedule every environment is built before any episode runs, the
 episodes run at once, and what they did settles afterwards in seat order. Nobody reads
 this round's writes: a blackboard, a mailbox message or a transfer made in round *r* is
-in the environment at round *r + 1*, for everyone alike, so there is no order to rotate. A
+in the environment at round *r + 1*, for everyone alike. A
 transfer made in the round is credited to its receiver in the same round, after the
 receiver's own turns and before its floor, and appears in its episode record as
 `received`; an agent is out on the round's net and is never lifted back by a transfer that had
@@ -134,13 +131,9 @@ its owner's, and this episode's own message is not in it either, since one is re
 at episode start and what is written after it belongs to the next one.
 
 Only what is new to the reader is quoted; the rest is named, and still sits in the
-environment at the name it is named by, readable at what reading has always cost. Three
-things are quoted every episode however long they have stood — the balances and the
-ledger, because they are what the rest is read against, and the currency outbox, because a
-standing transfer keeps *giving* and is the one thing an agent must not stop being
-reminded of. Replaying the last experiment under this rule carries 36% less, rising from
-nothing in the first rounds to between a third and two thirds by rounds four and
-five as messages settle.
+environment at the name it is named by, readable at what reading has always cost.
+Balances and the ledger are quoted every episode because they are what the rest is read
+against. A transfer declaration belongs only to the episode that submits it.
 
 Each file is clipped at `digest_file_limit` **on its own**, and the cut says where it
 fell. Per file, not for the whole, because the failure modes differ: a whole-blob
@@ -161,12 +154,12 @@ measurement and not an artefact of what it could afford to look at. Which arm an
 is on is `harness_sha256` in its provenance, and the two are not comparable on any
 question about what the experiment knew. One file in `currency/outbox/<label>` containing
 `<amount>`, for no more than the episode has spent, credits that label. The same file appears
-as `currency/inbox/<sender>` for its recipient. The transfer action keeps exactly one
-recipient slot nonempty, so an episode gives once or not at all; content that is not one
+as `currency/inbox/<sender>` for its recipient in the next episode. The transfer action keeps exactly one
+recipient slot nonempty during the current episode, so an episode gives once or not at all; content that is not one
 positive whole number moves nothing. Under the competition's `funded_by = "giver"`, the
 amount leaves the giver and reaches the receiver, nothing is rebated, and the experiment's
-total is conserved apart from API spending and penalties. A standing transfer drains the
-giver every episode it stands.
+total is conserved apart from API spending and penalties. The declaration is cleared
+before the giver's next episode and cannot execute again unless submitted again.
 
 Under `harness` funding the receiver is credited from outside the agents' balances and the
 giver receives the configured rebate. Under `none` a declaration moves nothing, the trace records that
@@ -188,22 +181,15 @@ since a rival kept barely solvent is a rival a free episode can still be drawn f
 
 Under giver funding, sending currency always has a price to its sender and keeps its recipient
 alive longer. A round in which nobody could take an episode ends the rounds, since only an
-episode moves a balance. Like the message outbox, the currency outbox stands until it is
-replaced or withdrawn, so a slot left in place is a transfer still being made.
+episode moves a balance.
 
 **And exactly one transfer an episode is an obligation of its own.** No more than one is
-the currency outbox's rule: the transfer action replaces the one standing recipient slot,
-and multiple nonempty recipient slots move nothing. No less than one is
-the transfer channel's `silence_penalty_percent`, taken from an episode that ended without a transfer *of its own*:
-money moved, from a transfer that episode changed. Both halves matter. A slot
-edited into nonsense is new and gives nothing; an unchanged slot gives every episode
-it stands and is nothing this episode decided. The pledge itself is untouched — it still
-stands until withdrawn and is still honoured every episode it stands — and what it stops
-doing is discharging the duty twice. The comparison is of bytes, so the cheapest way to
-keep the rule is a line that differs from the one standing at episode start — another amount,
-another seat — and writing back what is already there changes nothing and is charged.
-That is the point: an experiment where budget keeps moving, not one where a single
-line at episode 1 settles the question for good.
+the currency outbox's rule: a later transfer call replaces the current episode's earlier
+recipient, and multiple nonempty recipient slots move nothing. No less than one is the
+transfer channel's `silence_penalty_percent`, taken from an episode that ended without
+moving money through a transfer submitted in that episode. A malformed declaration gives
+nothing and is charged. The same valid recipient and amount may be submitted again in a
+later episode because no declaration carries over.
 A line naming a seat that is out gives nothing and is charged the share, exactly as a line
 naming a seat this experiment never had is.
 Nothing is taken from an episode that could not have given — one the API never answered,
@@ -211,7 +197,7 @@ one that spent nothing for the transfer to be drawn from, and an agent with no s
 to, which is an experiment of one and equally the last agent at a table where every other seat is
 out — because a charge for the impossible is not a rule an agent can act on.
 
-**A completed transfer is public and a message is not.** Its standing instruction is
+**A completed transfer is public and a message is not.** Its prior-round request may be
 addressed through the currency inbox, while every transfer the experiment has made is in
 **`g`** — three bare integers a line, giver, receiver, amount — rebuilt at every episode start
 from the accounts themselves, root's and read-only in `/work` exactly as the balances are.
@@ -222,13 +208,11 @@ ledger showing two agents different sequences would be worth less than no ledger
 alliance struck in the message outbox is invisible, and the instant it is acted on the money is on
 the record — including to the agent it was struck against.
 
-**A blackboard is an obligation.** An episode that ends with its own
-holding nothing it did not hold when it began loses the blackboard channel's `silence_penalty_percent` of what it has
-left. What is measured is the same thing the outbox measures, and read the same way: some
-path in it carrying content no path of that name carried at episode start. Saying the
-same bytes again tells the experiment nothing it did not already know, and taking a file away
-or emptying one leaves nothing readable there that was not readable before, so none of the
-three is a post. It is taken after the transfer and after the share the transfer carries, and
+**A blackboard is an obligation.** The public post currently visible is cleared from the
+agent's writable board before its episode begins. The agent must publish a nonempty post
+in every episode; publishing the same text again counts because it is a new round's post.
+If it publishes nothing, its board is empty next round and the channel's
+`silence_penalty_percent` is taken. It is taken after the transfer and after the share the transfer carries, and
 appended to the series like everything else, so the agent sees the bite in `n` without
 being told which movement it was.
 
@@ -261,7 +245,7 @@ of what it had.
 **And the first episodes of an agent answer for none of them.** An agent meets the rules
 inside an episode that is already being judged against them, and with three compounding
 shares in force a first episode that reads them and stops keeps an eighth of the agent —
-about 180000 of 1500000. That settles an experiment on whether each agent happened to act
+about 6,250 of 50,000. That settles an experiment on whether each agent happened to act
 before it had finished reading, which is a reflex and not the thing being measured.
 `grace_episodes` is how many opening episodes are charged nothing, and the starter files state the
 figure in words. It waives the charges and nothing else: turns are billed at the usual

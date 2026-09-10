@@ -217,14 +217,13 @@ def check_episodes_reconcile():
             transfer={"funded_by": "giver", "rebate_percent": 0, **HALF})) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())
-        episode_once(say())                                          # the line stands: no transfer of its own
+        episode_once(say())                                          # no transfer submitted
         account = ground_truth()
         series, episodes = account["series"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
         assert account["remaining"] == reconciled(account, spent), account
-        # The line stood through the second episode and gave again: a standing
-        # declaration drains a giver-funded giver every episode it stands.
-        assert account["debited"] == 600 and account["rebated"] == 0, account
+        # Only the first episode submitted a transfer.
+        assert account["debited"] == 300 and account["rebated"] == 0, account
         assert account["penalised"]["transfer"] > 0, account
         assert series[-1] == account["remaining"]
         for s in episodes:

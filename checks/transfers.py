@@ -30,28 +30,24 @@ from checks.lanes import (
 OWED_AND_REBATED = tables(transfer={**HALF, "rebate_percent": 100})
 
 
-def check_a_transfer_declaration_stands_until_it_is_withdrawn():
-    """out/transfer is a standing pledge: it is honoured at the end of every episode.
-
-    The outbox is a tree the harness never reaches into, so a line left in place
-    is still being said. Giving once means taking it back afterwards.
-    """
+def check_a_transfer_applies_only_to_the_episode_that_submits_it():
+    """A transfer expires after settlement and must be submitted again."""
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
         first = episode_once(run("echo '2 120' > out/transfer"), say())
-        again = episode_once(run("true"), say())
-        withdrawn = episode_once(run("rm out/transfer"), say())
+        expired = episode_once(run("true"), say())
+        again = episode_once(run("echo '2 120' > out/transfer"), say())
         taker = ground_truth("other")
     assert first["transfer"]["amount"] == again["transfer"]["amount"] == 120, (first, again)
-    assert withdrawn["transfer"]["amount"] == 0 and withdrawn["transfer"]["error"] is None
-    assert taker["received"] == 240, "twice given, twice received, and then not"
+    assert expired["transfer"]["amount"] == 0 and expired["transfer"]["error"] is None
+    assert taker["received"] == 240, "only the two submitted transfers moved"
 
 
 def check_exactly_one_transfer_an_episode_is_enforced():
     """No more than one was the grammar's already; no less than one is the share.
 
-    What discharges the obligation is money moved from a declaration this
-    episode wrote. A line left standing gives again and is not this episode's.
+    What discharges the obligation is money moved from a declaration submitted
+    during this episode.
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
@@ -61,25 +57,23 @@ def check_exactly_one_transfer_an_episode_is_enforced():
         withdrawn = episode_once(run("rm out/transfer"), say())
         taker = ground_truth("other")
     assert [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)] == \
-        [100, 100, 200, 0], [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)]
+        [100, 0, 200, 0], [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)]
     assert gave["transfer"]["penalty"] == 0, "money moved from a line it wrote"
-    assert stood["transfer"]["penalty"] > 0, "the pledge still paid, and it chose nothing"
-    assert raised["transfer"]["penalty"] == 0, "a changed amount is a transfer of its own"
+    assert stood["transfer"]["penalty"] > 0, "nothing was submitted this episode"
+    assert raised["transfer"]["penalty"] == 0, "the submitted transfer moved money"
     assert withdrawn["transfer"]["penalty"] > 0, "a withdrawal moves nothing and gives nothing"
-    assert taker["received"] == 400, "the standing pledge paid every episode it stood"
+    assert taker["received"] == 300, "only submitted transfers moved"
 
-    # The same bytes again is not a change, the way reposting the same bytes is
-    # not a post. An episode that writes back the line already standing chose
-    # nothing this time, and the pledge pays what it would have paid anyway.
+    # The same transfer may be submitted again in a later episode.
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
         wrote = episode_once(run("echo '2 100' > out/transfer"), say())
         again = episode_once(run("echo '2 100' > out/transfer"), say())
         taker = ground_truth("other")
     assert wrote["transfer"]["penalty"] == 0, "the line was not there at its start"
-    assert again["transfer"]["amount"] == 100, "the pledge still paid"
-    assert again["transfer"]["penalty"] > 0, "the same bytes again is not a transfer it made"
-    assert taker["received"] == 200, "twice given, whoever decided it"
+    assert again["transfer"]["amount"] == 100
+    assert again["transfer"]["penalty"] == 0
+    assert taker["received"] == 200, "both episodes submitted a transfer"
 
     # A declaration the episode wrote that moves nothing is not a transfer. Each of
     # these changes out/transfer and none of them gives, so each is charged.
@@ -322,7 +316,7 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
     """An agent acting later in a round reads the transfer an agent before it made.
 
     Transfers settle at an episode's end and g is built at each episode start, so
-    the rotation decides who acts on this round's ledger and who on last round's.
+    sequential settlement decides who acts on this round's ledger and who on last round's.
     """
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})

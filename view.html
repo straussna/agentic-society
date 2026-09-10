@@ -458,9 +458,8 @@ function tileHtml(s, i) {
   const left = s.initial ? Math.max(0, Math.min(1, n / s.initial)) : 0;
   const g = s.transfer;
   const taken = Object.entries(s.penalised || {}).filter(([, v]) => v);
-  // A declaration that moved nothing goes on moving nothing every episode it is
-  // left in place, and the only statement of why is here.
-  const transfer = g && g.standing && !g.amount
+  // A submitted declaration that moved nothing carries settlement's reason here.
+  const transfer = g && g.submitted && !g.amount
     ? `<span class="tag warn" title="${esc(g.error || "")}">transfer declared, moved nothing</span>`
     : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} → ${esc(g.label || g.seat)}</span>` : "";
   const terms = [s.model ? esc(`${s.provider || ""}/${s.model}`.replace(/^\//, "")) : "",
@@ -470,7 +469,7 @@ function tileHtml(s, i) {
     : s.live != null
       ? `<span class="tag warn" title="no trace was ever written for it">ep${s.live} unfinished · ${ago(s.live_age)}</span>`
     : s.pending
-      ? `<span class="tag" title="the round is still going and it has not acted in it; the order rotates, so a seat it has not reached yet looks no different from one it has">not yet this round</span>`
+      ? `<span class="tag" title="the round is still going and this seat has not acted yet">not yet this round</span>`
     : !s.acted
       ? `<span class="tag" title="nothing left to spend, or its last episodes ended in refusal; either way it is off the table">out of the experiment</span>`
       : `<span>ep${s.committed} committed</span>`;

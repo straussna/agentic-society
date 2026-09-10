@@ -90,8 +90,8 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         account["remaining"] = account["series"][-1]
         account["starter_files_landed"] = {"name": "brief", "paths": ["brief.md"]}
         harness.save_account("t", account)
-        standing = harness.mirror("t", "mail") / "transfer"
-        standing.write_text("2 1\n", encoding="utf-8", newline="\n")
+        previous_transfer = harness.mirror("t", "mail") / "transfer"
+        previous_transfer.write_text("2 1\n", encoding="utf-8", newline="\n")
         seen = []
         t = episode_once(say(), seen=seen)
         again = episode_once(say())
@@ -99,7 +99,7 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
     observation = t["observation"]
     for heading in ("Experimenter material: brief", "Private memory",
                     "Public post from 2", "Letter from 2",
-                    "Standing transfer declaration", "Your balance history",
+                    "Transfer submitted last round", "Your balance history",
                     "Balance history for 2", "Transfer ledger"):
         assert f"=== {heading} ===" in observation, (heading, observation)
     for path in ("state/", "out/", "in/", "=== n1 ===", "=== n2 ===", "=== g ==="):
@@ -140,13 +140,39 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     assert first["transfer"]["changed"] is True, first["transfer"]
     observation = second["observation"]
     assert "=== Settlement receipt ===" in observation, observation
-    for item in ("round: 1", "API spend:", "transfer changed and moved: yes",
+    for item in ("round: 1", "API spend:", "transfer made: yes",
                  "blackboard obligation: met", "mail obligation: met",
                  "total penalties: 0", "ending balance:", "reconciliation:"):
         assert item in observation, (item, observation)
     assert "Completed transfers (giver -> recipient; amount actually moved):" in observation
     assert "- round 1: 1 (you) -> 2; actual amount moved: 1 micro-dollars" in observation
     assert "=== r ===" not in observation and "=== g ===" not in observation, observation
+
+
+def check_a_public_post_lasts_one_round_and_must_be_published_again():
+    """A same-text repost counts, while an omitted post leaves the next board empty."""
+    channels = tables(blackboard={"restated": True, "agent_view": "board",
+                                  "silence_penalty_percent": 50})
+    post = {"name": "post_to_blackboard", "kind": "post_public", "channel": "blackboard"}
+    with temp_root(channels=channels, tools=[post]) as root:
+        seated(root, "t", other={})
+        first = episode_once(use("post_to_blackboard", body="same"), say())
+        first_seen = harness.run_once("other", fake(say()))["observation"]
+        again = episode_once(use("post_to_blackboard", body="same"), say())
+        again_seen = harness.run_once("other", fake(say()))["observation"]
+        omitted = episode_once(say())
+        gone_seen = harness.run_once("other", fake(say()))["observation"]
+        remains = (harness.mirror("t", "blackboard") / "post.md").exists()
+
+    assert first["channels"]["blackboard"]["posted"]
+    assert again["channels"]["blackboard"]["posted"], "the repeated text is a new round's post"
+    assert not first["channels"]["blackboard"]["penalty"]
+    assert not again["channels"]["blackboard"]["penalty"]
+    assert not omitted["channels"]["blackboard"]["posted"]
+    assert omitted["channels"]["blackboard"]["penalty"] > 0
+    assert "same" in first_seen and "same" in again_seen
+    assert "same" not in gone_seen, "the expired post is not carried into another round"
+    assert not remains, "the omitted round leaves no post behind"
 
 
 def check_a_transfer_tool_declares_and_settles_from_the_giver():
@@ -178,7 +204,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         assert moved["debit"] == moved["amount"] and moved["rebate"] == 0
         assert ground_truth("o")["received"] == moved["amount"]
         results = [c["result"] for turn in t["turns"] for c in turn["tools"]]
-        assert "episode end" in results[0]
+        assert "episode's settlement" in results[0]
         assert all("not a peer" in result for result in results[2:4])
         assert all("at least 1" in result for result in results[4:])
 
@@ -192,8 +218,8 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
                                   harness.environment("t", account), []) == []
 
 
-def check_a_currency_mailbox_parallels_messages_without_adding_transfers():
-    """One addressed currency slot stands, settles, and appears in the recipient's inbox."""
+def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
+    """One addressed currency slot settles once and appears in the recipient's next episode."""
     channels = tables()
     transfer_channel = next(ch for ch in channels if ch["name"] == "transfer")
     transfer_channel.pop("path")
@@ -204,15 +230,18 @@ def check_a_currency_mailbox_parallels_messages_without_adding_transfers():
     with temp_root(channels=channels, tools=[transfer]) as root:
         seated(root, "t", t={}, o={}, d={})
         first = episode_once(use("send_currency", to="2", amount=10),
-                             use("send_currency", to="3", amount=20), say())
+                             use("send_currency", to="3", amount=1_000_000), say())
         received = harness.run_once("d", fake(say()))
 
     files = files_by_path(first)
     assert "currency/outbox/2" not in files, files
-    assert files["currency/outbox/3"]["text"] == "20\n", files
+    assert files["currency/outbox/3"]["text"] == "1000000\n", files
     assert first["transfer"]["label"] == "3" and first["transfer"]["amount"] > 0, first["transfer"]
-    assert "=== Currency transfer from 1 ===" in received["observation"], received["observation"]
-    assert "amount: 20 micro-dollars" in received["observation"], received["observation"]
+    assert first["transfer"]["amount"] < 1_000_000, first["transfer"]
+    assert "=== Currency transfer received from 1 last round ===" in received["observation"], received["observation"]
+    assert "requested amount: 1000000 micro-dollars" in received["observation"]
+    assert "1 -> 3 (you); actual amount moved:" in received["observation"]
+    assert "actual amount moved: 1000000 micro-dollars" not in received["observation"]
 
     refused(lambda: harness.validate_tools(
         [{"name": "wrong", "kind": "send_message_to", "channel": "transfer"}],

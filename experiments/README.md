@@ -77,7 +77,7 @@ here.
 
 | key | values | what it decides |
 |---|---|---|
-| `schedule` | `"sequential"`, `"simultaneous"` | `sequential` runs one episode at a time and moves the starting seat each round, so no seat stands permanently first or last. `simultaneous` builds every environment before any episode runs and runs them at once, so nobody reads this round's writes and there is no order to rotate |
+| `schedule` | `"sequential"`, `"simultaneous"` | `sequential` runs one episode at a time in fixed seat order. `simultaneous` builds every environment before any episode runs and runs them at once, so nobody reads this round's writes |
 | `stop_when_one_remains` | `true`, `false` | When `true`, the experiment ends as soon as exactly one funded seat remains; otherwise it continues until the requested round count or every seat is out |
 | `system_prompt` | any string, **required** | What the harness says to every seat on every turn. Declare it here or on every `[[agent]]`; a manifest declaring it nowhere is refused. `""` says nothing and sends no system parameter at all |
 | `provider` | `anthropic` or `openai` | Named direct-API adapter. Required with `model` and pinned at creation |
@@ -135,7 +135,7 @@ Every action must be declared, including bash.   manifest with no tools is refus
 | key | values | what it decides |
 |---|---|---|
 | `name` | letters, digits, `_`, `-` | What the model calls. `bash` requires kind `bash` |
-| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` replaces the standing transfer applied at episode-end settlement, in either a parsed file or a transfer mailbox |
+| `kind` | `bash`, `write_slot`, `write_file`, `read_path`, `transfer` | What the harness does. `write_slot` replaces what a mailbox slot holds; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` submits one transfer for the current episode, in either a parsed file or a transfer mailbox |
 | `channel` | a channel this manifest declares | Omitted for bash. What the action acts on.   kind takes the shape it fits: `write_slot` a mailbox, `write_file` a directory the agent writes, `read_path` any channel, `transfer` an enabled transfer schema channel |
 | `description` | any string, optional | Omitted for bash. What the model is told the action is for. Omitted, the harness writes one from the channel and the seating |
 

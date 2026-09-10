@@ -153,8 +153,8 @@ def met_of(ch: harness.Channel, rec: dict) -> bool | None:
     if not rec:
         return None
     if ch.schema:
-        # A declaration left standing moves nothing a second time, so what counts
-        # is money moved this episode and no share taken for having moved none.
+        # A transfer meets the obligation only when this episode moved money and
+        # no share was taken for having moved none.
         return bool(rec["amount"]) and not rec["penalty"]
     if ch.shape == "mailbox":
         return messaged(rec)

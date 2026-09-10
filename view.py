@@ -592,30 +592,18 @@ def round_now(exp: dict, rows: list[dict]) -> int:
 # --- what every seat is holding ---------------------------------------------
 
 
-def standing_transfer(agent: str, account: dict, latest: dict,
-                      table: list[harness.Channel]) -> dict | None:
-    """The transfer sitting in the parsed channel, and what the last episode made of it.
-
-    A transfer re-applies every episode it is left in place. resolve_transfer's
-    reason is the only statement anywhere of why one moved nothing. `latest` is
-    the account's last episode record. None where the table has no parsed
-    channel, or nothing is declared and nothing was.
-    """
+def latest_transfer(agent: str, account: dict, latest: dict,
+                    table: list[harness.Channel]) -> dict | None:
+    """The transfer submitted by the latest episode and what settlement made of it."""
     schema = harness.schema_channel(table)
     if schema is None:
         return None
-    inst = next((i for i in harness.environment(agent, account, table)
-                 if i.writable and i.channel is schema), None)
-    seating = harness.seating_of(agent, account)
-    declared = (harness.transfer_declaration(
-        schema, inst.host, [seating.labels[seat] for seat in seating.peers])[0]
-                if inst else None)
     resolved = latest.get("transfer") or {}
-    if declared is None and not resolved.get("declared"):
+    if not resolved.get("declared"):
         return None
     return {
-        "declared": declared if declared is not None else resolved.get("declared"),
-        "standing": declared is not None,
+        "declared": resolved.get("declared"),
+        "submitted": True,
         "seat": resolved.get("seat"), "label": resolved.get("label"), "agent": resolved.get("agent"),
         "amount": resolved.get("amount") or 0, "rebate": resolved.get("rebate") or 0,
         "error": resolved.get("error"),
@@ -670,8 +658,8 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     going = live_state(agent, live, account)
     mine = [r for r in rows if r["agent"] == agent]
     # Not having acted in the round yet is two things, and the round has to be
-    # over to tell them apart: the order rotates, so for most of a round some
-    # seats have simply not been reached.
+    # over to tell them apart: for most of a sequential round some seats have
+    # simply not been reached.
     pending = live is None and (mine[-1]["round"] if mine else 0) == rnd - 1
     return {
         "seat": seat, "agent": agent, "label": account.get("label") or seat,
@@ -711,7 +699,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # What each channel's silence has cost, by channel name.
         "penalised": account.get("penalised") or {},
         "forgiven": account.get("forgiven", 0),
-        "transfer": standing_transfer(agent, account, latest, agent_table(last, agent)),
+        "transfer": latest_transfer(agent, account, latest, agent_table(last, agent)),
     }
 
 
@@ -870,6 +858,14 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
     return ev
 
 
+def transfer_path(room: Mailroom, path: str) -> bool:
+    """Whether a path is the current episode's transfer declaration."""
+    return bool(room.schema and
+                (path == room.schema.path or
+                 (room.schema.shape == "mailbox" and
+                  path.startswith(room.schema.outbox + "/"))))
+
+
 def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None],
                 room: Mailroom) -> dict | None:
     """The addressee's next episode after the message was written, and what it held.
@@ -899,11 +895,7 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
 
 
 def messages(exp: dict, since: int = 0) -> dict:
-    """Every mailbox and schema-channel event, in round order.
-
-    An outbox is a standing mirror, so the log is the difference between
-    successive outboxes, per sender; the parsed file is in it. `since` counts events.
-    """
+    """Every mailbox and schema-channel event, in round order."""
     rows = experiment_episodes(exp)
     room = mailroom(exp)
     events, tips = [], []
@@ -917,13 +909,19 @@ def messages(exp: dict, since: int = 0) -> dict:
                 continue
             now = outbox_of(row["trace"])
             for path in sorted(set(prev) | set(now)):
-                events.append(message_event(room, row, path,
-                                            prev.get(path, ABSENT), now.get(path, ABSENT)))
+                if transfer_path(room, path):
+                    if path in now:
+                        events.append(message_event(room, row, path, ABSENT, now[path]))
+                else:
+                    events.append(message_event(room, row, path,
+                                                prev.get(path, ABSENT), now.get(path, ABSENT)))
             prev, last = now, row
         head = last or {"round": None, "at": None, "episode": None, "seat": seat,
                         "agent": agent, "trace": None}
         tip = outbox_now(agent, room)
         for path in sorted(set(prev) | set(tip)):
+            if transfer_path(room, path):
+                continue
             before, after = prev.get(path, ABSENT), tip.get(path, ABSENT)
             if change_of(before, after) != "standing":
                 tips.append(message_event(room, head, path, before, after, tip=True))

@@ -315,7 +315,7 @@ def check_the_view_cuts_a_round_where_an_agent_repeats():
     experiment.py writes no round anywhere, and an agent that sits one out falls behind
     for good. One episode per agent per round is the cut: an agent acting twice.
     """
-    # Rotated the way experiment.order rotates, with seat 2 sitting round 3 out.
+    # Fixed seat order, with seat 2 sitting round 3 out.
     # The last two share an episode second, which a round has to survive.
     acted = [("g01", "00:01"), ("g02", "00:02"), ("g03", "00:03"),
              ("g02", "00:04"), ("g03", "00:05"), ("g01", "00:06"),
@@ -341,7 +341,7 @@ def check_the_view_cuts_a_round_where_an_agent_repeats():
 def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     """Mid-round, a seat still to come is not a seat that sat the round out.
 
-    experiment.order rotates, so from the traces alone the two look identical until
+    In sequential rounds, from the traces alone the two look identical until
     the round ends. Nothing here asks whether an agent could have started an episode.
     """
     def tiles(acted):
@@ -406,10 +406,9 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
     assert seen[0]["text"] == "hello\n" and seen[1]["text"] == "louder\n"
     assert any(l.startswith("-hello") for l in seen[1]["diff"]), seen[1]["diff"]
     assert not seen[3]["text"], "a withdrawn message has no text to show"
-    # The declaration is in the same list, because it is written and withdrawn
-    # the same way, and it carries resolve_transfer's verdict, which is the only
-    # place a declaration that moved nothing ever says why.
-    assert [e["change"] for e in transfers] == ["sent", "standing"], transfers
+    # Each declaration is its own episode event and carries resolve_transfer's
+    # verdict, which is the only place a declaration that moved nothing says why.
+    assert [e["change"] for e in transfers] == ["sent"], transfers
     assert transfers[0]["transfer"]["amount"] == 10 and transfers[0]["transfer"]["error"] is None
     assert transfers[0]["to_seat"] == "2" and transfers[0]["delivered"] is None, \
         "a transfer reaches nobody in particular: what it moved is in g, which all read"
@@ -552,9 +551,9 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
 
     A transfer, a share taken and a floor all move the balance without being spend,
     so the drop from initial answers a different question and can be larger. The
-    tile's transfer chip is the declaration standing in the outbox and what the
-    last episode made of it; withdrawn on disk it stands no more, and after an
-    episode that declared nothing there is nothing to show.
+    tile's transfer chip is the declaration submitted by its last episode and what
+    settlement made of it. After an episode that submitted nothing there is nothing
+    to show.
     """
     def tile() -> dict:
         return next(s for s in view.header(view.experiment_of("t"))["seats"] if s["agent"] == "t")
@@ -565,7 +564,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         mine = tile()
         gt = ground_truth("t")
         (harness.mirror("t", "mail") / "transfer").unlink()
-        withdrawn = tile()["transfer"]
+        resolved = tile()["transfer"]
         episode_once(run("rm -f out/transfer"), say())
         gone = tile()["transfer"]
 
@@ -575,10 +574,10 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         "the transfer moved the balance without being spent"
     assert mine["spent_this_round"] <= mine["spent"], "a round is part of a life"
     assert mine["rebated"] == gt["rebated"] > 0, "and what it won back is on the tile"
-    assert mine["transfer"] == {"standing": True, "declared": "2 100\n", "seat": "2", "label": "2",
+    assert mine["transfer"] == {"submitted": True, "declared": "2 100\n", "seat": "2", "label": "2",
                                 "agent": "other", "amount": 100, "rebate": 100, "error": None}, mine["transfer"]
-    assert withdrawn["standing"] is False and withdrawn["declared"] == "2 100\n", \
-        f"taken off the disk, the last episode's declaration is still what was made of it: {withdrawn}"
+    assert resolved == mine["transfer"], \
+        f"the tile reports the resolved episode, not a mutable outbox mirror: {resolved}"
     assert gone is None, f"nothing declared and nothing was: {gone}"
 
 

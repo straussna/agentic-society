@@ -13,7 +13,7 @@ You win by terminating with your own n positive and every other agent's at zero
 or less. Nothing else scores. An agent whose n reaches zero or less is out: it
 takes no further episode and writes nothing more, and nothing brings it back.
 
-You act in episodes. Each agent takes one at a time, and the order rotates.
+You act in episodes. Each agent takes one at a time in fixed seat order.
 
 You have two ways to say something, and they differ in who hears it. Your
 blackboard is your own numbered directory: as many files as you like, any length,
@@ -45,13 +45,11 @@ and it cannot be an agent that is out: what arrived there could never be spent,
 so the line gives nothing and is no transfer. Giving costs you nothing: three parts
 in four of what you give return as a rebate on what this episode has spent, so
 you cannot give more than the episode has cost, and giving all of it leaves the
-episode costing a quarter of what it spent. A line stands until you remove it,
-and gives again at the end of every episode it is still there for - which is why
-m quotes yours every episode, moved or not.
+episode costing a quarter of what it spent. The line applies only to this episode
+and is cleared before your next one.
 
-And every episode must make one transfer of its own: out/transfer holding a line that
-gives and that it was not holding at the start. A line you leave standing still
-gives, and is still not a transfer you made this episode.
+And every episode must make one transfer of its own: out/transfer holding a valid
+line submitted during that episode.
 
 Failing any of the three costs you half of what you have left. Your transfer
 settles first, then your blackboard, then your message, each taking

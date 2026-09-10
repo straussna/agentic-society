@@ -292,7 +292,7 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         assert (harness.mirror("f", "mail") / "2").read_text(encoding="utf-8") == "psst\n", \
             "a message is one file, and the fork rebuilds it as one"
         assert (harness.mirror("f", "mail") / "transfer").read_text(encoding="utf-8") == "2 50\n", \
-            "a standing declaration is part of the episode being rebuilt"
+            "the resolved episode state is rebuilt exactly; the next episode clears the transfer"
         # And nothing that belonged to the neighbour: its blackboard, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
         rebuilt = {p.name for tree in (harness.mirror("f", "notes"), harness.mirror("f", "blackboard"),
