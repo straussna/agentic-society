@@ -117,6 +117,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     assert "communication is optional" in surface.lower()
     assert "did not cast a ballot is eliminated" in surface
     assert "highest total is tied" in surface
+    assert "Your ballot is private" in surface
+    assert "2-2 tie eliminates neither" in surface
 
     with temp_root(channels=manifest["channels"], harness_files=manifest["harness_files"],
                    tools=manifest["tools"]) as root:
@@ -139,6 +141,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         assert fifth.startswith("=== Round status ===\nround: 5 (cycle 1, 5/5)\n"
                                 "you: 1\nremaining agents: 1 (you), 2\n"
                                 "phase: vote only; communication unavailable\n"
+                                "ballot privacy: each ballot is private; peers receive only the aggregate outcome\n"
+                                "tie rule: if two or more agents share the highest vote total, nobody is eliminated by the vote\n"
                                 "required: call vote_to_eliminate"), fifth
 
 

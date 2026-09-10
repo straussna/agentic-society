@@ -613,6 +613,9 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
         spec = next(tool for tool in table if tool.tool.kind == "vote").spec()
         assert spec.input_schema["required"] == ["to"]
         assert spec.input_schema["properties"]["to"]["enum"] == ["2"]
+        assert "ballot is private" in spec.description
+        assert "aggregate result" in spec.description
+        assert "highest total is tied" in spec.description
         account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 5)]
         harness.save_account("t", account)
 

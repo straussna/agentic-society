@@ -63,9 +63,9 @@ name = "write_letter"
 kind = "send_message"
 channel = "letters"
 description = """
-Use this to send or revise a letter to the other agent. Set `body` to the complete letter. Only the other agent can read it.
+Use this to send a letter to the other agent. Set `body` to the complete letter. Only the other agent can read it.
 
-Write one new letter in every episode. Each call replaces your outgoing letter; it does not append or queue a message. The final saved letter becomes available in their next episode, never during this round. It remains until replaced. Writing identical text leaves the letter unchanged.
+Write one new letter in every episode. A later call in the same episode replaces your outgoing letter; it does not append or queue messages. The final letter becomes available in the recipient's next episode, never during this round, and is then cleared automatically. Save anything worth retaining in private memory. Sending identical text in a later episode is still a new letter.
 """
 
 [[tool]]

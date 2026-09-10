@@ -354,6 +354,7 @@ def check_provenance_is_recorded():
             first = harness.run_once("t", fake(*DEFAULT))
             prov = first["provenance"]
             for key in ("started_at", "harness_sha256", "image", "image_id", "provider",
+                        "message_delivery",
                         "requested_model", "context_fraction", "max_tokens",
                         "max_turns", "command_timeout", "tool_result_limit",
                         # What the initial observation carried, and how much of each blackboard

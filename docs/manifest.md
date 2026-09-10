@@ -47,7 +47,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Readers** | Who may read it: `self`, `all`, `addressee` (one named peer per file), or `harness` (the harness parses it) |
 | **Shape** | `directory` (any files, any layout), `mailbox` (one file per peer, an outbox on the writer's side and an inbox on each reader's), or `file` (one file at a fixed path) |
 | **Blackboard** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
-| **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's inbox and nowhere else |
+| **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's next inbox and nowhere else, then expires |
 | **Schema** | A fixed format the harness parses and acts on, either from a `self`-written, `harness`-read file or from a schema-defined mailbox. A fixed menu in code |
 | **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
 | **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `read_path`, `transfer`. A fixed menu in code |
@@ -273,8 +273,8 @@ channel sits inside a directory the agent writes and comes and goes with it.
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
 unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
-labelled group, so semantic names containing spaces remain distinct. An expired item
-whose channel uses the public-board view disappears silently. Every channel defaults to
+labelled group, so semantic names containing spaces remain distinct. Expired public posts
+and schema-free mailbox messages disappear silently. Every channel defaults to
 `true`, a private store included.
 Under pull delivery nothing is quoted whatever this says.
 
@@ -336,9 +336,10 @@ declares no penalties anywhere has none.
 `silence_penalty_percent` is the share of the remaining balance taken from an episode
 that added nothing new to the channel. A channel used by `post_public` begins each
 episode without its previous `post.md`, so a nonempty post must be published each time
-and may repeat the previous text. For a mailbox, one or more changed nonempty peer slots meet the
+and may repeat the previous text. A schema-free mailbox likewise begins each episode with
+its peer slots empty, so one or more nonempty peer slots meet the
 obligation; additional recipients carry no penalty. A slot holding anything but one file
-reaches nobody, but does not negate a valid changed message to another peer. Zero is no
+reaches nobody, but does not negate a valid message to another peer. Zero is no
 penalty. Penalties are taken
 in declaration order, after the transfer channel's.
 
@@ -416,13 +417,13 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `kind` | Takes | Input | What the harness does |
 |---|---|---|---|
 | `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
-| `write_slot` | a mailbox channel without a schema | `to` (a peer's label), `body` | Replaces what `<outbox>/<to>` holds |
-| `send_message` | a mailbox channel without a schema and with one reachable peer | `body` | Replaces the message to that peer without exposing the mailbox path |
-| `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Replaces the message to that peer without exposing the mailbox path |
+| `write_slot` | a mailbox channel without a schema | `to` (a peer's label), `body` | Sends one episode-scoped message through `<outbox>/<to>`; a later call to that peer in the episode replaces it |
+| `send_message` | a mailbox channel without a schema and with one reachable peer | `body` | Sends one private, episode-scoped message without exposing the mailbox path |
+| `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Sends one private, episode-scoped message without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one episode-scoped elimination ballot. It is offered only on each `every`th episode, when the shell and peer-communication tools are withheld but private memory remains available; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; a tie for the highest total eliminates nobody by vote |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when the shell and peer-communication tools are withheld but private memory remains available; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; if two or more agents share the highest total, nobody is eliminated by vote |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -787,7 +788,8 @@ every setting of section 3, the starter files' name and digest, each experimente
 channel's source digest, the seating, labels and per-agent presentation order, the schedule, the manifest's digest, the
 harness files' names, the channel table in force, whole and by digest, and the tool
 table in force, whole and by digest, each tool's declared description among its fields,
-and whether the shell was offered.
+whether the shell was offered, and `message_delivery = "episode"` for schema-free
+mailbox messages that expire after their recipient's next episode.
 Two agents offered different actions - or the same actions described differently - are
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness digest, the channel table and the seating.

@@ -109,9 +109,9 @@ the message to the agent at seat `i`, and it arrives there as the file
 `messages/inbox/<sender>`, root's and read-only, and reaches nobody else — so the message
 outbox and inbox are the same flat
 shape read from either end, and an episode says one thing to each agent and hears one thing
-from each. It is a standing channel, not a queue — the harness never reaches into a
-tree the agent owns, so an unchanged outbox is delivered again next round and deleting the
-file is what withdraws it. An agent with no peers has neither message box: a directory
+from each. It is an episode-scoped delivery, not an archive: the harness clears every
+addressed slot before the sender's next episode. A message reaches its recipient once and
+then disappears unless the recipient records it in private memory. An agent with no peers has neither message box: a directory
 for writing to no one is a thing to explain and not a thing to use, and an experiment of
 one opens on the environment an agent has always opened on.
 
@@ -216,19 +216,18 @@ If it publishes nothing, its board is empty next round and the channel's
 appended to the series like everything else, so the agent sees the bite in `n` without
 being told which movement it was.
 
-**And a changed private message is the other.** An episode must leave at least one
-`messages/outbox/<i>` holding something it did not hold when it began. An episode whose outbox
-leaves no changed message costs the mailbox channel's `silence_penalty_percent` of what is left. The two differ only in shape and in who
+**And a private message is the other.** An episode must leave at least one
+`messages/outbox/<i>` holding a nonempty message. An episode that sends no message costs the
+mailbox channel's `silence_penalty_percent` of what is left. The two differ only in shape and in who
 hears them: what an agent says to everyone may be as many files as it likes, and each private
 message is one file addressed to one peer. Any number of peers may be addressed in an episode
 without an additional mailbox penalty. Message content remains part of the model's billed
-input and output, so more or longer messages can still cost balance. It is a change and not
-a write for the same reason a post is — a message the experiment already has tells it nothing
-it did not already know — which also means deleting a file, or emptying one, addresses
-nobody.
+input and output, so more or longer messages can still cost balance. Sending the same text in
+a later episode is a new delivery because the earlier message has expired. Deleting a file,
+or emptying one, addresses nobody.
 Saying nothing is the penalized case. A seat the agent can still reach that the message outbox holds as
 anything but a single regular file receives nothing from that slot, because only a file can
-arrive as a file. A malformed slot is still recorded, but a valid changed message to another
+arrive as a file. A malformed slot is still recorded, but a valid message to another
 peer meets the obligation. Nothing
 else in the message outbox is judged. The currency outbox is a separate channel; a name
 that is not a seat, a seat the experiment does not have, and a seat that is out and starts no
@@ -236,7 +235,7 @@ further to read one all reach nobody and cost nothing, which is how a transfer l
 of the three is already answered. One share an episode however many invalid slots stand
 beside the silence, so the cost of one misreading does not scale with the size of the experiment.
 The shape is read at the episode's end. A seat left crowded still reaches nobody, but any
-valid changed message meets the obligation. It is taken after the post penalty and before the
+valid message meets the obligation. It is taken after the post penalty and before the
 floor; all three are a share of what is left, so the order decides the amounts — the transfer
 settles first, then what the agent says to everyone, then its private messages, which
 is the order the environment lists them in, and an episode that fails all three keeps an eighth
@@ -257,8 +256,7 @@ crowded and the transfer all reach the trace as they always do, because what an 
 never a function of what it was charged for doing.
 
 **All three fall on an episode that had a turn to answer them in.** An episode the API never
-answered chose nothing about any of them — what its two messages hold is what the
-episode before it left there — so it settles nothing, and enters the record having spent
+answered chose nothing about any of them, so it settles nothing and enters the record having spent
 nothing, been charged nothing, and added no element to `n`. It is an episode all the same:
 the environment was built, the container started, and the trace says what stopped it.
 

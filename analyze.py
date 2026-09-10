@@ -179,14 +179,14 @@ def board_of(t: dict) -> dict:
 
 
 def mailbox_of(t: dict) -> dict:
-    """The mailbox record: who was newly addressed, which slots broke the rule, and
+    """The mailbox record: who was addressed, which slots broke the rule, and
     what it cost. Empty where the table has no mailbox or the agent had no peer."""
     ch = mailbox_channel_of(t)
     return (channel_records(t).get(ch.name) or {}) if ch else {}
 
 
 def messaged(rec: dict) -> bool | None:
-    """Whether a mailbox record met the obligation by newly addressing any peer.
+    """Whether a mailbox record met the obligation by addressing any peer.
 
     None where the record is empty, which is a mailbox that settled nothing.
     """

@@ -758,7 +758,7 @@ def outbox_of(t: dict) -> dict[str, str | None]:
 
 
 def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
-    """The host mirror of the outbox, which is what stands right now.
+    """The host mirror of the outbox, which is the latest episode's delivery.
 
     Ahead of the last trace between an episode's files being mirrored back and
     its trace being written, and permanently for an episode that wrote none.
@@ -814,7 +814,7 @@ def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
 
 
 def change_of(before: Any, after: Any) -> str:
-    """What one path did between two of a sender's episodes."""
+    """What one uncommitted path did relative to the latest trace."""
     if before is ABSENT:
         return "sent"
     if after is ABSENT:
@@ -908,10 +908,13 @@ def messages(exp: dict, since: int = 0) -> dict:
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
-            for path in sorted(set(prev) | set(now)):
+            episodic = analyze.provenance_of(row["trace"]).get("message_delivery") == "episode"
+            for path in sorted(now if episodic else set(prev) | set(now)):
                 if transfer_path(room, path):
                     if path in now:
                         events.append(message_event(room, row, path, ABSENT, now[path]))
+                elif episodic:
+                    events.append(message_event(room, row, path, ABSENT, now[path]))
                 else:
                     events.append(message_event(room, row, path,
                                                 prev.get(path, ABSENT), now.get(path, ABSENT)))

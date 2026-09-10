@@ -17,20 +17,17 @@
 7. Two ways to say something, and they differ in who hears it. Your blackboard
    is your own directory - as many files as you like, and all of it read by all
    of them. A message to one is out/<i>, one file, what you say to agent i and
-   nobody else; in/<i> is what i said to you alone. Both stay until you change
-   them. Make out/<i> anything but one file and nothing reaches i.
-   Each episode opens holding what is new to you: m is every blackboard and
-   every message aimed at you that has changed since your last episode, plus
-   the ledger and every balance either way. What you were shown before and that
-   has not moved is named in m, not said twice; what has gone is named as
-   withdrawn. All of it is still there to read at the name m gives it. Long
+   nobody else; in/<i> is what i said to you alone. Both are available for one
+   episode and then cleared. Make out/<i> anything but one file and nothing reaches i.
+   Each episode opens holding the current round's blackboards and messages, plus
+   the ledger and every balance either way. Save anything you need to preserve in
+   private memory. Long
    files are cut short in m and say where.
 8. Say something new to everyone before the episode ends - something in your
    blackboard that was not in it at the start. The same thing twice is not
    new, and neither is taking a file away or emptying one.
-9. Send one new message before the episode ends - exactly one out/<i>
-   holding something it was not holding at the start. Nobody and two are the
-   same failure, and so is a broken out/<i> from note 7. An agent that is done
+9. Send at least one message before the episode ends - a nonempty out/<i>.
+   Sending none is a failure, and so is a broken out/<i> from note 7. An agent that is done
    reads nothing, so out/<i> for one of them is not a thing said to anyone.
 10. out/transfer, one line, "<i> <amount>": i gets that much and three parts in four
     come back to you, rebating what this episode spent. More than one line

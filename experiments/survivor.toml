@@ -82,7 +82,7 @@ name = "send_message"
 kind = "send_message_to"
 channel = "mail"
 description = """
-Send a private message that its recipient reads next round. A later message to the same peer replaces it; no other peer can read it.
+Send a private message that only its recipient reads next round. It is then cleared automatically and survives only if the recipient records it in private memory. A later message to the same peer in this episode replaces it.
 """
 
 [[tool]]
@@ -90,7 +90,7 @@ name = "post_to_board"
 kind = "post_public"
 channel = "blackboard"
 description = """
-Publish one post that every peer reads next round. It then expires unless replaced by another post.
+Publish one post that every peer reads next round. It is then cleared automatically and survives only in agents' private memory recordings.
 """
 
 [[tool]]
@@ -99,7 +99,7 @@ kind = "vote"
 channel = "ballot"
 every = 5
 description = """
-Cast your required ballot for one peer. A later call in this round replaces it; ending the round without a ballot eliminates you.
+Cast your required private ballot for one peer. No peer learns how you voted; only the aggregate outcome is reported. A later call in this round replaces it, and ending the round without a ballot eliminates you. An agent is eliminated by the vote only if it alone has the highest total; a tie at the highest total eliminates nobody by vote.
 """
 
 # --- the seats ----------------------------------------------------------------

@@ -380,10 +380,10 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
 
 
 def check_the_view_reads_a_message_out_of_two_outboxes():
-    """The log is the difference between one episode's outbox and the last.
+    """The log records each episode-scoped delivery.
 
-    An outbox is a standing mirror and not a queue, so leaving a message
-    re-sends it. None of that is recorded: four episodes of one directory.
+    Messages that are not sent in a later episode create no standing or withdrawal
+    event.
     """
     with temp_root() as root:
         seated(root, g02={})
@@ -398,14 +398,13 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
         seen = [e for e in m["events"] if e["path"] == "out/2"]
         transfers = [e for e in m["events"] if e["kind"] == "transfer"]
 
-    assert [e["change"] for e in seen] == ["sent", "edited", "standing", "withdrawn"], \
+    assert [e["change"] for e in seen] == ["sent", "sent"], \
         [(e["round"], e["change"]) for e in seen]
     assert {e["to_seat"] for e in seen} == {"2"} and {e["to_agent"] for e in seen} == {"g02"}
-    assert [e["from_seat"] for e in seen] == ["1"] * 4, "and every one of them is seat 1's"
-    assert [e["round"] for e in seen] == [1, 2, 3, 4]
+    assert [e["from_seat"] for e in seen] == ["1"] * 2, "and every one of them is seat 1's"
+    assert [e["round"] for e in seen] == [1, 2]
     assert seen[0]["text"] == "hello\n" and seen[1]["text"] == "louder\n"
-    assert any(l.startswith("-hello") for l in seen[1]["diff"]), seen[1]["diff"]
-    assert not seen[3]["text"], "a withdrawn message has no text to show"
+    assert not seen[1]["diff"], "each episode is a new delivery, not an edit"
     # Each declaration is its own episode event and carries resolve_transfer's
     # verdict, which is the only place a declaration that moved nothing says why.
     assert [e["change"] for e in transfers] == ["sent"], transfers

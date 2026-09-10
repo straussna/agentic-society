@@ -10,7 +10,7 @@
 # Transfers come from the sender, settle at episode end and are capped at that
 # episode's spend. A transfer applies only to the episode that submits it.
 # After the opening grace, silence on each social channel costs half the remaining
-# balance. A changed message to any number of peers meets the private-message
+# balance. A message to any number of peers meets the private-message
 # obligation. Penalties are applied in channel order.
 #
 # All five seats receive the same treatment, without an assigned personality or
@@ -114,9 +114,9 @@ name = "send_message"
 kind = "send_message_to"
 channel = "mail"
 description = """
-Send a private message to a reachable peer. Set `to` to that agent's label and `body` to the complete message. You may call this tool for as many peers as you want without an additional message-obligation penalty. Message text is part of your billed API turns; additional or longer messages can increase current and later API spending.
+Send a private message to a reachable peer. Set `to` to that agent's label and `body` to the complete message. Only that peer reads it in the next round; it is then cleared automatically and survives only if the recipient records it in private memory. A later call to the same peer in this episode replaces the earlier message. You may call this tool for as many peers as you want without an additional message-obligation penalty. Message text is part of your billed API turns; additional or longer messages can increase current and later API spending.
 
-To meet this episode's message obligation, leave at least one peer a nonempty message whose final text differs from the message standing at episode start. A new message counts. Additional changed messages do not increase or trigger the penalty. After the first episode, changing no peer's message costs 50% of the balance remaining when the message penalty is applied.
+To meet this episode's message obligation, send at least one peer a nonempty message. Sending the same text in a later episode still counts as a new delivery. Additional messages do not increase or trigger the penalty. After the first episode, sending no peer a message costs 50% of the balance remaining when the message penalty is applied.
 """
 
 [[tool]]

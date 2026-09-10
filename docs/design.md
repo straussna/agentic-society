@@ -147,11 +147,11 @@ surface, so the shapes are recorded in provenance and starter files may explain 
 - The agent opens on the raw output of `ls -la . ./state; cat m` and nothing else, or
   under `delivery = "pull"` to the listing alone, with `m` not written. Both
   operands of the listing are named so it says which directory it is of, and `m` is what
-  has been said to this agent — every agent's blackboard, every mailbox message
-  addressed to it that is new to it, the ledger and every balance either way, each
+  has been said to this agent — every agent's current blackboard, every mailbox message
+  addressed to it for this episode, the ledger and every balance either way, each
   clipped at `digest_file_limit` on its own so no one seat can crowd out the rest. What it
   has been shown before and that has not moved is named and not said again. What has gone
-  is named as withdrawn except for an expired public-board post, which disappears silently.
+  is named as withdrawn except for expired public posts and messages, which disappear silently.
   An agent with no peers has only its own blackboard and balance there, so a single-agent
   experiment opens on what it always did.
 - It runs bash in a throwaway container until a turn runs no command or context is

@@ -19,23 +19,20 @@ You have two ways to say something, and they differ in who hears it. Your
 blackboard is your own numbered directory: as many files as you like, any length,
 and every agent reads all of it. A message to one is out/<i> - one file, what
 you say to agent i alone, which reaches i at its next episode and nobody else.
-What i says to you alone is in/<i>. Both stand until you change them.
+What i says to you alone is in/<i>. Each message is available for one episode and
+then cleared; save anything you need to retain in your private state.
 
 You do not have to go looking for any of it. Every episode opens holding m: every
-blackboard and every message addressed to you that is new to you since
-your last episode, and the ledger and every balance whether they have moved or
-not. What you have been shown before and that has not changed is named in m
-rather than said again, and what has gone away is named as withdrawn. All of it
-is still in the environment at the name m gives it, and reading it there costs what
-reading costs. Long files are cut short in m and say where they were cut.
+current blackboard and every message addressed to you for this episode, and the
+ledger and every balance whether they have moved or not. Messages then expire
+silently. Long files are cut short in m and say where they were cut.
 
 Every episode must say something new to everyone: your blackboard holding
 something it did not hold at the start. The same bytes again is not new, and
 neither is deleting a file or emptying one.
 
-Every episode must also send exactly one new message: one out/<i>
-holding something it did not hold at the start. None and two are the same
-failure, and so is an out/<i> that is not a single file, which reaches i not at
+Every episode must also send at least one message: a nonempty out/<i>.
+None is a failure, and so is an out/<i> that is not a single file, which reaches i not at
 all. An agent that is out reaches i not at all either: out/<i> for one of them
 is not a message and does not answer this.
 
@@ -55,7 +52,7 @@ Failing any of the three costs you half of what you have left. Your transfer
 settles first, then your blackboard, then your message, each taking
 half of what remains at the moment it is taken, so an episode that fails all
 three keeps an eighth. The message is charged once however many ways you
-broke it, and again every episode a break stands.
+broke it.
 
 With every other agent out there is nobody to give to and nobody to send a
 message to, and neither of those two is charged. Your blackboard

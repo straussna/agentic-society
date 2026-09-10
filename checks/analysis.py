@@ -160,8 +160,8 @@ def check_the_csv_row_flattens_a_trace():
     assert sum(r1[k] for k in analyze.USAGE_FIELDS) == sum(
         x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS)
 
-    # The message left standing is still in the outbox and no longer something said.
-    assert r2["sent_to"] == "2" and r2["mail_addressed"] == "", r2
+    # The first episode's message has expired and the second sent none.
+    assert r2["sent_to"] == "" and r2["mail_addressed"] == "", r2
     assert r2["transfer_amount"] == 0 and r2["transfer_to"] == "", r2
     assert r2["refusal_category"] == "" and r2["served_models"] == "claude-sonnet-5-20990101", r2
     assert r2["touched_starter"] is False, r2

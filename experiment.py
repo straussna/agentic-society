@@ -448,8 +448,9 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
                  vote: dict | None) -> int | None:
     """Resolve one completed voting round and remove every eliminated agent.
 
-    The vote tool's cadence defines the cycle. A ballot is the tool's episode-scoped
-    file in the voter's own channel; its final contents are the final tool call.
+    The vote tool's cadence defines the cycle. A ballot is the tool's private,
+    episode-scoped file in the voter's own channel; its final contents are the final
+    tool call. The result contains aggregate totals, never voter-to-target mappings.
     """
     if vote is None or not live:
         return None

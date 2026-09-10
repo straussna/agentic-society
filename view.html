@@ -579,8 +579,7 @@ function threadsOf() {
   return out;
 }
 
-// An outbox left alone is delivered again every round, so the repeats are the
-// bulk of the log and say nothing new. They are off by default and counted.
+// Old traces may contain standing-message events. They are hidden by default.
 const saidIn = (t) => t.events.filter(e => S.standing || e.change !== "standing");
 
 function previewOf(t) {
@@ -637,7 +636,7 @@ function msgHtml(e, t) {
   const tag = e.change === "edited"
       ? `<span class="tag edit">edited</span>`
     : e.change === "standing"
-      ? `<span class="tag" title="left in place, so it is delivered again">said again</span>` : "";
+      ? `<span class="tag" title="recorded by an older standing-message trace">stood</span>` : "";
   const diff = e.diff.length ? `<details><summary>what changed</summary><pre class="diff">${
     e.diff.map(diffLine).join("\n")}</pre></details>` : "";
   const body = e.binary ? `<pre class="note">not text</pre>`
@@ -714,11 +713,10 @@ function renderMessages() {
     <span class="note">${t.a ? `${esc(t.a.agent)} · ${esc(t.b.agent)}`
       : "a name that is no seat of this experiment"}</span>
     ${same ? `<label class="tail" style="margin-left:auto"><input type="checkbox" id="stand"
-      ${S.standing ? "checked" : ""}>show the ${same} round${same === 1 ? "" : "s"} an outbox
-      was left alone</label>` : ""}
+      ${S.standing ? "checked" : ""}>show ${same} legacy standing event${same === 1 ? "" : "s"}</label>` : ""}
     </div>`;
-  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">messages and harness-readable
-      declarations · unchanged files apply again every round</div>
+  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">episode-scoped messages
+      and harness-readable declarations</div>
     <div class="chat ${S.rail ? "narrow" : ""}"><div class="pairs">${side}</div>
       <div class="thread">${head}<div id="thread">${threadHtml(t)}</div></div></div></div>`);
   el.querySelectorAll(".pair").forEach(b => b.onclick = () => {

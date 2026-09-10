@@ -43,13 +43,14 @@ meaning.
 
 Every public post is visible to every peer for one round. What is currently on the board
 vanishes next round; an agent must post again during this round to put a post on the next
-round's board. Posting the same text again is still a new post. Private messages remain
-until replaced and are visible only to their recipient.
+round's board. Posting the same text again is still a new post. A private message is visible
+only to its recipient in the next round and then vanishes too. Save anything you need to
+retain in private memory.
 
 ## Obligations
 
 The tool descriptions define the three recurring obligations: publish one nonempty
-public post, change a private message to at least one peer, and call the transfer tool
+public post, send a private message to at least one peer, and call the transfer tool
 to send currency that actually moves. You may change messages to as many peers as you want without
 an additional message-obligation penalty. Their text is still generated and read as
 part of billed API turns, so additional or longer messages can increase API spending.

@@ -268,25 +268,21 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
     assert seen["g03"]["in/1"]["ours"], "and an inbox is not the reader's"
 
 
-def check_an_outbox_holds_until_it_is_changed():
-    """What is in out/<i> at an episode's end is delivered, and stays until changed.
+def check_an_outbox_message_expires_before_the_next_sender_episode_ends():
+    """What is in out/<i> at an episode's end is delivered once, then expires.
 
-    A standing channel and not a queue: an unchanged outbox is delivered again,
-    and a deletion is what withdraws a message.
+    The sender's next episode begins with empty peer slots. Sending nothing leaves
+    no message for a later recipient episode.
     """
     with temp_root() as root:
         seated(root, other={})
         episode_once(run("echo hello > out/2"), say())
         assert (harness.mirror("t", "mail") / "2").read_text(encoding="utf-8") == "hello\n"
 
-        # An episode that touches nothing leaves the message standing.
+        # The next sender episode clears the delivered message.
         episode_once(run("cat state/nothing 2>/dev/null; true"), say())
-        assert (harness.mirror("t", "mail") / "2").exists(), \
-            "an unchanged outbox is still what the next round delivers"
-
-        # And a deletion propagates, because the tree is mirrored back whole.
-        episode_once(run("rm -f out/2"), say())
-        assert not (harness.mirror("t", "mail") / "2").exists(), "withdrawing it withdraws it"
+        assert not (harness.mirror("t", "mail") / "2").exists(), \
+            "a delivered message does not survive another sender episode"
 
 
 def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
@@ -355,23 +351,23 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
     assert "not one message" not in buf.getvalue(), buf.getvalue()
 
 
-def check_a_crowded_seat_costs_again_every_episode_it_stands():
-    """The shape is read at every episode's end, not differenced against the last.
+def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
+    """A malformed message expires before the next episode.
 
-    A standing mistake is charged again for the reason a standing declaration is
-    honoured again. Replacing it with one file both stops the charge and delivers.
+    Sending nothing in that next episode is still penalized. Replacing the empty
+    slot with one file both stops the charge and delivers.
     """
     with temp_root(channels=tables(mail=HALF)) as root:
         seated(root, other={})
         first = episode_once(run("mkdir -p out/2 && echo hi > out/2/a",
                                  "echo r1 > 1/RESULT"), say())
-        # An episode that touches the outbox not at all is charged all the same.
+        # The malformed slot is cleared, and sending nothing is charged all the same.
         second = episode_once(run("echo r2 > 1/RESULT"), say())
         third = episode_once(run("rm -rf out/2 && echo at last > out/2",
                                  "echo r3 > 1/RESULT"), say())
         assert (harness.mirror("t", "mail") / "2").read_text(encoding="utf-8") == "at last\n"
 
-    assert [t["channels"]["mail"]["broken"] for t in (first, second, third)] == [["2"], ["2"], []]
+    assert [t["channels"]["mail"]["broken"] for t in (first, second, third)] == [["2"], [], []]
     assert first["channels"]["mail"]["penalty"] > second["channels"]["mail"]["penalty"] > 0, \
         "a share of what is left, so the second bite is the smaller"
     assert third["channels"]["mail"]["penalty"] == 0, third["channels"]["mail"]
@@ -379,8 +375,8 @@ def check_a_crowded_seat_costs_again_every_episode_it_stands():
         "and replacing it with one file is the episode's one message"
 
 
-def check_one_new_message_an_episode_costs_nothing():
-    """One out/<i> holding something new is enough to meet the obligation."""
+def check_one_message_an_episode_costs_nothing():
+    """One nonempty out/<i> is enough to meet the obligation."""
     with temp_root(channels=tables(mail=HALF, blackboard=HALF)) as root:
         seated(root, other={}, third={})
         t = episode_once(run("echo for two > out/2", "echo posted > 1/RESULT"), say())
@@ -394,11 +390,11 @@ def check_one_new_message_an_episode_costs_nothing():
     assert harness.channel("mail").silence_penalty_percent == 0
 
 
-def check_a_standing_message_is_not_a_new_one():
-    """Delivered again is not said again: the obligation is a change, not a write.
+def check_each_episode_must_send_a_message_and_same_text_counts_again():
+    """Every episode starts with empty message slots.
 
-    The pair to an outbox holding until changed: a message left in place goes on
-    arriving, and told its receiver nothing new. Withdrawing says nothing too.
+    Sending the same bytes again is a new delivery. Emptying or omitting the slot
+    sends nothing.
     """
     with temp_root(channels=tables(mail=HALF)) as root:
         seated(root, other={})
@@ -410,11 +406,10 @@ def check_a_standing_message_is_not_a_new_one():
         assert (harness.mirror("t", "mail") / "2").exists() is False, "the deletion propagated"
 
     assert [t["channels"]["mail"]["addressed"] for t in (first, same, edited, emptied, gone)] == \
-        [["2"], [], ["2"], [], []]
-    assert first["channels"]["mail"]["penalty"] == 0 and edited["channels"]["mail"]["penalty"] == 0
-    assert same["channels"]["mail"]["penalty"] > 0, "the same bytes again say nothing"
+        [["2"], ["2"], ["2"], [], []]
+    assert all(t["channels"]["mail"]["penalty"] == 0 for t in (first, same, edited))
     assert emptied["channels"]["mail"]["penalty"] > 0, "and an empty file carries nothing"
-    assert gone["channels"]["mail"]["penalty"] > 0, "and a withdrawal is not an utterance"
+    assert gone["channels"]["mail"]["penalty"] > 0, "and an omitted message is not an utterance"
 
 
 def check_only_a_seat_of_this_experiment_is_a_message():
@@ -494,8 +489,7 @@ def check_an_episode_that_does_not_post_loses_half():
 def check_an_episode_with_no_turn_settles_nothing():
     """An episode the API never answered is charged no penalty at all.
 
-    Every penalty charges a choice, and an episode that got no turn made none:
-    what its trees hold is what the episode before it left there.
+    Every penalty charges a choice, and an episode that got no turn made none.
     """
     with temp_root(channels=ALL_OWED) as root:
         seated(root, other={})
@@ -510,7 +504,7 @@ def check_an_episode_with_no_turn_settles_nothing():
     assert t["stop"] == "api_error", t["stop"]
     assert t["channels"]["blackboard"]["posted"] is False, "the blackboard really is as it was, and says so"
     assert t["channels"]["blackboard"]["penalty"] == 0, t["channels"]["blackboard"]["penalty"]
-    assert t["channels"]["mail"] == {"broken": ["2"], "addressed": [], "penalty": 0}, t["channels"]["mail"]
+    assert t["channels"]["mail"] == {"broken": [], "addressed": [], "penalty": 0}, t["channels"]["mail"]
     assert t["transfer"]["penalty"] == 0, "it gave nothing because it chose nothing"
     assert "blackboard" not in account.get("penalised", {}) and "mail" not in account.get("penalised", {}), account
     assert "transfer" not in account.get("penalised", {}), account

@@ -1786,7 +1786,7 @@ def receipt_text(account: dict, ch: Channel) -> str:
         elif channel.shape == "mailbox":
             addressed = record.get("addressed") or []
             met = bool(addressed)
-            detail = ("changed message to " + ", ".join(addressed)) if met else "no changed message"
+            detail = ("message sent to " + ", ".join(addressed)) if met else "no message sent"
         else:
             met = bool(record.get("posted"))
             detail = "public post published" if met else "no public post"
@@ -1995,6 +1995,8 @@ def render_round_status(account: dict) -> str:
             lines.append(f"previous vote: {outcome}")
         if voting:
             lines += ["phase: vote only; communication unavailable",
+                      "ballot privacy: each ballot is private; peers receive only the aggregate outcome",
+                      "tie rule: if two or more agents share the highest vote total, nobody is eliminated by the vote",
                       f"required: call {vote.name} before ending this episode"]
         else:
             lines.append("phase: discussion")
@@ -2010,7 +2012,7 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
     receipt where one is `carried`, then every other harness file in `files`.
     A section this agent was shown last episode and that has not moved since is
     named as unchanged. A section that has gone is named as withdrawn unless it
-    is a public-board post, whose expiration is silent. Every schema channel item,
+    is an expiring public post or schema-free mailbox message. Every schema channel item,
     and every channel a manifest marks `restated`, is quoted every episode they
     stand. An agent that does not remember reading something is not told it has
     read it. `account["shown_before"]`
@@ -2042,11 +2044,13 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
             return harness_digest_name(name, agent, account)
         return digest_name(name, instances, experimenter_paths)
 
-    def is_board_post(name: str) -> bool:
+    def expires_silently(name: str) -> bool:
         matches = [inst for inst in instances
                    if name == inst.path or name.startswith(inst.path + "/")]
         inst = max(matches, key=lambda item: len(item.path), default=None)
-        return bool(inst and inst.channel.agent_view == "board")
+        return bool(inst and (inst.channel.agent_view == "board" or
+                              (inst.channel.shape == "mailbox" and
+                               not inst.channel.schema)))
 
     for name, body in said.items():
         display = shown_name(name)
@@ -2055,7 +2059,7 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
         else:
             unchanged.append(display)
     withdrawn = [shown_name(name) for name in shown
-                 if name not in said and not is_board_post(name)]
+                 if name not in said and not expires_silently(name)]
     if unchanged:
         out.append(named("unchanged", unchanged))
     if withdrawn:
@@ -2192,10 +2196,10 @@ def tree_sha256(root: Path, exclude: frozenset = frozenset()) -> dict[str, str]:
 
 
 def slot_sha256(box: Path, slots: Iterable[str]) -> dict[str, str]:
-    """Digest of each standing message in an outbox, by the label it is addressed to.
+    """Digest of each message in an outbox, by the label it is addressed to.
 
-    One digest a slot: the outbox is judged on which message changed. Only a
-    reachable peer's slot holding a regular file is a message. Empties omitted.
+    One digest a slot. Only a reachable peer's slot holding a regular file is a
+    message. Empties omitted.
     """
     digests = {}
     for label in slots:
@@ -2224,9 +2228,8 @@ def before_digests(instances: list[Instance], reach: dict[str, str],
                    labels: dict[str, str]) -> dict[str, Any]:
     """What every obligated channel the agent writes held at episode start, by name.
 
-    A directory by path, a mailbox by slot, a parsed file as one digest. Each
-    obligation is a change and not a write, and this is what there is to have
-    changed from.
+    A directory by path, a mailbox by slot, a parsed file as one digest. Channels
+    whose obligation is a change compare their final state against this record.
     """
     slots = [labels[seat] for seat in reach]
     before: dict[str, Any] = {}
@@ -2951,15 +2954,22 @@ class Bound:
         if self.tool.kind == "vote":
             return (f"Vote to eliminate one peer. This action is offered only on every "
                     f"{self.tool.every}th episode, when peer communication and the shell are "
-                    "unavailable. A later call in the same episode replaces the earlier vote.")
+                    "unavailable. Your ballot is private: peers receive only the aggregate "
+                    "result. A later call in the same episode replaces the earlier vote. If "
+                    "the highest total is tied, nobody is eliminated by the vote.")
         if self.tool.kind == "write_slot":
-            return (f"Put text in one peer's slot of the {ch.name!r} channel. It replaces "
-                    f"whatever {ch.outbox}/<to> holds. That peer is the only one that can "
-                    f"read it, and reads it at {ch.inbox}/{self.own.label}.")
+            return (f"Put text in one peer's slot of the {ch.name!r} channel for their next "
+                    f"episode. That peer alone reads it at {ch.inbox}/{self.own.label}; it "
+                    "then expires unless they retain it in private memory. A later call to "
+                    "the same peer in this episode replaces the earlier one.")
         if self.tool.kind == "send_message":
-            return "Send a message to the other agent. Each call replaces your previous message."
+            return ("Send a private message to the other agent for their next episode. "
+                    "It expires after that episode and is retained only if they record it "
+                    "in private memory. A later call in this episode replaces it.")
         if self.tool.kind == "send_message_to":
-            return "Send a message to one named peer. Each call replaces your previous message to that peer."
+            return ("Send a private message to one named peer for their next episode. "
+                    "It expires after that episode and is retained only if they record it "
+                    "in private memory. A later call to that peer in this episode replaces it.")
         if self.tool.kind == "post_public":
             return ("Publish a post that every peer can read in the next episode. You must "
                     "publish in every episode; the post currently on the board expires when "
@@ -3132,12 +3142,12 @@ class Bound:
         path = f"{self.channel.outbox}/{recipient}"
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return f"Your message to {recipient} could not be saved. Nothing changed."
+            return f"Your message to {recipient} could not be sent. Nothing changed."
         if was == body:
-            return f"Your letter to {recipient} is already saved exactly as written."
+            return f"Your message to {recipient} is already set exactly as written for this episode."
         wrote, said = write_path_in(shell, path, body)
-        return (f"Your letter to {recipient} was saved." if wrote >= 0 else
-                f"Your message to {recipient} could not be saved. Nothing changed.")
+        return (f"Your message to {recipient} was set for their next episode." if wrote >= 0 else
+                f"Your message to {recipient} could not be sent. Nothing changed.")
 
     def peer_labels(self) -> list[str]:
         """Every peer slot planted for this channel, including peers now out."""
@@ -3753,11 +3763,11 @@ def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -
 
 
 def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> dict:
-    """Take a share of what is left where the outbox said nothing new.
+    """Take a share of what is left where the episode sent no message.
 
     A message is a file: <outbox>/<label> arrives at that peer as
-    <inbox>/<this agent's label>. Any number of reachable slots may change; the
-    obligation is met when at least one does. Only a reachable peer's slot is judged.
+    <inbox>/<this agent's label>. Any number of reachable slots may be filled; the
+    obligation is met when at least one is. Only a reachable peer's slot is judged.
     """
     slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
     rec: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
@@ -3772,9 +3782,7 @@ def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> 
     rec["broken"] = sorted((p.name for p in inst.host.iterdir()
                             if p.name in slots and not p.is_file()), key=by_seat)
     after = slot_sha256(inst.host, slots)
-    before = ep.before.get(ch.name, {})
-    rec["addressed"] = sorted((label for label, digest in after.items()
-                               if before.get(label) != digest), key=by_seat)
+    rec["addressed"] = sorted(after, key=by_seat)
     spoke = bool(rec["addressed"])
     if spoke or not settles:
         return rec
@@ -3878,6 +3886,8 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
         "digest_file_limit": DIGEST_FILE_LIMIT,
         "observation_limit": OBSERVATION_LIMIT,
         "live_balance": LIVE_BALANCE,
+        # How schema-free mailbox files are scoped across episodes.
+        "message_delivery": "episode",
         # Episodes at the start of an agent that answer for no obligation.
         "grace_episodes": GRACE_EPISODES,
         # Whether an agent ends holding the sign flip, or has it forgiven.
@@ -4093,6 +4103,10 @@ def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
                 paths.extend(f"{inst.path}/{label}" for label in labels)
             else:
                 paths.append(inst.path)
+        elif inst.channel.shape == "mailbox":
+            labels = [peer.label for peer in instances
+                      if peer.name == inst.name and peer.role == "peer"]
+            paths.extend(f"{inst.path}/{label}" for label in labels)
         elif inst.name in post_channels:
             paths.append(f"{inst.path}/post.md")
         elif inst.name in vote_channels:

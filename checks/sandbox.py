@@ -267,13 +267,8 @@ def check_the_previous_transfer_is_shown_once_before_it_expires():
         "and is never one of the names"
 
 
-def check_a_message_taken_away_is_named_as_withdrawn():
-    """Absence is reported, not left to be noticed.
-
-    A section that was shown and is gone is neither quoted nor named unchanged,
-    so without this a reader could not tell a withdrawal from the episode start having
-    stopped carrying it.
-    """
+def check_an_expired_private_message_disappears_silently():
+    """An expired private message leaves no withdrawal announcement."""
     with temp_root() as root:
         ids = seated(root, other={"out/1": "here for now\n"})
         episode_once(run(f"cat {digest_name()}"), say())
@@ -281,7 +276,7 @@ def check_a_message_taken_away_is_named_as_withdrawn():
         second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
-    assert "=== withdrawn ===\n- in/2\n" in said, f"a message taken away is named: {said}"
+    assert "withdrawn" not in said and "in/2" not in said, said
     assert "here for now" not in said, "and its text is not carried once it is gone"
 
 
