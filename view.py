@@ -54,6 +54,7 @@ PAGE = Path(__file__).with_name("view.html").read_text(encoding="utf-8")
 # manifest digest -> (manifest, path). The account carries the digest rather than
 # a path, so shipped manifests can describe a first episode before its trace lands.
 _MANIFESTS: dict[str, tuple[dict, Path]] | None = None
+_MANIFEST_STATE: tuple[tuple[str, int, int], ...] | None = None
 
 
 # --- reading what is on disk ------------------------------------------------
@@ -122,17 +123,21 @@ def account_of(agent: str) -> dict:
 
 
 def manifests() -> dict[str, tuple[dict, Path]]:
-    """Shipped manifests by digest, parsed once for this read-only process."""
-    global _MANIFESTS
-    if _MANIFESTS is None:
-        _MANIFESTS = {}
-        root = Path(__file__).with_name("experiments")
-        for path in sorted(root.rglob("*.toml")):
+    """Shipped manifests by digest, reparsed when one changes on disk."""
+    global _MANIFESTS, _MANIFEST_STATE
+    root = Path(__file__).with_name("experiments")
+    paths = sorted(root.rglob("*.toml"))
+    state = tuple((str(path), stat.st_mtime_ns, stat.st_size)
+                  for path in paths if (stat := path.stat()))
+    if _MANIFESTS is None or state != _MANIFEST_STATE:
+        found = {}
+        for path in paths:
             try:
                 manifest = experiment.load_manifest(path)
             except SystemExit:
                 continue
-            _MANIFESTS[manifest["sha256"]] = (manifest, path)
+            found[manifest["sha256"]] = (manifest, path)
+        _MANIFESTS, _MANIFEST_STATE = found, state
     return _MANIFESTS
 
 
@@ -471,16 +476,63 @@ def seat_of_label(exp: dict, label: str | None) -> str | None:
     return next((s for s, l in exp["labels"].items() if l == label), None)
 
 
+def named_group(members: list[str]) -> str:
+    """One stable short name for a complete manifest membership."""
+    seen = {str(i): agent for i, agent in enumerate(members, 1)}
+    return group_of(members[0], {"peers": {"seen": seen}})
+
+
+def anchored_groups(accounts: dict[str, dict],
+                    catalog: dict[str, tuple[dict, Path]] | None = None
+                    ) -> tuple[list[dict], set[str]]:
+    """Experiments identified by a manifest stamp already written to one account.
+
+    A simultaneous round prepares every environment before any episode starts. During
+    that preparation some accounts carry the complete seating while later accounts are
+    still fresh singletons. The stamped manifest is the common declaration and groups
+    every account it names without waiting for all account writes to finish.
+    """
+    out, claimed = [], set()
+    catalog = manifests() if catalog is None else catalog
+    for digest, (manifest, path) in catalog.items():
+        declared = [entry["id"] for entry in manifest["agents"]]
+        if not any(((accounts.get(agent, {}).get("experiment") or {}).get("manifest_sha256")
+                    == digest) for agent in declared):
+            continue
+        members = [agent for agent in declared if agent in accounts and
+                   ((accounts[agent].get("experiment") or {}).get("manifest_sha256")
+                    in (None, digest))]
+        if not members:
+            continue
+        seats = {seat: agent for seat, agent in experiment.seats_of(declared).items()
+                 if agent in members}
+        labels = {seat: manifest["labels"][seat] for seat in seats}
+        table = harness.validate_channels(manifest["channels"], manifest["harness_files"],
+                                          str(path), tuple(manifest["labels"].values()))[0]
+        out.append({
+            "name": named_group(declared), "seated": True, "seats": seats,
+            "members": members, "posts": bool(harness.mailbox_channel(table)
+                                                or harness.schema_channel(table)),
+            "running": sum(acting(agent, live_index(agent)) for agent in members),
+            "channels": [ch.as_table() for ch in table], "labels": labels,
+            "tools": manifest["tools"] or [],
+        })
+        claimed.update(members)
+    return out, claimed
+
+
 def experiments() -> list[dict]:
     """Every set of agents on disk, the seated ones first.
 
     Agents sharing a seating are one experiment, named by group_of. One whose mapping
     does not seat it is grouped by its id's letters and marked unseated.
     """
+    accounts = {agent: account for agent in agent_names()
+                if (account := read_json(harness.records_dir(agent) / "account.json")) is not None}
+    anchored, claimed = anchored_groups(accounts)
     groups: dict[tuple, dict] = {}
-    for agent in agent_names():
-        account = read_json(harness.records_dir(agent) / "account.json")
-        if account is None:
+    for agent, account in accounts.items():
+        if agent in claimed:
             continue
         key = seating_key(agent, account)
         seen = harness.seating_of(agent, account).seen
@@ -495,7 +547,8 @@ def experiments() -> list[dict]:
         exp["members"].append(agent)
         exp["running"] += acting(agent, live_index(agent))
 
-    out = sorted(groups.values(), key=lambda exp: (not exp["seated"], exp["name"]))
+    out = sorted([*anchored, *groups.values()],
+                 key=lambda exp: (not exp["seated"], exp["name"]))
     # Two sets can arrive at one name: a seated experiment and a leftover agent whose
     # id starts with the same letters. The seated one is sorted first and keeps
     # the short name, so what the other is called says what it is.
@@ -508,14 +561,19 @@ def experiments() -> list[dict]:
         # The table and the labels the members ran under, from the records of the
         # first member that has any: every member of one experiment ran under the
         # same ones.
-        first = next((a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0])
-        table = agent_table(latest_trace(first), first)
-        account = account_of(first)
-        exp["channels"] = [ch.as_table() for ch in table]
-        exp["labels"] = dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
-        mail = harness.mailbox_channel(table)
-        schema = harness.schema_channel(table)
-        exp["posts"] = bool(mail or schema)
+        if "channels" not in exp:
+            first = next((a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0])
+            last = latest_trace(first)
+            table = agent_table(last, first)
+            account = account_of(first)
+            exp["channels"] = [ch.as_table() for ch in table]
+            exp["labels"] = dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
+            mail = harness.mailbox_channel(table)
+            schema = harness.schema_channel(table)
+            exp["posts"] = bool(mail or schema)
+            found = manifest_of(first)
+            exp["tools"] = ((found[0]["tools"] or []) if found else
+                            (analyze.provenance_of(last).get("tools") if last else []) or [])
     return out
 
 
@@ -657,10 +715,12 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     live = live_index(agent)
     going = live_state(agent, live, account)
     mine = [r for r in rows if r["agent"] == agent]
+    out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
     # simply not been reached.
-    pending = live is None and (mine[-1]["round"] if mine else 0) == rnd - 1
+    pending = (out_reason is None and live is None
+               and (mine[-1]["round"] if mine else 0) == rnd - 1)
     return {
         "seat": seat, "agent": agent, "label": account.get("label") or seat,
         "provider": account.get("provider"), "model": account.get("model"),
@@ -677,6 +737,10 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         "round": mine[-1]["round"] if mine else 0,
         "acted": bool(mine and mine[-1]["round"] == rnd) or live is not None,
         "pending": pending,
+        "preparing": bool(account and not episodes and live is None and
+                          (account.get("experiment") or {}).get("manifest_sha256")),
+        "out_reason": out_reason, "eliminated": account.get("eliminated"),
+        "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
         # in flight. A transfer, a share taken and a floor all move the balance
         # without being spend, so the drop from initial is a different number,
@@ -719,17 +783,32 @@ def header(exp: dict) -> dict:
     table = agent_table(last, first)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
+    seats = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
+    vote = next((tool for tool in exp.get("tools", []) if tool.get("kind") == "vote"), None)
+    elections = {}
+    for seat in seats:
+        election = seat.get("last_election") or {}
+        if isinstance(election.get("round"), int):
+            elections[election["round"]] = election
+    every = vote.get("every") if vote else None
+    phase = ("vote complete" if rnd in elections else
+             "vote" if every and rnd and rnd % every == 0 else "discussion")
     return {
         "experiment": exp["name"], "seated": exp["seated"], "posts": exp["posts"],
         "members": exp["members"], "tabs": tabs(exp), "labels": exp["labels"],
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
-        "seats": [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)],
+        "seats": seats,
         "ledger": [list(g) for g in harness.ledger(first, account)] if exp["seated"] else [],
         "round": rnd,
         "schedule": (analyze.provenance_of(last).get("schedule") if last else None)
                     or stamp.get("schedule") or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
+        "active": sum(seat["out_reason"] is None for seat in seats),
+        "vote_every": every,
+        "phase": phase,
+        "cycle": ((rnd - 1) // every + 1) if every and rnd else None,
+        "elections": [elections[r] for r in sorted(elections)],
     }
 
 
@@ -1090,6 +1169,9 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         # which one is its own has to be said: absence cannot say it.
         "seat": seating.seat, "peers": seating.seen,
         "starter_files": account.get("starter_files_landed") or {},
+        "out_reason": harness.why_out(account) if account else None,
+        "eliminated": account.get("eliminated"),
+        "last_election": account.get("last_election"),
     }
 
 

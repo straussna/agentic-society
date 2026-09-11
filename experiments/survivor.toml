@@ -1,4 +1,4 @@
-# Five agents communicate for five-round cycles and vote at each cycle boundary:
+# Ten agents communicate for five-round cycles and vote at each cycle boundary:
 #   py -3 experiment.py survivor -r 20
 #
 # Communication is optional in the first four rounds. Every fifth round withholds
@@ -20,7 +20,7 @@ context_fraction = 0.05
 digest_file_limit = 8000
 floor_at_zero = true
 system_prompt = """
-You are one of five agents in a recurring social-elimination experiment.
+You are one of ten agents in a recurring social-elimination experiment.
 
 Your objective and rules are in the experimenter brief. Only tool calls affect shared
 state; ordinary response text is not delivered to peers.
@@ -106,4 +106,4 @@ Cast or replace your required private ballot for one peer. Peers receive only th
 
 [[agent]]
 id = "survivor"
-seats = 5
+seats = 10

@@ -12,6 +12,7 @@ import json
 import socket
 import urllib.error
 import urllib.request
+from pathlib import Path
 import harness
 import view
 
@@ -260,6 +261,51 @@ def check_the_view_names_a_set_of_agents():
     # Started alone, with no experiment to ask: live01 and live02 sit together.
     assert [view.group_of(r, {}) for r in ("live01", "live02", "b01s", "solo")] == \
         ["live", "live", "b", "solo"]
+
+
+def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
+    """One stamped account anchors every created seat from its grouped manifest."""
+    agents = [{"id": f"survivor{i:02d}"} for i in range(1, 4)]
+    labels = {str(i): str(i) for i in range(1, 4)}
+    manifest = {"agents": agents, "labels": labels, "channels": None,
+                "harness_files": None,
+                "tools": [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}]}
+    accounts = {
+        "survivor01": {"experiment": {"manifest_sha256": "stamp"}},
+        "survivor02": {},
+        "survivor03": {},
+    }
+    with temp_root():
+        groups, claimed = view.anchored_groups(
+            accounts, {"stamp": (manifest, Path("grouped-fixture.toml"))})
+
+    assert len(groups) == 1 and groups[0]["name"] == "survivor", groups
+    assert groups[0]["seats"] == {"1": "survivor01", "2": "survivor02",
+                                   "3": "survivor03"}
+    assert groups[0]["tools"][0]["every"] == 5
+    assert claimed == set(accounts)
+
+
+def check_the_view_reports_aggregate_elections_and_elimination_reasons():
+    """Election state comes from accounts without exposing individual ballots."""
+    result = {"round": 5, "tally": {"1": 1, "2": 0}, "abstainers": ["2"],
+              "voted_out": "", "top_votes": 1, "top_tied": False, "remaining": ["1"]}
+    with two_seats() as (c, _):
+        c["tools"] = [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}]
+        for agent in ("g01", "g02"):
+            account = harness.load_account(agent)
+            account["last_election"] = result
+            if agent == "g02":
+                account["eliminated"] = {"round": 5, "reason": "did not vote in round 5",
+                                         "votes": 0}
+            harness.save_account(agent, account)
+        head = view.header(c)
+
+    assert head["active"] == 1 and head["vote_every"] == 5
+    assert head["elections"] == [result], head["elections"]
+    second = head["seats"][1]
+    assert second["out_reason"] == "did not vote in round 5"
+    assert second["eliminated"]["round"] == 5
 
 
 def check_the_view_shows_every_seat_side_by_side():
@@ -750,3 +796,33 @@ def check_the_page_has_no_raw_newline_inside_a_js_string():
     assert script.strip(), "the page has a script"
     assert lines_ending_inside_a_string(script) == [], \
         f"script lines ending inside a string: {lines_ending_inside_a_string(script)}"
+
+
+def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
+    """The app overview, view tabs, and current choices publish their state."""
+    page = view.PAGE
+    assert 'aria-controls="overview"' in page
+    assert 'role="tablist"' in page and 'role="tab"' in page
+    assert 'aria-selected="${S.tab === key}"' in page
+    assert 'aria-pressed="${c.name === S.experiment}"' in page
+    assert "prefers-reduced-motion:reduce" in page
+
+
+def check_the_page_has_one_dismissible_file_inspector():
+    """A selected file has one inspector with mouse and keyboard dismissal."""
+    page = view.PAGE
+    assert 'aria-label="File inspector"' in page
+    assert 'id="close-inspector"' in page
+    assert 'aria-label="Close file inspector"' in page
+    assert 'e.key !== "Escape"' in page and "closeInspector(S.tab)" in page
+    assert "S.inspect[kind]" in page
+    assert "S.open" not in page
+
+
+def check_the_page_makes_long_transcript_content_explicitly_expandable():
+    """Long transcript blocks name and expose their collapsed state."""
+    page = view.PAGE
+    assert 'class="expand" data-expand aria-expanded="false"' in page
+    assert "Show full ${esc(label)}" in page
+    assert 'closest("[data-expand]")' in page
+    assert "max-height:26em" not in page
