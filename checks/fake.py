@@ -140,7 +140,11 @@ class FakeRouter:
         if self.seen is not None:
             self.seen.append({"kind": "session", "provider": provider, "model": model,
                               "system": system, "tools": [tool.as_dict() for tool in tools],
-                              "max_tokens": max_tokens, "context": context})
+                              "max_tokens": max_tokens,
+                              "context": {"agent": context.agent, "label": context.label,
+                                          "episode": context.episode,
+                                          "interaction_root": context.interaction_root.name,
+                                          "cancellable": context.cancelled is not None}})
         name = threading.current_thread().name
         steps = self.scripts.get(name)
         if steps is None:
