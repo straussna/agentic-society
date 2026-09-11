@@ -1,4 +1,4 @@
-"""view.py: the read-only page and its API.
+"""view.py: observational views and the interactive-seat control route.
 
 view.py reads what is on disk while an agent is going, writing nothing and asking
 Docker nothing, so every check here runs in the arithmetic lane. An episode in
@@ -166,7 +166,9 @@ def check_the_view_serves_its_api():
         episode_once(*DEFAULT)
         with serving() as base:
             with urllib.request.urlopen(base + "/") as r:
-                assert r.status == 200 and r.read().decode("utf-8") == view.PAGE, "the page as it stands"
+                page = r.read().decode("utf-8")
+                assert r.status == 200 and page != view.PAGE, "the served page carries its control token"
+                assert "__INTERACTION_CONTROL_TOKEN__" not in page
             assert got(base, "/api/experiments")[1]["experiments"][0]["name"] == "t"
             assert [s["episode"] for s in got(base, "/api/agent/t")[1]["episodes"]] == [1]
             assert got(base, "/api/agent/t")[1]["seat"] == "1"
@@ -206,7 +208,7 @@ def check_a_name_off_the_url_cannot_leave_records():
                     raise AssertionError(f"answered for {bad}")
 
 
-def check_the_view_never_writes():
+def check_the_observational_view_routes_never_write():
     """Reading an agent leaves every byte of it where it was.
 
     The whole design rests on this: the view is display only, in the same

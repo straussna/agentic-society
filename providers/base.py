@@ -5,11 +5,26 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 
 USAGE_FIELDS = ("prefix_tokens", "uncached_input_tokens", "cache_read_tokens",
                 "cache_write_tokens", "output_tokens", "reasoning_tokens")
+
+
+@dataclasses.dataclass(frozen=True)
+class SessionContext:
+    """Host context available to a provider for the lifetime of one episode."""
+
+    agent: str
+    label: str
+    episode: int
+    interaction_root: Path
+    cancelled: Callable[[], bool] | None = None
+
+    def is_cancelled(self) -> bool:
+        return bool(self.cancelled and self.cancelled())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -191,7 +206,7 @@ class ModelProvider(Protocol):
 
     def preflight(self, models: Iterable[str]) -> None: ...
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int) -> ModelSession: ...
+                     max_tokens: int, context: SessionContext) -> ModelSession: ...
     def provenance(self, model: str) -> dict[str, Any]: ...
 
 
@@ -199,7 +214,8 @@ class ModelProvider(Protocol):
 class ProviderRouter(Protocol):
     def preflight(self) -> None: ...
     def open_session(self, provider: str, model: str, system: str,
-                     tools: tuple[ToolSpec, ...], max_tokens: int) -> ModelSession: ...
+                     tools: tuple[ToolSpec, ...], max_tokens: int,
+                     context: SessionContext) -> ModelSession: ...
     def provenance(self, provider: str, model: str) -> dict[str, Any]: ...
 
 

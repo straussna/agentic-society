@@ -134,13 +134,13 @@ class FakeRouter:
     def preflight(self):
         return None
 
-    def open_session(self, provider, model, system, tools, max_tokens):
+    def open_session(self, provider, model, system, tools, max_tokens, context):
         if self.on_open:
             self.on_open()
         if self.seen is not None:
             self.seen.append({"kind": "session", "provider": provider, "model": model,
                               "system": system, "tools": [tool.as_dict() for tool in tools],
-                              "max_tokens": max_tokens})
+                              "max_tokens": max_tokens, "context": context})
         name = threading.current_thread().name
         steps = self.scripts.get(name)
         if steps is None:

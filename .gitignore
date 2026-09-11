@@ -7,6 +7,9 @@ environments/
 # Preserved records and mirrors displaced when a command starts a fresh run.
 displaced/
 
+# Pending and completed requests for local interactive provider sessions.
+interactions/
+
 # Working notes and assessments written during a session. Not part of the harness.
 Claude outputs/
 

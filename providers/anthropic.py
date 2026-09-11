@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .base import (Charge, ModelSpec, NormalizedTurn, PendingResponse, ProviderConfigurationError,
-                   ProviderError, Refusal, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
+                   ProviderError, Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
                    native_dict)
 
 
@@ -180,7 +180,7 @@ class AnthropicProvider:
                 raise _error(error) from error
 
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int) -> AnthropicSession:
+                     max_tokens: int, context: SessionContext) -> AnthropicSession:
         return AnthropicSession(self.client, model, system, tools, max_tokens)
 
     def provenance(self, model: str) -> dict[str, Any]:

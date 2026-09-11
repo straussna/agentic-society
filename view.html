@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>agentic-society</title>
+<meta name="interaction-control-token" content="__INTERACTION_CONTROL_TOKEN__">
 <style>
 /* Dark only, and low contrast on purpose: this is a page left open beside an agent
    for hours. Fira Code is the numbers and everything the agent wrote - a balance
@@ -400,6 +401,19 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; }
 }
+.player { display:none; margin:10px 16px 0; border:1px solid var(--line); border-radius:8px;
+  background:var(--panel); padding:12px; }
+.player.on { display:block; }
+.player h2 { margin:0 0 4px; font-size:15px; color:var(--live); }
+.player-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(320px,2fr); gap:12px; }
+.player pre { max-height:220px; overflow:auto; white-space:pre-wrap; }
+.tool-form { border-top:1px solid var(--line); padding:8px 0; }
+.tool-form label { display:block; margin-top:6px; color:var(--muted); }
+.tool-form input, .tool-form select, .tool-form textarea { box-sizing:border-box; width:100%;
+  margin-top:3px; padding:6px; color:var(--text); background:var(--bg); border:1px solid var(--line); }
+.player-actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.draft-call { padding:5px 0; border-bottom:1px solid var(--line); }
+@media (max-width:760px) { .player-grid { grid-template-columns:1fr; } }
 </style>
 <div id="page">
   <header id="top">
@@ -412,6 +426,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
     <div class="overview-resizer" id="overview-resizer" data-resize="overview" role="separator" aria-label="Resize dashboard" aria-orientation="horizontal" tabindex="0"></div>
     <nav id="tabs" role="tablist" aria-label="Experiment views"></nav>
   </header>
+  <section id="player" class="player" aria-live="polite"></section>
   <main id="body" role="tabpanel"><div class="empty">loading&hellip;</div></main>
 </div>
 <script>
@@ -419,6 +434,11 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>\u0022\u0027]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num = (n) => n == null ? "–" : Number(n).toLocaleString();
 const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status));
+const CONTROL_TOKEN = document.querySelector('meta[name="interaction-control-token"]').content;
+const post = (u, value) => fetch(u, {method:"POST", headers:{"Content-Type":"application/json",
+  "X-Interaction-Token":CONTROL_TOKEN}, body:JSON.stringify(value)}).then(async r => {
+    const body = await r.json(); if (!r.ok) throw new Error(body.error || String(r.status)); return body;
+  });
 const shortPath = (s) => String(s || "").split(/[\\/]/).filter(Boolean).pop() || "";
 // One provenance answer as a line. Lists and an experiment's
 // seating is a mapping, and both read as what they are, not as JSON.
@@ -496,6 +516,7 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             overviewHeight: heldNumber("overview-height"),
             mailWidth: heldNumber("mail-width") || 310,
             treeWidth: heldNumber("tree-width"),
+            interaction: null, interactionId: null, interactionDraft: [], interactionSubmitted: false,
             poll: 1500, stale: 180 };
 
 const PENDING = "output arrives when the episode ends";
@@ -1474,6 +1495,101 @@ function refresh() {
   }).catch(() => {});
 }
 
+function interactionInput(request) {
+  const input = request.input || {};
+  if (input.kind === "initial_observation") return input.text || "";
+  return (input.results || []).map(result => `${result.tool_call_id}${result.is_error ? " (error)" : ""}\n${result.content || ""}`).join("\n\n");
+}
+
+function fieldHtml(name, schema, required) {
+  const label = `${esc(name)}${required ? " *" : ""}`;
+  if (Array.isArray(schema.enum)) return `<label>${label}<select data-field="${esc(name)}" data-type="string">${
+    schema.enum.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join("")}</select></label>`;
+  if (schema.type === "boolean") return `<label><input style="width:auto" type="checkbox" data-field="${esc(name)}" data-type="boolean"> ${label}</label>`;
+  const type = schema.type === "integer" || schema.type === "number" ? "number" : "text";
+  return `<label>${label}<input type="${type}" data-field="${esc(name)}" data-type="${esc(schema.type || "string")}" ${required ? "required" : ""}></label>`;
+}
+
+function renderInteraction(request) {
+  const el = document.getElementById("player");
+  if (!request) { el.classList.remove("on"); el.innerHTML = ""; S.interaction = null; return; }
+  if (S.interactionId !== request.request_id) {
+    S.interactionId = request.request_id; S.interactionDraft = []; S.interactionSubmitted = false;
+  }
+  S.interaction = request;
+  const tools = request.available_tools.map((tool, index) => {
+    const schema = tool.input_schema || {}, required = new Set(schema.required || []);
+    const fields = Object.entries(schema.properties || {}).map(([name, spec]) => fieldHtml(name, spec, required.has(name))).join("");
+    return `<div class="tool-form" data-tool-index="${index}"><b>${esc(tool.name)}</b><div class="note">${esc(tool.description)}</div>${fields}
+      <label>JSON fallback<textarea data-json rows="2" placeholder="{}"></textarea></label>
+      <button data-add-call="${index}">Add call</button></div>`;
+  }).join("");
+  const draft = S.interactionDraft.length ? S.interactionDraft.map((call, index) =>
+    `<div class="draft-call"><button data-remove-call="${index}">remove</button> <b>${esc(call.name)}</b> <span class="note">${esc(JSON.stringify(call.input))}</span></div>`).join("") : `<div class="note">No drafted calls.</div>`;
+  el.classList.add("on");
+  el.innerHTML = `<h2>Player turn · ${esc(request.label)} · episode ${request.episode} · turn ${request.turn}</h2>
+    <div class="note">Only this seat's provider request is shown here.</div><div class="player-grid">
+    <div><details><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
+      <h3>Current input</h3><pre>${esc(interactionInput(request))}</pre></div>
+    <div><h3>Available actions</h3>${tools || `<div class="note">No tools declared.</div>`}
+      <h3>Draft</h3><div id="interaction-draft">${draft}</div>
+      <div class="player-actions"><button id="submit-interaction" ${!S.interactionDraft.length || S.interactionSubmitted ? "disabled" : ""}>Submit calls</button>
+      <button id="finish-interaction" ${S.interactionSubmitted ? "disabled" : ""}>Finish turn</button>
+      <span class="note" id="interaction-state">${S.interactionSubmitted ? "submitted" : "pending"}</span></div></div></div>`;
+  el.querySelectorAll("[data-add-call]").forEach(button => button.onclick = () => addInteractionCall(Number(button.dataset.addCall)));
+  el.querySelectorAll("[data-remove-call]").forEach(button => button.onclick = () => { S.interactionDraft.splice(Number(button.dataset.removeCall), 1); renderInteraction(request); });
+  document.getElementById("submit-interaction").onclick = () => submitInteraction("tool_calls");
+  document.getElementById("finish-interaction").onclick = () => submitInteraction("end_turn");
+}
+
+function interactionId() {
+  return "human-" + (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9-]/g, "");
+}
+
+function addInteractionCall(index) {
+  const request = S.interaction, tool = request.available_tools[index];
+  const form = document.querySelector(`[data-tool-index="${index}"]`);
+  try {
+    const fallback = form.querySelector("[data-json]").value.trim();
+    let input;
+    if (fallback) {
+      input = JSON.parse(fallback);
+      if (!input || Array.isArray(input) || typeof input !== "object") throw new Error("JSON input must be an object");
+    } else {
+      input = {};
+      form.querySelectorAll("[data-field]").forEach(field => {
+        if (field.dataset.type === "boolean") input[field.dataset.field] = field.checked;
+        else if (field.value !== "") input[field.dataset.field] = ["integer", "number"].includes(field.dataset.type) ? Number(field.value) : field.value;
+      });
+    }
+    S.interactionDraft.push({id:interactionId(), name:tool.name, input});
+    renderInteraction(request);
+  } catch (error) {
+    document.getElementById("interaction-state").textContent = error.message;
+  }
+}
+
+function submitInteraction(action) {
+  const request = S.interaction;
+  if (!request || S.interactionSubmitted) return;
+  const payload = {version:1, request_id:request.request_id, submission_id:interactionId(), action,
+    tool_calls:action === "tool_calls" ? S.interactionDraft : []};
+  S.interactionSubmitted = true; renderInteraction(request);
+  post(`/api/interaction/${encodeURIComponent(request.agent)}/${encodeURIComponent(request.request_id)}`, payload)
+    .then(() => { document.getElementById("interaction-state").textContent = "submitted"; })
+    .catch(error => { S.interactionSubmitted = false; renderInteraction(request);
+      document.getElementById("interaction-state").textContent = error.message; });
+}
+
+function pullInteraction() {
+  return get("/api/interaction").then(value => {
+    const agents = new Set(seats().map(seat => seat.agent));
+    const requests = (value.requests || []).filter(request => agents.has(request.agent));
+    const request = requests.find(item => item.agent === S.agent) || requests[0] || null;
+    renderInteraction(request);
+  }).catch(() => {});
+}
+
 function poll() {
   get("/api/experiments").then(d => {
     S.experiments = d.experiments; S.poll = d.poll; S.stale = d.stale;
@@ -1490,7 +1606,7 @@ function poll() {
       S.experiment = first.name;
     }
     renderPicks();
-    return refresh();
+    return Promise.all([refresh(), pullInteraction()]);
   }).catch(() => {}).then(() => setTimeout(poll, S.poll));
 }
 

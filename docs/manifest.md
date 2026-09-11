@@ -173,7 +173,7 @@ pinned by digest like the shipped prompt.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `budget` | int > 0 | 500000 | Micro-dollars an agent starts with. Pinned |
-| `provider` | `"anthropic"` \| `"openai"` | none | Named first-party adapter. Required with `model` and pinned |
+| `provider` | `"anthropic"` \| `"openai"` \| `"human"` | none | Named provider adapter. Required with `model` and pinned. Human seats use model `"interactive"` |
 | `model` | model in the provider catalog | none | Exact model requested on every turn. Required with `provider` and pinned |
 | `floor_at_zero` | bool | false | A balance below zero is put back to zero |
 | `grace_episodes` | int ≥ 0 | 0 | Episodes that take no silence penalty |

@@ -1,8 +1,9 @@
-"""Watch an experiment while it runs: py -3 view.py [--experiment h | --agent h02]
+"""Watch an experiment and answer interactive seats: py -3 view.py [--experiment h | --agent h02]
 
 Serves a read-only page on 127.0.0.1 showing one experiment's activity, every
 directory channel, and one transcript at a time, above every seat's balance,
-what it has spent, and any transfer ledger. Nothing it shows reaches the agent."""
+what it has spent, and any transfer ledger. Player actions enter only through the
+interactive provider's coordination store."""
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import argparse
 import http.server
 import json
 import re
+import secrets
 import sys
 import threading
 import time
@@ -21,8 +23,11 @@ from typing import Any, NamedTuple
 import analyze
 import experiment
 import harness
+from interaction import (InteractionConflict, InteractionError, InteractionStore,
+                         InvalidSubmission, StaleRequest)
 
 PORT = 8765
+MAX_INTERACTION_BODY = 64 * 1024
 
 # What the page polls at, in milliseconds. Fast enough that a turn appears while
 # the turn after it is still being thought about, slow enough that an experiment's
@@ -1405,7 +1410,7 @@ def episode_changes(agent: str, index: int) -> list[dict]:
 
 
 class View(http.server.BaseHTTPRequestHandler):
-    """Read-only. Every route is a GET, and nothing here opens a file to write."""
+    """Observational GET routes plus a narrow interactive-provider submission route."""
 
     server_version = "view.py"
 
@@ -1420,6 +1425,41 @@ class View(http.server.BaseHTTPRequestHandler):
         except Exception as e:                   # noqa: BLE001 - a viewer never takes the page down
             self.send_json({"error": f"{type(e).__name__}: {e}"}, status=500)
 
+    def do_POST(self) -> None:                   # noqa: N802 - BaseHTTPRequestHandler's name
+        url = urllib.parse.urlsplit(self.path)
+        parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
+        if len(parts) != 4 or parts[:2] != ["api", "interaction"]:
+            return self.send_json({"error": "no such route"}, status=404)
+        if parts[2] not in agent_names():
+            return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
+        if self.headers.get("Origin") != getattr(self.server, "origin", None):
+            return self.send_json({"error": "origin refused"}, status=403)
+        if self.headers.get("X-Interaction-Token") != getattr(self.server, "control_token", None):
+            return self.send_json({"error": "control token required"}, status=403)
+        if self.headers.get_content_type() != "application/json":
+            return self.send_json({"error": "Content-Type must be application/json"}, status=415)
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_INTERACTION_BODY:
+            return self.send_json({"error": "request body size refused"}, status=413)
+        try:
+            payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError("body is not an object")
+            result = InteractionStore(harness.ROOT / "interactions").submit(
+                parts[2], parts[3], payload)
+        except (InvalidSubmission, ValueError, json.JSONDecodeError) as error:
+            return self.send_json({"error": str(error)}, status=400)
+        except StaleRequest as error:
+            return self.send_json({"error": str(error)}, status=409)
+        except InteractionConflict as error:
+            return self.send_json({"error": str(error)}, status=409)
+        except InteractionError as error:
+            return self.send_json({"error": str(error)}, status=404)
+        return self.send_json({"submission": result.as_dict()}, status=201)
+
     def route(self, parts: list[str], query: dict[str, list[str]]) -> None:
         """One request. `parts` is the path split on slashes, already unquoted.
 
@@ -1431,6 +1471,16 @@ class View(http.server.BaseHTTPRequestHandler):
         if parts == ["api", "experiments"]:
             return self.send_json({"experiments": experiments(), "focus": getattr(self.server, "focus", None),
                                    "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT)})
+        if parts == ["api", "interaction"]:
+            pending = InteractionStore(harness.ROOT / "interactions").pending()
+            return self.send_json({"requests": [request.as_dict() for request in pending]})
+        if len(parts) == 3 and parts[:2] == ["api", "interaction"]:
+            if parts[2] not in agent_names():
+                return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
+            request = InteractionStore(harness.ROOT / "interactions").current(parts[2])
+            if request is None:
+                return self.send_json({"request": None})
+            return self.send_json({"request": request.as_dict()})
         if len(parts) >= 3 and parts[:2] == ["api", "experiment"]:
             exp = experiment_named(parts[2])
             if exp is None:
@@ -1477,7 +1527,8 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.send_json({"error": "no such route"}, status=404)
 
     def send_page(self) -> None:
-        body = PAGE.encode("utf-8")
+        token = getattr(self.server, "control_token", "")
+        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__", token).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1504,11 +1555,14 @@ class View(http.server.BaseHTTPRequestHandler):
 def serve(port: int = PORT, focus: str | None = None) -> http.server.ThreadingHTTPServer:
     """A server bound and ready, which the caller starts.
 
-    Bound to loopback and nothing else: there is no authentication here.
+    Bound to loopback and nothing else. Interactive POSTs require the random token
+    embedded in the served page and an exact same-origin request.
     Returned, not started, so a check can drive the real handler in-process.
     """
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), View)
     httpd.focus = focus
+    httpd.control_token = secrets.token_urlsafe(32)
+    httpd.origin = f"http://127.0.0.1:{httpd.server_address[1]}"
     return httpd
 
 
@@ -1544,7 +1598,7 @@ def main(argv: list[str] | None = None) -> int:
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
     seated = sum(exp["seated"] for exp in sets)
     print(f"{url}  ({len(sets)} sets, {seated} seated, under {harness.records_root()})")
-    print("read-only: nothing here is written, and nothing here reaches the agent")
+    print("observer views are read-only; the player panel submits only to interactive seats")
     if not a.no_browser:
         webbrowser.open(url)
     try:

@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .base import (ModelSpec, NormalizedTurn, PendingResponse, ProviderConfigurationError,
-                   ProviderError, Refusal, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
+                   ProviderError, Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
                    native_dict)
 
 
@@ -199,7 +199,7 @@ class OpenAIProvider:
                 raise _error(error) from error
 
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int) -> OpenAISession:
+                     max_tokens: int, context: SessionContext) -> OpenAISession:
         return OpenAISession(self.client, model, system, tools, max_tokens)
 
     def provenance(self, model: str) -> dict[str, Any]:

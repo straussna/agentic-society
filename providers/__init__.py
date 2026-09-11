@@ -1,4 +1,4 @@
-"""Registered first-party model providers."""
+"""Registered model providers."""
 
 from __future__ import annotations
 
@@ -10,12 +10,19 @@ from typing import Any
 from .anthropic import AnthropicProvider, MODELS as ANTHROPIC_MODELS
 from .base import (Charge, ModelProvider, ModelSession, ModelSpec, NormalizedTurn,
                    PendingResponse, ProviderConfigurationError, ProviderError, ProviderFailure, ProviderRouter,
-                   Refusal, ToolCall, ToolResult, ToolSpec, USAGE_FIELDS, Usage)
+                   Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, USAGE_FIELDS, Usage)
+from .human import HumanProvider, MODELS as HUMAN_MODELS
 from .openai import MODELS as OPENAI_MODELS, OpenAIProvider
 
 
-CATALOGS = {"anthropic": ANTHROPIC_MODELS, "openai": OPENAI_MODELS}
-FACTORIES = {"anthropic": AnthropicProvider, "openai": OpenAIProvider}
+CATALOGS = {"anthropic": ANTHROPIC_MODELS, "openai": OPENAI_MODELS, "human": HUMAN_MODELS}
+FACTORIES = {"anthropic": AnthropicProvider, "openai": OpenAIProvider, "human": HumanProvider}
+PROVENANCE = {
+    "anthropic": {"adapter": "anthropic-messages-v1", "endpoint": "first-party"},
+    "openai": {"adapter": "openai-responses-v1", "endpoint": "first-party", "store": False,
+               "reasoning_state": "encrypted"},
+    "human": {"adapter": "interaction-store-v1", "endpoint": "local"},
+}
 
 
 def provider_names() -> tuple[str, ...]:
@@ -36,13 +43,7 @@ def model_spec(provider: str, model: str) -> ModelSpec:
 
 def provenance(provider: str, model: str) -> dict[str, Any]:
     spec = model_spec(provider, model)
-    details = {"name": provider, "endpoint": "first-party", "model_spec": spec.as_dict()}
-    if provider == "anthropic":
-        details["adapter"] = "anthropic-messages-v1"
-    else:
-        details.update({"adapter": "openai-responses-v1", "store": False,
-                        "reasoning_state": "encrypted"})
-    return details
+    return {"name": provider, **PROVENANCE[provider], "model_spec": spec.as_dict()}
 
 
 def lapsed_prices(requirements: Iterable[tuple[str, str]], today: dt.date | None = None) -> list[str]:
@@ -74,9 +75,10 @@ class DirectProviderRouter:
             self.providers[name].preflight(models)
 
     def open_session(self, provider: str, model: str, system: str,
-                     tools: tuple[ToolSpec, ...], max_tokens: int) -> ModelSession:
+                     tools: tuple[ToolSpec, ...], max_tokens: int,
+                     context: SessionContext) -> ModelSession:
         model_spec(provider, model)
-        return self.providers[provider].open_session(model, system, tools, max_tokens)
+        return self.providers[provider].open_session(model, system, tools, max_tokens, context)
 
     def provenance(self, provider: str, model: str) -> dict[str, Any]:
         return self.providers[provider].provenance(model)
@@ -84,5 +86,5 @@ class DirectProviderRouter:
 
 __all__ = ["Charge", "DirectProviderRouter", "ModelProvider", "ModelSession", "ModelSpec",
            "NormalizedTurn", "PendingResponse", "ProviderConfigurationError", "ProviderError", "ProviderFailure",
-           "ProviderRouter", "Refusal", "ToolCall", "ToolResult", "ToolSpec", "USAGE_FIELDS",
+           "ProviderRouter", "Refusal", "SessionContext", "ToolCall", "ToolResult", "ToolSpec", "USAGE_FIELDS",
            "Usage", "lapsed_prices", "model_spec", "provenance", "provider_names"]

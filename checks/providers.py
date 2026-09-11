@@ -11,7 +11,7 @@ from types import SimpleNamespace as NS
 
 import experiment
 import providers
-from providers import ToolResult, ToolSpec
+from providers import SessionContext, ToolResult, ToolSpec
 from providers.anthropic import AnthropicProvider, normalize as normalize_anthropic
 from providers.openai import OpenAIProvider, normalize as normalize_openai
 from checks.fake import per_agent, say
@@ -20,6 +20,7 @@ from checks.lanes import quiet, temp_root
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
                                   "required": ["command"], "additionalProperties": False}),)
+CONTEXT = SessionContext("a", "1", 1, Path("interactions"))
 
 
 class Messages:
@@ -48,7 +49,7 @@ def check_anthropic_messages_wire_shape_and_state():
                                       "stop_reason": "tool_use", "content": [], "usage": {}})
     messages = Messages(response)
     session = AnthropicProvider(NS(messages=messages)).open_session(
-        "claude-sonnet-5", "system", TOOLS, 123)
+        "claude-sonnet-5", "system", TOOLS, 123, CONTEXT)
     first = session.request("hello")
     turn = first.normalize()
     session.request((ToolResult("call1", "ok"),))
@@ -76,7 +77,7 @@ def check_openai_responses_wire_shape_and_manual_state():
                                       "status": "completed", "output": [], "usage": {}})
     responses = Responses(response)
     session = OpenAIProvider(NS(responses=responses)).open_session(
-        "gpt-5.6-terra", "system", TOOLS, 321)
+        "gpt-5.6-terra", "system", TOOLS, 321, CONTEXT)
     turn = session.request("hello").normalize()
     session.request((ToolResult("call1", "ok"),))
     sent = responses.sent
@@ -105,8 +106,8 @@ def check_provider_tool_schemas_are_identical():
                          input_tokens_details=NS(cached_tokens=0, cache_write_tokens=0),
                          output_tokens_details=NS(reasoning_tokens=0)), model_dump=lambda: {})
     am, om = Messages(anthropic_response), Responses(openai_response)
-    AnthropicProvider(NS(messages=am)).open_session("claude-sonnet-5", "", TOOLS, 1).request("x")
-    OpenAIProvider(NS(responses=om)).open_session("gpt-5.6-terra", "", TOOLS, 1).request("x")
+    AnthropicProvider(NS(messages=am)).open_session("claude-sonnet-5", "", TOOLS, 1, CONTEXT).request("x")
+    OpenAIProvider(NS(responses=om)).open_session("gpt-5.6-terra", "", TOOLS, 1, CONTEXT).request("x")
     a = am.sent[0]["tools"][0]
     o = om.sent[0]["tools"][0]
     assert (a["name"], a["description"], a["input_schema"], a["strict"]) == \

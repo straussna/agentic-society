@@ -60,7 +60,7 @@ from typing import Any, Callable, Iterable
 
 import providers
 from providers import (NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult,
-                       ToolSpec, Usage)
+                       SessionContext, ToolSpec, Usage)
 
 
 # --- 1. What the harness says ----------------------------------------------------
@@ -3503,7 +3503,7 @@ def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
     return None
 
 
-def run_turns(router: ProviderRouter, shell: Shell, account: dict, index: int, label: str,
+def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, index: int, label: str,
               raw: Path | None, bound: Iterable[Bound] = ()) -> dict:
     """Drive one episode's turns. API failures are recorded in the returned dict.
 
@@ -3526,7 +3526,8 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, index: int, l
     refused = 0                              # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
     out, next_input = open_episode(shell, index, provider, model, remaining, floor)
-    session = router.open_session(provider, model, system, specs, MAX_TOKENS)
+    context = SessionContext(agent, label, index, ROOT / "interactions", lambda: STOPPING)
+    session = router.open_session(provider, model, system, specs, MAX_TOKENS, context)
 
     try:
         for turn in range(1, MAX_TURNS + 1):
@@ -4234,7 +4235,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     WATCH_AGENT.set(f"{ep.agent}| ")
     out: dict = {}
     try:
-        out = run_turns(router, ep.shell, ep.account, ep.index, ep.seating.label,
+        out = run_turns(router, ep.shell, ep.account, ep.agent, ep.index, ep.seating.label,
                         raw_path(ep.agent, ep.index), ep.bound)
     finally:
         # While the container is still up, and after the last billed turn: this
