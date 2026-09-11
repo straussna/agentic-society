@@ -855,9 +855,23 @@ def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
     page = view.PAGE
     assert 'aria-controls="overview"' in page
     assert 'role="tablist"' in page and 'role="tab"' in page
+    assert page.index('id="overview"') < page.index('id="tabs"'), \
+        "the data dashboard is read before the tabs beneath it"
     assert 'aria-selected="${S.tab === key}"' in page
     assert 'aria-pressed="${c.name === S.experiment}"' in page
     assert "prefers-reduced-motion:reduce" in page
+
+
+def check_the_page_summarises_the_experiment_and_resizes_its_sections():
+    """The dashboard leads with aggregate signals and its main splits are adjustable."""
+    page = view.PAGE
+    for label in ("remaining", "spent this round", "spent total", "active now",
+                  "needs attention"):
+        assert f'["{label}"' in page, label
+    for kind in ("overview", "mail", "tree"):
+        assert f'data-resize="{kind}"' in page, kind
+    assert 'role="separator"' in page and 'document.addEventListener("pointermove"' in page
+    assert 'holdNumber(`${kind}-width`, width)' in page, "resized sections persist locally"
 
 
 def check_the_page_has_one_dismissible_file_inspector():

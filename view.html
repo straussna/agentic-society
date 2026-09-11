@@ -23,6 +23,8 @@
 }
 * { box-sizing:border-box; }
 html { color-scheme:dark; height:100%; }
+body.resizing { cursor:col-resize; user-select:none; }
+body.resizing.rows { cursor:row-resize; }
 body { margin:0; height:100%; background:
        radial-gradient(circle at 78% -20%,rgba(82,112,172,.16),transparent 42%),var(--bg); color:var(--ink);
        font:400 14px/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
@@ -95,7 +97,18 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
         font:500 11.5px/1.5 var(--sans); letter-spacing:.02em; }
 .fold:hover { color:var(--ink); border-color:var(--faint); }
 
-.overview { padding:2px 0 12px; }
+.overview { padding:2px 0 10px; min-height:0; max-height:min(48vh,420px); overflow:auto; }
+.overview.sized { height:var(--overview-height); max-height:70vh; }
+.metrics { display:grid; grid-template-columns:repeat(5,minmax(130px,1fr)); gap:8px; margin-bottom:10px; }
+.metric { min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r);
+          background:linear-gradient(145deg,var(--panel2),var(--panel)); box-shadow:var(--glow); }
+.metric .k { color:var(--faint); font:500 10.5px/1 var(--sans); letter-spacing:.11em;
+             text-transform:uppercase; }
+.metric .v { margin-top:7px; color:var(--ink); font:500 18px/1 var(--mono);
+             font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.metric .s { margin-top:5px; color:var(--faint); font-size:11.5px; white-space:nowrap;
+             overflow:hidden; text-overflow:ellipsis; }
+.metric.attn .v { color:var(--warn); }
 .board { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,22%); gap:14px; align-items:stretch; }
 .seats { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1px;
          background:var(--line); border:1px solid var(--line); border-radius:var(--r);
@@ -122,6 +135,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
    number are the round's detail, and a reader watching a transcript is not
    reading them. */
 #top.compact .overview { display:none; }
+#top.compact .overview-resizer { display:none; }
 
 .gbox { border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
         padding:12px 14px; box-shadow:var(--glow); }
@@ -140,6 +154,11 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .tab:hover { color:var(--ink); }
 .tab.on { color:var(--ink); border-bottom-color:var(--accent); }
 .tab em { font-style:normal; color:var(--faint); margin-left:7px; font-size:12px; }
+.overview-resizer { height:7px; margin:0 -4px; cursor:row-resize; position:relative; touch-action:none; }
+.overview-resizer::after { content:""; position:absolute; left:4px; right:4px; top:3px; height:1px;
+  background:var(--line); transition:background .12s ease,box-shadow .12s ease; }
+.overview-resizer:hover::after, .overview-resizer.dragging::after { background:var(--accent);
+  box-shadow:0 0 8px rgba(120,183,230,.45); }
 /* What is left of the window after the header. Nothing inside it may grow the
    page: a pane that wants more room scrolls itself. */
 #body { flex:1 1 auto; min-height:0; overflow:hidden; padding:12px 0 16px;
@@ -152,9 +171,11 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .round { display:flex; align-items:center; gap:12px; margin:14px 0 8px; color:var(--faint);
          font:500 11.5px/1 var(--sans); letter-spacing:.16em; text-transform:uppercase; }
 .round i { flex:1; height:1px; background:var(--line); }
-.chat { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:310px minmax(0,1fr);
-        gap:12px; align-items:stretch; }
-.chat.narrow { grid-template-columns:44px minmax(0,1fr); }
+.chat { flex:1 1 auto; min-height:0; display:grid;
+        grid-template-columns:minmax(220px,var(--split,310px)) 7px minmax(0,1fr);
+        gap:6px; align-items:stretch; }
+.chat.narrow { grid-template-columns:44px minmax(0,1fr); gap:12px; }
+.chat.narrow .splitter { display:none; }
 .chat.narrow .pair .p, .chat.narrow .pair .t em { display:none; }
 .chat.narrow .pair-tools { display:none; }
 .chat.narrow .pair { padding:9px 6px; text-align:center; }
@@ -246,7 +267,13 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 /* The listing is an index and stays a column a seat; what a file says is read
    below it, across the whole window, in as many columns as there are files
    open. A file's contents are the reason the tab exists, so they get the room. */
-.treeview { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(360px,1fr) minmax(420px,1.15fr); gap:12px; }
+.treeview { flex:1 1 auto; min-height:0; display:grid;
+  grid-template-columns:minmax(300px,var(--split,46%)) 7px minmax(360px,1fr); gap:6px; }
+.splitter { min-width:7px; min-height:36px; cursor:col-resize; position:relative; touch-action:none; }
+.splitter::after { content:""; position:absolute; top:0; bottom:0; left:3px; width:1px;
+  background:var(--line); transition:background .12s ease,box-shadow .12s ease; }
+.splitter:hover::after, .splitter.dragging::after { background:var(--accent);
+  box-shadow:0 0 8px rgba(120,183,230,.45); }
 .treeindex, .inspector { min-height:0; overflow-y:auto; }
 .snapshotbar { display:flex; align-items:center; gap:10px; min-width:0; margin:0 0 10px;
   padding:9px 11px; border:1px solid var(--line); border-radius:var(--r); background:var(--panel); }
@@ -352,17 +379,20 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
           flex-direction:column; }
 @media (max-width:1279px) {
   #page { padding:0 14px; }
+  .metrics { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
   .board { grid-template-columns:1fr; }
   .gbox { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
   .gbox .election { border-bottom:0; margin:0; padding:0; }
   .gbox .chart-block { margin-top:0; }
-  .chat { grid-template-columns:270px minmax(0,1fr); }
-  .treeview { grid-template-columns:minmax(300px,.9fr) minmax(0,1.1fr); }
+  .chat { --split:270px; }
+  .treeview { --split:40%; }
 }
 @media (max-width:900px) {
   .appbar { flex-wrap:wrap; padding:9px 0; }
   .who { order:3; flex-basis:100%; }
-  .chat { grid-template-columns:220px minmax(0,1fr); }
+  .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .chat { grid-template-columns:220px minmax(0,1fr); gap:12px; }
+  .chat .splitter, .treeview .splitter { display:none; }
   .treeview { grid-template-columns:1fr; overflow-y:auto; }
   .treeindex, .inspector { overflow:visible; }
   .inspector { min-height:240px; }
@@ -376,14 +406,16 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
     <div class="appbar"><div class="brand"><span class="mark"></span><b>agentic-society</b></div>
       <div class="who"><span class="sub" id="whosub"></span><div class="picks" id="picks"></div></div>
       <button class="fold" id="fold" aria-controls="overview"></button></div>
-    <nav id="tabs" role="tablist" aria-label="Experiment views"></nav>
-    <div class="overview" id="overview"><div class="board"><div class="seats" id="seats"></div>
+    <div class="overview" id="overview" aria-label="Experiment dashboard"><div class="metrics" id="metrics"></div>
+      <div class="board"><div class="seats" id="seats"></div>
       <div id="gwrap"></div></div></div>
+    <div class="overview-resizer" id="overview-resizer" data-resize="overview" role="separator" aria-label="Resize dashboard" aria-orientation="horizontal" tabindex="0"></div>
+    <nav id="tabs" role="tablist" aria-label="Experiment views"></nav>
   </header>
   <main id="body" role="tabpanel"><div class="empty">loading&hellip;</div></main>
 </div>
 <script>
-const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>\u0022\u0027]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num = (n) => n == null ? "–" : Number(n).toLocaleString();
 const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status));
@@ -405,6 +437,9 @@ const charged = (n) => n ? ` · penalised ${num(n)}`
 const held = (k, dflt) => { try { const v = localStorage.getItem(k);
   return v == null ? dflt : v === "1"; } catch (e) { return dflt; } };
 const hold = (k, v) => { try { localStorage.setItem(k, v ? "1" : "0"); } catch (e) {} };
+const heldNumber = (k) => { try { const v = Number(localStorage.getItem(k));
+  return Number.isFinite(v) && v > 0 ? v : null; } catch (e) { return null; } };
+const holdNumber = (k, v) => { try { localStorage.setItem(k, String(Math.round(v))); } catch (e) {} };
 
 // --- where the reader left each box --------------------------------------
 
@@ -457,7 +492,10 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             // pane, because the pane is replaced under it.
             txtop: 0, txend: false,
             // How much of the header, and of the thread list, is shown.
-            compact: held("compact", true), rail: held("rail", false),
+            compact: held("compact", false), rail: held("rail", false),
+            overviewHeight: heldNumber("overview-height"),
+            mailWidth: heldNumber("mail-width") || 310,
+            treeWidth: heldNumber("tree-width"),
             poll: 1500, stale: 180 };
 
 const PENDING = "output arrives when the episode ends";
@@ -611,6 +649,9 @@ function tileHtml(s, i) {
 
 function renderFold() {
   document.getElementById("top").classList.toggle("compact", S.compact);
+  const overview = document.getElementById("overview");
+  overview.classList.toggle("sized", !S.compact && S.overviewHeight != null);
+  if (S.overviewHeight != null) overview.style.setProperty("--overview-height", `${S.overviewHeight}px`);
   const fold = document.getElementById("fold");
   fold.textContent = S.compact ? "Show overview" : "Hide overview";
   fold.setAttribute("aria-expanded", String(!S.compact));
@@ -646,6 +687,22 @@ function renderHeader() {
     (h.vote_every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.phase)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no blackboard or mailbox between them`);
+  const current = h.seats.map(s => s.live_balance != null ? s.live_balance : s.n);
+  const remaining = current.reduce((sum, n) => sum + Number(n || 0), 0);
+  const initial = h.seats.reduce((sum, s) => sum + Number(s.initial || 0), 0);
+  const roundSpent = h.seats.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
+  const totalSpent = h.seats.reduce((sum, s) => sum + Number(s.spent || 0), 0);
+  const live = h.seats.filter(running).length;
+  const attention = h.seats.filter(s => s.halted || (s.drift || []).length || (s.unmet || []).length
+    || (s.live != null && !running(s))).length;
+  const pct = initial ? `${Math.max(0, remaining / initial * 100).toFixed(0)}% of initial` : "current balance";
+  document.getElementById("metrics").innerHTML = [
+    ["remaining", num(remaining), pct, ""],
+    ["spent this round", num(roundSpent), `round ${h.round}`, ""],
+    ["spent total", num(totalSpent), `${h.seats.length} seats`, ""],
+    ["active now", `${h.active}/${h.seats.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
+    ["needs attention", num(attention), attention ? "unfinished, unmet, halted, or drifted" : "no current alerts", attention ? "attn" : ""]
+  ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   document.getElementById("seats").innerHTML = h.seats.map(tileHtml).join("");
   // The ledger reads the same three bare numbers for everyone, including the
   // agent a transfer was aimed at. The gloss is the page's.
@@ -755,14 +812,10 @@ function gotHtml(d, from) {
   }
   if (d.shown_before === false) {
     return d.environment
-      ? `<span style="color:var(--warn)" title="${d.clipped
-          ? "the initial observation ran past its limit, and what clip takes is the middle"
-          : "it stood in the environment and the initial observation did not carry it"}"
-         >in its environment, not in its observation</span>${again}`
+      ? `<span style="color:var(--warn)" title="${d.clipped ? "the initial observation ran past its limit, and what clip takes is the middle" : "it stood in the environment and the initial observation did not carry it"}">in its environment, not in its observation</span>${again}`
       : `never reached it${again}`;
   }
-  return (d.environment ? `in its environment · <span title="the initial observation was the listing alone,
-    so the inbox was there to be fetched">nothing was carried</span>`
+  return (d.environment ? `in its environment · <span title="the initial observation was the listing alone, so the inbox was there to be fetched">nothing was carried</span>`
                   : `never reached it`) + again;
 }
 
@@ -792,8 +845,10 @@ function msgHtml(e, t) {
         e.delivered.round}) · ${gotHtml(e.delivered, e.from_seat)}`
     : e.tip ? "standing now; no episode has started since"
     : "not delivered yet";
-  return `<div class="msg ${!t.a || String(e.from_seat) === String(t.a.seat) ? "" : "r"}
-      ${e.tip ? "tip" : ""} ${e.change === "standing" ? "same" : ""}">
+  const side = !t.a || String(e.from_seat) === String(t.a.seat) ? "" : "r";
+  const tip = e.tip ? "tip" : "";
+  const same = e.change === "standing" ? "same" : "";
+  return `<div class="msg ${side} ${tip} ${same}">
     <div class="mh">${seatTag(e.from_seat)}
       <span>${esc(e.from_agent)} ep${e.episode == null ? "?" : e.episode}</span>
       <span class="num">${esc(e.path)}${e.size ? ` · ${num(e.size)} B` : ""}</span>${tag}</div>
@@ -844,7 +899,8 @@ function renderMessages() {
         aria-label="Clear conversation search" title="Clear search">×</button></div>
       <div class="pair-options"><label class="tail"><input type="checkbox" id="empty-pairs"
         ${S.showEmpty ? "checked" : ""}>show empty pairs</label><span>0 shown</span></div></div>`;
-    redraw(el, `<div class="fill"><div class="chat"><div class="pairs">${controls}</div>
+    redraw(el, `<div class="fill"><div class="chat" style="--split:${S.mailWidth}px"><div class="pairs">${controls}</div>
+      <div class="splitter" data-resize="mail" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
       <div class="thread"><div class="empty">no conversations match</div></div></div></div>`);
     wireConversationFilters(el);
     return;
@@ -888,7 +944,8 @@ function renderMessages() {
       ${S.standing ? "checked" : ""}>show ${same} legacy standing event${same === 1 ? "" : "s"}</label>` : ""}
     </div>`;
   redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">Activity · newest conversations first</div>
-    <div class="chat ${S.rail ? "narrow" : ""}"><div class="pairs">${controls}${side}</div>
+    <div class="chat ${S.rail ? "narrow" : ""}" style="--split:${S.mailWidth}px"><div class="pairs">${controls}${side}</div>
+      <div class="splitter" data-resize="mail" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
       <div class="thread">${head}<div id="thread">${threadHtml(t)}</div></div></div></div>`);
   el.querySelectorAll(".pair").forEach(b => b.onclick = () => {
     if (b.dataset.k === S.pair) return;
@@ -1053,13 +1110,15 @@ function renderTree(kind) {
   el.dataset.sig = sig;
   const what = d.what || "";
   const historical = d.history && d.history.selected != null;
-  const stamp = (c) => d.static ? "the manifest's source"
-    : historical ? (c.committed == null ? `did not act in round ${d.history.selected}`
-      : c.saved ? `end of round ${d.history.selected} · ep${c.committed}`
-      : `ep${c.committed} · state was not saved`)
-    : `${c.seat == null ? "" : esc(c.agent) + " · "}as of ep${c.committed}${
-      c.live == null ? "" : running(c)
-        ? " · an episode is running" : " · an episode never finished"}`;
+  const stamp = (c) => {
+    if (d.static) return `the manifest's source`;
+    if (historical && c.committed == null) return `did not act in round ${d.history.selected}`;
+    if (historical && c.saved) return `end of round ${d.history.selected} · ep${c.committed}`;
+    if (historical) return `ep${c.committed} · state was not saved`;
+    const seat = c.seat == null ? "" : `${esc(c.agent)} · `;
+    const live = c.live == null ? "" : running(c) ? " · an episode is running" : " · an episode never finished";
+    return `${seat}as of ep${c.committed}${live}`;
+  };
   const snapshots = snapshotHtml(d);
   const index = d.columns.map(c => {
     const rows = c.files.map(f => {
@@ -1090,7 +1149,8 @@ function renderTree(kind) {
       : historical ? ` · immutable state captured from each seat's committed episode in round ${d.history.selected}`
       : ` · mirrored back when an episode ends, so each column is as of that agent's own last
       committed one`}</div>
-    <div class="treeview"><div class="treeindex"><div class="cols">${index}</div></div>${inspector}</div></div>`);
+    <div class="treeview" ${S.treeWidth == null ? "" : `style="--split:${S.treeWidth}px"`}><div class="treeindex"><div class="cols">${index}</div></div>
+      <div class="splitter" data-resize="tree" role="separator" aria-label="Resize file list" aria-orientation="vertical" tabindex="0"></div>${inspector}</div></div>`);
   el.querySelectorAll(".file-row").forEach(row => row.onclick = () => {
     const same = chosen && chosen.agent === row.dataset.agent && chosen.path === row.dataset.p;
     S.inspect[kind] = same ? null : {agent:row.dataset.agent, path:row.dataset.p};
@@ -1203,11 +1263,10 @@ function drawTranscript() {
   const rounds = Array.from({ length: last }, (_, i) => i + 1).map(r => {
     const s = byRound[r];
     if (!s) return `<button class="chip off" title="it was out of the experiment by this round">r${r}</button>`;
-    return `<button class="chip ${s.episode === S.episode ? "on" : ""}
-       ${s.live && running(d) ? "live" : ""} ${s.live && !running(d) ? "halt" : ""}
-       ${s.halted ? "halt" : ""}"
-       data-s="${s.episode}" aria-pressed="${s.episode === S.episode}" title="ep${s.episode} · ${esc(s.stop || (running(d) ? "running" : "unfinished"))
-         } · ${s.turns} turns · spent ${num(s.spent)}">r${r}</button>`;
+    const classes = [s.episode === S.episode ? "on" : "", s.live && running(d) ? "live" : "",
+      s.live && !running(d) ? "halt" : "", s.halted ? "halt" : ""].filter(Boolean).join(" ");
+    const state = esc(s.stop || (running(d) ? "running" : "unfinished"));
+    return `<button class="chip ${classes}" data-s="${s.episode}" aria-pressed="${s.episode === S.episode}" title="ep${s.episode} · ${state} · ${s.turns} turns · spent ${num(s.spent)}">r${r}</button>`;
   }).join("");
   const here = d.episodes.find(s => s.episode === S.episode) || {};
   el.dataset.sig = "";
@@ -1328,10 +1387,10 @@ function renderTranscript(fresh) {
   const state = !v.live ? esc(v.stop)
     : dead ? `<b style="color:var(--warn)">unfinished</b> · last turn ${ago(v.age)} · derived cost`
            : "<b style='color:var(--live)'>running</b> · derived cost";
+  const unmet = (v.unmet || []).map(u => ` · <span style="color:var(--bad)" title="${esc(u.channel)}">${esc(u.channel)}: ${esc(u.why)}</span>${charged(u.penalty)}`).join("");
   document.getElementById("txhead").innerHTML =
     `episode ${v.episode} · ${state} · ${v.total_turns} turns · spent ${num(v.spent)}` +
-    (v.unmet || []).map(u => ` · <span style="color:var(--bad)" title="${
-      esc(u.channel)}">${esc(u.channel)}: ${esc(u.why)}</span>${charged(u.penalty)}`).join("") +
+    unmet +
     (v.forgiven ? ` · floored ${num(v.forgiven)}` : "") +
     (v.error ? ` · <span style="color:var(--bad)">${esc(v.error)}</span>` : "") +
     ((v.missing_tools || []).length ? ` · reached for and absent: ${esc(v.missing_tools.join(", "))}` : "");
@@ -1435,6 +1494,59 @@ function poll() {
   }).catch(() => {}).then(() => setTimeout(poll, S.poll));
 }
 
+const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
+let activeResize = null;
+
+function setSplit(kind, value, container) {
+  const minimum = kind === "mail" ? 220 : 300;
+  const room = kind === "mail" ? 360 : 420;
+  const width = clamp(value, minimum, Math.max(minimum, container.clientWidth - room));
+  if (kind === "mail") S.mailWidth = width;
+  else S.treeWidth = width;
+  holdNumber(`${kind}-width`, width);
+  container.style.setProperty("--split", `${width}px`);
+}
+
+function setOverviewHeight(value) {
+  const overview = document.getElementById("overview");
+  const height = clamp(value, 132, Math.max(132, window.innerHeight * .7));
+  S.overviewHeight = height;
+  holdNumber("overview-height", height);
+  overview.classList.add("sized");
+  overview.style.setProperty("--overview-height", `${height}px`);
+}
+
+function beginResize(handle, e) {
+  const kind = handle.dataset.resize;
+  const container = kind === "overview" ? null : handle.parentElement;
+  activeResize = { handle, kind, container };
+  handle.classList.add("dragging");
+  document.body.classList.add("resizing");
+  document.body.classList.toggle("rows", kind === "overview");
+  e.preventDefault();
+}
+
+document.addEventListener("pointermove", e => {
+  if (!activeResize) return;
+  if (activeResize.kind === "overview") {
+    const top = document.getElementById("overview").getBoundingClientRect().top;
+    setOverviewHeight(e.clientY - top);
+  } else {
+    const left = activeResize.container.getBoundingClientRect().left;
+    setSplit(activeResize.kind, e.clientX - left, activeResize.container);
+  }
+});
+
+function endResize() {
+  if (!activeResize) return;
+  activeResize.handle.classList.remove("dragging");
+  activeResize = null;
+  document.body.classList.remove("resizing", "rows");
+}
+
+document.addEventListener("pointerup", endResize);
+document.addEventListener("pointercancel", endResize);
+
 document.getElementById("fold").onclick = () => {
   S.compact = !S.compact; hold("compact", S.compact); renderFold();
 };
@@ -1447,7 +1559,24 @@ document.getElementById("body").addEventListener("click", e => {
   button.textContent = collapsed ? button.textContent.replace(/^Collapse /, "Show full ")
                                  : button.textContent.replace(/^Show full /, "Collapse ");
 });
+document.addEventListener("pointerdown", e => {
+  const handle = e.target.closest("[data-resize]");
+  if (handle) beginResize(handle, e);
+});
 document.addEventListener("keydown", e => {
+  const handle = e.target.closest("[data-resize]");
+  if (handle && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+    const direction = (e.key === "ArrowLeft" || e.key === "ArrowUp") ? -1 : 1;
+    if (handle.dataset.resize === "overview") {
+      setOverviewHeight((S.overviewHeight || document.getElementById("overview").clientHeight) + direction * 16);
+    } else {
+      const kind = handle.dataset.resize;
+      const current = kind === "mail" ? S.mailWidth : handle.parentElement.firstElementChild.clientWidth;
+      setSplit(kind, current + direction * 16, handle.parentElement);
+    }
+    e.preventDefault();
+    return;
+  }
   if (e.key !== "Escape" || S.tab === "mailbox" || S.tab === "agent" || !S.inspect[S.tab]) return;
   closeInspector(S.tab);
 });

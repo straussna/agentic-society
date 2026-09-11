@@ -122,6 +122,7 @@ Three principles bind the language:
 |---|---|---|
 | `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |

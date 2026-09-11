@@ -63,9 +63,10 @@ def check_anthropic_messages_wire_shape_and_state():
 
 
 def check_openai_responses_wire_shape_and_manual_state():
-    output = [NS(type="reasoning", summary=[NS(text="thought")], encrypted_content="cipher"),
-              NS(type="function_call", id="fc1", call_id="call1", name="bash",
-                 arguments='{"command":"pwd"}')]
+    output = [NS(type="reasoning", id="rs1", summary=[NS(text="thought")], content=[],
+                 encrypted_content="cipher", status=None),
+               NS(type="function_call", id="fc1", call_id="call1", name="bash",
+                  arguments='{"command":"pwd"}', status="completed", async_=None)]
     response = NS(id="r1", model="gpt-5.6-terra-20260908", status="completed",
                   incomplete_details=None, output=output,
                   usage=NS(input_tokens=20, output_tokens=5,
@@ -85,7 +86,12 @@ def check_openai_responses_wire_shape_and_manual_state():
                                   "parameters": TOOLS[0].input_schema, "strict": True}]
     assert sent[1]["input"][-1] == {"type": "function_call_output", "call_id": "call1",
                                      "output": "ok"}
-    assert any(item.get("type") == "reasoning" for item in sent[1]["input"])
+    reasoning = next(item for item in sent[1]["input"] if item.get("type") == "reasoning")
+    call = next(item for item in sent[1]["input"] if item.get("type") == "function_call")
+    assert reasoning == {"type": "reasoning", "id": "rs1", "summary": [{"text": "thought"}],
+                         "content": [], "encrypted_content": "cipher"}
+    assert call == {"type": "function_call", "call_id": "call1", "name": "bash",
+                    "arguments": '{"command":"pwd"}'}
     assert turn.provider == "openai" and turn.usage.reasoning_tokens == 3
 
 

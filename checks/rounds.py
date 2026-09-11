@@ -108,7 +108,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     surface = "\n".join([brief, manifest["overrides"]["system_prompt"],
                            *(tool["description"] for tool in manifest["tools"])])
     assert [agent["id"] for agent in manifest["agents"]] == [
-        "survivor01", "survivor02", "survivor03", "survivor04", "survivor05"]
+        "survivor01", "survivor02", "survivor03", "survivor04", "survivor05",
+        "survivor06", "survivor07", "survivor08", "survivor09", "survivor10"]
     assert manifest["schedule"] == "simultaneous" and manifest["stop_when_one_remains"]
     assert vote["every"] == 5
     assert all(tool["kind"] != "bash" for tool in manifest["tools"])
@@ -225,6 +226,35 @@ def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
         assert "top vote tied at 2" in output.getvalue()
         result = harness.load_account("g01")["last_election"]
         assert result["top_tied"] and not result["voted_out"] and not result["abstainers"]
+
+
+def check_a_final_two_tie_can_end_with_both_agents_surviving():
+    """A manifest may make the final reciprocal ballot the terminal result."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
+    with temp_root(channels=tables(ballot), tools=[vote]) as root:
+        ids = seated(root, "g01", g02={})
+        labels = {"1": "1", "2": "2"}
+        for agent, target in zip(ids, ("2", "1")):
+            account = harness.load_account(agent)
+            account["episodes"] = [{"episode": i, "stop": "no_tool_call"}
+                                   for i in range(1, 6)]
+            harness.save_account(agent, account)
+            path = harness.mirror(agent, "ballot") / "vote"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(target + "\n", encoding="utf-8")
+
+        live = set(ids)
+        completed = lambda *_args: True
+        with quiet() as output:
+            continues = experiment.play_round(completed, ids, live, 4, None, {}, labels,
+                                              True, vote, True)
+        result = harness.load_account("g01")["last_election"]
+
+    assert not continues and live == set(ids)
+    assert "both survive and the competition ends" in output.getvalue()
+    assert result["top_tied"]
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
@@ -469,6 +499,7 @@ def check_a_manifest_is_validated():
     assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
     assert experiment.stamp_of(m) == {"schedule": "simultaneous", "stop_when_one_remains": False,
+                                      "stop_when_two_remain_after_tie": False,
                                       "manifest_sha256": m["sha256"]}
 
     assert [e["id"] for e in grouped["agents"]] == ["clone01", "clone02", "clone03"]

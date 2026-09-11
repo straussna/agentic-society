@@ -719,7 +719,8 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
     # simply not been reached.
-    pending = (out_reason is None and live is None
+    pending = (live is None and not account.get("eliminated")
+               and latest.get("stop") not in harness.STOPS_THE_AGENT
                and (mine[-1]["round"] if mine else 0) == rnd - 1)
     return {
         "seat": seat, "agent": agent, "label": account.get("label") or seat,

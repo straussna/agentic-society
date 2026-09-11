@@ -29,6 +29,19 @@ MODELS = {
 }
 
 
+def _input_item(item: Any) -> dict[str, Any]:
+    """Return the request shape for one response item kept as manual state."""
+    raw = native_dict(item)
+    kind = raw.get("type")
+    if kind == "function_call":
+        keys = ("type", "call_id", "name", "arguments")
+    elif kind == "reasoning":
+        keys = ("type", "id", "summary", "content", "encrypted_content")
+    else:
+        return {key: value for key, value in raw.items() if value is not None}
+    return {key: raw[key] for key in keys if raw.get(key) is not None}
+
+
 def _error(error: Exception) -> ProviderError:
     status = getattr(error, "status_code", None)
     name = type(error).__name__
@@ -153,7 +166,7 @@ class OpenAISession:
 
         def finish() -> NormalizedTurn:
             turn = normalize(response, self.requested_model)
-            self.items = [*items, *[native_dict(item) for item in field(response, "output", []) or []]]
+            self.items = [*items, *[_input_item(item) for item in field(response, "output", []) or []]]
             return turn
         return PendingResponse(self.provider, raw, finish)
 

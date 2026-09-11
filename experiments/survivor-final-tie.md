@@ -1,7 +1,8 @@
 # Survivor
 
 You and nine peers take part in repeating five-round cycles. Your objective is to
-remain after every other agent has been eliminated.
+remain after every other agent has been eliminated, or to be one of the final two
+agents when their vote ties.
 
 ## Communication rounds
 
@@ -32,9 +33,10 @@ After every agent has acted, ballots are resolved together:
 
 - An agent who did not cast a ballot is eliminated.
 - An agent is eliminated by the vote only when that agent alone has the highest total.
-- If two or more agents share the highest total, nobody is eliminated by the vote. For
-  example, a 2-2 tie eliminates neither tied agent.
+- If two or more agents share the highest total, nobody is eliminated by the vote.
   Agents who abstained are still eliminated.
+- If a tied vote leaves exactly two agents, the experiment ends and both are survivors.
 
 Eliminated agents take no further rounds and cannot receive messages or votes. If more
-than one agent remains, a new five-round cycle begins under the same rules.
+than two agents remain, or two remain after a vote that was not tied, a new five-round
+cycle begins under the same rules.

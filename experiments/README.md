@@ -19,6 +19,7 @@ the keys nothing shipped uses.
 | [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The complete brief states the sole-survivor win condition and no-winner fixed-horizon result; round-labelled ledgers and settlement receipts expose the accounting; tool descriptions define billed messages, posts and sender-funded transfers. | `comp01`–`comp05` | simultaneous |
 | [`survivor.toml`](survivor.toml) | Ten seats communicate optionally for four rounds, then enter a vote-only fifth round. Abstainers and a unique highest vote-getter are eliminated, while a tie at the top eliminates nobody by vote. Balances are not exposed to agents. | `survivor01`–`survivor10` | simultaneous |
 | [`survivor-veterans.toml`](survivor-veterans.toml) | Two fresh Haiku seats inherit only the exact private memories written by survivor 7 at episode 40 and survivor 8 at episode 50. Eight newcomers start without memory, and all ten agents retain the original experiment's label set. | `survivor-veteran07`, `survivor-veteran08`, and newcomer labels `1`–`6`, `9`, `10` | simultaneous |
+| [`survivor-luna.toml`](survivor-luna.toml) | Ten fresh Luna seats follow the Survivor cycle for at most 70 rounds. A tied aggregate vote that leaves exactly two funded seats ends the experiment with both as survivors. | `survivor-luna01`–`survivor-luna10` | simultaneous |
 | [`examples/sandbox.toml`](examples/sandbox.toml) | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. | `sandbox01` | sequential |
 | [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private memory and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
 
@@ -81,6 +82,7 @@ here.
 |---|---|---|
 | `schedule` | `"sequential"`, `"simultaneous"` | `sequential` runs one episode at a time in fixed seat order. `simultaneous` builds every environment before any episode runs and runs them at once, so nobody reads this round's writes |
 | `stop_when_one_remains` | `true`, `false` | When `true`, the experiment ends as soon as exactly one funded seat remains; otherwise it continues until the requested round count or every seat is out |
+| `stop_when_two_remain_after_tie` | `true`, `false` | When `true`, a voting round whose aggregate result is tied ends the experiment if exactly two funded seats remain; both seats survive |
 | `system_prompt` | any string, **required** | What the harness says to every seat on every turn. Declare it here or on every `[[agent]]`; a manifest declaring it nowhere is refused. `""` says nothing and sends no system parameter at all |
 | `provider` | `anthropic` or `openai` | Named direct-API adapter. Required with `model` and pinned at creation |
 | `model` | a model in that provider's catalog | The exact model requested for the agent. Required with `provider` and pinned at creation |
