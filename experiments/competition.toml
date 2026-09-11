@@ -142,16 +142,5 @@ The transfer is settled once at this episode's end and then expires; you must ca
 # --- the seats ----------------------------------------------------------------
 
 [[agent]]
-id = "comp01"
-
-[[agent]]
-id = "comp02"
-
-[[agent]]
-id = "comp03"
-
-[[agent]]
-id = "comp04"
-
-[[agent]]
-id = "comp05"
+id = "comp"
+seats = 5

@@ -43,10 +43,10 @@ EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "provider", "model", "ag
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
-AGENT_KEYS = {"id", "label", "starter_files", "starter_files_below", "budget", "provider", "model",
-              "system_prompt"}
+AGENT_KEYS = {"id", "label", "seats", "starter_files", "starter_files_below", "budget",
+              "provider", "model", "system_prompt"}
 
-AGENT_TYPES = (("id", str), ("label", str), ("starter_files", str),
+AGENT_TYPES = (("id", str), ("label", str), ("seats", int), ("starter_files", str),
                ("starter_files_below", int), ("budget", int), ("provider", str), ("model", str),
                ("system_prompt", str))
 
@@ -110,10 +110,34 @@ def check_agent(path: Path, entry: dict) -> None:
     agent = entry.get("id")
     if not isinstance(agent, str) or not agent:
         refuse("every agent needs an id")
+    label = entry.get("label")
+    if label is not None and (not LABEL.match(label) or label in (".", "..")):
+        refuse(f"{agent}: label {label!r} must be letters, digits, '.', '_' or '-'")
+    if entry.get("seats", 1) < 1:
+        refuse(f"{agent}: seats must be positive, got {entry['seats']}")
     harness.validate_terms(str(path), who=agent, provider=entry.get("provider"),
                            model=entry.get("model"), budget=entry.get("budget"),
                            starter_files=entry.get("starter_files"),
                            starter_files_below=entry.get("starter_files_below"))
+
+
+def expand_agents(definitions: list[dict]) -> list[dict]:
+    """Expand each grouped definition into the concrete agents that occupy its seats."""
+    agents: list[dict] = []
+    for definition in definitions:
+        if "seats" not in definition:
+            agents.append(dict(definition))
+            continue
+        count = definition["seats"]
+        width = max(2, len(str(count)))
+        for ordinal in range(1, count + 1):
+            entry = {key: value for key, value in definition.items() if key != "seats"}
+            suffix = str(ordinal).zfill(width)
+            entry["id"] += suffix
+            if "label" in entry:
+                entry["label"] += suffix
+            agents.append(entry)
+    return agents
 
 
 def manifest_path(named: str) -> Path:
@@ -165,17 +189,17 @@ def load_manifest(path: Path) -> dict:
     stop_when_one_remains = top.get("stop_when_one_remains", False)
     if type(stop_when_one_remains) is not bool:
         raise SystemExit(f"{path}: stop_when_one_remains must be bool, got {type(stop_when_one_remains).__name__}")
-    agents = top.get("agent")
-    if not isinstance(agents, list) or not all(isinstance(r, dict) for r in agents):
+    definitions = top.get("agent")
+    if not isinstance(definitions, list) or not all(isinstance(r, dict) for r in definitions):
         raise SystemExit(f"{path}: agents are [[agent]] tables, each with an id")
-    for terms in [top, *agents]:
+    for terms in [top, *definitions]:
         starter = terms.get("starter_files")
         if isinstance(starter, str) and starter.startswith(("./", "../", ".\\", "..\\")):
             terms["starter_files"] = str((path.parent / starter).resolve())
     default_provider, default_model = top.get("provider"), top.get("model")
     if (default_provider is None) != (default_model is None):
         raise SystemExit(f"{path}: top-level provider and model must be set together")
-    for entry in agents:
+    for entry in definitions:
         if "provider" not in entry and default_provider is not None:
             entry["provider"] = default_provider
         if "model" not in entry and default_model is not None:
@@ -184,6 +208,7 @@ def load_manifest(path: Path) -> dict:
             raise SystemExit(f"{path}: {entry.get('id', 'agent')}: provider and model must resolve "
                              "from top-level defaults or the [[agent]] table")
         check_agent(path, entry)
+    agents = expand_agents(definitions)
     check_ids([entry["id"] for entry in agents], str(path))
 
     labels: dict[str, str] = {}
@@ -209,7 +234,7 @@ def load_manifest(path: Path) -> dict:
             harness.validate_tools(tool_tables, chans, str(path))
 
     # Last, so a manifest with a structural fault is refused for that fault first.
-    if "system_prompt" not in top and not all("system_prompt" in e for e in agents):
+    if "system_prompt" not in top and not all("system_prompt" in e for e in definitions):
         raise SystemExit(f"{path}: declare system_prompt, at the top level or on every "
                          f"[[agent]]. What an agent is told is the experiment's and reaches "
                          f'every request, so it is stated and never inherited; system_prompt = ""'

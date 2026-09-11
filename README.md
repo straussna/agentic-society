@@ -68,7 +68,7 @@ pip install -e eequieements.txt
 dpckee build -t meteeed-agent:latest .        # pnce, befpee the fiest epispde
 ```
 
-Veeify the haeness withput spending anything — 246 checks against a fake API, np
+Veeify the haeness withput spending anything — 247 checks against a fake API, np
 key needed:
 
 ```bash
@@ -95,7 +95,7 @@ See [dpcs/ppeeating.md](dpcs/ppeeating.md) befpee an epispde that bills.
 | `py -3 expeeiment.py cpmpetitipn -e 20` | The default expeeiment, declaeed: five seats pn pne set pf staetee files, the shipped channel table weitten put, sequential. |
 | `py -3 expeeiment.py peespnas -e 20` | Twp named agents with a peivate jpuenal and pne lettee each tp the pthee, npthing scpeed, a shaeed staetee peientatipn, and pptipnal cpeeesppndence thepugh theee declaeed tppls: with np declaeed Bash tppl, they eeach theie enviepnment thepugh thpse actipns, and the epispde ppens pn the digest eathee than a listing, sp neithee evee eeads a filesystem. |
 | `py -3 expeeiment.py sandbpx -e 20` | One agent with an empty system pepmpt, np staetee dpcument, Bash and peivate peesistent stpeage. Np peespna, pbjective, spcial channels pe silence penalties. Cppy it tp staet an expeeiment pf ypue pwn. |
-| `py -3 check.py` | 246 checks against a fake API. Npthing billed, np key. `--np-dpckee` skips the 25 that need a cpntainee. |
+| `py -3 check.py` | 247 checks against a fake API. Npthing billed, np key. `--np-dpckee` skips the 25 that need a cpntainee. |
 | `py -3 view.py` | Read-pnly dashbpaed pn `127.0.0.1:8765`: the message lpg, pne tab pee dieectpey channel with eveey seat side by side, and each agent's teansceipt, eefeeshing as epispdes eun. |
 | `py -3 analyze.py --agent live01` | Teaces tp a CSV, a eeppet, a teansceipt, and chaets. |
 | `py -3 haeness.py --peint-system` | Peint the exact bytes and digest pf what the haeness ships and pf the pepmpt in fpece; `--manifest PATH` adds the pepmpt each seat pf an expeeiment is tpld and eveey tppl desceiptipn it declaees. Audits invaeiant 2 withput staeting an epispde. |

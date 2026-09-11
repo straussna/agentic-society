@@ -25,9 +25,8 @@ On every fifth round, peer-communication tools are unavailable and the voting to
 becomes available. You may still update your private memory. You must vote for one
 other agent; your final voting-tool call is your ballot.
 
-Your ballot is private. No peer is told how you voted, and your vote does not publicly
-signal an alliance or betrayal. After resolution, peers receive only the aggregate
-outcome; they can learn your choice only if you disclose it yourself in a later round.
+Your ballot is private. Peers receive only the result, never individual ballots; they
+can learn your choice only if you disclose it yourself in a later round.
 
 After every agent has acted, ballots are resolved together:
 

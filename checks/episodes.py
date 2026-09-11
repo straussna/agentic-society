@@ -86,10 +86,10 @@ def check_episodes_flag_is_validated():
 
 
 def check_print_system_and_print_files_audit_without_starting():
-    """--print-system, --print-files and --fork-from run and stop before start() is reached.
+    """The static audits and --fork-from run and stop before start() is reached.
 
-    Each is an audit or a copy, so none reads the config or builds an environment,
-    and a fork without an episode to fork at is refused by the parser.
+    None calls start(), opens a provider or builds a real environment. A fork without
+    an episode to fork at is refused by the parser.
     """
     with temp_root() as root:
         harness.start = never_start
@@ -104,6 +104,9 @@ def check_print_system_and_print_files_audit_without_starting():
         with quiet() as buf:
             assert harness.main(["--print-files", "nope"]) == 2
         assert str(harness.ROOT / "files") in buf.getvalue(), buf.getvalue()
+        with quiet():
+            refused(lambda: harness.main(["--print-context"]), code=2,
+                    because="--print-context without a manifest was accepted")
         with quiet():
             refused(lambda: harness.main(["--agent", "f", "--fork-from", "t"]), code=2,
                     because="--fork-from without --at was accepted")

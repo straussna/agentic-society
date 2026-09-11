@@ -101,7 +101,8 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
 
 def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     """The shipped survivor arm carries its rules without exposing accounting."""
-    manifest = experiment.load_manifest(experiment.manifest_path("survivor"))
+    path = experiment.manifest_path("survivor")
+    manifest = experiment.load_manifest(path)
     brief = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
     vote = next(tool for tool in manifest["tools"] if tool["kind"] == "vote")
     surface = "\n".join([brief, manifest["overrides"]["system_prompt"],
@@ -116,7 +117,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     assert all(word not in surface.lower() for word in ("budget", "balance", "micro-dollar"))
     assert "communication is optional" in surface.lower()
     assert "did not cast a ballot is eliminated" in surface
-    assert "highest total is tied" in surface
+    assert "tie for the highest total" in surface
     assert "Your ballot is private" in surface
     assert "2-2 tie eliminates neither" in surface
 
@@ -141,9 +142,23 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         assert fifth.startswith("=== Round status ===\nround: 5 (cycle 1, 5/5)\n"
                                 "you: 1\nremaining agents: 1 (you), 2\n"
                                 "phase: vote only; communication unavailable\n"
-                                "ballot privacy: each ballot is private; peers receive only the aggregate outcome\n"
-                                "tie rule: if two or more agents share the highest vote total, nobody is eliminated by the vote\n"
-                                "required: call vote_to_eliminate"), fifth
+                                "required private ballot: call vote_to_eliminate; peers receive only the result, "
+                                "never individual ballots; a tie for the highest total eliminates nobody by vote"), fifth
+
+    runtime_names = harness.TUNABLES | {
+        "ROOT", "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL",
+    }
+    runtime = {name: getattr(harness, name) for name in runtime_names}
+    with quiet() as buf:
+        assert harness.print_context(None, path, "survivor02") == 0
+    context = buf.getvalue()
+    assert {name: getattr(harness, name) for name in runtime_names} == runtime, \
+        "the read-only audit leaves the caller's runtime in force"
+    assert "=== agent survivor02 ===" in context and "=== agent survivor01 ===" not in context
+    assert "--- episode 1 opening ---" in context and "--- episode 5 opening ---" in context
+    assert "Experimenter material: survivor" in context
+    assert '"name": "send_message"' in context and '"name": "vote_to_eliminate"' in context
+    assert '"enum": [\n            "1",\n            "3",\n            "4",\n            "5"' in context, context
 
 
 def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
@@ -410,6 +425,12 @@ def check_a_manifest_is_validated():
         for bad in ('colour = "red"\n' + two,                    # an unknown key
                     'schedule = "random"\n' + two,               # an unknown schedule
                     '[[agent]]\nid = "g01"\n[[agent]]\nid = "g01"\n',  # an agent twice
+                    '[[agent]]\nid = "g"\nseats = 0\n',          # no concrete agents
+                    '[[agent]]\nid = "g"\nseats = -1\n',         # nor a negative count
+                    '[[agent]]\nid = "g"\nseats = true\n',       # bool is not an integer here
+                    '[[agent]]\nid = "g"\nseats = "many"\n',     # nor is a string
+                    '[[agent]]\nid = "g"\nlabel = ""\nseats = 2\n',  # a group still needs a valid label prefix
+                    '[[agent]]\nid = "g"\nseats = 2\n[[agent]]\nid = "g01"\n',  # expanded ids are distinct too
                     'image = "x"\n' + two,                       # config.toml's, not an experiment's
                     'max_turns = 5\n' + two,                     # and so is this
                     '[[agent]]\nid = "1"\n[[agent]]\nid = "g02"\n',  # a bare number is a seat
@@ -431,6 +452,9 @@ def check_a_manifest_is_validated():
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
         expected_sha = hashlib.sha256(p.read_bytes()).hexdigest()
+        grouped = experiment.load_manifest(manifest_file(
+            root, 'system_prompt = ""\n[[agent]]\nid = "clone"\nlabel = "Peer"\nseats = 3\nbudget = 7\n',
+            name="grouped.toml"))
     assert m["schedule"] == "simultaneous"
     want = {"grace_episodes": 1, "system_prompt": ""}
     assert m["overrides"] == want, "everything else is an experiment default"
@@ -446,6 +470,10 @@ def check_a_manifest_is_validated():
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
     assert experiment.stamp_of(m) == {"schedule": "simultaneous", "stop_when_one_remains": False,
                                       "manifest_sha256": m["sha256"]}
+
+    assert [e["id"] for e in grouped["agents"]] == ["clone01", "clone02", "clone03"]
+    assert grouped["labels"] == {"1": "Peer01", "2": "Peer02", "3": "Peer03"}
+    assert all(e["budget"] == 7 and "seats" not in e for e in grouped["agents"])
 
 
 def check_a_manifest_gives_each_agent_its_own_starter_files():

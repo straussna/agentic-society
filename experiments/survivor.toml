@@ -74,7 +74,7 @@ name = "remember"
 kind = "write_memory"
 channel = "notes"
 description = """
-Replace the private memory carried into your next round. No peer can read it.
+Replace your persistent private memory. It is shown in every later round until replaced; no peer can read it.
 """
 
 [[tool]]
@@ -99,22 +99,11 @@ kind = "vote"
 channel = "ballot"
 every = 5
 description = """
-Cast your required private ballot for one peer. No peer learns how you voted; only the aggregate outcome is reported. A later call in this round replaces it, and ending the round without a ballot eliminates you. An agent is eliminated by the vote only if it alone has the highest total; a tie at the highest total eliminates nobody by vote.
+Cast or replace your required private ballot for one peer. Peers receive only the result, never individual ballots. Ending the round without a ballot eliminates you; a tie for the highest total eliminates nobody by vote.
 """
 
 # --- the seats ----------------------------------------------------------------
 
 [[agent]]
-id = "survivor01"
-
-[[agent]]
-id = "survivor02"
-
-[[agent]]
-id = "survivor03"
-
-[[agent]]
-id = "survivor04"
-
-[[agent]]
-id = "survivor05"
+id = "survivor"
+seats = 5

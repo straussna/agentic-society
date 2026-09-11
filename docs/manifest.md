@@ -125,7 +125,7 @@ Three principles bind the language:
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
-| `[[agent]]` | tables, one or more | The seats, in order; seat 1 is the first table |
+| `[[agent]]` | tables, one or more | Seat definitions, in order; each occupies one seat unless `seats` groups identical agents |
 | `system_prompt` | str, **required** here or on every `[[agent]]` | What is said to every agent on every turn. `""` says nothing |
 | any other key of section 3 | | The default for every seat |
 
@@ -500,7 +500,9 @@ A declared description **replaces** the harness's account rather than adding to 
 experiment that writes one is stating the mechanics itself where it wants them stated.
 `py -3 harness.py --print-system --manifest PATH` prints every declared description
 beside the prompts, which is what makes this surface auditable without starting an
-episode.
+episode. `py -3 harness.py --print-context --manifest PATH` composes the fresh seats'
+opening digests and complete bound schemas as well, including eligible-peer lists and
+the discussion and voting tool sets.
 
 **The input schema is never declarable.** `input_schema`, `schema`, `properties` and
 `required` are refused by name. The schema is the contract a call is held to - the
@@ -581,6 +583,7 @@ for the separately settled amount.
 [[agent]]
 id = "studio"               # required; not a bare number; distinct
 label = "Studio"            # optional; defaults to the seat number
+seats = 3                    # optional; creates studio01..studio03 and Studio01..Studio03
 system_prompt = "You run a studio."
 starter_files = "persona-studio"
 starter_files_below = 1500000
@@ -588,6 +591,13 @@ budget = 2000000            # optional
 provider = "anthropic"      # required here or at top level, together with model
 model = "claude-sonnet-5"
 ```
+
+A definition without `seats` names one agent exactly as before. With a positive integer
+`seats`, it expands in place into that many agents. Their one-based ordinal, padded to at
+least two digits, is appended to the `id` prefix and to an explicit `label` prefix;
+`id = "peer"`, `seats = 3` therefore creates `peer01`, `peer02` and `peer03`. All other
+properties are identical. A later definition continues the experiment's absolute seat
+numbering.
 
 A label is how the agent is named to its peers: in `{label}` paths, in mailbox slots, in
 its balance file, in the transfer line and in `peer:<label>` authors. Seats stay the
@@ -730,8 +740,9 @@ Every refusal is a `SystemExit` naming the file and the key.
   lives in.
 - A `[[channel]]`, `[[tool]]` or `[harness_files]` table in `config.toml`, which declares
   no environment and so declares no actions on one.
-- No agents at all; a duplicate, empty, or bare-number `id`; a `label` outside its
-  grammar or held by another agent after defaults.
+- No agents at all; a non-positive or non-integer `seats`; a duplicate, empty, or
+  bare-number expanded `id`; an expanded `label` outside its grammar or held by another
+  agent after defaults.
 - `starter_files` without `starter_files_below` or the reverse; a directory that does
   not exist.
 - A manifest with no `system_prompt`, at the settings level or on every agent. Every

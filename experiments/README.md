@@ -153,12 +153,14 @@ is refused.
 
 ## The seats
 
-`[[agent]]` tables, in order; seat 1 is the first table.
+`[[agent]]` tables, in order. A table occupies one seat unless it declares `seats`;
+grouped seats are expanded in place before the next table.
 
 | key | values | what it decides |
 |---|---|---|
 | `id` | not a bare number, distinct | The agent's identity on disk: its account, environment and traces live under it |
 | `label` | letters, digits, `.`, `_`, `-` | How it is named to its peers — in `{label}` paths, mailbox slots, its balance file, a transfer line, and `peer:<label>` authors. Defaults to the seat number |
+| `seats` | optional positive integer | Make this table a group of identical agents. The one-based ordinal, padded to at least two digits, is appended to `id` and to an explicit `label`: `id = "peer"`, `seats = 3` creates `peer01`–`peer03`. Omit it for one agent whose `id` is used exactly |
 | `system_prompt`, `budget`, `provider`, `model`, `starter_files`, `starter_files_below` | as above | This seat's own, where it differs from the experiment's |
 
 Those six are pinned in the agent's `account.json` when it is created. An agent that
@@ -182,5 +184,8 @@ Copy `examples/sandbox.toml` and edit it. Three things to know before the first 
 `py -3 harness.py --print-system --manifest <path>` prints every system prompt and
 declared tool description, without starting an episode. Dynamic context such as starter
 material, the opening digest, generated descriptions, schemas and eligible-peer lists is
-not rendered by this command; traces record the observation and the provenance needed to
-reproduce the tool surface.
+not rendered by this command. Use
+`py -3 harness.py --print-context --manifest <path>` to compose those surfaces for every
+fresh seat's first discussion and voting episodes, or add `--agent <id>` for one seat.
+It uses temporary state and starts no container or provider. Traces remain authoritative
+for the context of episodes that actually ran.

@@ -35,10 +35,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import contextvars
 import dataclasses
 import functools
 import hashlib
+import io
 import json
 import os
 import posixpath
@@ -1995,9 +1997,8 @@ def render_round_status(account: dict) -> str:
             lines.append(f"previous vote: {outcome}")
         if voting:
             lines += ["phase: vote only; communication unavailable",
-                      "ballot privacy: each ballot is private; peers receive only the aggregate outcome",
-                      "tie rule: if two or more agents share the highest vote total, nobody is eliminated by the vote",
-                      f"required: call {vote.name} before ending this episode"]
+                      f"required private ballot: call {vote.name}; peers receive only the result, "
+                      "never individual ballots; a tie for the highest total eliminates nobody by vote"]
         else:
             lines.append("phase: discussion")
     return "\n".join(lines) + "\n"
@@ -2048,7 +2049,9 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
         matches = [inst for inst in instances
                    if name == inst.path or name.startswith(inst.path + "/")]
         inst = max(matches, key=lambda item: len(item.path), default=None)
-        return bool(inst and (inst.channel.agent_view == "board" or
+        return bool(inst and ((inst.channel.shape == "directory" and
+                               inst.channel.writer == "self" and
+                               inst.channel.readers == "all") or
                               (inst.channel.shape == "mailbox" and
                                not inst.channel.schema)))
 
@@ -2958,10 +2961,11 @@ class Bound:
                     "result. A later call in the same episode replaces the earlier vote. If "
                     "the highest total is tied, nobody is eliminated by the vote.")
         if self.tool.kind == "write_slot":
-            return (f"Put text in one peer's slot of the {ch.name!r} channel for their next "
-                    f"episode. That peer alone reads it at {ch.inbox}/{self.own.label}; it "
-                    "then expires unless they retain it in private memory. A later call to "
-                    "the same peer in this episode replaces the earlier one.")
+            return (f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
+                    f"channel, for their next episode. That peer is the only one that can "
+                    f"read it, at {ch.inbox}/{self.own.label}; it then expires unless they "
+                    "retain it in private memory. A later call to the same peer in this "
+                    "episode replaces the earlier one.")
         if self.tool.kind == "send_message":
             return ("Send a private message to the other agent for their next episode. "
                     "It expires after that episode and is retained only if they record it "
@@ -4723,6 +4727,123 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
     return 1 if drifted else 0
 
 
+def print_context(config: Path | None, manifest: Path, selected: str | None = None) -> int:
+    """Render fresh agents' complete first discussion and voting request context.
+
+    Uses a temporary root, so starter files and synthetic accounts can be composed by
+    the same functions that build an episode without touching records, environments,
+    containers or providers. A shell experiment's opening listing depends on the
+    container and is therefore shown as its command beside the rendered digest.
+    """
+    names = TUNABLES | {"ROOT", "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL"}
+    saved = {name: globals()[name] for name in names}
+    try:
+        return _print_context(config, manifest, selected)
+    finally:
+        for name, value in saved.items():
+            globals()[name] = value
+
+
+def _print_context(config: Path | None, manifest: Path, selected: str | None = None) -> int:
+    """Compose and print context while the audit's temporary runtime is active."""
+    global ROOT
+
+    # Deferred for the same reason as print_system(): experiment imports this module.
+    import experiment
+
+    source_root = ROOT
+    m = experiment.load_manifest(manifest)
+    agents = m["agents"]
+    if selected is not None and selected not in {entry["id"] for entry in agents}:
+        raise SystemExit(f"{manifest}: no agent {selected!r}")
+
+    cfg = load_config(config)
+    if m["overrides"]:
+        apply_config(m["overrides"], str(manifest), TREATMENT, NOT_MANIFEST)
+    apply_channels(m["channels"], m["harness_files"], str(manifest),
+                   tuple(m["labels"].values()))
+    apply_tools(m["tools"], channels(), str(manifest))
+
+    def stage_source(name: str, audit_root: Path) -> None:
+        if not name or Path(name).is_absolute():
+            return
+        source = source_root / "files" / name
+        destination = audit_root / "files" / name
+        if source.is_dir():
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+        elif source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+    print(f"config: {cfg or 'built-in defaults'}")
+    print(f"manifest: {manifest}")
+    with tempfile.TemporaryDirectory(prefix="agent-context-") as temporary:
+        audit_root = Path(temporary)
+        sources = [c.source for c in channels() if c.writer == "experimenter"]
+        sources += [entry.get("starter_files", STARTER_FILES) for entry in agents]
+        for name in dict.fromkeys(s for s in sources if s):
+            stage_source(name, audit_root)
+
+        ROOT = audit_root
+        try:
+            seats = {str(i): entry["id"] for i, entry in enumerate(agents, 1)}
+            stamp = experiment.stamp_of(m)
+            with contextlib.redirect_stdout(io.StringIO()):
+                for entry in agents:
+                    account = load_account(entry["id"], **experiment.terms_of(entry))
+                    experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
+                    save_account(entry["id"], account)
+
+            vote = next((tool for tool in tools() if tool.kind == "vote"), None)
+            episodes = [1] if vote is None or vote.every == 1 else [1, vote.every]
+            for entry in agents:
+                if selected is not None and entry["id"] != selected:
+                    continue
+                account = account_on_disk(entry["id"])
+                instances = environment(entry["id"], account)
+                ensure_mirrors(instances)
+                store = private_store(channels())
+                if store is None and starter_terms(account)[0]:
+                    raise SystemExit(f"agent {entry['id']} has starter files and the channel "
+                                     "table has no private store to put them in")
+                if store is not None:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        plant_starter_files(entry["id"], mirror(entry["id"], store.name),
+                                            store.path, account, 1)
+
+                print(f"\n=== agent {entry['id']} ===")
+                system = system_of(account)
+                print(f"system ({len(system.encode('utf-8'))} bytes, sha256={system_sha256(system)}):")
+                print(system, end="" if system.endswith("\n") else "\n")
+                for episode in episodes:
+                    view = json.loads(json.dumps(account))
+                    view["episodes"] = [{"episode": n, "stop": "end_turn"}
+                                        for n in range(1, episode)]
+                    instances = environment(entry["id"], view)
+                    rendered, _ = render_harness_files(entry["id"], view)
+                    opening = rendered.get(HARNESS_FILES["digest"], "")
+                    reach = [view["peers"]["labels"][seat]
+                             for seat in seating_of(entry["id"], view).peers]
+                    bound = bind_tools(tools(), channels(), instances, reach, episode)
+                    voting = any(item.tool.kind == "vote" for item in bound)
+                    specs = tuple(([SHELL_SPEC] if SHELL_TOOL and not voting else [])
+                                  + [item.spec() for item in bound])
+
+                    print(f"\n--- episode {episode} opening ---")
+                    if SHELL_TOOL:
+                        print(f"opening command: {observation()}")
+                        print("rendered digest (the container listing precedes it):")
+                    else:
+                        print(f"opening input ({len(opening)} characters):")
+                    print(opening, end="" if opening.endswith("\n") else "\n")
+                    print("tool specs:")
+                    print(json.dumps([spec.as_dict() for spec in specs], indent=2,
+                                     ensure_ascii=False))
+        finally:
+            ROOT = source_root
+    return 0
+
+
 def show_tools(declared: list[dict] | None, validated: list[Tool] | None = None) -> None:
     """The declared tool table's digest and descriptions, which are prompt surface too.
 
@@ -4763,6 +4884,9 @@ def main(argv: list[str] | None = None) -> int:
                          "previous state is preserved under displaced/ and a fresh run starts")
     ap.add_argument("--print-system", action="store_true",
                     help="print what the harness ships and what is in force; starts no episode")
+    ap.add_argument("--print-context", action="store_true",
+                    help="render fresh agents' opening input and complete tool schemas; "
+                         "requires --manifest and starts no episode")
     ap.add_argument("--manifest", type=Path, metavar="PATH",
                     help="the experiment this agent is part of: its environment, its settings "
                          "and this agent's own terms. Required to run an episode")
@@ -4780,6 +4904,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.print_system:
         return print_system(a.config, a.manifest)
+    if a.print_context:
+        if a.manifest is None:
+            ap.error("--print-context requires --manifest")
+        return print_context(a.config, a.manifest, a.agent)
     # Audits invariant 9 without starting anything, so it runs on a drifted prompt
     # too; start() is what refuses before an episode costs money.
     if a.print_files:

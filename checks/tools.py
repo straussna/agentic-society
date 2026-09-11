@@ -601,7 +601,9 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
               "shape": "directory", "path": "ballot", "pushed": False}
     vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
     remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
-    with temp_root(channels=tables(ballot), tools=[BASH, remember, SEND, POST, vote]) as root:
+    send = {"name": "send", "kind": "send_message_to", "channel": "mail"}
+    post = {"name": "post", "kind": "post_public", "channel": "blackboard"}
+    with temp_root(channels=tables(ballot), tools=[BASH, remember, send, post, vote]) as root:
         seated(root, "t", o={})
         account = harness.load_account("t")
         instances = harness.environment("t", account)
