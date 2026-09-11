@@ -29,8 +29,9 @@ environments/<agent>/<channel>/       one mirror per channel the agent writes, n
                                       table), copied in and out each episode
 environments/<agent>/<channel>.modes  the file modes of each, which the host cannot store
 records/<agent>/account.json          ground truth: the terms an agent was created on (budget,
-                                      provider, model, starter files and their threshold), balance, series,
-                                      episodes, starter-file delivery, elimination, and the latest election
+                                      provider, model, starter files and their threshold), inherited-memory
+                                      source and digests where declared, balance, series, episodes,
+                                      starter-file delivery, elimination, and the latest election
 records/<agent>/traces/*.json         one per episode: transcript, usage, commands, and the
                                       contents of every file the episode could see, each
                                       labelled with who wrote it

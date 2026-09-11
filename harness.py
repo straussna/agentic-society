@@ -3928,6 +3928,8 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
         # How the experiment was driven, and the manifest that said so.
         "schedule": experiment.get("schedule", ""),
         "manifest_sha256": experiment.get("manifest_sha256", ""),
+        **({"memory_from": experiment["memory_from"]}
+           if experiment.get("memory_from") else {}),
     }
 
 
@@ -4783,6 +4785,14 @@ def _print_context(config: Path | None, manifest: Path, selected: str | None = N
         sources += [entry.get("starter_files", STARTER_FILES) for entry in agents]
         for name in dict.fromkeys(s for s in sources if s):
             stage_source(name, audit_root)
+        for entry in agents:
+            if inherited := entry.get("memory_from"):
+                source = source_root / "records" / inherited["agent"] / "traces" / \
+                    f"episode-{inherited['episode']:04d}.json"
+                destination = audit_root / "records" / inherited["agent"] / "traces" / source.name
+                if source.is_file():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
 
         ROOT = audit_root
         try:
@@ -4791,6 +4801,7 @@ def _print_context(config: Path | None, manifest: Path, selected: str | None = N
             with contextlib.redirect_stdout(io.StringIO()):
                 for entry in agents:
                     account = load_account(entry["id"], **experiment.terms_of(entry))
+                    experiment.inherit_memory(entry, account, runtime=sys.modules[__name__])
                     experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
                     save_account(entry["id"], account)
 
@@ -4953,7 +4964,8 @@ def main(argv: list[str] | None = None) -> int:
     catch_signals()
     if not a.resume:
         displace_agents([a.agent])
-    load_account(a.agent, **experiment.terms_of(entry))
+    account = load_account(a.agent, **experiment.terms_of(entry))
+    experiment.inherit_memory(entry, account, runtime=sys.modules[__name__])
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
     return run_episodes(a.agent, router, a.episodes, seat(a.agent))
 

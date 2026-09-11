@@ -219,6 +219,28 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .msg .ft { margin-top:3px; color:var(--faint); font-size:12px; }
 .sys { margin-top:10px; text-align:center; color:var(--faint); font-size:12.5px; }
 .sys b { font:400 12.5px/1.5 var(--mono); font-weight:400; }
+.public-chat { flex:1 1 auto; min-height:0; }
+.public-chat .thead { justify-content:space-between; }
+.public-chat .group-title, .ballot-view .group-title { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.public-chat .participants { display:flex; align-items:center; }
+.public-chat .participant { width:25px; height:25px; display:grid; place-items:center; margin-left:-5px;
+  border:1px solid var(--line2); border-radius:50%; background:var(--raise); font:600 10px/1 var(--mono); }
+.public-chat .participant:first-child { margin-left:0; }
+.public-chat .msg { max-width:min(920px,92%); }
+.public-chat .msg .bub { border-left:2px solid var(--speaker,var(--accent)); }
+.public-chat .msg .mh b { font-weight:600; }
+.ballot-view { flex:1 1 auto; min-height:0; }
+.ballot-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:14px; }
+.vote-tally { display:grid; gap:8px; margin-bottom:18px; }
+.vote-result { display:grid; grid-template-columns:minmax(80px,160px) minmax(120px,1fr) auto;
+  gap:12px; align-items:center; }
+.vote-result .target { font:500 13px/1.3 var(--mono); }
+.vote-result .count { color:var(--dim); font:500 13px/1 var(--mono); font-variant-numeric:tabular-nums; }
+.vote-bar { height:8px; overflow:hidden; border-radius:999px; background:var(--sunk); }
+.vote-bar i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),var(--live)); }
+.ballot-table { margin-top:8px; }
+.ballot-table td:first-child { width:1%; white-space:nowrap; color:var(--ink); }
+.ballot-table td:last-child { color:var(--dim); }
 
 /* --- directory channels, side by side --- */
 /* The listing is an index and stays a column a seat; what a file says is read
@@ -226,6 +248,12 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
    open. A file's contents are the reason the tab exists, so they get the room. */
 .treeview { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(360px,1fr) minmax(420px,1.15fr); gap:12px; }
 .treeindex, .inspector { min-height:0; overflow-y:auto; }
+.snapshotbar { display:flex; align-items:center; gap:10px; min-width:0; margin:0 0 10px;
+  padding:9px 11px; border:1px solid var(--line); border-radius:var(--r); background:var(--panel); }
+.snapshotbar .lbl { flex:0 0 auto; color:var(--faint); font-size:11.5px; font-weight:600;
+  letter-spacing:.13em; text-transform:uppercase; }
+.snapshots { display:flex; gap:6px; min-width:0; overflow-x:auto; padding:2px; scrollbar-width:thin; }
+.snapshots .chip { flex:0 0 auto; }
 .treeindex { border:1px solid var(--line); border-radius:var(--r); background:var(--panel); padding:12px; box-shadow:var(--glow); }
 /* Both grids wrap instead of running off the side: a listing too narrow to read is
    no better than one that is not on screen. */
@@ -391,7 +419,7 @@ const atEnd = (b) => b.scrollHeight > b.clientHeight && behind(b) < NEAR;
 
 // Every box the page can be scrolled in. A pane is drawn by replacing its
 // nodes, and the new nodes carry none of the scroll the old ones had.
-const BOXES = "#tx, #thread, .pairs, .treeindex, .inspector, .led";
+const BOXES = "#tx, #thread, .pairs, .treeindex, .inspector, .led, .snapshots";
 const boxesIn = (el) =>
   (el.matches(BOXES) ? [el] : []).concat([...el.querySelectorAll(BOXES)]);
 
@@ -421,7 +449,7 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             // and not re-fetched; the tip is whatever is ahead of it.
             msgs: [], tips: [], msgn: 0, standing: false, pair: null,
             mailQuery: "", mailTimer: null, showEmpty: held("show-empty-pairs", false),
-            tree: {}, inspect: {}, body: {},
+            tree: {}, treeRound: {}, inspect: {}, body: {},
             // One agent's transcript, and how many of its turns are drawn.
             agent: null, detail: null, episode: null, view: null,
             since: 0, source: null, drawn: 0, tail: true,
@@ -522,7 +550,7 @@ function pickExperiment(name) {
   if (name === S.experiment) return;
   S.experiment = name;
   S.msgs = []; S.tips = []; S.msgn = 0; S.pair = null;
-  S.tree = {}; S.inspect = {}; S.body = {}; S.mailQuery = "";
+  S.tree = {}; S.treeRound = {}; S.inspect = {}; S.body = {}; S.mailQuery = "";
   S.agent = null; S.detail = null; S.episode = null; S.view = null; S.drawn = 0;
   blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
   renderPicks();
@@ -905,21 +933,134 @@ function wireConversationFilters(el) {
 
 // --- directory channels -------------------------------------------------------
 
-function keyOf(kind, agent) { return kind + ":" + agent; }
+function keyOf(kind, agent) {
+  const round = S.treeRound[kind];
+  return kind + ":" + (round == null ? "live" : "r" + round) + ":" + agent;
+}
+
+function snapshotHtml(d) {
+  if (!d.history) return "";
+  const publicChat = d.history.kind === "round";
+  return `<div class="snapshotbar"><span class="lbl">${publicChat ? "Chats" : "Votes"}</span>
+    <div class="snapshots" role="group" aria-label="${publicChat ? "Blackboard round chats" : "Ballot vote-round snapshots"}">
+      <button class="chip ${d.history.selected == null ? "on live" : ""}" data-round="" aria-pressed="${d.history.selected == null}">Live</button>
+      ${d.history.rounds.map(r => `<button class="chip ${d.history.selected === r ? "on" : ""}"
+        data-round="${r}" aria-pressed="${d.history.selected === r}">${publicChat ? "" : "vote "}r${r}</button>`).join("")}
+    </div></div>`;
+}
+
+function wireSnapshots(el, kind) {
+  el.querySelectorAll(".snapshots [data-round]").forEach(button => button.onclick = () => {
+    const selected = button.dataset.round === "" ? null : Number(button.dataset.round);
+    if ((S.treeRound[kind] == null ? null : S.treeRound[kind]) === selected) return;
+    S.treeRound[kind] = selected;
+    S.inspect[kind] = null;
+    blank(el, `<div class="empty">loading ${selected == null ? "live chat" : `round ${selected}`}&hellip;</div>`);
+    renderTab();
+  });
+}
+
+function renderPublicChat(kind) {
+  const d = S.tree[kind], el = document.getElementById("body");
+  if (!d) return;
+  const selected = d.history.selected;
+  const messages = [];
+  for (const [i, c] of d.columns.entries()) {
+    for (const f of c.files) {
+      const got = S.body[keyOf(kind, c.agent) + ":" + f.path];
+      messages.push({c, f, got, color:inkOf(i)});
+    }
+  }
+  const sig = JSON.stringify([kind, d.history, messages.map(m =>
+    [m.c.agent, m.c.committed, m.f.path, m.f.stamp, m.got && m.got.stamp])]);
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  const roundName = selected == null ? "Live blackboard" : `Round ${selected} blackboard`;
+  const participants = messages.map(m => `<span class="participant" style="color:${m.color}"
+    title="${esc(m.c.agent)}">${esc(m.c.seat == null ? m.c.agent.slice(0,2) : m.c.seat)}</span>`).join("");
+  const posts = messages.map(({c, f, got, color}) => {
+    const body = got === undefined ? `<pre class="note">Reading&hellip;</pre>`
+      : got == null ? `<pre class="note">This post is no longer available.</pre>`
+      : got.text == null ? `<pre class="note">Binary post · ${num(got.size)} B</pre>`
+      : got.text ? `<pre>${esc(got.text)}</pre>` : `<pre class="note">empty post</pre>`;
+    return `<article class="msg" style="--speaker:${color}"><div class="mh">${seatTag(c.seat)}
+      <b>${esc(c.agent)}</b><span>${selected == null ? `as of ep${c.committed}` : `ep${c.committed}`}</span>
+      ${c.files.length > 1 ? `<span>${esc(f.path)}</span>` : ""}</div><div class="bub">${body}</div></article>`;
+  }).join("");
+  const missing = d.columns.filter(c => !c.files.length).map(c => nameOf(c.seat)).filter(Boolean);
+  const status = messages.length ? `${messages.length} post${messages.length === 1 ? "" : "s"} · ${
+    new Set(messages.map(m => m.c.agent)).size} participant${new Set(messages.map(m => m.c.agent)).size === 1 ? "" : "s"}` : "no posts";
+  redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread public-chat" aria-label="${esc(roundName)}">
+    <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span><span class="note">${status}</span></div>
+      <div class="participants" aria-label="Participants who posted">${participants}</div></div>
+    <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted in this chat.</div>`}
+      ${missing.length && selected != null ? `<div class="sys">No post from ${missing.map(esc).join(", ")}</div>` : ""}</div>
+    </section></div>`);
+  wireSnapshots(el, kind);
+}
+
+function renderBallotAggregate(kind) {
+  const d = S.tree[kind], el = document.getElementById("body");
+  if (!d) return;
+  const selected = d.history.selected;
+  const ballots = [], missing = [];
+  for (const [i, c] of d.columns.entries()) {
+    if (!c.files.length) { missing.push(c); continue; }
+    for (const f of c.files) {
+      const got = S.body[keyOf(kind, c.agent) + ":" + f.path];
+      const target = got && got.text != null ? got.text.trim() : null;
+      ballots.push({c, f, got, target, color:inkOf(i)});
+    }
+  }
+  const sig = JSON.stringify([kind, d.history, ballots.map(b =>
+    [b.c.agent, b.c.committed, b.f.stamp, b.got && b.got.stamp, b.target])]);
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  const tally = new Map();
+  for (const ballot of ballots) if (ballot.target) {
+    tally.set(ballot.target, (tally.get(ballot.target) || 0) + 1);
+  }
+  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1]
+    || a[0].localeCompare(b[0], undefined, {numeric:true}));
+  const high = Math.max(1, ...ranked.map(([, count]) => count));
+  const results = ranked.map(([target, count]) => `<div class="vote-result">
+    <span class="target">${esc(nameOf(target) || target)}</span><span class="vote-bar"><i style="width:${count / high * 100}%"></i></span>
+    <span class="count">${count} vote${count === 1 ? "" : "s"}</span></div>`).join("");
+  const rows = ballots.map(({c, got, target}) => `<tr><td>${seatTag(c.seat)} · ${esc(c.agent)}</td>
+    <td>${got === undefined ? "reading…" : got == null ? "unavailable" : got.text == null ? "binary ballot"
+      : target ? `→ ${esc(nameOf(target) || target)}` : "empty ballot"}</td></tr>`).join("");
+  const roundName = selected == null ? "Live ballot" : `Round ${selected} ballot`;
+  const summary = `${ballots.length} submitted · ${missing.length} seat${missing.length === 1 ? "" : "s"} did not act in this round`;
+  redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread ballot-view" aria-label="${esc(roundName)} aggregate">
+    <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span>
+      <span class="note">${summary}</span></div></div><div class="ballot-body">
+      <div class="vote-tally">${results || `<div class="empty">No votes to tally.</div>`}</div>
+      ${rows ? `<div class="round">submitted ballots<i></i></div><table class="ballot-table"><tbody>${rows}</tbody></table>` : ""}
+    </div></section></div>`);
+  wireSnapshots(el, kind);
+}
 
 function renderTree(kind) {
   const d = S.tree[kind], el = document.getElementById("body");
   if (!d) return;
+  if (d.history && d.history.kind === "round") return renderPublicChat(kind);
+  if (d.history && d.history.kind === "vote") return renderBallotAggregate(kind);
   const chosen = S.inspect[kind] || null;
-  const sig = JSON.stringify([kind, d.columns.map(c =>
+  const sig = JSON.stringify([kind, d.history, d.columns.map(c =>
     [c.agent, c.committed, c.live, c.files.map(f => [f.path, f.stamp, f.mode])]),
     chosen, Object.entries(S.body).map(([k, v]) => [k, v && v.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   const what = d.what || "";
-  const stamp = (c) => d.static ? "the manifest's source" : `${c.seat == null ? "" : esc(c.agent) + " · "}as of ep${c.committed}${
-    c.live == null ? "" : running(c)
-      ? " · an episode is running" : " · an episode never finished"}`;
+  const historical = d.history && d.history.selected != null;
+  const stamp = (c) => d.static ? "the manifest's source"
+    : historical ? (c.committed == null ? `did not act in round ${d.history.selected}`
+      : c.saved ? `end of round ${d.history.selected} · ep${c.committed}`
+      : `ep${c.committed} · state was not saved`)
+    : `${c.seat == null ? "" : esc(c.agent) + " · "}as of ep${c.committed}${
+      c.live == null ? "" : running(c)
+        ? " · an episode is running" : " · an episode never finished"}`;
+  const snapshots = snapshotHtml(d);
   const index = d.columns.map(c => {
     const rows = c.files.map(f => {
       const on = chosen && chosen.agent === c.agent && chosen.path === f.path;
@@ -945,8 +1086,9 @@ function renderTree(kind) {
         : got == null ? `<div class="note">This file is no longer available.</div>`
         : got.text == null ? `<div class="note">Binary file · ${num(got.size)} B</div>`
         : `<pre class="file-content">${esc(got.text)}</pre>`}</div></aside>`;
-  redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">${what}${d.static ? "" : ` ·
-      mirrored back when an episode ends, so each column is as of that agent's own last
+  redraw(el, `<div class="fill">${snapshots}<div class="note" style="margin:2px 0 8px">${what}${d.static ? ""
+      : historical ? ` · immutable state captured from each seat's committed episode in round ${d.history.selected}`
+      : ` · mirrored back when an episode ends, so each column is as of that agent's own last
       committed one`}</div>
     <div class="treeview"><div class="treeindex"><div class="cols">${index}</div></div>${inspector}</div></div>`);
   el.querySelectorAll(".file-row").forEach(row => row.onclick = () => {
@@ -957,6 +1099,7 @@ function renderTree(kind) {
   });
   const close = document.getElementById("close-inspector");
   if (close) close.onclick = () => closeInspector(kind);
+  wireSnapshots(el, kind);
 }
 
 function closeInspector(kind) {
@@ -979,9 +1122,26 @@ function pullFiles(kind) {
   if (!f) { S.body[key] = null; return Promise.resolve(); }
   const cached = S.body[key];
   if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) return Promise.resolve();
-  const q = `agent=${encodeURIComponent(chosen.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(chosen.path)}`;
+  let q = `agent=${encodeURIComponent(chosen.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(chosen.path)}`;
+  if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
   return get(`/api/experiment/${S.experiment}/file?${q}`)
     .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; });
+}
+
+function pullChannelFiles(kind) {
+  const d = S.tree[kind];
+  if (!d) return Promise.resolve();
+  const pulls = [];
+  for (const c of d.columns) for (const f of c.files) {
+    const key = keyOf(kind, c.agent) + ":" + f.path;
+    const cached = S.body[key];
+    if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) continue;
+    let q = `agent=${encodeURIComponent(c.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(f.path)}`;
+    if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
+    pulls.push(get(`/api/experiment/${S.experiment}/file?${q}`)
+      .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; }));
+  }
+  return Promise.all(pulls);
 }
 
 // --- one agent's transcript ----------------------------------------------
@@ -1218,9 +1378,17 @@ function renderTab() {
     }).catch(() => {});
   }
   if (S.tab !== "agent") {
-    return get(`/api/experiment/${S.experiment}/tree/${encodeURIComponent(S.tab)}`).then(d => {
+    const selected = S.treeRound[S.tab];
+    const query = selected == null ? "" : `?round=${encodeURIComponent(selected)}`;
+    return get(`/api/experiment/${S.experiment}/tree/${encodeURIComponent(S.tab)}${query}`).then(d => {
+      if (!Object.prototype.hasOwnProperty.call(S.treeRound, S.tab)
+          && d.history && d.history.rounds.length) {
+        S.treeRound[S.tab] = d.history.rounds[d.history.rounds.length - 1];
+        return renderTab();
+      }
       S.tree[S.tab] = d;
-      return pullFiles(S.tab).then(() => renderTree(S.tab));
+      const pull = d.history ? pullChannelFiles : pullFiles;
+      return pull(S.tab).then(() => renderTree(S.tab));
     }).catch(() => {});
   }
   const at = seats();

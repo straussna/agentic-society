@@ -337,6 +337,58 @@ def check_the_view_shows_every_seat_side_by_side():
         ["secret.md", "secret.md"], "each store holds its own, and neither holds the other's"
 
 
+def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
+    """Committed traces retain public posts each round and ballots only on vote rounds."""
+    def files(seat, rnd):
+        return [
+            {"path": f"{seat}/post.md", "channel": "blackboard", "role": "own",
+             "size": 8, "starter": False, "text": f"post {seat}-{rnd}\n"},
+            {"path": "state/vote", "channel": "notes", "role": "own",
+             "size": 2, "starter": False, "text": f"{3 - int(seat)}\n"},
+        ]
+
+    acted = [
+        ("g01", "00:01", {"files": files("1", 1)}),
+        ("g02", "00:02", {"files": files("2", 1)}),
+        ("g01", "00:03", {"files": files("1", 2)}),
+        ("g02", "00:04", {"files": files("2", 2)}),
+    ]
+    with rooted(HostBox) as root:
+        fake_experiment(root, acted, agents=("g01", "g02"))
+        tools = [
+            {"name": "post", "kind": "post_public", "channel": "blackboard"},
+            {"name": "vote", "kind": "vote", "channel": "notes", "every": 2},
+        ]
+        for agent in ("g01", "g02"):
+            for path in harness.trace_paths(agent):
+                trace = json.loads(path.read_text(encoding="utf-8"))
+                trace["provenance"]["tools"] = tools
+                path.write_text(json.dumps(trace), encoding="utf-8")
+        c = view.experiment_named("g")
+        live = view.tree_view(c, "blackboard")
+        board = view.tree_view(c, "blackboard", 1)
+        ballot = view.tree_view(c, "notes", 2)
+        opened = view.file_view(c, "g02", "blackboard", "post.md", 1)
+        not_a_vote_round = view.tree_view(c, "notes", 1)
+        with serving() as base:
+            served = got(base, "/api/experiment/g/tree/blackboard?round=1")[1]
+            served_file = got(base, "/api/experiment/g/file?agent=g02&channel=blackboard"
+                                    "&path=post.md&round=1")[1]
+
+    assert live["history"] == {"kind": "round", "every": 1,
+                               "rounds": [1, 2], "selected": None}
+    assert board["history"]["selected"] == 1
+    assert [[f["path"] for f in col["files"]] for col in board["columns"]] == \
+        [["post.md"], ["post.md"]]
+    assert all("text" not in f for col in board["columns"] for f in col["files"]), \
+        "the snapshot index stays lazy"
+    assert opened["text"] == "post 2-1\n"
+    assert served["history"]["selected"] == 1 and served_file["text"] == opened["text"]
+    assert ballot["history"] == {"kind": "vote", "every": 2,
+                                 "rounds": [2], "selected": 2}
+    assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
+
+
 def check_the_view_shows_every_balance_from_its_own_account():
     """A seat's n is that agent's ground truth, read from no file in any environment.
 
@@ -817,6 +869,19 @@ def check_the_page_has_one_dismissible_file_inspector():
     assert 'e.key !== "Escape"' in page and "closeInspector(S.tab)" in page
     assert "S.inspect[kind]" in page
     assert "S.open" not in page
+
+
+def check_the_page_exposes_ephemeral_round_snapshots():
+    """Blackboards and ballots expose live and committed round choices as buttons."""
+    page = view.PAGE
+    assert 'class="snapshotbar"' in page and 'class="snapshots"' in page
+    assert '"Blackboard round chats" : "Ballot vote-round snapshots"' in page
+    assert 'aria-pressed="${d.history.selected == null}"' in page
+    assert "S.treeRound = {}" in page, "changing experiments clears the chosen snapshot"
+    assert "&round=${encodeURIComponent(S.treeRound[kind])}" in page
+    assert "renderPublicChat(kind)" in page and "renderBallotAggregate(kind)" in page
+    assert 'class="thread public-chat"' in page and 'class="thread ballot-view"' in page
+    assert 'class="vote-tally"' in page and 'class="ballot-table"' in page
 
 
 def check_the_page_makes_long_transcript_content_explicitly_expandable():

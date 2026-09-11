@@ -1074,13 +1074,88 @@ def given_in(ch: harness.Channel, account: dict) -> set[str]:
     return harness.starter_paths(account) if ch.readers == "self" else set()
 
 
-def tree_view(exp: dict, kind: str) -> dict:
+def ephemeral_tool(exp: dict, kind: str) -> dict | None:
+    """The tool whose channel is cleared around each episode, if this is one."""
+    return next((tool for tool in exp.get("tools") or []
+                 if tool.get("channel") == kind
+                 and tool.get("kind") in ("post_public", "vote")), None)
+
+
+def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
+    """Rounds whose last eligible episode has committed."""
+    rounds = sorted({row["round"] for row in rows})
+    if not rounds:
+        return []
+    latest = rounds[-1]
+    if live_rows(exp, rows):
+        return rounds[:-1]
+    active = {agent for _, agent in places_of(exp) if harness.why_out(account_of(agent)) is None}
+    acted = {row["agent"] for row in rows if row["round"] == latest}
+    return rounds if not active or active <= acted else rounds[:-1]
+
+
+def channel_history(exp: dict, kind: str, rows: list[dict] | None = None) -> dict | None:
+    """The committed round snapshots an episode-scoped channel can show."""
+    tool = ephemeral_tool(exp, kind)
+    if tool is None:
+        return None
+    every = int(tool.get("every") or 1) if tool.get("kind") == "vote" else 1
+    available = [rnd for rnd in completed_rounds(exp, rows or experiment_episodes(exp))
+                 if rnd % every == 0]
+    return {"kind": "vote" if tool.get("kind") == "vote" else "round",
+            "every": every, "rounds": available}
+
+
+def historical_listing(row: dict | None, ch: harness.Channel, kind: str,
+                       label: str) -> list[dict]:
+    """The files this seat owned when its episode in a round committed."""
+    if row is None or not row["trace"].get("state_saved"):
+        return []
+    prefix = ch.path_for(label).strip("/")
+    out = []
+    for rec in row["trace"].get("files") or []:
+        if rec.get("channel") != kind or rec.get("role") != "own":
+            continue
+        path = str(rec.get("path") or "").strip("/")
+        if prefix:
+            if not path.startswith(prefix + "/"):
+                continue
+            path = path[len(prefix) + 1:]
+        if not path:
+            continue
+        out.append({"path": path, "channel": kind, "size": rec.get("size") or 0,
+                    "mode": None, "starter": bool(rec.get("starter")),
+                    "stamp": ["round", row["round"], row["episode"], rec.get("size") or 0]})
+    return sorted(out, key=lambda rec: rec["path"])
+
+
+def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
     """One tree of every seat's environment, a column each.
 
     save_state runs when an episode ends, so each column is current as of that
     agent's last committed episode and two columns can be stamped differently.
     """
     ch = trees(exp)[kind]
+    rows = experiment_episodes(exp)
+    history = channel_history(exp, kind, rows)
+    if round_at is not None:
+        if history is None or round_at not in history["rounds"]:
+            return None
+        columns = []
+        for seat, agent in places_of(exp):
+            account = account_of(agent)
+            row = next((item for item in rows
+                        if item["agent"] == agent and item["round"] == round_at), None)
+            label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
+            columns.append({
+                "seat": seat, "agent": agent, "label": account.get("label") or seat,
+                "committed": row["episode"] if row else None, "live": None, "live_age": None,
+                "saved": bool(row and row["trace"].get("state_saved")),
+                "files": historical_listing(row, ch, kind, label),
+            })
+        return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
+                "static": False, "history": {**history, "selected": round_at},
+                "columns": columns}
     if ch.writer == "experimenter":
         files = listing(harness.files_dir(ch.source), kind, set())
         return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
@@ -1099,10 +1174,12 @@ def tree_view(exp: dict, kind: str) -> dict:
             "files": listing(harness.mirror(agent, kind), kind, given_in(ch, account)),
         })
     return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
-            "static": False, "columns": columns}
+            "static": False, "history": ({**history, "selected": None} if history else None),
+            "columns": columns}
 
 
-def file_view(exp: dict, agent: str, kind: str, inner: str) -> dict | None:
+def file_view(exp: dict, agent: str, kind: str, inner: str,
+              round_at: int | None = None) -> dict | None:
     """One file of one tree of one member of `exp`, found in a listing and never
     joined onto a root.
 
@@ -1114,6 +1191,29 @@ def file_view(exp: dict, agent: str, kind: str, inner: str) -> dict | None:
     if (ch is None or (source and agent != "experimenter")
             or (not source and agent not in exp["members"])):
         return None
+    if round_at is not None:
+        rows = experiment_episodes(exp)
+        history = channel_history(exp, kind, rows)
+        if history is None or round_at not in history["rounds"]:
+            return None
+        row = next((item for item in rows
+                    if item["agent"] == agent and item["round"] == round_at), None)
+        seat = next((place for place, member in places_of(exp) if member == agent), None)
+        account = account_of(agent)
+        label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
+        rec = next((item for item in historical_listing(row, ch, kind, label)
+                    if item["path"] == inner), None)
+        if rec is None or row is None:
+            return None
+        prefix = ch.path_for(label).strip("/")
+        full = f"{prefix}/{inner}" if prefix else inner
+        source_rec = next((item for item in row["trace"].get("files") or []
+                           if item.get("channel") == kind and item.get("role") == "own"
+                           and str(item.get("path") or "").strip("/") == full), None)
+        if source_rec is None:
+            return None
+        return {**rec, "agent": agent, "kind": kind,
+                "size": source_rec.get("size") or 0, "text": source_rec.get("text")}
     root = harness.files_dir(ch.source) if source else harness.mirror(agent, kind)
     given = set() if source else given_in(ch, account_of(agent))
     rec = next((f for f in listing(root, kind, given) if f["path"] == inner), None)
@@ -1341,12 +1441,22 @@ class View(http.server.BaseHTTPRequestHandler):
                 since = query.get("since", ["0"])[0]
                 return self.send_json(messages(exp, int(since) if since.isdigit() else 0))
             if len(rest) == 2 and rest[0] == "tree" and rest[1] in trees(exp):
-                return self.send_json(tree_view(exp, rest[1]))
+                selected = query.get("round", [""])[0]
+                if selected and not selected.isdigit():
+                    return self.send_json({"error": f"invalid round {selected}"}, status=404)
+                got = tree_view(exp, rest[1], int(selected) if selected else None)
+                if got is None:
+                    return self.send_json({"error": f"no round {selected} snapshot for {rest[1]}"},
+                                          status=404)
+                return self.send_json(got)
             if rest == ["file"]:
                 agent = query.get("agent", [""])[0]
                 kind = query.get("channel", [""])[0]
                 inner = query.get("path", [""])[0]
-                got = file_view(exp, agent, kind, inner)
+                selected = query.get("round", [""])[0]
+                if selected and not selected.isdigit():
+                    return self.send_json({"error": f"invalid round {selected}"}, status=404)
+                got = file_view(exp, agent, kind, inner, int(selected) if selected else None)
                 if got is None:
                     return self.send_json({"error": f"no {kind} file {inner} in {agent}"}, status=404)
                 return self.send_json(got)

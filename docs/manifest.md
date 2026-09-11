@@ -584,6 +584,7 @@ for the separately settled amount.
 id = "studio"               # required; not a bare number; distinct
 label = "Studio"            # optional; defaults to the seat number
 seats = 3                    # optional; creates studio01..studio03 and Studio01..Studio03
+memory_from = { agent = "prior-studio", episode = 12 }
 system_prompt = "You run a studio."
 starter_files = "persona-studio"
 starter_files_below = 1500000
@@ -604,9 +605,24 @@ its balance file, in the transfer line and in `peer:<label>` authors. Seats stay
 order. A label is letters, digits, `.`, `_` and `-`, distinct from every other after
 defaults, and a path too, so one that lands on a channel's path is refused.
 
+`memory_from` gives a fresh agent only the private memories held at the end of one
+recorded episode. It names an agent outside this experiment and a positive episode
+number. The source and target must declare the same `write_memory` tool names. Each
+source `memory.md` is copied byte for byte into the corresponding target tool's channel
+before episode 1. No balance, episode count, elimination, peer roster, message, public
+post, ballot, trace or provider session is inherited. The source trace must have saved
+its state and must contain every copied memory as complete UTF-8 text. The account and
+each later trace record the source episode and the copied files' digests.
+
+This is a creation term rather than a fork: it preserves only behaviorally visible
+private memory while every other part of the agent starts fresh. It is refused if the
+source is another seat in the new experiment, because starting fresh would displace
+that source before it could be read.
+
 The six pinned settings are fixed in the agent's account when it is created. An agent
 that exists already must have been created on the same six, or the manifest is refused.
-Everything else about an agent comes from the experiment's settings.
+`memory_from` is likewise fixed once the agent has taken an episode. Everything else
+about an agent comes from the experiment's settings.
 
 ## 7. Schedule
 
@@ -743,6 +759,9 @@ Every refusal is a `SystemExit` naming the file and the key.
 - No agents at all; a non-positive or non-integer `seats`; a duplicate, empty, or
   bare-number expanded `id`; an expanded `label` outside its grammar or held by another
   agent after defaults.
+- A `memory_from` that is not `{ agent = <string>, episode = <positive integer> }`,
+  names a seat in the new experiment, names a missing or incomplete trace, or cannot
+  match the source and target `write_memory` tools exactly.
 - `starter_files` without `starter_files_below` or the reverse; a directory that does
   not exist.
 - A manifest with no `system_prompt`, at the settings level or on every agent. Every

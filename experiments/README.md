@@ -17,7 +17,8 @@ the keys nothing shipped uses.
 | manifest | what it is | seats | schedule |
 |---|---|---|---|
 | [`competition.toml`](competition.toml) | Five equally funded seats competing to remain funded after their peers are out. The complete brief states the sole-survivor win condition and no-winner fixed-horizon result; round-labelled ledgers and settlement receipts expose the accounting; tool descriptions define billed messages, posts and sender-funded transfers. | `comp01`–`comp05` | simultaneous |
-| [`survivor.toml`](survivor.toml) | Five seats communicate optionally for four rounds, then enter a vote-only fifth round. Abstainers and a unique highest vote-getter are eliminated, while a tie at the top eliminates nobody by vote. Balances are not exposed to agents. | `survivor01`–`survivor05` | simultaneous |
+| [`survivor.toml`](survivor.toml) | Ten seats communicate optionally for four rounds, then enter a vote-only fifth round. Abstainers and a unique highest vote-getter are eliminated, while a tie at the top eliminates nobody by vote. Balances are not exposed to agents. | `survivor01`–`survivor10` | simultaneous |
+| [`survivor-veterans.toml`](survivor-veterans.toml) | Two fresh Haiku seats inherit only the exact private memories written by survivor 7 at episode 40 and survivor 8 at episode 50. Eight newcomers start without memory, and all ten agents retain the original experiment's label set. | `survivor-veteran07`, `survivor-veteran08`, and newcomer labels `1`–`6`, `9`, `10` | simultaneous |
 | [`examples/sandbox.toml`](examples/sandbox.toml) | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. | `sandbox01` | sequential |
 | [`examples/personas.toml`](examples/personas.toml) | Two named agents with a private memory and one letter each to the other, reaching all of it through declared actions rather than a shell. Nothing is scored; what is measured is whether a working relationship survives episodes neither remembers. | `alice`, `bob` | sequential |
 
@@ -71,8 +72,8 @@ starter source differ from an existing agent's recorded terms.
 
 ## Settings
 
-Top-level keys. Each is the default for every seat, and an `[[agent]]` may override the
-last five for itself. The machine and the  PI — `image`, `max_tokens`, `max_turns`,
+Top-level keys. Each is the default for every seat, and an `[[agent]]` may override its
+pinned settings. The machine and the API — `image`, `max_tokens`, `max_turns`,
 `command_timeout` and `tool_result_limit` — are `config.toml`'s and are refused
 here.
 
@@ -162,10 +163,17 @@ grouped seats are expanded in place before the next table.
 | `label` | letters, digits, `.`, `_`, `-` | How it is named to its peers — in `{label}` paths, mailbox slots, its balance file, a transfer line, and `peer:<label>` authors. Defaults to the seat number |
 | `seats` | optional positive integer | Make this table a group of identical agents. The one-based ordinal, padded to at least two digits, is appended to `id` and to an explicit `label`: `id = "peer"`, `seats = 3` creates `peer01`–`peer03`. Omit it for one agent whose `id` is used exactly |
 | `system_prompt`, `budget`, `provider`, `model`, `starter_files`, `starter_files_below` | as above | This seat's own, where it differs from the experiment's |
+| `memory_from` | `{ agent = <id>, episode = <positive integer> }` | For a fresh seat, copy only the complete private memories produced by matching `write_memory` tools at the end of that recorded episode. The new account, model, budget, peers and episode history remain fresh |
 
 Those six are pinned in the agent's `account.json` when it is created. An agent that
 already exists must be seated on the same six, or the manifest is refused: episodes
 either side of a changed term are not one experiment.
+
+`memory_from` is also fixed once the new agent has acted. Its source must be outside the
+new experiment and must expose the same named `write_memory` tools. The source trace is
+the immutable boundary: balances, eliminations, messages, posts, ballots, traces and
+provider sessions do not cross it. The new account records the source episode and a
+digest of every copied memory.
 
 ---
 

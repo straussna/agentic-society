@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import sys
 import threading
@@ -38,17 +39,20 @@ ATTEMPTS = 2
 # episodes run at once, and the results settle in seat order, so nobody reads
 # this round's writes and a transfer made in one round is seen at the next.
 SCHEDULES = ("sequential", "simultaneous")
-EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "provider", "model", "agent", "channel",
-                   "harness_files", "tool"}
+EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "stop_when_two_remain_after_tie",
+                   "provider", "model", "agent", "channel", "harness_files", "tool"}
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
 AGENT_KEYS = {"id", "label", "seats", "starter_files", "starter_files_below", "budget",
-              "provider", "model", "system_prompt"}
+              "provider", "model", "system_prompt", "memory_from"}
 
 AGENT_TYPES = (("id", str), ("label", str), ("seats", int), ("starter_files", str),
                ("starter_files_below", int), ("budget", int), ("provider", str), ("model", str),
-               ("system_prompt", str))
+               ("system_prompt", str), ("memory_from", dict))
+
+MEMORY_FROM_KEYS = {"agent", "episode"}
+MEMORY_FROM_TYPES = (("agent", str), ("episode", int))
 
 # What an agent may be called to its peers: one path segment, since it lands in
 # paths and file names. The default is the seat number.
@@ -75,6 +79,7 @@ def order(agents: list[str], _rnd: int) -> list[str]:
 def shorthand(ids: list[str], schedule: str = "sequential") -> dict:
     """A bare manifest for these agents, which is what a round stamps when driven directly."""
     return {"schedule": schedule, "stop_when_one_remains": False,
+            "stop_when_two_remain_after_tie": False,
             "overrides": {}, "agents": [{"id": i, "provider": "anthropic",
                                            "model": "claude-sonnet-5"} for i in ids],
             "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
@@ -115,6 +120,16 @@ def check_agent(path: Path, entry: dict) -> None:
         refuse(f"{agent}: label {label!r} must be letters, digits, '.', '_' or '-'")
     if entry.get("seats", 1) < 1:
         refuse(f"{agent}: seats must be positive, got {entry['seats']}")
+    if "memory_from" in entry:
+        memory_from = entry["memory_from"]
+        check_keys(refuse, f"{agent}: memory_from: ", memory_from,
+                   MEMORY_FROM_KEYS, MEMORY_FROM_TYPES)
+        source = memory_from.get("agent")
+        episode = memory_from.get("episode")
+        if not source:
+            refuse(f"{agent}: memory_from: agent must name an existing agent")
+        if not isinstance(episode, int) or isinstance(episode, bool) or episode < 1:
+            refuse(f"{agent}: memory_from: episode must be a positive integer, got {episode!r}")
     harness.validate_terms(str(path), who=agent, provider=entry.get("provider"),
                            model=entry.get("model"), budget=entry.get("budget"),
                            starter_files=entry.get("starter_files"),
@@ -189,6 +204,10 @@ def load_manifest(path: Path) -> dict:
     stop_when_one_remains = top.get("stop_when_one_remains", False)
     if type(stop_when_one_remains) is not bool:
         raise SystemExit(f"{path}: stop_when_one_remains must be bool, got {type(stop_when_one_remains).__name__}")
+    stop_when_two_remain_after_tie = top.get("stop_when_two_remain_after_tie", False)
+    if type(stop_when_two_remain_after_tie) is not bool:
+        raise SystemExit(f"{path}: stop_when_two_remain_after_tie must be bool, got "
+                         f"{type(stop_when_two_remain_after_tie).__name__}")
     definitions = top.get("agent")
     if not isinstance(definitions, list) or not all(isinstance(r, dict) for r in definitions):
         raise SystemExit(f"{path}: agents are [[agent]] tables, each with an id")
@@ -209,7 +228,12 @@ def load_manifest(path: Path) -> dict:
                              "from top-level defaults or the [[agent]] table")
         check_agent(path, entry)
     agents = expand_agents(definitions)
-    check_ids([entry["id"] for entry in agents], str(path))
+    ids = [entry["id"] for entry in agents]
+    check_ids(ids, str(path))
+    if inherited_inside := [entry["id"] for entry in agents
+                            if (entry.get("memory_from") or {}).get("agent") in ids]:
+        raise SystemExit(f"{path}: memory_from must name an agent outside this experiment; "
+                         f"starting fresh would displace the source for {inherited_inside[0]!r}")
 
     labels: dict[str, str] = {}
     for seat, entry in enumerate(agents, 1):
@@ -243,6 +267,7 @@ def load_manifest(path: Path) -> dict:
     overrides = {k: v for k, v in top.items()
                  if k not in EXPERIMENT_KEYS}
     return {"schedule": schedule, "stop_when_one_remains": stop_when_one_remains,
+            "stop_when_two_remain_after_tie": stop_when_two_remain_after_tie,
             "overrides": overrides, "agents": agents, "labels": labels,
             "channels": tables, "harness_files": harness_files, "tools": tool_tables,
             "sha256": hashlib.sha256(data).hexdigest()}
@@ -258,7 +283,89 @@ def stamp_of(manifest: dict) -> dict[str, Any]:
     """What every episode records about how the experiment was driven."""
     return {"schedule": manifest["schedule"],
             "stop_when_one_remains": manifest["stop_when_one_remains"],
+            "stop_when_two_remain_after_tie": manifest["stop_when_two_remain_after_tie"],
             "manifest_sha256": manifest["sha256"]}
+
+
+def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
+    """Give a fresh agent the exact private memories recorded by another agent's episode.
+
+    Only files owned by write_memory tools cross the boundary. The new agent keeps its
+    own account, model, budget, peers and every episode-scoped channel.
+    """
+    runtime = runtime or harness
+    agent = entry["id"]
+    declared = entry.get("memory_from")
+    recorded = account.get("memory_from")
+    if recorded != declared:
+        if recorded is not None or account.get("episodes"):
+            raise SystemExit(f"agent {agent} was created with memory_from={recorded!r}, and is "
+                             f"now asked to run with {declared!r}; start a fresh agent")
+        account["memory_from"] = dict(declared) if declared else None
+        runtime.save_account(agent, account)
+    if not declared or account.get("memory_inherited"):
+        return
+
+    source, episode = declared["agent"], declared["episode"]
+    source_path = runtime.trace_path(source, episode)
+    if not source_path.exists():
+        raise SystemExit(f"agent {agent}: memory_from names {source!r} episode {episode}, but "
+                         f"{source_path} does not exist")
+    trace = json.loads(source_path.read_text(encoding="utf-8"))
+    if trace.get("trace_version") != runtime.TRACE_VERSION:
+        raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} has "
+                         f"trace version {trace.get('trace_version')!r}, expected {runtime.TRACE_VERSION}")
+    if not trace.get("state_saved"):
+        raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} did not "
+                         "save its state")
+
+    source_tools = {tool.name: tool for tool in runtime.tools_from(
+        (trace.get("provenance") or {}).get("tools")) if tool.kind == "write_memory"}
+    target_tools = {tool.name: tool for tool in runtime.tools() if tool.kind == "write_memory"}
+    if not source_tools or source_tools.keys() != target_tools.keys():
+        raise SystemExit(f"agent {agent}: memory_from requires matching write_memory tools; "
+                         f"source has {sorted(source_tools)}, target has {sorted(target_tools)}")
+
+    source_channels = runtime.table_of(trace)
+    inherited = []
+    destinations: set[Path] = set()
+    for name, target_tool in target_tools.items():
+        source_tool = source_tools[name]
+        source_channel = runtime.channel(source_tool.channel, source_channels)
+        matches = [record for record in trace.get("files", [])
+                   if record.get("role", "own") == "own"
+                   and record.get("channel") == source_channel.name
+                   and record.get("path", "").endswith("/memory.md")]
+        if len(matches) > 1:
+            raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} "
+                             f"contains several memories for tool {name!r}")
+        destination = runtime.mirror(agent, target_tool.channel) / "memory.md"
+        if destination in destinations:
+            continue
+        destinations.add(destination)
+        item = {"tool": name, "channel": target_tool.channel, "present": bool(matches)}
+        if matches:
+            record = matches[0]
+            text = record.get("text")
+            data = text.encode("utf-8") if isinstance(text, str) else b""
+            if text is None or record.get("size") != len(data) or "\ufffd" in text:
+                raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} "
+                                 f"does not contain an exact text copy for tool {name!r}")
+            if destination.exists() and destination.read_bytes() != data:
+                raise SystemExit(f"agent {agent}: inherited memory would overwrite "
+                                 f"{target_tool.channel}/memory.md")
+            if not destination.exists():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+            item.update({"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        inherited.append(item)
+
+    account["memory_inherited"] = {"agent": source, "episode": episode,
+                                   "memories": inherited}
+    runtime.save_account(agent, account)
+    total = sum(item.get("bytes", 0) for item in inherited)
+    print(f"{agent}: inherited {total} bytes of private memory from "
+          f"{source} episode {episode}")
 
 
 # --- rounds -------------------------------------------------------------------
@@ -276,7 +383,8 @@ def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
         account["label"] = named[seat]
         account["peers"] = {"seen": seats, "labels": named,
                             "presentation": list(seats)}
-        account["experiment"] = dict(stamp)
+        account["experiment"] = {**stamp,
+                                 "memory_from": account.get("memory_inherited")}
     return prepare
 
 
@@ -544,7 +652,7 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
 
 def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, create: Callable,
                stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool,
-               vote: dict | None = None) -> bool:
+               vote: dict | None = None, stop_when_two_remain_after_tie: bool = False) -> bool:
     """One round: drop the agents that cannot act, name the round, run it, and say
     whether the rounds go on.
 
@@ -581,6 +689,13 @@ def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, c
     if election is not None and stop_when_one_remains and len(live) == 1:
         print(f"{next(iter(live))} is the only agent left; the competition ends")
         return False
+    if election is not None and stop_when_two_remain_after_tie and len(live) == 2:
+        result = harness.load_account(next(iter(live))).get("last_election", {})
+        if result.get("top_tied"):
+            survivors = [agent for agent in agents if agent in live]
+            print(f"the final vote tied between {' and '.join(survivors)}; "
+                  "both survive and the competition ends")
+            return False
     return True
 
 
@@ -640,13 +755,15 @@ def main(argv: list[str] | None = None) -> int:
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
     for entry in manifest["agents"]:
-        harness.load_account(entry["id"], **terms_of(entry))
+        account = harness.load_account(entry["id"], **terms_of(entry))
+        inherit_memory(entry, account)
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
           f"{manifest['schedule']})")
     try:
         for rnd in range(a.rounds):
             if not play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
-                              manifest["stop_when_one_remains"], vote):
+                              manifest["stop_when_one_remains"], vote,
+                              manifest["stop_when_two_remain_after_tie"]):
                 break
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,
