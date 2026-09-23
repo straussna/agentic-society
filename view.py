@@ -23,6 +23,7 @@ from typing import Any, NamedTuple
 import analyze
 import experiment
 import harness
+import product
 from interaction import (InteractionConflict, InteractionError, InteractionStore,
                          InvalidSubmission, StaleRequest)
 
@@ -516,6 +517,7 @@ def anchored_groups(accounts: dict[str, dict],
                                           str(path), tuple(manifest["labels"].values()))[0]
         out.append({
             "name": named_group(declared), "seated": True, "seats": seats,
+            "experiment_id": manifest.get("experiment_id", path.stem),
             "members": members, "posts": bool(harness.mailbox_channel(table)
                                                 or harness.schema_channel(table)),
             "running": sum(acting(agent, live_index(agent)) for agent in members),
@@ -546,6 +548,8 @@ def experiments() -> list[dict]:
         if exp is None:
             exp = groups[ident] = {
                 "name": group_of(agent, account), "seated": key is not None,
+                "experiment_id": (account.get("experiment") or {}).get("experiment_id")
+                                 or group_of(agent, account),
                 "seats": dict(seen) if key else {}, "members": [],
                 "posts": False, "running": 0,
             }
@@ -718,6 +722,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     episodes = account.get("episodes") or []
     latest = episodes[-1] if episodes else {}
     live = live_index(agent)
+    interaction = InteractionStore(harness.ROOT / "interactions").current(agent)
     going = live_state(agent, live, account)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
@@ -737,6 +742,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # Derived from the raw log until the trace lands, which is what the
         # header labels it as: the arithmetic is the account's, the commit is not.
         "live": live, "live_age": live_age(agent, live),
+        "pending_human": interaction.as_dict() if interaction else None,
         "live_turns": len(going["turns"]),
         "live_balance": going["balance"],
         "committed": len(episodes),
@@ -799,8 +805,12 @@ def header(exp: dict) -> dict:
     every = vote.get("every") if vote else None
     phase = ("vote complete" if rnd in elections else
              "vote" if every and rnd and rnd % every == 0 else "discussion")
+    experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
+    records = product.records(harness.ROOT, experiment_id)
+    cost = product.cost(exp["members"], account_of, stamp.get("cost") or {})
     return {
-        "experiment": exp["name"], "seated": exp["seated"], "posts": exp["posts"],
+        "experiment": exp["name"], "experiment_id": experiment_id,
+        "seated": exp["seated"], "posts": exp["posts"],
         "members": exp["members"], "tabs": tabs(exp), "labels": exp["labels"],
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
@@ -815,6 +825,8 @@ def header(exp: dict) -> dict:
         "phase": phase,
         "cycle": ((rnd - 1) // every + 1) if every and rnd else None,
         "elections": [elections[r] for r in sorted(elections)],
+        "progress": records["progress"], "outcome": records["outcome"],
+        "lineage": records["lineage"], "cost": cost,
     }
 
 
@@ -1022,6 +1034,89 @@ def messages(exp: dict, since: int = 0) -> dict:
         ev["delivered"] = delivery_of(ev, rows, carried_paths, room)
     return {"experiment": exp["name"], "posts": exp["posts"], "seats": len(places_of(exp)),
             "committed": len(events), "events": events[since:], "tip": tips}
+
+
+def player_history(exp: dict, agent: str) -> dict:
+    """Public posts and the player's private conversations, including accepted sends."""
+    rows = experiment_episodes(exp)
+    table = experiment_table(exp)
+    post_tool = next((tool for tool in exp.get("tools") or []
+                      if tool.get("kind") == "post_public"), None)
+    post_channel = next((ch for ch in table
+                         if post_tool and ch.name == post_tool.get("channel")), None)
+    public = []
+    if post_channel:
+        for row in rows:
+            if not row["trace"].get("state_saved"):
+                continue
+            seat = row["seat"]
+            account = account_of(row["agent"])
+            label = exp.get("labels", {}).get(seat) or account.get("label") or seat or row["agent"]
+            prefix = post_channel.path_for(label).strip("/")
+            for rec in row["trace"].get("files") or []:
+                if rec.get("channel") != post_channel.name or rec.get("role") != "own":
+                    continue
+                path = str(rec.get("path") or "").strip("/")
+                if prefix and not path.startswith(prefix + "/"):
+                    continue
+                text = rec.get("text")
+                if isinstance(text, str) and text:
+                    public.append({"episode": row["round"], "agent_episode": row["episode"],
+                                   "from_agent": row["agent"], "from_label": label,
+                                   "text": text})
+    private = [event for event in messages(exp)["events"]
+               if event["kind"] == "message"
+               and event["change"] not in ("withdrawn", "standing")
+               and agent in (event["from_agent"], event["to_agent"])
+               and isinstance(event.get("text"), str) and event["text"]]
+
+    request_dir = harness.ROOT / "interactions" / "requests" / agent
+    submission_dir = harness.ROOT / "interactions" / "submissions" / agent
+    player_seat = next((seat for seat, member in places_of(exp) if member == agent), None)
+    tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
+    public_keys = {(event["episode"], event["from_agent"], event["text"])
+                   for event in public}
+    private_keys = {(event["round"], event["from_agent"], event["to_label"], event["text"])
+                    for event in private}
+    if request_dir.is_dir() and submission_dir.is_dir():
+        for request_path in sorted(request_dir.glob("*.json")):
+            try:
+                request = json.loads(request_path.read_text(encoding="utf-8"))
+                submission = json.loads((submission_dir / request_path.name).read_text(
+                    encoding="utf-8"))
+                episode = int(request["episode"])
+            except (FileNotFoundError, OSError, ValueError, KeyError, json.JSONDecodeError):
+                continue
+            for call in submission.get("tool_calls") or []:
+                inputs = call.get("input") or {}
+                text = inputs.get("body")
+                if not isinstance(text, str) or not text:
+                    continue
+                kind = tool_kinds.get(call.get("name"))
+                if kind == "post_public":
+                    key = (episode, agent, text)
+                    if key not in public_keys:
+                        public.append({"episode": episode, "agent_episode": episode,
+                                       "from_agent": agent, "from_label": request.get("label", agent),
+                                       "text": text, "accepted": True})
+                        public_keys.add(key)
+                elif kind == "send_message_to":
+                    label = inputs.get("to")
+                    seat = seat_of_label(exp, label)
+                    key = (episode, agent, label, text)
+                    if isinstance(label, str) and key not in private_keys:
+                        private.append({"round": episode, "episode": episode,
+                                        "from_seat": player_seat,
+                                        "from_label": request.get("label", agent),
+                                        "from_agent": agent, "to_seat": seat, "to_label": label,
+                                        "to_agent": exp["seats"].get(seat) if seat else None,
+                                        "text": text, "accepted": True})
+                        private_keys.add(key)
+    public.sort(key=lambda event: (event["episode"], event.get("agent_episode", 0),
+                                   event["from_agent"], event["text"]))
+    private.sort(key=lambda event: (event["round"], event["episode"],
+                                    event["from_agent"], event.get("to_label") or ""))
+    return {"experiment": exp["name"], "agent": agent, "public": public, "private": private}
 
 
 # --- directory channels ---------------------------------------------------------
@@ -1491,6 +1586,11 @@ class View(http.server.BaseHTTPRequestHandler):
             if rest == ["messages"]:
                 since = query.get("since", ["0"])[0]
                 return self.send_json(messages(exp, int(since) if since.isdigit() else 0))
+            if rest == ["player-history"]:
+                agent = query.get("agent", [""])[0]
+                if agent not in exp["members"]:
+                    return self.send_json({"error": f"no agent {agent} in experiment"}, status=404)
+                return self.send_json(player_history(exp, agent))
             if len(rest) == 2 and rest[0] == "tree" and rest[1] in trees(exp):
                 selected = query.get("round", [""])[0]
                 if selected and not selected.isdigit():

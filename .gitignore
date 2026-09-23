@@ -10,8 +10,14 @@ displaced/
 # Pending and completed requests for local interactive provider sessions.
 interactions/
 
+# Experiment-level progress, outcomes, cost state, and branch lineage.
+experiment_records/
+
 # Working notes and assessments written during a session. Not part of the harness.
 Claude outputs/
+
+# Local society definitions and imported experimental source material.
+societies/
 
 # Console output of parallel processes. The trace is the record; these are scrollback.
 *.log
@@ -19,3 +25,4 @@ Claude outputs/
 __pycache__/
 *.pyc
 .venv/
+/.agents/

@@ -498,7 +498,9 @@ def check_a_manifest_is_validated():
     short = experiment.shorthand(["a", "b"])
     assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
-    assert experiment.stamp_of(m) == {"schedule": "simultaneous", "stop_when_one_remains": False,
+    assert experiment.stamp_of(m) == {"schedule": "simultaneous",
+                                      "experiment_id": m["experiment_id"], "cost": {},
+                                      "stop_when_one_remains": False,
                                       "stop_when_two_remain_after_tie": False,
                                       "manifest_sha256": m["sha256"]}
 

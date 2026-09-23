@@ -1,0 +1,109 @@
+# One human and four Luna agents play for at most 70 rounds:
+#   py -3 experiment.py survivor-human-luna -r 70
+# In another terminal, attach to the human seat:
+#   py -3 human.py --agent survivor-human
+
+experiment_id = "survivor-human-luna"
+schedule = "simultaneous"
+stop_when_one_remains = true
+stop_when_two_remain_after_tie = true
+provider = "openai"
+model = "gpt-5.6-luna"
+budget = 1000000
+starter_files = "./survivor-human-luna.md"
+starter_files_below = 1000000
+context_fraction = 0.05
+digest_file_limit = 8000
+floor_at_zero = true
+system_prompt = """
+You are one of five participants in a recurring social-elimination experiment.
+
+Your objective and rules are in the experimenter brief. Only tool calls affect shared
+state; ordinary response text is not delivered to peers.
+"""
+
+[harness_files]
+balance = ""
+digest = "m"
+round = "round"
+
+[[channel]]
+name = "notes"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "state"
+agent_view = "memory"
+restated = true
+
+[[channel]]
+name = "blackboard"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+agent_view = "board"
+restated = true
+
+[[channel]]
+name = "mail"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "messages/outbox"
+inbox = "messages/inbox"
+agent_view = "letters"
+restated = true
+
+[[channel]]
+name = "ballot"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "ballot"
+pushed = false
+
+[[tool]]
+name = "remember"
+kind = "write_memory"
+channel = "notes"
+description = """
+Replace your persistent private memory. It is shown in every later round until replaced; no peer can read it.
+"""
+
+[[tool]]
+name = "send_message"
+kind = "send_message_to"
+channel = "mail"
+description = """
+Send a private message that only its recipient reads next round. It is then cleared automatically and survives only if the recipient records it in private memory. A later message to the same peer in this episode replaces it.
+"""
+
+[[tool]]
+name = "post_to_board"
+kind = "post_public"
+channel = "blackboard"
+description = """
+Publish one post that every peer reads next round. It is then cleared automatically and survives only in participants' private memory recordings.
+"""
+
+[[tool]]
+name = "vote_to_eliminate"
+kind = "vote"
+channel = "ballot"
+every = 5
+description = """
+Cast or replace your required private ballot for one peer. Peers receive only the aggregate result, never individual ballots. Ending the round without a ballot eliminates you; a unique highest total eliminates that participant. If a tied vote leaves exactly two participants, both survive and the experiment ends.
+"""
+
+[[agent]]
+id = "survivor-human"
+label = "Player"
+provider = "human"
+model = "interactive"
+quality_tier = "interactive"
+
+[[agent]]
+id = "survivor-luna"
+label = "Luna"
+seats = 4

@@ -140,6 +140,8 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 
 .gbox { border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
         padding:12px 14px; box-shadow:var(--glow); }
+.product-state { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line); }
+.product-state .result { color:var(--dim); margin-top:7px; }
 /* An experiment that has been trading for a while has a ledger longer than the
    seats beside it; it scrolls instead of setting how tall the header is. */
 .gbox .led { max-height:150px; overflow-y:auto; margin-top:6px; }
@@ -401,19 +403,102 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; }
 }
-.player { display:none; margin:10px 16px 0; border:1px solid var(--line); border-radius:8px;
-  background:var(--panel); padding:12px; }
-.player.on { display:block; }
-.player h2 { margin:0 0 4px; font-size:15px; color:var(--live); }
-.player-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(320px,2fr); gap:12px; }
-.player pre { max-height:220px; overflow:auto; white-space:pre-wrap; }
-.tool-form { border-top:1px solid var(--line); padding:8px 0; }
+.mode-toggle { position:fixed; right:18px; bottom:18px; z-index:60; min-height:42px;
+  padding:8px 15px; border:1px solid var(--accent); border-radius:999px; cursor:pointer;
+  color:var(--ink); background:var(--raise); box-shadow:var(--glow); }
+.mode-toggle:hover { background:var(--panel2); }
+.player { display:none; width:min(920px,calc(100% - 40px)); margin:48px auto 88px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--panel); padding:20px;
+  box-shadow:var(--glow); }
+#page.play-mode { overflow:auto; }
+#page.play-mode #top, #page.play-mode #body { display:none; }
+#page.play-mode .player { display:block; }
+.player h2 { margin:0 0 4px; font-size:18px; color:var(--live); }
+.player h3 { margin:18px 0 8px; }
+.peer-strip { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 18px; padding:10px;
+  border:1px solid var(--line); border-radius:8px; background:var(--bg); }
+.peer-badge { display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border:1px solid var(--line2);
+  border-radius:999px; color:var(--faint); background:var(--panel); font:600 12px/1.2 var(--sans); }
+.peer-badge .dot { animation:none; }
+.peer-badge small { color:inherit; font-size:10px; font-weight:500; letter-spacing:.05em; text-transform:uppercase; }
+.peer-badge.processing { color:var(--accent); border-color:rgba(127,155,176,.58);
+  animation:agent-glow 1.5s ease-in-out infinite; }
+.peer-badge.processing .dot { animation:pulse 1.2s ease-in-out infinite; }
+.peer-badge.ready { color:var(--live); border-color:rgba(143,168,125,.48); background:rgba(143,168,125,.09); }
+@keyframes agent-glow {
+  50% { border-color:rgba(127,155,176,.95); box-shadow:0 0 16px rgba(127,155,176,.36); background:rgba(127,155,176,.12); }
+}
+.player-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.player-column { min-width:0; }
+.prompt-details { border:1px solid var(--line); border-radius:7px; padding:9px 11px; background:var(--bg); }
+.prompt-details pre { max-height:260px; }
+.input-stack { display:grid; gap:9px; }
+.input-card { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
+.input-card > summary { position:sticky; top:0; z-index:1; display:flex; align-items:center; gap:8px;
+  padding:9px 11px; cursor:pointer; color:var(--accent); background:var(--raise); list-style:none; }
+.input-card > summary::-webkit-details-marker { display:none; }
+.input-card > summary::after { content:"+"; margin-left:auto; color:var(--faint); font-size:16px; }
+.input-card[open] > summary { border-bottom:1px solid var(--line); }
+.input-card[open] > summary::after { content:"−"; }
+.input-card-title { font:600 12px/1.25 var(--sans); letter-spacing:.03em; }
+.input-card-meta { color:var(--faint); font:500 10px/1.2 var(--sans); text-transform:uppercase; letter-spacing:.06em; }
+.input-card pre { margin:0; padding:11px; max-height:none; overflow:visible; white-space:pre-wrap; }
+.input-card.error { border-color:var(--bad); }
+.player-chat { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
+.player-chat-head { display:flex; align-items:center; gap:9px; padding:9px 11px; border-bottom:1px solid var(--line); color:var(--accent);
+  background:var(--raise); font:600 12px/1.25 var(--sans); letter-spacing:.03em; }
+.player-chat-log { height:420px; overflow-y:auto; padding:12px; background:linear-gradient(180deg,var(--bg),var(--panel)); }
+.private-chat-list { display:grid; gap:9px; }
+.private-thread { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--bg); }
+.private-thread > summary { display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer;
+  color:var(--accent); background:var(--raise); list-style:none; font:600 12px/1.25 var(--sans); }
+.private-thread > summary::-webkit-details-marker { display:none; }
+.private-thread > summary::after { content:"+"; margin-left:auto; color:var(--faint); font-size:16px; }
+.private-thread[open] > summary { border-bottom:1px solid var(--line); }
+.private-thread[open] > summary::after { content:"−"; }
+.private-thread .player-chat-log { height:320px; }
+.private-thread.empty > summary { color:var(--faint); }
+.private-count { color:var(--faint); font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; }
+.chat-update { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1px solid rgba(194,160,107,.7);
+  border-radius:999px; color:var(--warn); background:rgba(194,160,107,.16); font:700 10px/1 var(--sans);
+  letter-spacing:.07em; text-transform:uppercase; animation:update-glow 1.4s ease-in-out infinite; }
+.chat-update::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+@keyframes update-glow { 50% { box-shadow:0 0 14px rgba(194,160,107,.48); filter:brightness(1.18); } }
+.episode-divider { display:flex; align-items:center; gap:9px; margin:12px 0 10px; color:var(--faint);
+  font:600 10px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase; }
+.episode-divider::before, .episode-divider::after { content:""; height:1px; flex:1; background:var(--line); }
+.chat-message { display:grid; grid-template-columns:30px minmax(0,1fr); gap:9px; align-items:start; margin-bottom:10px; }
+.chat-message.mine { grid-template-columns:minmax(0,1fr) 30px; }
+.chat-avatar { width:28px; height:28px; display:grid; place-items:center; border:1px solid rgba(127,155,176,.45);
+  border-radius:50%; color:var(--accent); background:var(--raise); font:700 11px/1 var(--sans); }
+.chat-bubble { min-width:0; }
+.chat-message.mine .chat-bubble { grid-column:1; grid-row:1; }
+.chat-message.mine .chat-avatar { grid-column:2; }
+.chat-bubble b { display:block; margin:0 0 4px 3px; color:var(--dim); font-size:11px; }
+.chat-message.mine .chat-bubble b { text-align:right; margin-right:3px; }
+.chat-bubble pre { margin:0; padding:9px 11px; white-space:pre-wrap; border:1px solid var(--line);
+  border-radius:4px 10px 10px 10px; background:var(--raise); }
+.chat-message.mine .chat-bubble pre { border-radius:10px 4px 10px 10px; background:rgba(127,155,176,.12); }
+.chat-message.pending-message .chat-bubble pre { border-style:dashed; }
+.chat-draft { display:inline-flex; margin-left:5px; padding:2px 6px; border:1px solid rgba(127,155,176,.48);
+  border-radius:999px; color:var(--accent); font:600 9px/1 var(--sans); letter-spacing:.05em; text-transform:uppercase; }
+.chat-compose { padding:10px; border-top:1px solid var(--line); background:var(--raise); }
+.chat-compose textarea { box-sizing:border-box; width:100%; min-height:64px; resize:vertical; padding:9px 11px;
+  color:var(--text); background:var(--panel); border:1px solid var(--line2); border-radius:12px; }
+.chat-compose textarea:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 2px rgba(127,155,176,.14); }
+.tool-form { border:1px solid var(--line); border-radius:7px; background:var(--bg); padding:11px; margin-bottom:9px; }
+.tool-form > b { color:var(--accent); }
 .tool-form label { display:block; margin-top:6px; color:var(--muted); }
 .tool-form input, .tool-form select, .tool-form textarea { box-sizing:border-box; width:100%;
-  margin-top:3px; padding:6px; color:var(--text); background:var(--bg); border:1px solid var(--line); }
+  margin-top:3px; padding:8px; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:4px; }
+.message-fields { display:grid; gap:8px; margin-top:8px; }
+.message-fields label { margin-top:0; }
 .player-actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
-.draft-call { padding:5px 0; border-bottom:1px solid var(--line); }
-@media (max-width:760px) { .player-grid { grid-template-columns:1fr; } }
+@media (max-width:900px) {
+  .player { width:min(100% - 24px,720px); margin-top:18px; padding:14px; }
+  .player-grid { grid-template-columns:1fr; }
+  .input-stack { max-height:none; }
+}
 </style>
 <div id="page">
   <header id="top">
@@ -428,17 +513,30 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
   </header>
   <section id="player" class="player" aria-live="polite"></section>
   <main id="body" role="tabpanel"><div class="empty">loading&hellip;</div></main>
+  <button id="mode-toggle" class="mode-toggle" aria-pressed="false"></button>
 </div>
 <script>
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>\u0022\u0027]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num = (n) => n == null ? "–" : Number(n).toLocaleString();
 const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status));
-const CONTROL_TOKEN = document.querySelector('meta[name="interaction-control-token"]').content;
-const post = (u, value) => fetch(u, {method:"POST", headers:{"Content-Type":"application/json",
-  "X-Interaction-Token":CONTROL_TOKEN}, body:JSON.stringify(value)}).then(async r => {
-    const body = await r.json(); if (!r.ok) throw new Error(body.error || String(r.status)); return body;
-  });
+let CONTROL_TOKEN = document.querySelector('meta[name="interaction-control-token"]').content;
+async function post(u, value, retry = true) {
+  const response = await fetch(u, {method:"POST", headers:{"Content-Type":"application/json",
+    "X-Interaction-Token":CONTROL_TOKEN}, body:JSON.stringify(value)});
+  const body = await response.json();
+  if (response.status === 403 && retry && body.error === "control token required") {
+    const page = await fetch("/", {cache:"no-store"}).then(result => result.text());
+    const fresh = new DOMParser().parseFromString(page, "text/html")
+      .querySelector('meta[name="interaction-control-token"]')?.content;
+    if (fresh && fresh !== CONTROL_TOKEN) {
+      CONTROL_TOKEN = fresh;
+      return post(u, value, false);
+    }
+  }
+  if (!response.ok) throw new Error(body.error || String(response.status));
+  return body;
+}
 const shortPath = (s) => String(s || "").split(/[\\/]/).filter(Boolean).pop() || "";
 // One provenance answer as a line. Lists and an experiment's
 // seating is a mapping, and both read as what they are, not as JSON.
@@ -516,7 +614,9 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             overviewHeight: heldNumber("overview-height"),
             mailWidth: heldNumber("mail-width") || 310,
             treeWidth: heldNumber("tree-width"),
-            interaction: null, interactionId: null, interactionDraft: [], interactionSubmitted: false,
+            interaction: null, interactionId: null, interactionSubmitted: false,
+            playerExperiment: null, playerExperimentAgent: null,
+            playerMode: held("player-mode", false),
             poll: 1500, stale: 180 };
 
 const PENDING = "output arrives when the episode ends";
@@ -627,7 +727,9 @@ function tileHtml(s, i) {
     : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} → ${esc(g.label || g.seat)}</span>` : "";
   const terms = [s.model ? `<span class="tag" title="provider and model">${esc(`${s.provider || ""}/${s.model}`.replace(/^\//, ""))}</span>` : "",
     s.starter_files ? `<span class="tag starter" title="${esc(s.starter_files)}">starter · ${esc(shortPath(s.starter_files))}</span>` : ""].filter(Boolean).join("");
-  const state = running(s)
+  const state = s.pending_human
+      ? `<span class="tag warn"><i class="dot"></i>waiting for player</span>`
+    : running(s)
       ? `<span class="tag live"><i class="dot"></i>ep${s.live} · ${s.live_turns}t · derived</span>`
     : s.live != null
       ? `<span class="tag warn" title="no trace was ever written for it">ep${s.live} unfinished · ${ago(s.live_age)}</span>`
@@ -713,6 +815,7 @@ function renderHeader() {
   const initial = h.seats.reduce((sum, s) => sum + Number(s.initial || 0), 0);
   const roundSpent = h.seats.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
   const totalSpent = h.seats.reduce((sum, s) => sum + Number(s.spent || 0), 0);
+  const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
   const live = h.seats.filter(running).length;
   const attention = h.seats.filter(s => s.halted || (s.drift || []).length || (s.unmet || []).length
     || (s.live != null && !running(s))).length;
@@ -720,7 +823,9 @@ function renderHeader() {
   document.getElementById("metrics").innerHTML = [
     ["remaining", num(remaining), pct, ""],
     ["spent this round", num(roundSpent), `round ${h.round}`, ""],
-    ["spent total", num(totalSpent), `${h.seats.length} seats`, ""],
+    ["spent total", num(totalSpent), h.cost && h.cost.maximum != null
+      ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
+      : `${num(autonomousSpent)} autonomous`, h.cost && h.cost.warning_reached ? "attn" : ""],
     ["active now", `${h.active}/${h.seats.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
     ["needs attention", num(attention), attention ? "unfinished, unmet, halted, or drifted" : "no current alerts", attention ? "attn" : ""]
   ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
@@ -730,7 +835,18 @@ function renderHeader() {
   const rows = h.ledger.map(([giver, taker, amount]) => `<tr>
       <td class="num">${esc(giver)} ${esc(taker)} ${num(amount)}</td>
       <td class="note">${esc(seatName(giver) || "")} → ${esc(seatName(taker) || "")}</td></tr>`).join("");
+  const latest = h.progress && h.progress.latest;
+  const terminal = latest && ["completed", "interrupted", "cost_ceiling"].includes(latest.phase);
+  const result = terminal ? h.outcome : null;
+  const lineage = h.lineage;
+  const productState = result
+    ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.termination_reason)}</div></div>
+       <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
+         : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
+    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc(latest.phase.replaceAll("_", " "))}</div></div>
+       <div class="result">round ${num(latest.round)}${lineage ? ` · branch of ${esc(lineage.source_experiment_id)} at round ${num(lineage.source_round)}` : ""}</div></div>` : "";
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
+    ${productState}
     ${electionHtml(h)}
     ${h.ledger_name ? `<div class="ledger-block"><div class="kv"><div class="k">${esc(h.ledger_name)} · the transfer ledger</div></div>
     ${rows ? `<div class="led"><table>${rows}</table></div>`
@@ -1495,102 +1611,304 @@ function refresh() {
   }).catch(() => {});
 }
 
-function interactionInput(request) {
+function interactionInputHtml(request) {
   const input = request.input || {};
-  if (input.kind === "initial_observation") return input.text || "";
-  return (input.results || []).map(result => `${result.tool_call_id}${result.is_error ? " (error)" : ""}\n${result.content || ""}`).join("\n\n");
+  if (input.kind !== "initial_observation") return (input.results || []).map(result =>
+    inputCardHtml(result.tool_call_id || "Tool result", `<pre>${esc(result.content || "(empty)")}</pre>`, true,
+      result.is_error ? "error" : "", result.is_error ? "error" : "")).join("")
+    || `<div class="note">No tool results.</div>`;
+  const text = input.text || "", sections = [], heading = /^=== (.+) ===$/gm;
+  let match, start = 0, title = "Episode information";
+  while ((match = heading.exec(text)) !== null) {
+    if (match.index > start) sections.push([title, text.slice(start, match.index).trim()]);
+    title = match[1];
+    start = heading.lastIndex;
+  }
+  if (start < text.length || !sections.length) sections.push([title, text.slice(start).trim()]);
+  const present = sections.filter(([name, body]) => body && !name.startsWith("Public post from ") && !name.startsWith("Letter from "));
+  return present.map(([name, body]) => {
+    return inputCardHtml(name, `<pre>${esc(body)}</pre>`, !name.startsWith("Experimenter material:"));
+  }).join("");
 }
 
-function fieldHtml(name, schema, required) {
-  const label = `${esc(name)}${required ? " *" : ""}`;
+function inputCardHtml(title, content, open = true, className = "", meta = "") {
+  return `<details class="input-card ${className}" ${open ? "open" : ""}><summary><span class="input-card-title">${esc(title)}</span>
+    ${meta ? `<span class="input-card-meta">${esc(meta)}</span>` : ""}</summary>${content}</details>`;
+}
+
+function fieldHtml(name, schema, required, blank = false, displayName = name) {
+  const label = `${esc(displayName)}${required ? " *" : ""}`;
   if (Array.isArray(schema.enum)) return `<label>${label}<select data-field="${esc(name)}" data-type="string">${
-    schema.enum.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join("")}</select></label>`;
+    blank ? `<option value="">Choose&hellip;</option>` : ""}${schema.enum.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join("")}</select></label>`;
   if (schema.type === "boolean") return `<label><input style="width:auto" type="checkbox" data-field="${esc(name)}" data-type="boolean"> ${label}</label>`;
   const type = schema.type === "integer" || schema.type === "number" ? "number" : "text";
+  if (type === "text" && (name === "body" || name === "content")) return `<label>${label}<textarea rows="4" data-field="${esc(name)}" data-type="string" ${required ? "required" : ""}></textarea></label>`;
   return `<label>${label}<input type="${type}" data-field="${esc(name)}" data-type="${esc(schema.type || "string")}" ${required ? "required" : ""}></label>`;
+}
+
+function actionName(tool) {
+  return ({remember:"Private memory", send_message:"Private messages", post_to_board:"Public post",
+    vote_to_eliminate:"Vote to eliminate"})[tool.name] || tool.name.replaceAll("_", " ");
+}
+
+function actionHtml(tool, index) {
+  const schema = tool.input_schema || {}, properties = schema.properties || {};
+  if (Array.isArray((properties.to || {}).enum) && properties.body) {
+    const fields = properties.to.enum.map(recipient => `<label>Message to ${esc(recipient)}
+      <textarea rows="3" data-recipient="${esc(recipient)}" placeholder="Optional private message"></textarea></label>`).join("");
+    return `<section class="tool-form" data-tool-index="${index}" data-message-tool><b>${esc(actionName(tool))}</b>
+      <div class="note">${esc(tool.description)}</div><div class="message-fields">${fields}</div></section>`;
+  }
+  if (properties.body && Object.keys(properties).length === 1) {
+    const label = tool.name === "remember" ? "Memory" : tool.name === "post_to_board" ? "Post" : "Body";
+    return `<section class="tool-form" data-tool-index="${index}"><b>${esc(actionName(tool))}</b>
+      <div class="note">${esc(tool.description)}</div><label>${label}
+      <textarea rows="4" data-field="body" data-type="string" placeholder="Optional"></textarea></label></section>`;
+  }
+  const required = new Set(schema.required || []), isVote = tool.name === "vote_to_eliminate";
+  const fields = Object.entries(properties).map(([name, spec]) =>
+    fieldHtml(name, spec, required.has(name), isVote, isVote && name === "to" ? "Agent" : name)).join("");
+  return `<section class="tool-form" data-tool-index="${index}"${isVote ? " data-required-tool" : ""}><b>${esc(actionName(tool))}</b>
+    <div class="note">${esc(tool.description)}</div>${fields}</section>`;
+}
+
+function setInteractionSubmitted(submitted, message) {
+  S.interactionSubmitted = submitted;
+  const player = document.getElementById("player");
+  player.querySelectorAll("textarea, input, select, #submit-interaction").forEach(field => field.disabled = submitted);
+  const state = document.getElementById("interaction-state");
+  if (state) state.textContent = message || (submitted ? "submitted" : "ready");
+}
+
+function renderPeerStatus(head, playerAgent) {
+  const el = document.getElementById("peer-status");
+  if (!el || !head) return;
+  const completed = new Set((head.progress && head.progress.events || [])
+    .filter(event => event.round === head.round && event.completed_autonomous)
+    .map(event => event.completed_autonomous));
+  const badges = (head.seats || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason)
+    .map(seat => {
+      let state = "queued", label = "not started";
+      if (completed.has(seat.agent) || (seat.round === head.round && seat.acted && seat.live == null)) {
+        state = "ready"; label = "ready";
+      } else if (seat.live != null) {
+        state = "processing"; label = "processing";
+      }
+      return `<span class="peer-badge ${state}" title="${esc(seat.label)} is ${label}"><i class="dot"></i>${esc(seat.label)} <small>${label}</small></span>`;
+    }).join("");
+  el.innerHTML = badges || `<span class="note">No other active participants.</span>`;
+}
+
+function chatInitials(label) {
+  return String(label || "?").replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
+}
+
+function playerChatHtml(events, playerAgent, isPrivate, deliveredEpisode) {
+  if (!events.length) return `<div class="empty">No messages yet.</div>`;
+  let episode = null, html = "";
+  for (const event of events) {
+    const at = Number(event.episode || event.round || 0);
+    if (at !== episode) {
+      episode = at;
+      html += `<div class="episode-divider"><span>Episode ${num(at)}</span></div>`;
+    }
+    const mine = event.from_agent === playerAgent;
+    const sender = mine ? "You" : event.from_label;
+    const destination = isPrivate ? (mine ? ` → ${event.to_label}` : " → you") : "";
+    const updated = at === deliveredEpisode;
+    const accepted = event.accepted ? `<span class="chat-draft">sent</span>` : "";
+    html += `<article class="chat-message ${mine ? "mine" : ""}">
+      <span class="chat-avatar" aria-hidden="true">${esc(chatInitials(sender))}</span>
+      <div class="chat-bubble"><b>${esc(sender)}${esc(destination)} ${accepted}${updated ? `<span class="chat-update">new</span>` : ""}</b><pre>${esc(event.text)}</pre></div></article>`;
+  }
+  return html;
+}
+
+function wireChatComposer(field, log, destination = "", storageKey = "") {
+  if (!field || !log) return;
+  if (!field.value && storageKey) field.value = localStorage.getItem(storageKey) || "";
+  const draw = () => {
+    if (storageKey) {
+      if (field.value) localStorage.setItem(storageKey, field.value);
+      else localStorage.removeItem(storageKey);
+    }
+    let message = log.querySelector("[data-player-draft]");
+    if (!field.value.trim()) {
+      if (message) message.remove();
+      return;
+    }
+    if (!message) {
+      log.insertAdjacentHTML("beforeend", `<article class="chat-message mine pending-message" data-player-draft>
+        <span class="chat-avatar" aria-hidden="true">YO</span><div class="chat-bubble"><b>You${destination ? ` → ${esc(destination)}` : ""}
+        <span class="chat-draft">pending this episode</span></b><pre></pre></div></article>`);
+      message = log.querySelector("[data-player-draft]");
+    }
+    message.querySelector("pre").textContent = field.value;
+    log.scrollTop = log.scrollHeight;
+  };
+  field.oninput = draw;
+  draw();
+}
+
+function renderPlayerHistory(history, playerAgent, seats, currentEpisode) {
+  const board = document.getElementById("player-board"), publicEvents = history.public || [];
+  const deliveredEpisode = currentEpisode - 1;
+  const requestKey = `${playerAgent}:${(S.interaction || {}).request_id || currentEpisode}`;
+  if (board) {
+    const sig = JSON.stringify(publicEvents.map(event => [event.episode, event.from_agent, event.text]));
+    if (board.dataset.sig !== sig) {
+      board.dataset.sig = sig;
+      board.innerHTML = playerChatHtml(publicEvents, playerAgent, false, deliveredEpisode);
+      board.scrollTop = board.scrollHeight;
+    }
+    wireChatComposer(board.parentElement.querySelector(".chat-compose textarea"), board, "",
+      `player-draft:${requestKey}:board`);
+  }
+  const privateRoot = document.getElementById("player-private"), privateEvents = history.private || [];
+  if (!privateRoot) return;
+  const drafts = new Map([...privateRoot.querySelectorAll("[data-recipient]")]
+    .map(field => [field.dataset.recipient, field.value]));
+  const canMessage = privateRoot.hasAttribute("data-message-tool");
+  const peers = (seats || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason);
+  const sig = JSON.stringify([currentEpisode, peers.map(peer => [peer.agent, peer.label]),
+    privateEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
+  if (privateRoot.dataset.sig === sig) return;
+  privateRoot.dataset.sig = sig;
+  privateRoot.innerHTML = peers.map(peer => {
+    const events = privateEvents.filter(event => peer.agent === (event.from_agent === playerAgent ? event.to_agent : event.from_agent));
+    return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
+      <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
+      <div class="player-chat-log" role="log" aria-label="Private chat with ${esc(peer.label)}">${playerChatHtml(events, playerAgent, true, deliveredEpisode)}</div>
+      ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
+        aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
+  }).join("");
+  privateRoot.querySelectorAll(".player-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
+  privateRoot.querySelectorAll("[data-recipient]").forEach(field =>
+    wireChatComposer(field, field.closest(".private-thread").querySelector(".player-chat-log"),
+      field.dataset.recipient, `player-draft:${requestKey}:private:${field.dataset.recipient}`));
+}
+
+function pullPeerStatus(request) {
+  const findExperiment = S.playerExperimentAgent === request.agent && S.playerExperiment
+    ? Promise.resolve(S.playerExperiment)
+    : get("/api/experiments").then(data => {
+        S.poll = data.poll; S.stale = data.stale;
+        const match = (data.experiments || []).find(experiment => (experiment.members || []).includes(request.agent));
+        S.playerExperimentAgent = request.agent;
+        S.playerExperiment = match && match.name;
+        return S.playerExperiment;
+      });
+  return findExperiment.then(name => name && Promise.all([
+      get(`/api/experiment/${encodeURIComponent(name)}`),
+      get(`/api/experiment/${encodeURIComponent(name)}/player-history?agent=${encodeURIComponent(request.agent)}`)
+    ]))
+    .then(result => {
+      if (result && S.interaction && S.interaction.request_id === request.request_id) {
+        renderPeerStatus(result[0], request.agent);
+        renderPlayerHistory(result[1], request.agent, result[0].seats, request.episode);
+      }
+    }).catch(() => {});
 }
 
 function renderInteraction(request) {
   const el = document.getElementById("player");
-  if (!request) { el.classList.remove("on"); el.innerHTML = ""; S.interaction = null; return; }
-  if (S.interactionId !== request.request_id) {
-    S.interactionId = request.request_id; S.interactionDraft = []; S.interactionSubmitted = false;
+  if (!request) {
+    if (S.interactionId !== null || (!el.innerHTML && S.playerMode))
+      el.innerHTML = S.playerMode ? `<h2>Player view</h2><div class="note">No human episode is waiting. This view will update when an interactive provider request arrives.</div>` : "";
+    S.interaction = null; S.interactionId = null; S.interactionSubmitted = false;
+    return;
   }
+  const isNew = S.interactionId !== request.request_id;
   S.interaction = request;
-  const tools = request.available_tools.map((tool, index) => {
-    const schema = tool.input_schema || {}, required = new Set(schema.required || []);
-    const fields = Object.entries(schema.properties || {}).map(([name, spec]) => fieldHtml(name, spec, required.has(name))).join("");
-    return `<div class="tool-form" data-tool-index="${index}"><b>${esc(tool.name)}</b><div class="note">${esc(tool.description)}</div>${fields}
-      <label>JSON fallback<textarea data-json rows="2" placeholder="{}"></textarea></label>
-      <button data-add-call="${index}">Add call</button></div>`;
-  }).join("");
-  const draft = S.interactionDraft.length ? S.interactionDraft.map((call, index) =>
-    `<div class="draft-call"><button data-remove-call="${index}">remove</button> <b>${esc(call.name)}</b> <span class="note">${esc(JSON.stringify(call.input))}</span></div>`).join("") : `<div class="note">No drafted calls.</div>`;
-  el.classList.add("on");
-  el.innerHTML = `<h2>Player turn · ${esc(request.label)} · episode ${request.episode} · turn ${request.turn}</h2>
-    <div class="note">Only this seat's provider request is shown here.</div><div class="player-grid">
-    <div><details><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
-      <h3>Current input</h3><pre>${esc(interactionInput(request))}</pre></div>
-    <div><h3>Available actions</h3>${tools || `<div class="note">No tools declared.</div>`}
-      <h3>Draft</h3><div id="interaction-draft">${draft}</div>
-      <div class="player-actions"><button id="submit-interaction" ${!S.interactionDraft.length || S.interactionSubmitted ? "disabled" : ""}>Submit calls</button>
-      <button id="finish-interaction" ${S.interactionSubmitted ? "disabled" : ""}>Finish turn</button>
-      <span class="note" id="interaction-state">${S.interactionSubmitted ? "submitted" : "pending"}</span></div></div></div>`;
-  el.querySelectorAll("[data-add-call]").forEach(button => button.onclick = () => addInteractionCall(Number(button.dataset.addCall)));
-  el.querySelectorAll("[data-remove-call]").forEach(button => button.onclick = () => { S.interactionDraft.splice(Number(button.dataset.removeCall), 1); renderInteraction(request); });
-  document.getElementById("submit-interaction").onclick = () => submitInteraction("tool_calls");
-  document.getElementById("finish-interaction").onclick = () => submitInteraction("end_turn");
+  if (!isNew) return;
+  S.interactionId = request.request_id; S.interactionSubmitted = false;
+  const sendIndex = request.available_tools.findIndex(tool => tool.name === "send_message");
+  const postIndex = request.available_tools.findIndex(tool => tool.name === "post_to_board");
+  const tools = request.available_tools.map((tool, index) =>
+    tool.name === "send_message" || tool.name === "post_to_board" ? "" : actionHtml(tool, index)).join("");
+  el.innerHTML = `<h2>${esc(request.label)} · episode ${request.episode}</h2>
+    <div class="note">This is your private view.</div>
+    <div id="peer-status" class="peer-strip" aria-label="Other participant status"><span class="note">Loading participant status&hellip;</span></div>
+    <div class="player-grid">
+    <div class="player-column"><details class="prompt-details"><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
+      <h3>Blackboard</h3><section class="player-chat" ${postIndex >= 0 ? `data-tool-index="${postIndex}"` : ""}><div class="player-chat-head">Public room</div>
+        <div id="player-board" class="player-chat-log" role="log" aria-label="Blackboard history"><div class="empty">Loading history&hellip;</div></div>
+        ${postIndex >= 0 ? `<div class="chat-compose"><textarea rows="2" data-field="body" data-type="string"
+          aria-label="Post to Blackboard" placeholder="Post to Blackboard…"></textarea></div>` : ""}</section>
+      <h3>Private chats</h3><div id="player-private" class="private-chat-list" aria-label="Private conversations"
+        ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
+      <h3>Episode information</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
+    <div class="player-column"><h3>Episode actions</h3>${tools || `<div class="note">Use the chat composers, then submit the episode.</div>`}
+      <div class="player-actions"><button id="submit-interaction">Submit episode</button>
+      <span class="note" id="interaction-state">ready</span></div></div></div>`;
+  document.getElementById("submit-interaction").onclick = submitInteraction;
 }
 
 function interactionId() {
   return "human-" + (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9-]/g, "");
 }
 
-function addInteractionCall(index) {
-  const request = S.interaction, tool = request.available_tools[index];
-  const form = document.querySelector(`[data-tool-index="${index}"]`);
-  try {
-    const fallback = form.querySelector("[data-json]").value.trim();
-    let input;
-    if (fallback) {
-      input = JSON.parse(fallback);
-      if (!input || Array.isArray(input) || typeof input !== "object") throw new Error("JSON input must be an object");
-    } else {
-      input = {};
-      form.querySelectorAll("[data-field]").forEach(field => {
-        if (field.dataset.type === "boolean") input[field.dataset.field] = field.checked;
-        else if (field.value !== "") input[field.dataset.field] = ["integer", "number"].includes(field.dataset.type) ? Number(field.value) : field.value;
+function interactionCalls(request) {
+  const calls = [];
+  document.querySelectorAll("[data-tool-index]").forEach(form => {
+    const tool = request.available_tools[Number(form.dataset.toolIndex)];
+    if (form.hasAttribute("data-message-tool")) {
+      form.querySelectorAll("[data-recipient]").forEach(field => {
+        if (field.value.trim()) calls.push({id:interactionId(), name:tool.name,
+          input:{to:field.dataset.recipient, body:field.value}});
       });
+      return;
     }
-    S.interactionDraft.push({id:interactionId(), name:tool.name, input});
-    renderInteraction(request);
-  } catch (error) {
-    document.getElementById("interaction-state").textContent = error.message;
-  }
+    const input = {}, fields = [...form.querySelectorAll("[data-field]")];
+    fields.forEach(field => {
+      if (field.type === "checkbox") input[field.dataset.field] = field.checked;
+      else if (field.value !== "") input[field.dataset.field] = ["integer", "number"].includes(field.dataset.type) ? Number(field.value) : field.value;
+    });
+    if (form.hasAttribute("data-required-tool") && Object.keys(input).length === 0)
+      throw new Error("Choose an agent to eliminate.");
+    if (Object.keys(input).length) calls.push({id:interactionId(), name:tool.name, input});
+  });
+  return calls;
 }
 
-function submitInteraction(action) {
+function submitInteraction() {
   const request = S.interaction;
   if (!request || S.interactionSubmitted) return;
-  const payload = {version:1, request_id:request.request_id, submission_id:interactionId(), action,
-    tool_calls:action === "tool_calls" ? S.interactionDraft : []};
-  S.interactionSubmitted = true; renderInteraction(request);
+  let calls;
+  try { calls = interactionCalls(request); }
+  catch (error) { setInteractionSubmitted(false, error.message); return; }
+  const payload = {version:1, request_id:request.request_id, submission_id:interactionId(),
+    action:calls.length ? "tool_calls" : "end_turn", tool_calls:calls};
+  setInteractionSubmitted(true, "submitting…");
   post(`/api/interaction/${encodeURIComponent(request.agent)}/${encodeURIComponent(request.request_id)}`, payload)
-    .then(() => { document.getElementById("interaction-state").textContent = "submitted"; })
-    .catch(error => { S.interactionSubmitted = false; renderInteraction(request);
-      document.getElementById("interaction-state").textContent = error.message; });
+    .then(() => {
+      document.querySelectorAll(".chat-compose textarea").forEach(field => {
+        field.value = "";
+        field.dispatchEvent(new Event("input"));
+      });
+      document.getElementById("interaction-state").textContent = calls.length
+        ? `sent ${calls.length} action${calls.length === 1 ? "" : "s"}` : "submitted";
+      pullPeerStatus(request);
+    })
+    .catch(error => setInteractionSubmitted(false, error.message));
 }
 
 function pullInteraction() {
   return get("/api/interaction").then(value => {
+    const requests = value.requests || [];
     const agents = new Set(seats().map(seat => seat.agent));
-    const requests = (value.requests || []).filter(request => agents.has(request.agent));
-    const request = requests.find(item => item.agent === S.agent) || requests[0] || null;
+    const visible = S.playerMode ? requests : requests.filter(request => agents.has(request.agent));
+    const request = visible.find(item => item.agent === (S.interaction || {}).agent)
+      || visible.find(item => item.agent === S.agent) || visible[0] || null;
     renderInteraction(request);
+    return request ? pullPeerStatus(request) : null;
   }).catch(() => {});
 }
 
 function poll() {
+  if (S.playerMode) {
+    return pullInteraction().then(() => setTimeout(poll, S.poll));
+  }
   get("/api/experiments").then(d => {
     S.experiments = d.experiments; S.poll = d.poll; S.stale = d.stale;
     if (!S.experiments.length) {
@@ -1606,8 +1924,21 @@ function poll() {
       S.experiment = first.name;
     }
     renderPicks();
-    return Promise.all([refresh(), pullInteraction()]);
+    return refresh();
   }).catch(() => {}).then(() => setTimeout(poll, S.poll));
+}
+
+function renderMode() {
+  const page = document.getElementById("page"), toggle = document.getElementById("mode-toggle");
+  page.classList.toggle("play-mode", S.playerMode);
+  toggle.textContent = S.playerMode ? "Observer view" : "Play view";
+  toggle.setAttribute("aria-pressed", String(S.playerMode));
+  toggle.setAttribute("aria-label", S.playerMode ? "Switch to observer view" : "Switch to player view");
+  if (S.playerMode) pullInteraction();
+  else {
+    renderInteraction(null);
+    blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
+  }
 }
 
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
@@ -1666,6 +1997,11 @@ document.addEventListener("pointercancel", endResize);
 document.getElementById("fold").onclick = () => {
   S.compact = !S.compact; hold("compact", S.compact); renderFold();
 };
+document.getElementById("mode-toggle").onclick = () => {
+  S.playerMode = !S.playerMode;
+  hold("player-mode", S.playerMode);
+  renderMode();
+};
 document.getElementById("body").addEventListener("click", e => {
   const button = e.target.closest("[data-expand]");
   if (!button) return;
@@ -1696,6 +2032,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape" || S.tab === "mailbox" || S.tab === "agent" || !S.inspect[S.tab]) return;
   closeInspector(S.tab);
 });
+renderMode();
 renderFold();
 poll();
 </script>

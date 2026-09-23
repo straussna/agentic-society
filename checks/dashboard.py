@@ -861,6 +861,9 @@ def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
         "the data dashboard is read before the tabs beneath it"
     assert 'aria-selected="${S.tab === key}"' in page
     assert 'aria-pressed="${c.name === S.experiment}"' in page
+    assert 'id="mode-toggle"' in page
+    assert '"Switch to observer view" : "Switch to player view"' in page
+    assert '#page.play-mode #top, #page.play-mode #body { display:none; }' in page
     assert "prefers-reduced-motion:reduce" in page
 
 

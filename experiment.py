@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import harness
+import product
 from harness import check_keys
 
 T = TypeVar("T")
@@ -39,17 +40,18 @@ ATTEMPTS = 2
 # episodes run at once, and the results settle in seat order, so nobody reads
 # this round's writes and a transfer made in one round is seen at the next.
 SCHEDULES = ("sequential", "simultaneous")
-EXPERIMENT_KEYS = {"schedule", "stop_when_one_remains", "stop_when_two_remain_after_tie",
-                   "provider", "model", "agent", "channel", "harness_files", "tool"}
+EXPERIMENT_KEYS = {"experiment_id", "schedule", "stop_when_one_remains",
+                   "stop_when_two_remain_after_tie", "provider", "model", "agent", "channel",
+                   "harness_files", "tool", "cost", "reveal"}
 
 # What a manifest may say about one agent. Everything else an agent is comes from
 # the experiment's defaults and config.toml.
 AGENT_KEYS = {"id", "label", "seats", "starter_files", "starter_files_below", "budget",
-              "provider", "model", "system_prompt", "memory_from"}
+              "provider", "model", "system_prompt", "memory_from", "quality_tier"}
 
 AGENT_TYPES = (("id", str), ("label", str), ("seats", int), ("starter_files", str),
                ("starter_files_below", int), ("budget", int), ("provider", str), ("model", str),
-               ("system_prompt", str), ("memory_from", dict))
+               ("system_prompt", str), ("memory_from", dict), ("quality_tier", str))
 
 MEMORY_FROM_KEYS = {"agent", "episode"}
 MEMORY_FROM_TYPES = (("agent", str), ("episode", int))
@@ -57,6 +59,10 @@ MEMORY_FROM_TYPES = (("agent", str), ("episode", int))
 # What an agent may be called to its peers: one path segment, since it lands in
 # paths and file names. The default is the seat number.
 LABEL = re.compile(r"^[A-Za-z0-9._-]+$")
+COST_KEYS = {"maximum", "reserved_completion", "warning", "ceiling_policy"}
+REVEAL_KEYS = {"during_play", "at_elimination", "at_completion", "experimenter_only"}
+OUTCOME_FIELDS = {"winners", "survivors", "draw", "elimination_order", "scores", "resources",
+                  "termination_reason", "evidence"}
 
 
 def seats_of(agents: list[str]) -> dict[str, str]:
@@ -80,6 +86,7 @@ def shorthand(ids: list[str], schedule: str = "sequential") -> dict:
     """A bare manifest for these agents, which is what a round stamps when driven directly."""
     return {"schedule": schedule, "stop_when_one_remains": False,
             "stop_when_two_remain_after_tie": False,
+            "experiment_id": "-".join(ids), "cost": {}, "reveal": {},
             "overrides": {}, "agents": [{"id": i, "provider": "anthropic",
                                            "model": "claude-sonnet-5"} for i in ids],
             "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
@@ -208,6 +215,33 @@ def load_manifest(path: Path) -> dict:
     if type(stop_when_two_remain_after_tie) is not bool:
         raise SystemExit(f"{path}: stop_when_two_remain_after_tie must be bool, got "
                          f"{type(stop_when_two_remain_after_tie).__name__}")
+    experiment_id = top.get("experiment_id", path.stem)
+    if not isinstance(experiment_id, str) or not product.IDENTIFIER.fullmatch(experiment_id) or \
+            experiment_id in (".", ".."):
+        raise SystemExit(f"{path}: experiment_id must be letters, digits, '.', '_' or '-'")
+    cost = top.get("cost", {})
+    if not isinstance(cost, dict):
+        raise SystemExit(f"{path}: cost must be a table")
+    check_keys(refuser(path), "cost: ", cost, COST_KEYS,
+               (("maximum", int), ("reserved_completion", int), ("warning", int),
+                ("ceiling_policy", str)))
+    if cost.get("maximum", 1) <= 0 or cost.get("reserved_completion", 0) < 0 or \
+            cost.get("warning", 0) < 0:
+        raise SystemExit(f"{path}: cost amounts must be non-negative and maximum must be positive")
+    if cost.get("ceiling_policy", "stop") != "stop":
+        raise SystemExit(f"{path}: cost.ceiling_policy must be 'stop'")
+    if cost.get("maximum") is not None and (cost.get("reserved_completion", 0) >= cost["maximum"] or
+            cost.get("warning", 0) > cost["maximum"]):
+        raise SystemExit(f"{path}: cost reserve and warning must fit below maximum")
+    reveal = top.get("reveal", {})
+    if not isinstance(reveal, dict):
+        raise SystemExit(f"{path}: reveal must be a table")
+    check_keys(refuser(path), "reveal: ", reveal, REVEAL_KEYS)
+    for phase, fields in reveal.items():
+        if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
+            raise SystemExit(f"{path}: reveal.{phase} must be a list of outcome field names")
+        if unknown := set(fields) - OUTCOME_FIELDS:
+            raise SystemExit(f"{path}: reveal.{phase} names unknown outcome fields {sorted(unknown)}")
     definitions = top.get("agent")
     if not isinstance(definitions, list) or not all(isinstance(r, dict) for r in definitions):
         raise SystemExit(f"{path}: agents are [[agent]] tables, each with an id")
@@ -268,6 +302,7 @@ def load_manifest(path: Path) -> dict:
                  if k not in EXPERIMENT_KEYS}
     return {"schedule": schedule, "stop_when_one_remains": stop_when_one_remains,
             "stop_when_two_remain_after_tie": stop_when_two_remain_after_tie,
+            "experiment_id": experiment_id, "cost": cost, "reveal": reveal,
             "overrides": overrides, "agents": agents, "labels": labels,
             "channels": tables, "harness_files": harness_files, "tools": tool_tables,
             "sha256": hashlib.sha256(data).hexdigest()}
@@ -282,6 +317,7 @@ def terms_of(entry: dict) -> dict[str, Any]:
 def stamp_of(manifest: dict) -> dict[str, Any]:
     """What every episode records about how the experiment was driven."""
     return {"schedule": manifest["schedule"],
+            "experiment_id": manifest["experiment_id"], "cost": manifest["cost"],
             "stop_when_one_remains": manifest["stop_when_one_remains"],
             "stop_when_two_remain_after_tie": manifest["stop_when_two_remain_after_tie"],
             "manifest_sha256": manifest["sha256"]}
@@ -366,6 +402,143 @@ def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
     total = sum(item.get("bytes", 0) for item in inherited)
     print(f"{agent}: inherited {total} bytes of private memory from "
           f"{source} episode {episode}")
+
+
+def toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_value(item) for item in value) + "]"
+    return str(value)
+
+
+def branch_manifest(manifest: dict, entries: list[dict], experiment_id: str) -> str:
+    """Serialize the concrete branch manifest accepted by load_manifest()."""
+    lines = [f"experiment_id = {toml_value(experiment_id)}",
+             f"schedule = {toml_value(manifest['schedule'])}",
+             f"stop_when_one_remains = {toml_value(manifest['stop_when_one_remains'])}",
+             f"stop_when_two_remain_after_tie = {toml_value(manifest['stop_when_two_remain_after_tie'])}"]
+    for key, value in manifest["overrides"].items():
+        if key not in ("system_prompt", "starter_files", "starter_files_below", "budget"):
+            lines.append(f"{key} = {toml_value(value)}")
+    if manifest["cost"]:
+        lines.append("\n[cost]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in manifest["cost"].items())
+    if manifest["reveal"]:
+        lines.append("\n[reveal]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in manifest["reveal"].items())
+    if manifest["harness_files"]:
+        lines.append("\n[harness_files]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in manifest["harness_files"].items())
+    for entry in entries:
+        lines.append("\n[[agent]]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in entry.items()
+                     if value is not None)
+    for channel in manifest["channels"] or []:
+        lines.append("\n[[channel]]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in channel.items())
+    for tool in manifest["tools"] or []:
+        lines.append("\n[[tool]]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in tool.items())
+    return "\n".join(lines) + "\n"
+
+
+def branch_totals(account: dict, index: int) -> dict[str, Any]:
+    """Cumulative settlement fields as they stood at one completed episode."""
+    totals: dict[str, Any] = {"sent": 0, "received": 0, "rebated": 0, "debited": 0,
+                              "forgiven": 0, "penalised": {}}
+    for episode in account.get("episodes", [])[:index]:
+        transfer = episode.get("transfer") or {}
+        totals["sent"] += int(transfer.get("amount", 0))
+        totals["rebated"] += int(transfer.get("rebate", 0))
+        totals["debited"] += int(transfer.get("debit", 0))
+        totals["received"] += int(episode.get("received", 0))
+        totals["forgiven"] += int(episode.get("forgiven", 0))
+        for name, record in (episode.get("channels") or {}).items():
+            penalty = int(record.get("penalty", 0))
+            if penalty:
+                totals["penalised"][name] = totals["penalised"].get(name, 0) + penalty
+    return totals
+
+
+def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_seat: str,
+                      output: Path | None = None) -> Path:
+    """Fork every seat at a completed round and make one new seat interactive."""
+    manifest = load_manifest(source)
+    if at_round < 1:
+        raise SystemExit("--at-round must be positive")
+    if takeover_seat not in manifest["labels"]:
+        raise SystemExit(f"no seat {takeover_seat!r} in {source}")
+    output = output or Path(__file__).with_name("experiments") / "branches" / f"{experiment_id}.toml"
+    if output.exists():
+        raise SystemExit(f"branch manifest {output} already exists")
+    if product.directory(harness.ROOT, experiment_id).exists():
+        raise SystemExit(f"experiment record {experiment_id!r} already exists")
+    new_ids = {seat: f"{experiment_id}-{int(seat):02d}" for seat in manifest["labels"]}
+    check_ids(list(new_ids.values()), "branch")
+    sources = []
+    for seat, entry in zip(manifest["labels"], manifest["agents"]):
+        account_path = harness.records_dir(entry["id"]) / "account.json"
+        try:
+            account = json.loads(account_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise SystemExit(f"{entry['id']} has no readable source account") from None
+        index = min(at_round, len(account.get("episodes", [])))
+        if index < at_round and harness.why_out(account) is None:
+            raise SystemExit(f"{entry['id']} did not reach completed round {at_round}")
+        if index < 1 or not harness.trace_path(entry["id"], index).exists():
+            raise SystemExit(f"{entry['id']} has no completed state at round {at_round}")
+        if harness.records_dir(new_ids[seat]).exists() or \
+                (harness.ROOT / "environments" / new_ids[seat]).exists():
+            raise SystemExit(f"branch target {new_ids[seat]!r} already exists")
+        trace = json.loads(harness.trace_path(entry["id"], index).read_text(encoding="utf-8"))
+        if harness.rebuildable(trace, entry["id"], index) is None:
+            raise SystemExit(f"{entry['id']} cannot be rebuilt at round {at_round}")
+        sources.append((seat, entry, account, index))
+    entries, evidence = [], []
+    for seat, entry, parent, index in sources:
+        new = new_ids[seat]
+        if harness.fork(entry["id"], index, new):
+            raise SystemExit(f"could not fork {entry['id']}")
+        account = harness.load_account(new)
+        account.update(branch_totals(parent, index))
+        for key in ("last_election", "eliminated"):
+            value = parent.get(key)
+            if value and value.get("round", at_round + 1) <= at_round:
+                account[key] = value
+        account["branch"] = {"experiment_id": experiment_id, "source_experiment_id":
+                             manifest["experiment_id"], "source_agent": entry["id"],
+                             "source_episode": index, "source_round": at_round}
+        if seat == takeover_seat:
+            account["provider"], account["model"] = "human", "interactive"
+        quality_tier = ("interactive" if seat == takeover_seat
+                        else entry.get("quality_tier", "standard"))
+        account["product"] = {"quality_tier": quality_tier}
+        harness.save_account(new, account)
+        generated = {"id": new, "label": manifest["labels"][seat],
+                     "provider": account["provider"], "model": account["model"],
+                     "budget": account["initial"],
+                     "system_prompt": account.get("system_prompt", ""),
+                     "quality_tier": (account.get("product") or {}).get("quality_tier", "standard")}
+        for key in ("starter_files", "starter_files_below"):
+            if key in account:
+                generated[key] = account[key]
+        entries.append(generated)
+        trace_path = harness.trace_path(entry["id"], index)
+        evidence.append({"seat": seat, "source_agent": entry["id"], "source_episode": index,
+                         "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
+                         "new_agent": new, "provider": account["provider"], "model": account["model"]})
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(branch_manifest(manifest, entries, experiment_id), encoding="utf-8", newline="\n")
+    lineage = {"version": 1, "experiment_id": experiment_id,
+               "source_experiment_id": manifest["experiment_id"], "source_manifest": str(source),
+               "source_manifest_sha256": manifest["sha256"], "source_round": at_round,
+               "takeover_seat": takeover_seat, "created_agents": new_ids, "traces": evidence,
+               "branch_manifest": str(output)}
+    product.atomic(product.directory(harness.ROOT, experiment_id) / "lineage.json", lineage)
+    return output
 
 
 # --- rounds -------------------------------------------------------------------
@@ -511,10 +684,15 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
 
     outs: dict[str, dict] = {}
     errors: dict[str, BaseException] = {}
-
     def go(agent: str, ep: harness.Episode) -> None:
         try:
             outs[agent] = harness.run_episode(ep, create)
+            if ep.account.get("provider") != "human" and stamp and stamp.get("experiment_id"):
+                human_waiting = any(other.account.get("provider") == "human" and name not in outs
+                                    for name, other in built.items())
+                product.progress(harness.ROOT, stamp["experiment_id"],
+                                 "waiting_player" if human_waiting else "resolving_actions",
+                                 rnd + 1, {"completed_autonomous": agent})
         except BaseException as e:      # run_episode has saved and reaped on its way out
             errors[agent] = e
 
@@ -721,8 +899,22 @@ def main(argv: list[str] | None = None) -> int:
                     help="continue existing compatible agent accounts; without this flag, "
                          "previous state is preserved under displaced/ and a fresh run starts")
     ap.add_argument("-c", "--config", type=Path, help="default: config.toml beside harness.py")
+    ap.add_argument("--branch-from", type=Path, metavar="MANIFEST",
+                    help="create an immutable experiment branch from a completed round")
+    ap.add_argument("--at-round", type=int, metavar="N", help="completed source round to branch")
+    ap.add_argument("--branch-id", help="new experiment identity and agent-id prefix")
+    ap.add_argument("--takeover-seat", metavar="SEAT",
+                    help="seat whose new agent uses human/interactive")
+    ap.add_argument("--output", type=Path, help="generated branch manifest path")
     a = ap.parse_args(argv)
 
+    if a.branch_from is not None:
+        if a.at_round is None or not a.branch_id or not a.takeover_seat:
+            ap.error("--branch-from requires --at-round, --branch-id and --takeover-seat")
+        output = branch_experiment(a.branch_from, a.at_round, a.branch_id,
+                                   a.takeover_seat, a.output)
+        print(f"branch manifest: {output}")
+        return 0
     if a.rounds < 1:
         ap.error("--rounds must be at least 1")
     named = a.named or a.name
@@ -747,23 +939,61 @@ def main(argv: list[str] | None = None) -> int:
     agents = [e["id"] for e in manifest["agents"]]
     live = set(agents)
     stamp = stamp_of(manifest)
+    experiment_id = manifest["experiment_id"]
     vote = next((tool for tool in manifest["tools"] or [] if tool["kind"] == "vote"), None)
     a_round = simultaneous_round if manifest["schedule"] == "simultaneous" else sequential_round
     if not a.resume:
-        harness.displace_agents(agents)
+        bundle = harness.displace_agents(agents)
+        product.displace(harness.ROOT, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
     for entry in manifest["agents"]:
         account = harness.load_account(entry["id"], **terms_of(entry))
+        account["product"] = {"quality_tier": entry.get(
+            "quality_tier", "interactive" if entry["provider"] == "human" else "standard")}
+        harness.save_account(entry["id"], account)
         inherit_memory(entry, account)
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
           f"{manifest['schedule']})")
+    reason = "round_limit"
+    code = 0
     try:
-        for rnd in range(a.rounds):
-            if not play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
-                              manifest["stop_when_one_remains"], vote,
-                              manifest["stop_when_two_remain_after_tie"]):
+        for _ in range(a.rounds):
+            round_number = max((len(harness.load_account(agent).get("episodes", []))
+                                for agent in agents), default=0) + 1
+            rnd = round_number - 1
+            cost = product.cost(agents, harness.load_account, manifest["cost"])
+            product.progress(harness.ROOT, experiment_id, "preparing_round", round_number,
+                             {"cost": cost, "agents": agents,
+                              "schedule": manifest["schedule"]})
+            if cost["ceiling_reached"]:
+                reason = "cost_ceiling"
+                break
+            autonomous = [entry["id"] for entry in manifest["agents"]
+                          if entry["id"] in live and entry["provider"] != "human"]
+            players = [entry["id"] for entry in manifest["agents"]
+                       if entry["id"] in live and entry["provider"] == "human"]
+            if autonomous:
+                product.progress(harness.ROOT, experiment_id, "waiting_autonomous", round_number,
+                                 {"agents": autonomous})
+            if players:
+                product.progress(harness.ROOT, experiment_id, "waiting_player", round_number,
+                                 {"agents": players})
+            continued = play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
+                                   manifest["stop_when_one_remains"], vote,
+                                   manifest["stop_when_two_remain_after_tie"])
+            product.progress(harness.ROOT, experiment_id, "resolving_actions", round_number)
+            product.progress(harness.ROOT, experiment_id, "settling_round", round_number)
+            product.progress(harness.ROOT, experiment_id, "round_completed", round_number,
+                             {"active": [agent for agent in agents if agent in live]})
+            if not continued:
+                last_election = next((harness.load_account(agent).get("last_election")
+                                      for agent in agents if harness.load_account(agent).get("last_election")), {})
+                reason = ("final_tie" if manifest["stop_when_two_remain_after_tie"] and
+                          len(live) == 2 and last_election.get("top_tied")
+                          else "one_remains" if len(live) == 1 and manifest["stop_when_one_remains"]
+                          else "all_eliminated" if not live else "completed")
                 break
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,
@@ -771,8 +1001,15 @@ def main(argv: list[str] | None = None) -> int:
         # the rounds.
         print(f"interrupted; the rounds end here with {len(live)} agents at the table",
               file=sys.stderr)
-        return 130
-    return 0
+        reason, code = "interrupted", 130
+    product.progress(harness.ROOT, experiment_id,
+                     "interrupted" if reason == "interrupted" else
+                     "cost_ceiling" if reason == "cost_ceiling" else "completed",
+                     max((len(harness.load_account(agent).get("episodes", [])) for agent in agents),
+                         default=0), {"termination_reason": reason})
+    product.outcome(harness.ROOT, experiment_id, agents, manifest["labels"], live, reason,
+                    harness.load_account, manifest["reveal"])
+    return code
 
 
 if __name__ == "__main__":

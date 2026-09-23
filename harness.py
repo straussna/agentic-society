@@ -3928,6 +3928,8 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
                           if c.writer == "experimenter"},
         # How the experiment was driven, and the manifest that said so.
         "schedule": experiment.get("schedule", ""),
+        "experiment_id": experiment.get("experiment_id", ""),
+        "cost": experiment.get("cost", {}),
         "manifest_sha256": experiment.get("manifest_sha256", ""),
         **({"memory_from": experiment["memory_from"]}
            if experiment.get("memory_from") else {}),

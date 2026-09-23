@@ -120,18 +120,34 @@ Three principles bind the language:
 
 | Key | Type | Meaning |
 |---|---|---|
+| `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
 | `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
+| `[cost]` | table | Match-level autonomous inference ceiling, reserve, warning, and boundary policy |
+| `[reveal]` | table | Which outcome fields are designated for each audience and lifecycle point |
 | `[[agent]]` | tables, one or more | Seat definitions, in order; each occupies one seat unless `seats` groups identical agents |
 | `system_prompt` | str, **required** here or on every `[[agent]]` | What is said to every agent on every turn. `""` says nothing |
 | any other key of section 3 | | The default for every seat |
 
 Unknown keys are refused, naming the key; so is a `config.toml` key, saying where it
 lives. The file's digest is stamped in every episode's provenance.
+
+`[cost]` may declare positive `maximum`, non-negative `reserved_completion` and
+`warning`, and `ceiling_policy = "stop"`. Before each round, spend is summed from
+committed non-human episodes. A new round is not started when spend plus the reserve
+reaches the maximum. A round already running is allowed to settle; providers are never
+silently changed. Human episodes have zero provider charges and do not contribute to
+autonomous spend.
+
+`[reveal]` may list outcome fields under `during_play`, `at_elimination`,
+`at_completion`, and `experimenter_only`. The permitted fields are `winners`,
+`survivors`, `draw`, `elimination_order`, `scores`, `resources`,
+`termination_reason`, and `evidence`. The outcome record remains the complete
+experimenter record; the table is the declarative policy a player-facing surface uses.
 
 Seat order determines identity, presentation and settlement order. Every agent sees
 agents and records in that same order, and every episode records it as
@@ -592,6 +608,7 @@ starter_files_below = 1500000
 budget = 2000000            # optional
 provider = "anthropic"      # required here or at top level, together with model
 model = "claude-sonnet-5"
+quality_tier = "premium"    # optional product-facing label
 ```
 
 A definition without `seats` names one agent exactly as before. With a positive integer
@@ -619,6 +636,9 @@ This is a creation term rather than a fork: it preserves only behaviorally visib
 private memory while every other part of the agent starts fresh. It is refused if the
 source is another seat in the new experiment, because starting fresh would displace
 that source before it could be read.
+
+`quality_tier` is a product-facing string recorded with match cost state. It neither
+selects nor changes a provider or model; those exact terms remain independently pinned.
 
 The six pinned settings are fixed in the agent's account when it is created. An agent
 that exists already must have been created on the same six, or the manifest is refused.
@@ -813,7 +833,8 @@ Every refusal is a `SystemExit` naming the file and the key.
 
 ## 11. What reaches the trace
 
-Every episode's provenance stamps: the harness digest, the system prompt in force whole
+Every episode's provenance stamps: the harness digest, the experiment identity and cost
+policy, the system prompt in force whole
 and by digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
 channel's source digest, the seating, labels and per-agent presentation order, the schedule, the manifest's digest, the

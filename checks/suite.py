@@ -114,7 +114,8 @@ def check_no_setting_is_given_in_two_places():
         assert top.get("agent"), f"{m.name}: an experiment seats agents"
         stray = sorted(set(top) - {"schedule", "stop_when_one_remains",
                                   "stop_when_two_remain_after_tie", "provider", "model",
-                                  "agent", "channel", "harness_files", "tool"}
+                                  "experiment_id", "cost", "reveal", "agent", "channel",
+                                  "harness_files", "tool"}
                        - treatment)
         assert not stray, f"{m.name} sets {stray}, which config.toml owns"
         told = "system_prompt" in top or all("system_prompt" in a for a in top["agent"])
