@@ -1,6 +1,6 @@
 # Sandbox for one metered episode. Nothing in here is prompt surface:
 # the agent never sees this file, only the environment it produces.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # bash is required by the prompt's claim; the rest is the toolbox an ordinary
 # Debian box has, baked in because the container has no network. Network
