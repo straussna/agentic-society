@@ -1,0 +1,34 @@
+# File formatting defaults and per-language overrides.
+# Language formatter options belong in that tool's repository configuration.
+# Markdown guides link to configuration; they do not duplicate these settings.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{json,jsonc,yml,yaml,html,css,scss,js,jsx,ts,tsx,mjs,cjs}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{gd,gdshader}]
+indent_style = tab
+indent_size = 4
+
+[{Makefile,makefile,GNUmakefile,*.mk}]
+indent_style = tab
+
+[*.{tscn,tres}]
+indent_style = unset
+indent_size = unset
+trim_trailing_whitespace = false
+
+[*.{bat,cmd}]
+end_of_line = crlf

@@ -12,14 +12,13 @@ topic, with the fake API in `checks/fake.py` and every shared fixture in
 `checks/lanes.py`. Nothing in it bills an API. Some of it starts Docker containers,
 and that is the only part that is slow.
 
-**Run the cheapest thing that answers the question you actually have.** Work down
-this ladder and stop at the first rung that covers what you changed.
+Available verification commands:
 
 | what you changed | run |
 |---|---|
 | one behaviour, and you know its name | `py -3 check.py <name-fragment>` |
 | pricing, metering, refusals, traces, the declared system prompt, starter files, forks, experiments, manifests, the channel table, the tool table and what a tool call does, labels, receipts, harness file names, simultaneous rounds, experimenter channels, transfer funding, push and pull delivery, author labels, transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial observation, the silence penalties, the grace, the floor | `py -3 check.py --no-docker` |
-| anything, before handing work over | `py -3 check.py` |
+| full verification suite | `py -3 check.py` |
 | `harness.py`'s episode path — the container, the shell, `load_state`/`save_state`, `run_once` | `py -3 check.py --real` |
 
 Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
@@ -41,13 +40,9 @@ them. Those are the checks that skip when Docker is down, and the reason
 `--no-docker` still runs 241 of 266.
 
 `--real` puts every check in a container. It is what says the two lanes still
-agree, so run it after changing how an episode is set up or torn down. It is not
-the default, and it is not what to run to check an assertion you just edited.
+agree, including how an episode is set up or torn down.
 
 ## Things that will waste your time
-
-Do not run the full suite repeatedly to watch a number. Run it once when the
-work is done.
 
 Docker Desktop slows down markedly after a few hundred containers. A full run
 that took 40s on a fresh daemon can take two minutes later in a long day.
@@ -99,3 +94,7 @@ scoped to its own pid and cannot match `mtr-<agent>-<index>`. Remove those by ha
 So do not edit `harness.py` while a suite run or an experiment is in flight — the
 running process will disagree with the file and the check fails for a reason
 that has nothing to do with the change.
+
+## Formatting sources
+
+[`.editorconfig`](.editorconfig) owns file formatting; [`.gitattributes`](.gitattributes) owns Git line endings.
