@@ -108,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no check matches {args.patterns}")
         return 2
 
+    # The provider adapters refuse a redirected endpoint, and every check hands
+    # them a fake client, so an endpoint set in the calling shell is removed
+    # here, before any worker inherits the environment.
+    for variable in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
+        os.environ.pop(variable, None)
+
     # Asked once for the whole run, and handed to every worker: docker info is
     # slower than most of the checks that depend on the answer.
     available = False if args.no_docker else docker_ready()
