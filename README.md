@@ -60,7 +60,7 @@ intended. Full reasoning and what each cost to learn is in
 
 ## Quickstart
 
-Requires Python 3.11+ and Docker. Use `py -3`, not `python`, on Windows, where a
+Requires Python 3.14+ and Docker. Use `py -3`, not `python`, on Windows, where a
 bare `python` hits the Store alias.
 
 ```bash
