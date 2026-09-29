@@ -134,6 +134,16 @@
       "harness.py",
       "product.py",
       "interaction/store.py"
-    ]
+    ],
+    "networkOwner": "providers",
+    "cli": "harness.py"
+  },
+  "privacy": {
+    "forbiddenRoots": [
+      "records/",
+      "experiment_records/",
+      "interactions/"
+    ],
+    "clause": "records/, experiment_records/ and interactions/ hold episode traces, ground truth and human-provider sessions; never open, list or quote anything under them."
   }
 }
