@@ -136,7 +136,13 @@
       "interaction/store.py"
     ],
     "networkOwner": "providers",
-    "cli": "harness.py"
+    "cli": "harness.py",
+    "collectCoverage": true,
+    "coverageCommand": [
+      "check.py",
+      "--no-docker"
+    ],
+    "testFunctionPattern": "check_*"
   },
   "privacy": {
     "forbiddenRoots": [
