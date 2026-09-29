@@ -150,8 +150,10 @@
     "forbiddenRoots": [
       "records/",
       "experiment_records/",
-      "interactions/"
+      "interactions/",
+      "displaced/",
+      "environments/"
     ],
-    "clause": "records/, experiment_records/ and interactions/ hold episode traces, ground truth and human-provider sessions; never open, list or quote anything under them."
+    "clause": "records/, experiment_records/, interactions/, displaced/ and environments/ hold episode traces, ground truth, agent outputs and human-provider sessions; never open, list or quote anything under them."
   }
 }
