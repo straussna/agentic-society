@@ -441,7 +441,7 @@ def check_run_once_is_build_then_run_then_commit():
         t = json.loads(json.dumps(t))
         t.pop("duration_s")
         t["provenance"].pop("started_at")
-        return t
+        return without_listing_times(t)
 
     with temp_root() as root:
         seated(root, other=neighbour)
