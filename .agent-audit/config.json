@@ -1,0 +1,139 @@
+{
+  "name": "agentic-society",
+  "conventions": [
+    "CLAUDE.md"
+  ],
+  "packs": [
+    "python"
+  ],
+  "modes": [
+    {
+      "id": "patterns"
+    },
+    {
+      "id": "coupling"
+    },
+    {
+      "id": "simplicity"
+    },
+    {
+      "id": "typing"
+    },
+    {
+      "id": "testing"
+    },
+    {
+      "id": "guardrails",
+      "scope": [
+        "harness.py",
+        "experiment.py",
+        "product.py",
+        "providers",
+        "interaction",
+        "view.py",
+        "human.py",
+        "Dockerfile",
+        "config.toml"
+      ]
+    },
+    {
+      "id": "docs"
+    },
+    {
+      "id": "meta"
+    }
+  ],
+  "paths": {
+    "source": [
+      "harness.py",
+      "experiment.py",
+      "product.py",
+      "analyze.py",
+      "view.py",
+      "human.py",
+      "providers",
+      "interaction"
+    ],
+    "tests": [
+      "checks",
+      "check.py"
+    ],
+    "exclude": [
+      "records",
+      "experiment_records",
+      "environments",
+      "displaced",
+      "interactions",
+      "Audits",
+      ".agent-audit",
+      ".claude",
+      ".codex"
+    ]
+  },
+  "docs": {
+    "exclude": [
+      "^view\\.html$",
+      "^files/",
+      "^experiments/(?!README\\.md$)",
+      "^\\.agent-audit/"
+    ],
+    "knownTopDirs": [
+      "checks",
+      "docs",
+      "experiments",
+      "files",
+      "interaction",
+      "providers",
+      ".github"
+    ]
+  },
+  "python": {
+    "templateRoots": [
+      "view.html"
+    ],
+    "optionalDependencies": [
+      "matplotlib"
+    ],
+    "networkModules": [
+      "anthropic",
+      "openai",
+      "http",
+      "socket",
+      "requests",
+      "httpx",
+      "aiohttp",
+      "urllib3"
+    ],
+    "gateKeys": [
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "ANTHROPIC_BASE_URL",
+      "OPENAI_BASE_URL",
+      "\"--network\", \"none\""
+    ],
+    "layers": {
+      "providers.base": 0,
+      "product": 0,
+      "interaction": 1,
+      "providers": 2,
+      "harness": 3,
+      "experiment": 4,
+      "analyze": 4,
+      "view": 5,
+      "human": 5
+    },
+    "cliModules": [
+      "harness.py",
+      "experiment.py",
+      "analyze.py",
+      "view.py",
+      "interaction/cli.py"
+    ],
+    "configModule": "config.toml",
+    "publicationModules": [
+      "harness.py",
+      "product.py",
+      "interaction/store.py"
+    ]
+  }
+}
