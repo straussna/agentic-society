@@ -2,8 +2,7 @@
 
 `docs/manifest.md` defines every term this repo uses: harness, experimenter, agent, seat,
 label, episode, turn, round, experiment, environment, channel, blackboard, mailbox,
-schema, starter files, harness files, digest, account, trace. Its section 13 maps the
-old names (run, session, cohort, world, region, seed, gift, wake) to the current ones.
+schema, starter files, harness files, digest, account, trace.
 
 # Running check.py
 
@@ -14,39 +13,45 @@ and that is the only part that is slow.
 
 Available verification commands:
 
-| what you changed | run |
-|---|---|
-| one behaviour, and you know its name | `py -3 check.py <name-fragment>` |
-| pricing, metering, refusals, traces, the declared system prompt, starter files, forks, experiments, manifests, the channel table, the tool table and what a tool call does, labels, receipts, harness file names, simultaneous rounds, experimenter channels, transfer funding, push and pull delivery, author labels, transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial observation, the silence penalties, the grace, the floor | `py -3 check.py --no-docker` |
-| full verification suite | `py -3 check.py` |
-| `harness.py`'s episode path — the container, the shell, `load_state`/`save_state`, `run_once` | `py -3 check.py --real` |
+```powershell
+# One behaviour, by name fragment; fragments match anywhere and several can be given
+py -3 "C:\source\repos\agentic-society\check.py" refusal fallback
+# Every check that needs no container: pricing, metering, refusals, traces, the declared
+# system prompt, starter files, forks, experiments, manifests, the channel table, the tool
+# table and what a tool call does, labels, receipts, harness file names, simultaneous
+# rounds, experimenter channels, transfer funding, push and pull delivery, author labels,
+# transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial
+# observation, the silence penalties, the grace, the floor
+py -3 "C:\source\repos\agentic-society\check.py" --no-docker
+# Full verification suite
+py -3 "C:\source\repos\agentic-society\check.py"
+# harness.py's episode path: the container, the shell, load_state/save_state, run_once
+py -3 "C:\source\repos\agentic-society\check.py" --real
+# Print every check name
+py -3 "C:\source\repos\agentic-society\check.py" --list
+```
 
 Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
 about 40s, `--real` two to four minutes.
 
-`py -3 check.py --list` prints every name. Fragments match anywhere, and several
-can be given at once: `py -3 check.py refusal fallback`.
-
-## Why there are two lanes
+## Lanes
 
 Most checks are arithmetic — what a turn cost, what reached the series, which
-stop an episode ended on. A container proves none of that, so those episodes run
-in a directory and a bash process on this machine.
+stop an episode ended on — and run their episodes in a directory and a bash
+process on this machine.
 
-What only a container can show — modes, ownership, the dead network, what the
-image has and lacks — takes a real one. That includes the checks that an inbox
-and the transfer ledger really are root's and really do refuse every route into
-them. Those are the checks that skip when Docker is down, and the reason
-`--no-docker` still runs 242 of 267.
+Checks of what only a container shows — modes, ownership, the dead network, what
+the image has and lacks, and that an inbox and the transfer ledger are root's and
+refuse every route into them — run in a real container and skip when Docker is
+down. `--no-docker` runs 242 of 267.
 
-`--real` puts every check in a container. It is what says the two lanes still
-agree, including how an episode is set up or torn down.
+`--real` runs every check in a container, which verifies that the two lanes
+agree, including how an episode is set up and torn down.
 
 ## Things that will waste your time
 
-Docker Desktop slows down markedly after a few hundred containers. A full run
-that took 40s on a fresh daemon can take two minutes later in a long day.
-That is the daemon, not a regression — restart Docker instead of hunting it.
+Docker Desktop slows down markedly after a few hundred containers. When a full
+run takes well over 40s, restart Docker.
 
 A suite run only removes containers carrying its own pid, so two runs at once
 leave each other alone and no run of `check.py` can touch a live experiment.
@@ -57,9 +62,8 @@ Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
 flood against a deadline) and anything setting `COMMAND_TIMEOUT`.
 `a_simultaneous_round_runs_its_episodes_at_once` and
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight` use a 10
-second thread barrier and fail the same way under contention. Running with `-j`
-above the core count makes them fail for contention, not for cause. The default
-`-j` is already sized for this machine; lower it before raising it.
+second thread barrier and also fail under contention. `-j` must not exceed the
+core count; the default is sized for this machine.
 
 # Stopping an agent early
 
@@ -91,9 +95,7 @@ scoped to its own pid and cannot match `mtr-<agent>-<index>`. Remove those by ha
 
 `harness.py` hashes itself at import and records the digest in every trace, and
 `check_the_harness_digest_is_read_once` compares that against the file on disk.
-So do not edit `harness.py` while a suite run or an experiment is in flight — the
-running process will disagree with the file and the check fails for a reason
-that has nothing to do with the change.
+`harness.py` must not be edited while a suite run or an experiment is in flight.
 
 ## Formatting sources
 
