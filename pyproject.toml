@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["checks"]
+python_files = ["*.py"]
+python_functions = ["check_*"]
+pythonpath = ["."]
+addopts = ["-p", "no:cacheprovider"]

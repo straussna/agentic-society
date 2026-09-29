@@ -29,6 +29,9 @@ jobs:
       - run: pip install -r requirements.txt
       # No key, nothing billed: the suite runs against a fake API.
       - run: python check.py --no-docker
+      # The same checks under pytest, the runner coverage tools drive.
+      - run: pip install pytest
+      - run: python -m pytest checks
 
   full:
     name: all checks, in containers

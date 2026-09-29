@@ -34,6 +34,20 @@ py -3 "C:\source\repos\agentic-society\check.py" --list
 Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
 about 40s, `--real` two to four minutes.
 
+## Under pytest
+
+The same checks run under pytest, which with coverage.py is the suite's only test
+dependency: `pyproject.toml` collects every `check_*` function under `checks/`, and
+`conftest.py` sets up the run as `check.py` does and reports a `Skip` as a skip. Checks
+run one at a time in one process. Without a flag the container checks skip, as under
+`--no-docker`; `--docker` runs them and `--real` matches `check.py --real`.
+
+```powershell
+py -3 -m pip install pytest coverage
+py -3 -m pytest "C:\source\repos\agentic-society\checks"
+py -3 -m pytest "C:\source\repos\agentic-society\checks" --docker
+```
+
 ## Lanes
 
 Most checks are arithmetic — what a turn cost, what reached the series, which
