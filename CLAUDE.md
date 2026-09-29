@@ -37,7 +37,7 @@ What only a container can show — modes, ownership, the dead network, what the
 image has and lacks — takes a real one. That includes the checks that an inbox
 and the transfer ledger really are root's and really do refuse every route into
 them. Those are the checks that skip when Docker is down, and the reason
-`--no-docker` still runs 241 of 266.
+`--no-docker` still runs 242 of 267.
 
 `--real` puts every check in a container. It is what says the two lanes still
 agree, including how an episode is set up or torn down.
@@ -76,7 +76,7 @@ The cost is latency: worst case one whole turn, which is one API call plus the
 commands it asks for. Press `Ctrl+C` a second time to stop waiting. The handler
 puts the default back before it returns, so the second press raises
 `KeyboardInterrupt`, and where it lands decides what survives. Inside a turn,
-`harness.episode` catches it and ends the episode as `interrupted`: the files are
+`harness.run_turns` catches it and ends the episode as `interrupted`: the files are
 mirrored back, the trace is written and the container is reaped, the same commit
 the first press makes. A press that lands while an environment is being built or
 torn down, or during a simultaneous round's wait on its threads, abandons the

@@ -682,9 +682,8 @@ def fake_experiment(root: Path, acted: list[tuple], series: tuple[int, ...] = (1
         }), encoding="utf-8")
     return view.experiment_named("g")
 
-# The spec's persona experiment (docs/manifest.md section 9), without its brief:
-# a journal with an identity file inside it, a noticeboard per label, letters, and
-# no transfer channel.
+# A persona channel table without a brief: a journal with an identity file inside
+# it, a noticeboard per label, letters, and no transfer channel.
 PERSONA = [
     {"name": "journal", "writer": "self", "readers": "self", "shape": "directory", "path": "journal"},
     {"name": "identity", "writer": "self", "readers": "self", "shape": "file",

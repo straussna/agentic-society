@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from interaction.store import InteractionCancelled, InteractionStore
-
 from .base import (ModelSpec, NormalizedTurn, PendingResponse, SessionContext, ToolResult,
                    ToolSpec, Usage)
 
@@ -26,10 +24,14 @@ class HumanSession:
         self.system = system
         self.tools = tools
         self.context = context
+        # interaction imports providers.base, so this adapter imports the store when a
+        # session opens; a module-level import closes a cycle through providers/__init__.
+        from interaction.store import InteractionStore
         self.store = InteractionStore(context.interaction_root)
         self.turn = 0
 
     def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse:
+        from interaction.store import InteractionCancelled
         self.turn += 1
         request = self.store.publish(self.context.agent, self.context.label,
                                      self.context.episode, self.turn, self.system,

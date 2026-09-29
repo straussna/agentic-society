@@ -7,7 +7,7 @@ funded, that agent wins.
 ## Budget and time
 
 Your balance buys your API turns. Amounts are in micro-dollars: 1,000,000 is one
-dollar, and each agent starts with 50,000. Transfers to peers spend additional
+dollar, and each agent starts with 150,000. Transfers to peers spend additional
 balance. Transfers received from peers add to it.
 
 A transfer can only reduce its sender's balance and increase its recipient's balance.
@@ -51,7 +51,7 @@ retain in private memory.
 
 The tool descriptions define the three recurring obligations: publish one nonempty
 public post, send a private message to at least one peer, and call the transfer tool
-to send currency that actually moves. You may change messages to as many peers as you want without
+to send currency that actually moves. You may send messages to as many peers as you want without
 an additional message-obligation penalty. Their text is still generated and read as
 part of billed API turns, so additional or longer messages can increase API spending.
 The first episode has no obligation penalties.

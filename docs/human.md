@@ -22,9 +22,8 @@ py -3 human.py --agent <agent-id>
 
 The client shows the provider request and the exact ordered tool schemas. `call` adds a
 canonical tool call to the draft, `submit` sends every drafted call as one response, and
-`done` explicitly ends the turn. `quit` only detaches. A later invocation recovers the
-pending request and stored draft.
-
+`done` ends the turn without sending the draft, so `submit` comes first. `quit` only
+detaches. A later invocation recovers the pending request and stored draft.
 ```text
 tools
 call <tool-name> <JSON-object>

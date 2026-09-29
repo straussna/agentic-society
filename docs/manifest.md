@@ -18,7 +18,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger, a receipt, and the notice a refused turn receives. It utters no constant of its own |
+| **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
 | **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, and every manifest declares one, `""` included |
 | **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness refuses to let any of it stop being constant. Configures everything through `config.toml` and a manifest |
 | **Agent** | One participant: an account, a seat, a private store inherited from episode to episode, and the model that acts for it |
@@ -29,7 +29,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Episode** | One container lifetime: a fresh sandbox, one shell, turns until a turn runs no command or the context fills. Produces one trace |
+| **Episode** | One container lifetime: a fresh sandbox, one shell, turns until the agent ends its turn without a tool call, the context fills, the balance runs out or a safety stop is reached. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
 | **Round** | One episode for every agent still in the experiment |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
@@ -41,7 +41,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | Term | Definition |
 |---|---|
 | **Environment** | Everything under `/work` in an agent's sandbox: its channels and the harness files, nothing else |
-| **Seat** | An agent's numbered position, from 1. Names its balance to every reader alike |
+| **Seat** | An agent's numbered position, from 1: its order, and its default label |
 | **Channel** | One part of the environment with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
 | **Writer** | Who may put bytes in a channel: `self` or `experimenter`. The harness's own files are the `[harness_files]` table, not channels |
 | **Readers** | Who may read it: `self`, `all`, `addressee` (one named peer per file), or `harness` (the harness parses it) |
@@ -50,10 +50,10 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's next inbox and nowhere else, then expires |
 | **Schema** | A fixed format the harness parses and acts on, either from a `self`-written, `harness`-read file or from a schema-defined mailbox. A fixed menu in code |
 | **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
-| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `read_path`, `transfer`. A fixed menu in code |
+| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `read_path`, `transfer`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its private directory when its balance first falls to a chosen level |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
-| **Harness file** | A file the harness renders from the accounts and plants read-only: a balance per seat, a ledger per transfer channel, and the digest |
+| **Harness file** | A file the harness renders from the accounts and plants read-only: a balance per seat, a ledger per transfer channel, the digest, the round announcement, and a receipt |
 | **Digest** | The harness file that quotes every pushed channel at episode start: new content in full, unchanged content by name |
 | **Initial observation** | The first thing an episode sees: the directory listing, plus the digest under push delivery |
 
@@ -65,7 +65,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Delivery** | `push`: pushed channels are quoted in the digest at episode start. `pull`: nothing is quoted; the agent reads what it chooses at the ordinary price |
 | **Pushed** | A channel property: whether it is part of the digest under push delivery |
 | **Silence penalty** | A channel property: the share of the remaining balance taken from an episode that added nothing new to the channel |
-| **Transfer** | The one schema today: either one line `<label> <amount>` or one addressed mailbox slot containing `<amount>`, crediting that peer with no more than the episode spent |
+| **Transfer** | The only schema: either one line `<label> <amount>` or one addressed mailbox slot containing `<amount>`, crediting that peer with no more than the episode spent |
 | **Funded by** | Who pays for a transfer. `harness`: the receiver is credited from nowhere and the giver rebated; the total grows. `giver`: the amount leaves the giver; the total is conserved |
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
@@ -111,17 +111,41 @@ Three principles bind the language:
 - **Names are the experimenter's.** Every file and directory an agent sees is named in
   the manifest. The defaults use sparse names; a persona experiment
   chooses its own.
-- **The default environment is today's.** An experiment that declares no `[[channel]]`
-  gets exactly the environment the competitions run in, byte for byte. That is how the
-  existing suite stays the proof. What is said to an agent has no default: a manifest
-  declares it or is refused.
+- **The default environment is the code's.** An experiment that declares no
+  `[[channel]]` gets the table in section 8. It must still declare at least one
+  `[[tool]]`. What is said to an agent has no default: a manifest declares it or is
+  refused.
+
+### Running a manifest
+
+`py -3 experiment.py NAME` runs every seat; `py -3 harness.py --agent ID --manifest PATH`
+runs one.
+
+| Flag | Meaning |
+|---|---|
+| `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
+| `-r N` | Up to N rounds, default 1, stopping early as budgets end |
+| `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
+| `--resume` | Continue existing compatible accounts; without it, previous state moves under `displaced/` and a fresh run starts |
+| `-c PATH` | The config file; default `config.toml` beside `harness.py` |
+| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
+| `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
+| `harness.py --watch` | Echo the agent's words and account to stdout |
+| `harness.py --fork-from AGENT --at N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
+| `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
+
+Each experiment writes `experiment_records/<experiment_id>/progress.json`,
+`outcome.json` and, for a branch, `lineage.json`. The outcome's `termination_reason` is
+one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`, `all_eliminated`,
+`completed` or `interrupted`. Human seats are answered as [docs/human.md](human.md)
+describes.
 
 ## 2. Top level
 
 | Key | Type | Meaning |
 |---|---|---|
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
-| `schedule` | `"sequential"` \| `"simultaneous"` | How a round is driven |
+| `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
 | `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
@@ -141,7 +165,8 @@ lives. The file's digest is stamped in every episode's provenance.
 committed non-human episodes. A new round is not started when spend plus the reserve
 reaches the maximum. A round already running is allowed to settle; providers are never
 silently changed. Human episodes have zero provider charges and do not contribute to
-autonomous spend.
+autonomous spend. `reserved_completion` must be below `maximum` and `warning` at most
+`maximum`; `warning` only marks `warning_reached` in the progress record.
 
 `[reveal]` may list outcome fields under `during_play`, `at_elimination`,
 `at_completion`, and `experimenter_only`. The permitted fields are `winners`,
@@ -205,8 +230,8 @@ pinned by digest like the shipped prompt.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `starter_files` | dir under `files/` | `""` | Copied once into the agent's private directory. Pinned |
-| `starter_files_below` | int ≥ 0 | 0 | The balance at or below which they land. At or above the budget, the first episode |
+| `starter_files` | a file or directory under `files/`, or a `./` or `../` path beside the manifest | `""` | Copied once into the agent's private directory. Pinned |
+| `starter_files_below` | int > 0 when `starter_files` is set | 0 | The balance at or below which they land. At or above the budget, the first episode |
 
 `starter_files` and `starter_files_below` are set together or not at all. What lands is
 recorded in the account by name, digest, episode and paths, and lands once.
@@ -229,13 +254,15 @@ of every run whatever the experiment is. They live in `config.toml`, and a manif
 naming one is refused saying so — no setting is given in two places, and no run's terms
 depend on which file was read last.
 
-### Refused: keys that became channel fields
+### Refused: retired keys
 
-These were top-level keys and are fields of the channel they describe. A manifest or
-`config.toml` naming one is refused, and the refusal names the field it became.
+A manifest or `config.toml` naming one of these keys is refused, and the refusal names
+where the setting is declared.
 
-| Key | Now |
+| Key | Declared as |
 |---|---|
+| `fallbacks` | nothing: every turn requests the seat's pinned provider and model |
+| `shell_tool` | a `[[tool]]` with `name = "bash"` and `kind = "bash"` |
 | `transfer_funded_by`, `rebate_percent`, `transfer_silence_penalty_percent` | `funded_by`, `rebate_percent`, `silence_penalty_percent` on the channel with `schema = "transfer"` |
 | `blackboard_silence_penalty_percent` | `silence_penalty_percent` on the blackboard channel |
 | `mailbox_silence_penalty_percent` | `silence_penalty_percent` on the mailbox channel |
@@ -243,8 +270,8 @@ These were top-level keys and are fields of the channel they describe. A manifes
 
 ## 4. The channel object
 
-A channel is one part of every agent's environment. Six properties describe every
-channel the harness has ever had.
+A channel is one part of every agent's environment. Every channel has a name, writer,
+readers, shape and path; the remaining fields are optional.
 
 ```toml
 [[channel]]
@@ -254,6 +281,7 @@ readers = "all"             # self | all | addressee | harness
 shape = "directory"         # directory | mailbox | file
 path = "{label}"            # where it sits in /work; see 4.2
 pushed = true               # quoted in the digest under push delivery
+restated = false            # quoted in full every episode; needs pushed; see 4.3
 measured = true             # the episode records what this channel gained; see 4.4
 agent_view = "paths"        # paths | memory | letters | board | transfer; digest labels
 silence_penalty_percent = 50
@@ -270,7 +298,8 @@ silence_penalty_percent = 50
 | experimenter | all | Placed by the experimenter, identical in every seat, read-only | none |
 
 Other combinations are refused. An experimenter channel takes `source = "<dir under
-files/>"` and `path`, and nothing else. The harness's own files are section 5, not channels.
+files/>"` and `path`, and optionally `pushed`, `restated` and `agent_view`. The harness's
+own files are section 5, not channels.
 
 ### 4.2 Shape and path
 
@@ -291,9 +320,8 @@ channel sits inside a directory the agent writes and comes and goes with it.
 under push delivery, each clipped at `digest_file_limit`, new content in full and
 unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
 labelled group, so semantic names containing spaces remain distinct. Expired public posts
-and schema-free mailbox messages disappear silently. Every channel defaults to
-`true`, a private store included.
-Under pull delivery nothing is quoted whatever this says.
+and schema-free mailbox messages disappear silently. Every channel defaults to `true`, a
+private store included. Under pull delivery nothing is quoted whatever this says.
 
 `restated = true` quotes the channel in full every episode it stands, never naming it
 as unchanged. "Unchanged" is measured against what the *account* was last shown, and an
@@ -315,11 +343,11 @@ mailbox records as letters from or to the named agent, `"board"` presents public
 records as posts from their authors, and `"transfer"` presents a schema file or
 transfer mailbox as outgoing and incoming currency transfers. Storage and access rules
 remain the same, so an experiment can give agents persistent memory without making a
-filesystem part of their world.
+filesystem part of their environment.
 
 The semantic views are checked against the channel they describe: `"letters"` requires
-a mailbox without a schema, `"board"` a self-written public directory, `"transfer"` an
-enabled transfer schema file or mailbox, and `"memory"` a private or experimenter-written directory. Experimenter
+a mailbox, `"board"` a self-written public directory, `"transfer"` a transfer-schema
+file or mailbox, and `"memory"` a private or experimenter-written directory. Experimenter
 material in a memory view is labelled as such rather than presented as the agent's memory.
 The board view marks the owning agent's own label with `(you)`.
 
@@ -354,10 +382,9 @@ declares no penalties anywhere has none.
 that added nothing new to the channel. A channel used by `post_public` begins each
 episode without its previous `post.md`, so a nonempty post must be published each time
 and may repeat the previous text. A schema-free mailbox likewise begins each episode with
-its peer slots empty, so one or more nonempty peer slots meet the
-obligation; additional recipients carry no penalty. A slot holding anything but one file
-reaches nobody, but does not negate a valid message to another peer. Zero is no
-penalty. Penalties are taken
+its peer slots empty, so one or more nonempty peer slots meet the obligation; additional
+recipients carry no penalty. A slot holding anything but one file reaches nobody, but
+does not negate a valid message to another peer. Zero is no penalty. Penalties are taken
 in declaration order, after the transfer channel's.
 
 ### 4.5 Schema
@@ -372,11 +399,11 @@ are cleared before each episode and settle only in the episode that submits them
 
 | Schema | Form | Effect | Fields |
 |---|---|---|---|
-| `transfer` | one line, `<label> <amount>`, or one mailbox slot `<outbox>/<label>` containing `<amount>` | Credits the peer, for no more than the episode spent | `funded_by` (`harness` \| `giver` \| `none`), `rebate_percent` (0 to 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none), `receipt` |
+| `transfer` | one line, `<label> <amount>`, or one mailbox slot `<outbox>/<label>` containing `<amount>` | Credits the peer, for no more than the episode spent | `funded_by` (`harness` \| `giver` \| `none`; default `harness`), `rebate_percent` (0 to 100, default 100; 0 under giver funding), `silence_penalty_percent`, `ledger` (a harness file name, or `""` for none), `receipt` |
 
 Setting `funded_by = "none"` disables the schema: the file is recorded and moves
-nothing, and `silence_penalty_percent` must be 0. One schema channel per experiment. New
-schemas are code, with a check each, and are listed here when they land.
+nothing, and `silence_penalty_percent` must be 0. One schema channel per experiment. The
+schema menu is fixed in code.
 
 A `receipt = "<path>"` on a schema channel asks the harness to plant an itemized settlement
 receipt at that path at the next episode start. It states the round, starting balance,
@@ -427,7 +454,7 @@ description = "..."         # optional; prompt surface. Omitted, the harness wri
 ```
 
 `vote` also requires `every = N`, where `N` is a positive integer. No other kind
-accepts `every`.
+accepts `every`, and an experiment declares at most one `vote` tool.
 
 Every tool must be declared. No declaration means no bash; an empty tool set is refused.
 
@@ -435,12 +462,12 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 |---|---|---|---|
 | `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
 | `write_slot` | a mailbox channel without a schema | `to` (a peer's label), `body` | Sends one episode-scoped message through `<outbox>/<to>`; a later call to that peer in the episode replaces it |
-| `send_message` | a mailbox channel without a schema and with one reachable peer | `body` | Sends one private, episode-scoped message without exposing the mailbox path |
+| `send_message` | a mailbox channel without a schema; a call succeeds only when exactly one peer is reachable | `body` | Sends one private, episode-scoped message without exposing the mailbox path |
 | `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Sends one private, episode-scoped message without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when the shell and peer-communication tools are withheld but private memory remains available; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; if two or more agents share the highest total, nobody is eliminated by vote |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; if two or more agents share the highest total, nobody is eliminated by vote |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -450,13 +477,12 @@ is whole, because the channel it reads may have an instance per seat and a bare 
 would not say which. So one string can name two files, and a `description` that replaces
 the harness's says which of them it means; the generated ones already do.
 
-The menu is code, like the schema menu: a manifest names a kind and a channel and
-invents no behaviour. A new kind is a change to `harness.py` with a check of its own,
-and is listed here when it lands.
+The kind menu is fixed in code, like the schema menu: a manifest names a kind and a
+channel and invents no behaviour.
 
 The schemas and results for `send_message`, `send_message_to`, `post_public`,
-`write_memory`, `vote` and `transfer` use the action's vocabulary. They do not describe backing
-files or return shell diagnostics; an internal failure is recorded as an unchanged
+`write_memory`, `vote` and `transfer` use the action's vocabulary. They do not describe
+backing files or return shell diagnostics; an internal failure is recorded as an unchanged
 action without revealing its storage path to the model.
 
 **Bash is opt-in**, using this declaration:
@@ -467,25 +493,26 @@ name = "bash"
 kind = "bash"
 ```
 
-Bash takes no channel or custom description. Its API schema is built in.
+Bash takes no channel, custom description or `every`. Its API schema is built in.
 Without this declaration, agents receive only the declared channel tools. The
 container and shell still carry out those actions internally.
-It also changes what an episode opens on. A listing is what an agent holding the shell
+Withholding bash also changes what an episode opens on. A listing is what an agent holding the shell
 reads to know what there is to reach; with no shell there is nothing to reach it with, so
 the episode opens on the **digest alone** - the content of the channels rather than their
 layout. That is the arm for an agent that never has to read a filesystem: every path it
 needs is named in the tool descriptions and every byte it is shown is content.
 
-Two arrangements are refused before anything is billed, both being experiments that would
-end every episode on its first turn:
+Three arrangements are refused before anything is billed, all being experiments that
+would end every episode on its first turn:
 
 | Refused | Why |
 |---|---|
-| no declared `bash` tool with no `[[tool]]` | the agent is offered nothing to act with, and an empty tool set is not a request the API takes |
-| no declared `bash` tool with `delivery = "pull"` or `digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
+| no `[[tool]]` at all | the agent is offered nothing to act with, and an empty tool set is not a request the API takes |
+| no declared `bash` tool with `delivery = "pull"` or `[harness_files] digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
 | no declared `bash` tool where this seating leaves every declared tool out | the table is not empty but the request would be, for the same reason and with the same result |
 
-The first two are settled when the manifest is read. The third is a seat's rather than
+The first two are settled when the harness starts, before any environment is built. The
+third is a seat's rather than
 an experiment's — which tools can act depends on what the seating planted — so it is
 settled as that agent's environment is built, still before the container starts and
 before anything is billed.
@@ -495,11 +522,11 @@ with the agent's ownership, mirrors back with its tree, and settles exactly as t
 bytes written with `bash` would. It runs no command of the agent's, so the episode's
 `commands` do not grow.
 
-**A tool is offered only where it can act.** A mailbox is not planted for an agent with
-no peers, so a `write_slot` on it is left out of that agent's request rather than
-offered and refused at every call. A seat that is out is not a message target either -
-the mailbox settles only the reachable slots - so it is not in the `to` enumeration, and
-a mailbox whose every peer is out is not offered at all. Which tools an agent was
+**A tool is offered only where it can act.** A tool whose channel this seating did not
+plant is left out of the request; a mailbox is not planted for an agent with no peers. A
+seat that is out is not a message target either - the mailbox settles only the reachable
+slots - so it is not in the `to` enumeration, and a `write_slot`, `transfer` or `vote`
+tool with no reachable peer is not offered at all. Which tools an agent was
 actually offered follows from the tool table and the seating, both in provenance.
 
 #### What a tool says of itself
@@ -510,8 +537,10 @@ is recorded whole and by digest in the tool table like every other declaration. 
 wordings of the same action are two arms.
 
 This is the fourth slot an experiment can speak in, beside the system prompt, the starter
-files and an experimenter channel - and the only one attached to an action. Descriptions can explain when an action is useful as well as what it does.
-An action-specific obligation is an experiment design choice, not an API requirement. `experiments/examples/personas.toml` is the worked example.
+files and an experimenter channel - and the only one attached to an action. Descriptions
+can explain when an action is useful as well as what it does. An action-specific
+obligation is an experiment design choice, not an API requirement.
+`experiments/examples/personas.toml` is the worked example.
 
 A declared description **replaces** the harness's account rather than adding to it, so an
 experiment that writes one is stating the mechanics itself where it wants them stated.
@@ -535,6 +564,9 @@ from the channel it points at:
 | `write_slot` | the channel's name, its outbox and inbox paths, the writer's label, and that the addressee alone reads it |
 | `write_file` | the channel's name, the agent's own instance path, and whether every agent or nobody else reads it |
 | `read_path` | the channel's name, every path of it this agent can reach with a directory's trailing slash, and the clip |
+| `transfer` | the whole-number amount rule, that the transfer applies to this episode only, the cap at episode spend, and the channel's funding and rebate |
+| `vote` | the `every` cadence, that the ballot is private and a later call replaces it, and the tie rule |
+| `send_message`, `send_message_to`, `post_public`, `write_memory` | the action in fixed wording, naming no path: who reads it, when it expires, and that a later call replaces it |
 
 Every path, label and reader in it is read out of the channel table, so it moves when the
 declaration moves and never otherwise; it cannot say what the channel does not. It is not
@@ -561,7 +593,7 @@ wrote 4 bytes to out/2, which held nothing before.
 out/2 already held exactly this. Nothing was written and nothing changed.
 replaced the 4 bytes out/2 held with 4.
 '9' is not a peer this channel reaches; it reaches 2. Nothing was written.
-state/secret is not in the 'blackboard' channel, which holds 1, 2. Nothing was read.
+state/secret is not in the 'blackboard' channel, which holds 1/, 2/. Nothing was read.
 ```
 
 A call the harness will not make is refused in the result rather than raised: the path
@@ -576,7 +608,7 @@ The files the harness renders from the accounts and plants read-only in every se
 [harness_files]
 balance = "n"       # one file per seat, <balance><label>: the seat's balance history; "" plants none
 digest = "m"        # the digest under push delivery; "" is the same as delivery = "pull"
-round = "round"     # round number, cycle position and discussion/voting phase; "" plants none
+round = ""          # default: no round announcement; a name such as "round" plants one
 ```
 
 When `round` is named, its announcement is the first section of the digest. It states
@@ -586,7 +618,7 @@ Rounds on the vote cadence say `vote only`, identify communication as unavailabl
 name the vote tool the agent must call before ending the episode. Private-memory tools
 remain available.
 
-A transfer channel's `ledger` names its ledger file, `"g"` today: three integers a line,
+A transfer channel's `ledger` names its ledger file (`"g"` in the default table): three integers a line,
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
 path segments and must not collide with a channel path. In a tool-only agent's semantic
 digest, the same events are rendered as `giver -> recipient`, its own label is marked
@@ -600,10 +632,10 @@ for the separately settled amount.
 [[agent]]
 id = "studio"               # required; not a bare number; distinct
 label = "Studio"            # optional; defaults to the seat number
-seats = 3                    # optional; creates studio01..studio03 and Studio01..Studio03
+seats = 3                   # optional; creates studio01..studio03 and Studio01..Studio03
 memory_from = { agent = "prior-studio", episode = 12 }
 system_prompt = "You run a studio."
-starter_files = "persona-studio"
+starter_files = "persona-ana"
 starter_files_below = 1500000
 budget = 2000000            # optional
 provider = "anthropic"      # required here or at top level, together with model
@@ -611,7 +643,7 @@ model = "claude-sonnet-5"
 quality_tier = "premium"    # optional product-facing label
 ```
 
-A definition without `seats` names one agent exactly as before. With a positive integer
+A definition without `seats` names one agent. With a positive integer
 `seats`, it expands in place into that many agents. Their one-based ordinal, padded to at
 least two digits, is appended to the `id` prefix and to an explicit `label` prefix;
 `id = "peer"`, `seats = 3` therefore creates `peer01`, `peer02` and `peer03`. All other
@@ -639,6 +671,7 @@ that source before it could be read.
 
 `quality_tier` is a product-facing string recorded with match cost state. It neither
 selects nor changes a provider or model; those exact terms remain independently pinned.
+It defaults to `"standard"`, or `"interactive"` on a human seat.
 
 The six pinned settings are fixed in the agent's account when it is created. An agent
 that exists already must have been created on the same six, or the manifest is refused.
@@ -654,8 +687,7 @@ about an agent comes from the experiment's settings.
 
 ## 8. The default manifest
 
-What an experiment gets when it declares no `[[channel]]` and no `[harness_files]`: the
-competition environment, in today's paths.
+What an experiment gets when it declares no `[[channel]]` and no `[harness_files]`.
 
 ```toml
 [harness_files]
@@ -675,7 +707,7 @@ writer = "self"
 readers = "all"
 shape = "directory"
 path = "{label}"
-silence_penalty_percent = 50
+measured = true
 
 [[channel]]
 name = "mail"
@@ -684,7 +716,7 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "out"
 inbox = "in"
-silence_penalty_percent = 50
+measured = true
 
 [[channel]]
 name = "transfer"
@@ -694,14 +726,13 @@ shape = "file"
 path = "out/transfer"
 schema = "transfer"
 funded_by = "harness"
-rebate_percent = 75
-silence_penalty_percent = 50
+rebate_percent = 100
 ledger = "g"
 ```
 
-An agent under `harness.py` alone is this environment with no peers: the
-blackboard is its own, and the mailbox and transfer channels have nobody to reach and
-are not planted.
+No channel carries a silence penalty. The manifest still declares its `[[tool]]` tables.
+`py -3 harness.py --agent ID --manifest PATH` runs that one seat's episodes under the
+manifest's full seating.
 
 ## 9. A persona experiment
 
@@ -713,6 +744,8 @@ A single document is planted under its filename, including when it is empty.
 ```toml
 schedule = "simultaneous"
 delivery = "push"
+provider = "anthropic"
+model = "claude-sonnet-5"
 
 # Each seat is briefed by its starter files and the experimenter channel below,
 # so the harness says nothing - declared, as every manifest must.
@@ -736,6 +769,7 @@ writer = "self"
 readers = "all"
 shape = "directory"
 path = "from-{label}"
+agent_view = "board"
 
 [[channel]]
 name = "letters"
@@ -749,42 +783,68 @@ agent_view = "letters"
 [[channel]]
 name = "brief"
 writer = "experimenter"
-source = "studio-brief"
+source = "mechanics-rules"
 path = "brief"
 
+[[tool]]
+name = "remember"
+kind = "write_memory"
+channel = "memory"
+
+[[tool]]
+name = "post"
+kind = "post_public"
+channel = "noticeboard"
+
+[[tool]]
+name = "write_letter"
+kind = "send_message_to"
+channel = "letters"
+
 [[agent]]
-id = "studio"
-label = "Studio"
-starter_files = "persona-studio"
+id = "ana"
+label = "Ana"
+starter_files = "persona-ana"
 starter_files_below = 1500000
 
 [[agent]]
-id = "game"
-label = "Game"
-starter_files = "persona-game"
+id = "bo"
+label = "Bo"
+starter_files = "persona-bo"
 starter_files_below = 1500000
 ```
 
-No transfer channel, so no ledger, no reserved file, and no penalty for making none. The
-identity file is its own channel so the trace and the analysis can name it.
+`persona-ana`, `persona-bo` and `mechanics-rules` are directories under `files/`. No
+bash tool, so each episode opens on the digest and every action is a declared tool. No
+transfer channel, so no ledger and no transfer obligation.
 
 ## 10. Validation
 
 Every refusal is a `SystemExit` naming the file and the key.
 
 - Unknown keys anywhere; wrong types; values out of range as section 3 states; any key of
-  the refused tables in section 3, naming the channel field it became or the file it
+  the refused tables in section 3, naming where the setting is declared or the file it
   lives in.
 - A `[[channel]]`, `[[tool]]` or `[harness_files]` table in `config.toml`, which declares
   no environment and so declares no actions on one.
+- A `schedule` outside `sequential`, `simultaneous`; a `stop_when_one_remains` or
+  `stop_when_two_remain_after_tie` that is not a bool; an `experiment_id` outside
+  letters, digits, `.`, `_` and `-`, or `.` or `..`.
+- A `[cost]` or `[reveal]` that is not a table or holds an unknown key; a non-positive
+  `maximum`, a negative `reserved_completion` or `warning`, a reserve at or above the
+  maximum or a warning above it; a `ceiling_policy` other than `"stop"`; a reveal phase
+  that is not a list of outcome field names, or names an unknown field.
+- A top-level `provider` without `model` or the reverse; an agent whose provider and
+  model do not resolve from its own table or the top level; a provider or model outside
+  the catalog.
 - No agents at all; a non-positive or non-integer `seats`; a duplicate, empty, or
-  bare-number expanded `id`; an expanded `label` outside its grammar or held by another
-  agent after defaults.
+  bare-number expanded `id`; an expanded `label` outside its grammar, `.` or `..`, or
+  held by another agent after defaults.
 - A `memory_from` that is not `{ agent = <string>, episode = <positive integer> }`,
   names a seat in the new experiment, names a missing or incomplete trace, or cannot
   match the source and target `write_memory` tools exactly.
-- `starter_files` without `starter_files_below` or the reverse; a directory that does
-  not exist.
+- `starter_files` without `starter_files_below` or the reverse; a `starter_files_below`
+  of 0 with `starter_files` set; a file or directory that does not exist.
 - A manifest with no `system_prompt`, at the settings level or on every agent. Every
   string is allowed, `""` included: an experiment may declare that the harness says
   nothing, and must declare even that.
@@ -793,7 +853,9 @@ Every refusal is a `SystemExit` naming the file and the key.
   `.incoming` or `.previous`; an unknown channel key; a wrong type.
 - A writer other than `self` or `experimenter`; a writer and readers pair outside 4.1.
 - An experimenter channel with anything but `source` (a directory under `files/`),
-  `path`, `pushed` and `restated`; `measured` is refused by name.
+  `path`, `pushed`, `restated` and `agent_view`; `measured` is refused by name.
+- An `agent_view` outside `paths`, `memory`, `letters`, `board`, `transfer`, or one that
+  does not describe its channel as 4.3 states.
 - A shape outside `directory`, `mailbox`, `file`; a mailbox with a `path` or without
   distinct `outbox` and `inbox`; `outbox` or `inbox` on anything else; `addressee`
   readers on anything but a mailbox.
@@ -814,13 +876,17 @@ Every refusal is a `SystemExit` naming the file and the key.
   is still recordable.
 - Two channels, expanded over every label, at one path; a path that is a harness file
   or a label's balance file.
-- A tool with no name, a name outside the API's grammar, a name declared twice, or the
-  name `bash`; an unknown tool key; a wrong type; a `kind` outside the menu; a `channel`
-  that is not in the channel table the manifest declares; a kind whose channel is the
-  wrong shape for it; `input_schema`, `schema`, `properties` or `required`, each refused
-  by name as the harness's. Every `description` string is allowed, `""` included: that
-  is the experiment asking for the harness's own account of the action.
-- no declared `bash` tool with no `[[tool]]`, or with `delivery = "pull"` or an empty
+- A tool with no name, a name outside the API's grammar, or a name declared twice; an
+  unknown tool key; a wrong type; a `kind` outside the menu; a `channel` that is not in
+  the channel table the manifest declares; a kind whose channel is the wrong shape for
+  it; `input_schema`, `schema`, `properties` or `required`, each refused by name as the
+  harness's. Every `description` string is allowed, `""` included: that is the
+  experiment asking for the harness's own account of the action.
+- The name `bash` with a kind other than `bash`; `kind = "bash"` under another name, or
+  with a `channel`, `description` or `every`.
+- A `vote` tool without a positive integer `every`; `every` on any other kind; a second
+  `vote` tool.
+- No `[[tool]]` at all, or no declared `bash` tool with `delivery = "pull"` or an empty
   `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no
   shell whose every declared tool is left out of its request because this seating
   planted no channel for it to act on — an episode that would open on a turn the agent
@@ -834,14 +900,14 @@ Every refusal is a `SystemExit` naming the file and the key.
 ## 11. What reaches the trace
 
 Every episode's provenance stamps: the harness digest, the experiment identity and cost
-policy, the system prompt in force whole
-and by digest, the image and its id, the rates,
+policy, the system prompt in force whole and by digest, the image and its id, the rates,
 every setting of section 3, the starter files' name and digest, each experimenter
-channel's source digest, the seating, labels and per-agent presentation order, the schedule, the manifest's digest, the
-harness files' names, the channel table in force, whole and by digest, and the tool
-table in force, whole and by digest, each tool's declared description among its fields,
-whether the shell was offered, and `message_delivery = "episode"` for schema-free
-mailbox messages that expire after their recipient's next episode.
+channel's source digest, the seating, labels and per-agent presentation order, the
+schedule, the manifest's digest, the harness files' names, the channel table in force,
+whole and by digest, and the tool table in force, whole and by digest, each tool's
+declared description among its fields, whether the shell was offered, and
+`message_delivery = "episode"` for schema-free mailbox messages that expire after their
+recipient's next episode.
 Two agents offered different actions - or the same actions described differently - are
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness digest, the channel table and the seating.
@@ -854,20 +920,19 @@ among them, are in the observation and in no file record.
 Every episode record carries `transfer`, what the schema channel parsed and moved, and
 `channels`: one record per channel the agent writes that is settled at all - one with a
 schema, `measured = true`, or a penalty above 0. A channel that asked for none of them
-has no entry. A directory
-every agent reads records `posted` and `penalty`; a mailbox records `addressed`, `broken`
-and `penalty`; the schema channel records its declaration, whether it was submitted, what moved,
-and `penalty`. The
-account keeps `penalised`, the running total per channel.
+has no entry. A directory every agent reads records `posted` and `penalty`; a mailbox
+records `addressed`, `broken` and `penalty`; the schema channel records its declaration,
+whether it was submitted, what moved, and `penalty`. The account keeps `penalised`, the
+running total per channel.
 
 Every tool record carries `tool` (`bash` or the declared name), `result`, and then
 `command` for the shell or `input` for a declared tool, the other being null.
 `trace_version` is 4. The trace names `provider`, `requested_model`, and
 `resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
 native stop reasons, and the provider provenance. Raw logs write the provider and complete
-native response before their canonical normalized event. A fresh CLI run moves matching prior
-records and environment mirrors under `displaced/<timestamp>/`; `--resume` instead requires
-compatible version-4 accounts and never mixes version-3 records with this format.
+native response before their canonical normalized event. A fresh CLI run moves matching
+prior records and environment mirrors under `displaced/<timestamp>/`; `--resume`
+requires version-4 traces, and an agent with traces of any other version is refused.
 
 ## 12. Invariants, restated in this vocabulary
 

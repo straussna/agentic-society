@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import builtins
 import contextlib
 import io
@@ -225,3 +227,11 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+def check_human_py_starts_in_a_fresh_interpreter():
+    """interaction is imported before providers there, the order that exposes an import cycle."""
+    script = Path(__file__).resolve().parent.parent / "human.py"
+    done = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert "--agent" in done.stdout
