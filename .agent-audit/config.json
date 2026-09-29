@@ -140,7 +140,9 @@
     "collectCoverage": true,
     "coverageCommand": [
       "check.py",
-      "--no-docker"
+      "--no-docker",
+      "-j",
+      "1"
     ],
     "testFunctionPattern": "check_*"
   },
