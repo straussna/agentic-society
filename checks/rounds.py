@@ -607,6 +607,43 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
     assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], outcome
 
 
+def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
+    """Under stop_when_two_remain_after_tie, an election the experimenter's stop kept an
+    elector's ballot from does not end the competition, tied or not: the ballot the stop
+    kept out could have broken the tie, so where the stop landed would decide the result.
+
+    g01 votes for seat 2, and the stop lands in g02's voting episode before it votes.
+    --resume finishes the round with g03, which votes for seat 1 and spends the last of
+    its balance doing so. Seats 1 and 2 are left, tied, and the rounds go on.
+    """
+    cost = turn_cost()
+    with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE], budget=4 * cost - 1,
+                   floor_at_zero=True) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True,
+                          head="stop_when_two_remain_after_tie = true\n")
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), say(), use("vote", to="2"), say(), run("echo one"), KeyboardInterrupt())
+        with quiet():
+            stopped = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+        harness.start = lambda config=None, **kw: fake(run("echo one"), use("vote", to="1"), say())
+        with quiet() as output:
+            code = experiment.main(["--manifest", str(manifest), "--resume"])
+        elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
+        out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
+        outcome = product.records(root, "seats")["outcome"]
+    assert stopped == 130 and code == 0, (stopped, code, output.getvalue())
+    assert all(election == {
+        "round": 2, "tally": {"1": 1, "2": 1}, "electors": ["1", "2", "3"], "abstainers": [],
+        "interrupted": ["2"], "voted_out": "", "top_votes": 1, "top_tied": True,
+        "remaining": ["1", "2"],
+    } for election in elections.values()), elections
+    assert out["g01"] is None and out["g02"] is None and out["g03"], out
+    assert "both survive" not in output.getvalue(), output.getvalue()
+    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], outcome
+    assert outcome["survivors"] == ["1", "2"] and outcome["winners"] == [], outcome
+
+
 def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
     """A seat whose episode of a voting round ends on an API failure leaves the table for
     the rest of the run, as any fault of its own does, and is no elector of that round's
@@ -637,10 +674,10 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
 
 
 def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
-    """Under stop_when_two_remain_after_tie, an election is judged on the seats it leaves
-    funded, so whether it ends the competition does not turn on where the run stops: one
-    run of -r 3, -r 1 then --resume -r 2, and a stop in the voting round's last seat then
-    --resume all end on the tie, after the same round.
+    """Under stop_when_two_remain_after_tie, an election is judged on the seats it leaves in
+    the competition, so whether it ends the competition does not turn on where the run
+    stops: one run of -r 3, -r 1 then --resume -r 2, and a stop in the voting round's last
+    seat then --resume all end on the tie, after the same round.
 
     The three seats tie 1-1-1 at round 2, and g03 spends the last of its balance in it.
     """
@@ -1488,7 +1525,8 @@ def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
 
 
 def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winner():
-    """The manifest decides whether a lone funded seat continues or ends the experiment."""
+    """The manifest decides whether the last seat still in the competition plays on alone
+    or ends the experiment."""
     with temp_root(channels=ALL_OWED) as root:
         ids = seated(root, "g01", g02={}, g03={})
         put_out("g02")
@@ -1790,7 +1828,9 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     Sequentially a lost giver's credit is never paid, and a lost g01 ends the round before
     g02 plays. In a simultaneous round a receiver closes on the credits of every giver
     that has not failed by then: a lost g01 credits g02 nothing, and a lost g02 has what it
-    credited g01, which closed first, taken back.
+    credited g01, which closed first, taken back. A g01 that overspent, and that the credit
+    lifted back above zero before its floor, is floored once it is taken back, so it
+    stands where it would had g02 given it nothing.
     """
     rounds = (("sequential", experiment.sequential_round,
                lambda: fake(run("echo '2 100' > out/transfer"), say(),
@@ -1834,6 +1874,31 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
         ("simultaneous", "g01"): {"g01": ([], 250), "g02": ([0], 0)},
         ("simultaneous", "g02"): {"g01": ([250], 0), "g02": ([], 100)},
     }, ended
+
+    cost = turn_cost()
+    floored = {}
+    for lost, transfer in ((True, "echo '1 50' > out/transfer"), (False, "true")):
+        with temp_root(budget=cost - 1, floor_at_zero=True) as root:
+            ids = seated(root, "g01", g02={})
+            real = harness.replace_file
+
+            def no_room(src, dest, lost=lost):
+                if lost and dest == harness.trace_path("g02", 1):
+                    raise OSError("no space left on device")
+                real(src, dest)
+
+            harness.replace_file = no_room
+            try:
+                with quiet():
+                    experiment.simultaneous_round(ids, set(ids), 0, per_agent(
+                        g01=(say(),), g02=(run(transfer), say())))
+            except OSError:
+                pass
+            g01 = ground_truth("g01")
+        floored[lost] = (g01["remaining"], g01.get("forgiven", 0), g01.get("received", 0),
+                         reconciled(g01, g01["episodes"][0]["spent"]), g01["series"][1:])
+    assert floored[True][:4] == floored[False][:4] == (0, 1, 0, 0), floored
+    assert floored[True][4] == [-1, 49, -1, 0] and floored[False][4] == [-1, 0], floored
 
 
 def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_committed():

@@ -131,8 +131,9 @@ def branch_source(root: Path) -> Path:
 
 
 def check_a_branch_refuses_a_boundary_it_cannot_fork():
-    """A branch needs a positive round every seat completed, a seat to hand over, and an
-    id, manifest and agents nothing else holds. Each refusal makes nothing."""
+    """A branch needs a positive round every seat completed, a seat to hand over, an id,
+    manifest and agents nothing else holds, and a series in every seat's account that
+    holds what the ledger had paid it by that round. Each refusal makes nothing."""
     with temp_root() as root:
         source = branch_source(root)
         output = root / "experiments" / "branches" / "takeover.toml"
@@ -155,6 +156,24 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
             refused(lambda: experiment.branch_experiment(source, 1, "takeover", "2",
                                                          root / "again.toml"),
                     "experiment record 'takeover' already exists")
+
+    # The ledger lists what g02 gave seat 1, and g01's account never had it, as a run
+    # killed between g02's commit and the payment leaves it.
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={})
+        with quiet():
+            experiment.sequential_round(ids, set(ids), 0,
+                                        fake(say(), run("echo '1 250' > out/transfer"), say()))
+        account = harness.load_account("g01")
+        account["series"].pop()
+        account["remaining"], account["received"] = account["series"][-1], 0
+        harness.save_account("g01", account)
+        with quiet():
+            refused(lambda: experiment.branch_experiment(seats_manifest(root, ids), 1, "lost", "2",
+                                                         root / "lost.toml"),
+                    "g01 cannot be carried as it stood at round 1", "the 250 the ledger paid it")
+        made = sorted(p.name for p in harness.records_root().iterdir())
+    assert made == ids and not (root / "lost.toml").exists(), made
 
 
 def check_a_branch_that_fails_partway_can_be_made_again():
@@ -212,10 +231,14 @@ def check_a_branch_that_fails_partway_can_be_made_again():
     assert made == output and lineage["created_agents"] == {"1": "takeover-01", "2": "takeover-02"}
 
 
-def check_branch_totals_are_each_ledger_field_as_it_stood_at_the_episode():
-    """Every cumulative field of a branch sums the episodes up to the one it forks at: what
+def check_a_branch_standing_is_each_ledger_field_as_it_stood_as_the_round_ended():
+    """Every running total of a branch sums the episodes up to the one it forks at: what
     was sent, rebated, debited, forgiven and taken by each channel, and what was received
-    inside an episode or, from a peer settling outside it, between two."""
+    inside an episode or, from a peer settling outside it, between two. Past that episode
+    the series is the round's until what the account received comes to what the ledger
+    had paid it by the round's end, and holds every credit taken back, with the floor
+    that answers one: a credit past that is a later round's. A series that cannot hold
+    what the ledger paid is no standing."""
     first = {"episode": 1, "spent": 100, "series_from": 1, "series_to": 5, "received": 20,
              "forgiven": 0, "transfer": {"amount": 100, "rebate": 100, "debit": 0, "penalty": 0},
              "channels": {"transfer": {"penalty": 0}, "blackboard": {"penalty": 10},
@@ -226,36 +249,110 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_at_the_episode():
                            "mail": {"penalty": 15}}}
     # 30 arrives before the first episode and 40 between the two; 20 inside the first.
     series = [1000, 1030, 930, 1030, 1050, 1040, 1080, 880, 830, 810, 795, 802]
-    account = {"initial": 1000, "series": series, "episodes": [first, second]}
-    at = {index: experiment.branch_totals(account, index) for index in (1, 2)}
-    assert at[1] == {"sent": 100, "received": 50, "rebated": 100, "debited": 0, "forgiven": 0,
-                     "penalised": {"blackboard": 10}}, at[1]
-    assert at[2] == {"sent": 150, "received": 90, "rebated": 100, "debited": 50, "forgiven": 7,
-                     "penalised": {"blackboard": 30, "mail": 15}}, at[2]
-    for index, episode in ((1, first), (2, second)):
-        spent = sum(e["spent"] for e in (first, second)[:index])
-        assert reconciled({"initial": 1000, **at[index]}, spent) == series[episode["series_to"]], \
-            (index, at[index])
+    two = {"series": series, "episodes": [first, second]}
+    # 50 arrives inside an episode and is taken back, then 30 arrives.
+    taken = {"episode": 1, "spent": 100, "series_from": 0, "series_to": 2, "received": 50,
+             "forgiven": 0, "transfer": {"amount": 0, "rebate": 0, "debit": 0, "penalty": 0},
+             "channels": {}}
+    back = {"series": [1000, 900, 950, 900, 930], "episodes": [taken]}
+    # The same, for an episode that overspent by 1, so the floor answers the take-back.
+    floored = {"series": [1049, -1, 49, -1, 0], "episodes": [{**taken, "spent": 1050}]}
+    one = {"sent": 100, "received": 50, "rebated": 100, "debited": 0, "forgiven": 0,
+           "penalised": {"blackboard": 10}}
+    none = {"sent": 0, "received": 0, "rebated": 0, "debited": 0, "forgiven": 0, "penalised": {}}
+    cases = {(name, index, paid): (account, expected)
+             for name, account, index, paid, expected in (
+                 ("two", two, 1, 50, (series[:6], one)),
+                 ("two", two, 1, 90, (series[:7], {**one, "received": 90})),
+                 ("two", two, 2, 90, (series, {"sent": 150, "received": 90, "rebated": 100,
+                                               "debited": 50, "forgiven": 7,
+                                               "penalised": {"blackboard": 30, "mail": 15}})),
+                 ("back", back, 1, 0, (back["series"][:4], none)),
+                 ("back", back, 1, 30, (back["series"], {**none, "received": 30})),
+                 ("floored", floored, 1, 0, (floored["series"], {**none, "forgiven": 1})),
+                 ("two", two, 1, 60, None), ("two", two, 1, 40, None),
+                 ("back", back, 1, 50, None), ("floored", floored, 1, 50, None))}
+    for case, (account, expected) in cases.items():
+        standing = experiment.branch_standing(account, case[1], case[2])
+        assert standing == expected, (case, standing)
+        if standing is not None:
+            stood, totals = standing
+            spent = sum(e["spent"] for e in account["episodes"][:case[1]])
+            assert reconciled({"initial": stood[0], **totals}, spent) == stood[-1], (case, totals)
 
 
 def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
-    """Each fork's account balances against its own series. Under a sequential round a
-    transfer reaches a later seat before its episode starts, and its fork has received it."""
-    with temp_root() as root:
-        ids = seated(root, "g01", g02={})
-        live = set(ids)
-        with quiet():
-            experiment.sequential_round(ids, live, 0, fake(run("echo '2 250' > out/transfer"), say()))
-            experiment.branch_experiment(seats_manifest(root, ids), 1, "ledger", "2",
-                                         root / "ledger.toml")
-        parents = {agent: ground_truth(agent) for agent in ids}
-        forks = {agent: ground_truth(f"ledger-0{seat}") for seat, agent in enumerate(ids, 1)}
-    assert parents["g02"]["received"] == 250 and forks["g02"]["received"] == 250, forks["g02"]
-    for agent, fork in forks.items():
-        spent = sum(e["spent"] for e in fork["episodes"])
-        assert reconciled(fork, spent) == fork["remaining"], (agent, fork)
-        for key in ("sent", "received", "rebated", "debited", "forgiven"):
-            assert fork[key] == parents[agent].get(key, 0), (agent, key, fork[key])
+    """Each fork stands where its seat stood as the round ended: its balance, its series,
+    and every running total, which a transfer that reached it after its own episode of
+    the round moved, and a later round's did not. So the branch's ledger balances.
+
+    Sequentially, g01 gives seat 2 250 before g02's episode, and g02 gives seat 1 100
+    after g01's; in round 2 each gives the other again. In a simultaneous round, g02
+    closes on 250 from g03 and 40 from g01, and neither giver's trace lands: g01's credit
+    never reaches g02, and g03's is taken back. g01 and g03 finish the round, g01 giving
+    seat 2 30, which reaches g02 after its own episode, and a round 2 follows.
+    """
+    sequential = fake(run("echo '2 250' > out/transfer"), say(),
+                      run("echo '1 100' > out/transfer"), say(),
+                      run("echo '2 40' > out/transfer"), say(),
+                      run("echo '1 70' > out/transfer"), say())
+    keys = ("remaining", "series", "episodes", "sent", "received", "rebated", "debited",
+            "forgiven", "penalised")
+    ended, forks = {}, {}
+    for schedule in ("sequential", "simultaneous"):
+        with temp_root() as root:
+            ids = seated(root, "g01", g02={},
+                         **({"g03": {}} if schedule == "simultaneous" else {}))
+            if schedule == "sequential":
+                with quiet():
+                    experiment.sequential_round(ids, set(ids), 0, sequential)
+                    ended[schedule] = {agent: ground_truth(agent) for agent in ids}
+                    experiment.sequential_round(ids, set(ids), 1, sequential)
+            else:
+                real = harness.replace_file
+
+                def no_room(src, dest):
+                    if dest in (harness.trace_path("g01", 1), harness.trace_path("g03", 1)):
+                        raise OSError("no space left on device")
+                    real(src, dest)
+
+                harness.replace_file = no_room
+                try:
+                    with quiet():
+                        experiment.simultaneous_round(ids, set(ids), 0, per_agent(
+                            g01=(run("echo '2 40' > out/transfer"), say()), g02=(say(),),
+                            g03=(run("echo '2 250' > out/transfer"), say())))
+                except OSError:
+                    pass
+                harness.replace_file = real
+                with quiet():
+                    experiment.simultaneous_round(ids, {"g01", "g03"}, 0, per_agent(
+                        g01=(run("echo '2 30' > out/transfer"), say()), g03=(say(),)))
+                    ended[schedule] = {agent: ground_truth(agent) for agent in ids}
+                    experiment.simultaneous_round(ids, set(ids), 1, per_agent(
+                        g01=(run("echo '2 20' > out/transfer"), say()), default=(say(),)))
+            with quiet():
+                experiment.branch_experiment(seats_manifest(root, ids), 1, schedule, "2",
+                                             root / f"{schedule}.toml")
+                # A fork stands on no series that does not carry on from its trace's.
+                astray = harness.fork("g01", 1, "astray", [0])
+            forks[schedule] = {agent: ground_truth(f"{schedule}-0{seat}")
+                               for seat, agent in enumerate(ids, 1)}
+            assert astray == 2 and not harness.records_dir("astray").exists(), astray
+    assert [ended["sequential"][agent]["received"] for agent in ("g01", "g02")] == [100, 250]
+    g02 = ended["simultaneous"]["g02"]
+    assert g02["episodes"][0]["received"] == 250 and g02["received"] == 30, g02
+    for schedule, stood in ended.items():
+        for agent, fork in forks[schedule].items():
+            spent = sum(e["spent"] for e in fork["episodes"])
+            assert reconciled(fork, spent) == fork["remaining"], (schedule, agent, fork)
+            carried = {key: fork.get(key, 0) for key in keys}
+            expected = {key: stood[agent].get(key, {} if key == "penalised" else 0)
+                        for key in keys}
+            assert carried == expected, (schedule, agent, carried, expected)
+        branch = forks[schedule].values()
+        assert sum(fork["sent"] for fork in branch) == sum(fork["received"] for fork in branch), \
+            f"the branch's ledger balances: {schedule}"
 
 
 def check_a_branch_carries_the_elections_its_round_had_held_and_no_later_one():
@@ -397,6 +494,8 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
                   if event["phase"] == "preparing_round"][-1]
     assert stopped_at["round"] == 3 and stopped_at["cost"]["autonomous_spend"] == 4 * cost, stopped_at
     assert stopped_at["cost"]["ceiling_reached"], stopped_at
+    assert [(event["phase"], event["round"]) for event in records["progress"]["events"][-2:]] == \
+        [("preparing_round", 3), ("cost_ceiling", 3)], records["progress"]["events"][-2:]
     assert records["outcome"]["termination_reason"] == "cost_ceiling", records["outcome"]
 
     with temp_root() as root:
@@ -480,7 +579,8 @@ def check_progress_appends_each_event_and_reads_its_history_back():
 def check_a_round_writes_each_phase_as_it_reaches_it():
     """Progress follows the round as it goes: the round waits on an episode before it
     runs, resolves its actions after it ran and before it settles, and settles it
-    before it is committed, so no phase is written once the round has left it.
+    before it is committed, so no phase is written once the round has left it. An
+    episode has settled once its turns are in the series its account holds.
 
     g01's transfer reaches g02's account once g01's episode is committed, and not when
     it settles. In a simultaneous round an episode that ends while a peer's still runs
@@ -490,7 +590,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
     simultaneous round names its players apart from its autonomous agents, and g01's
     episode ending while g02's still runs leaves the round waiting on the player.
     """
-    ran, committed, waiting = "ran", "committed", "waiting"
+    ran, settled, committed, waiting = "ran", "settled", "committed", "waiting"
     for player in (False, True):
         with temp_root() as root:
             ids = seated(root, "g01", g02={})
@@ -501,11 +601,23 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
             seen: list[tuple] = []
             g01_ended = threading.Event()
             held_back: list[bool] = []
+            built: dict[tuple[str, int], harness.Episode] = {}
+            ready = harness.ready
+
+            def noted(agent, prepare=None):
+                ep = ready(agent, prepare)
+                built[agent, ep.index] = ep
+                return ep
+
+            harness.ready = noted
 
             def progress(phase, round_number, detail):
                 def state(agent):
                     if harness.trace_path(agent, round_number).exists():
                         return "committed"
+                    ep = built.get((agent, round_number))
+                    if ep is not None and len(ep.account["series"]) > len(ep.series_before):
+                        return "settled"
                     return "ran" if harness.raw_path(agent, round_number).exists() else "waiting"
                 seen.append((phase, round_number, detail, {agent: state(agent) for agent in ids},
                              ground_truth("g02").get("received", 0)))
@@ -531,10 +643,10 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
         assert sequential == [
             ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}, 0),
             ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
-            ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
+            ("settling_round", 1, {"agents": ["g01"]}, {"g01": settled, "g02": waiting}, 0),
             (g02_waits, 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}, 250),
             ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250),
-            ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250)], \
+            ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": settled}, 250)], \
             (player, sequential)
         assert held_back == [True], f"g02's episode ran on after g01's had ended: {player} {held_back}"
         unrun = {"g01": waiting, "g02": waiting}
@@ -549,7 +661,77 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                           {"g01": ran, "g02": ran}, 250))
         assert seen == started + ended + [
             ("resolving_actions", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250),
-            ("settling_round", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250)], (player, seen)
+            ("settling_round", 2, {"agents": ids}, {"g01": settled, "g02": settled}, 250)], \
+            (player, seen)
+
+
+def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play():
+    """progress.jsonl holds one line for each phase each round reaches, in the order it
+    reaches them, and nothing else: every round played is completed once, and one the
+    stops end the rounds before is neither prepared nor completed. The last line names
+    the round the rounds ended at, so the record's rounds never go back.
+
+    Two seats play two sequential rounds to the round limit. Then g02 spends the last of
+    its balance in round 1, and under stop_when_one_remains the rounds end before round
+    2. Last, the stop lands as round 2 starts, before any seat has played it.
+    """
+    def events(root: Path) -> list[tuple]:
+        return [(event["phase"], event["round"],
+                 event.get("agents") or event.get("active") or event.get("termination_reason"))
+                for event in product.records(root, "seats")["progress"]["events"]]
+
+    def played(round_number: int, *agents: str) -> list[tuple]:
+        return [(phase, round_number, [agent]) for agent in agents
+                for phase in ("waiting_autonomous", "resolving_actions", "settling_round")]
+
+    ids = ["g01", "g02"]
+    cost = turn_cost()
+    ended = {}
+    for name, head, budget, steps, rounds in (
+            ("round limit", "", None, (), "2"),
+            ("one remains", "stop_when_one_remains = true\n", 2 * cost - 1,
+             (say(), run("echo one"), say()), "3")):
+        overrides = {} if budget is None else {"budget": budget, "floor_at_zero": True}
+        with temp_root(**overrides) as root:
+            seated(root, "g01", g02={})
+            manifest = seats_manifest(root, ids)
+            manifest.write_text(head + manifest.read_text(encoding="utf-8"), encoding="utf-8",
+                                newline="\n")
+            harness.start = lambda config=None, steps=steps, **kw: fake(*steps)
+            with quiet():
+                code = experiment.main(["--manifest", str(manifest), "--rounds", rounds,
+                                        "--resume"])
+            ended[name] = (code, events(root))
+
+    driven = experiment.sequential_round
+
+    def stops_as_round_two_starts(agents, live, rnd, *rest):
+        if rnd == 1:
+            raise KeyboardInterrupt
+        return driven(agents, live, rnd, *rest)
+
+    experiment.sequential_round = stops_as_round_two_starts
+    try:
+        with temp_root() as root:
+            seated(root, "g01", g02={})
+            harness.start = lambda config=None, **kw: fake()
+            with quiet():
+                code = experiment.main(["--manifest", str(seats_manifest(root, ids)),
+                                        "--rounds", "3", "--resume"])
+            ended["stopped"] = (code, events(root))
+    finally:
+        experiment.sequential_round = driven
+
+    def prepared(round_number: int) -> tuple:
+        return ("preparing_round", round_number, ids)
+
+    first = [prepared(1), *played(1, *ids), ("round_completed", 1, ids)]
+    assert ended == {
+        "round limit": (0, [*first, prepared(2), *played(2, *ids), ("round_completed", 2, ids),
+                            ("completed", 2, "round_limit")]),
+        "one remains": (0, [*first, ("completed", 1, "one_remains")]),
+        "stopped": (130, [*first, prepared(2), ("interrupted", 2, "interrupted")]),
+    }, ended
 
 
 def check_a_progress_record_that_fails_costs_no_episode_its_spend():

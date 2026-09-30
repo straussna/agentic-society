@@ -32,6 +32,8 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Episode** | One container lifetime: a fresh sandbox, one shell, turns until the agent ends its turn without a tool call, the context fills, the balance runs out or a safety stop is reached. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
 | **Round** | One episode for every agent still in the experiment |
+| **At the table** | A seat is at the table while the run of `experiment.py` still drives it: from the run's start, unless it is out or more than one round behind the table's round, until it is out or leaves for the rest of the run on a fault of its own or an environment that would not build. **The table's round** is the furthest round any seat has played, whether or not it is at the table |
+| **In the competition** | A seat is in the competition while its account admits an episode and it is at most one round behind the table's round, whether or not the run has it at the table. Every stop, candidate and survivor is judged on the seats in the competition |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
 | **Grace period** | Episodes at the start of an agent's life during which no silence penalty is taken |
@@ -70,7 +72,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
 | **Receipt** | A file the harness writes back into the writer's environment saying what a schema parsed and what it moved. Optional |
-| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, forgiving the overshoot. Zero is out either way |
+| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. Zero is out either way |
 
 ### What is recorded
 
@@ -128,24 +130,26 @@ runs one.
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
 | `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind the furthest round any seat has played sits out, and is no longer in the competition. Without it, previous state moves under `displaced/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
-| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
+| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
 | `harness.py --watch` | Echo the agent's words and account to stdout |
 | `harness.py --fork-from AGENT --at N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
 | `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
 
 Each experiment writes under `experiment_records/<experiment_id>/`: `progress.jsonl`,
-one line per phase each round reaches as it reaches it; `progress.json`, the latest of
-those; `outcome.json`; and, for a branch, `lineage.json`. The outcome's
-`termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`,
-`final_tie`, `all_eliminated`, `none_can_act` or `interrupted`. Every stop is judged on
-the seats still in the competition, whose accounts admit an episode and which are at most
-one round behind the furthest round any seat has played, whether or not the run has them
-at its table: a seat whose episode ended on a fault of its own, or whose environment would
-not build, leaves the table for the rest of that run and stays in until it falls further
-behind, which is once the table has played two rounds past the last it played. One further
-behind sits out every round of every run, and is no longer in: it counts toward no stop,
-survives nothing and stands in no election.
+one line per phase each round reaches as it reaches it and none for a round the stops end
+the rounds before, the last naming the round the rounds ended at, so its rounds never go
+back; `progress.json`, the latest of those; `outcome.json`; and, for a branch,
+`lineage.json`. The outcome's `termination_reason` is one of `round_limit`,
+`cost_ceiling`, `one_remains`, `final_tie`, `all_eliminated`, `none_can_act` or
+`interrupted`. Every stop is judged on the seats still in the competition, whose accounts
+admit an episode and which are at most one round behind the table's round, the furthest
+round any seat has played, whether or not the run has them at the table: a seat whose
+episode ended on a fault of its own, or whose environment would not build, leaves the
+table for the rest of that run and stays in until it falls further behind, which is once
+the table's round is two past the last it played. One further behind sits out every round
+of every run, and is no longer in: it counts toward no stop, survives nothing and stands
+in no election.
 `all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
 able to take an episode in this run. The outcome's `survivors` are the seats still in as
 the run ends, and its `elimination_order` the seats an election put out, so a seat out of
@@ -159,7 +163,7 @@ the competition for its balance or for sitting out is in neither, and what it ho
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is still in the competition (section 1) |
-| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are still in the competition (section 1), both of them electors in it |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are still in the competition (section 1), both of them electors in it. A tie the experimenter's stop kept an elector's ballot from ends nothing, since that ballot could have broken it |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
@@ -479,9 +483,21 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included, and not to a seat that takes that round after its election was held, whose episode is a discussion; a later call replaces the earlier vote. After that round every seat still in the competition is a candidate, and a ballot counts toward the candidate it names; the electors are the seats that took the round's episode without a fault. An elector offered the ballot that cast none is eliminated; one with no peer left to name was offered none. The candidate with the unique highest total above zero is eliminated by vote. Nobody is eliminated by vote where two or more candidates share the highest total, or where the experimenter's stop ended an elector's episode before it cast the ballot it was offered; such an elector is not a nonvoter. The result goes to every candidate and elector, whose account keeps each election it was in |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; the election that follows is below the table |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
+
+**The election** follows each `every`th round. Every seat still in the competition is a
+candidate, and a ballot counts toward the candidate it names. The electors are the seats
+that took the round's episode without a fault; a seat that takes the round after its
+election was held is none, and takes it as a discussion, offered every tool but the
+ballot. An elector offered the ballot that cast none is eliminated; one with no peer left
+to name was offered none. The candidate with the unique highest total above zero is
+eliminated by vote. Nobody is eliminated by vote where two or more candidates share the
+highest total, or where the experimenter's stop ended an elector's episode before it cast
+the ballot it was offered: such an elector is not a nonvoter, and where the stop landed
+would otherwise decide who goes. The result goes to every candidate and elector, whose
+account keeps every election it was in as `elections`, the last as `last_election`.
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the
 one instance the agent writes, there being only one place it could mean. A `read_path`'s

@@ -83,7 +83,7 @@ here.
 |---|---|---|
 | `schedule` | `"sequential"`, `"simultaneous"` | `sequential` runs one episode at a time in fixed seat order. `simultaneous` builds every environment before any episode runs and runs them at once, so nobody reads this round's writes |
 | `stop_when_one_remains` | `true`, `false` | When `true`, the experiment ends as soon as exactly one seat is still in the competition (section 1 of [docs/manifest.md](../docs/manifest.md)); otherwise it continues until the requested round count, every seat is out, or no seat still in the competition can take an episode in the run |
-| `stop_when_two_remain_after_tie` | `true`, `false` | When `true`, a voting round whose aggregate result is tied ends the experiment if exactly two seats are still in the competition, both of them electors in it; both seats survive |
+| `stop_when_two_remain_after_tie` | `true`, `false` | When `true`, a voting round whose aggregate result is tied ends the experiment if exactly two seats are still in the competition, both of them electors in it; both seats survive. A tie the experimenter's stop kept an elector's ballot from ends nothing |
 | `system_prompt` | any string, **required** | What the harness says to every seat on every turn. Declare it here or on every `[[agent]]`; a manifest declaring it nowhere is refused. `""` says nothing and sends no system parameter at all |
 | `provider` | `anthropic`, `openai` or `human` | Named adapter; `human` takes `model = "interactive"` and is described in [docs/human.md](../docs/human.md). Required with `model` and pinned at creation |
 | `model` | a model in that provider's catalog | The exact model requested for the agent. Required with `provider` and pinned at creation |

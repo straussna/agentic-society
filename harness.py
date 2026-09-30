@@ -5230,11 +5230,13 @@ def run_episodes(agent: str, router: ProviderRouter, count: int,
 # --- 17. Forking -----------------------------------------------------------------
 
 
-def fork(parent: str, index: int, new: str) -> int:
+def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> int:
     """Rebuild an agent as it stood at the end of episode `index`, under a new id.
 
     series_after is the series at that episode, files[] holds what each file
-    contained, and the provenance holds the channel table the files sat in.
+    contained, and the provenance holds the channel table the files sat in. A branch
+    hands the `series` its seat stood on as the episode's round ended: series_after,
+    and what reached the parent after the episode and within the round.
     Refuses wherever it cannot reproduce the recorded environment exactly.
     """
     trace_file = trace_path(parent, index)
@@ -5263,8 +5265,13 @@ def fork(parent: str, index: int, new: str) -> int:
     rebuild = rebuildable(trace, parent, index)
     if rebuild is None:
         return 2
+    recorded = list(trace["series_after"])
+    series = recorded if series is None else list(series)
+    if series[:len(recorded)] != recorded:
+        print(f"{parent} episode {index}: the series handed to the fork does not carry on from "
+              f"the one the trace recorded", file=sys.stderr)
+        return 2
 
-    series = list(trace["series_after"])
     at_head = index == len(parent_account["episodes"])
     seat = parent_account.get("seat") or "1"
     label = (trace.get("provenance", {}).get("labels") or {}).get(seat) or parent_account.get("label") or seat

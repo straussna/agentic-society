@@ -144,7 +144,9 @@ total is conserved apart from API spending and penalties. The declaration is cle
 before the giver's next episode and cannot execute again unless submitted again. A
 transfer is paid once the giver's episode is committed, its trace and its account both
 saved: an episode whose commit fails moves nothing to anyone, and under a simultaneous
-round a receiver that closed on its credit before the giver failed has it taken back.
+round a receiver that closed on its credit before the giver failed has it taken back, and
+under `floor_at_zero` is floored again, so it stands where it would had the credit never
+reached it.
 
 Under `harness` funding the receiver is credited from outside the agents' balances and the
 giver receives the configured rebate. Under `none` a declaration moves nothing, the trace records that
@@ -260,11 +262,11 @@ every other agent end at zero or less with the agent's own `n` positive, and und
 `stop_when_one_remains = true` that is the state `experiment.py` stops at: the rounds end
 as soon as exactly one seat is still in the competition, as section 1 of
 [manifest.md](manifest.md) has it, instead of running it down alone. A seat more than a
-round behind the table is out of the competition with its balance, so the rounds can end
-there with the condition unmet as well. An episode the last agent takes before then owes
-no transfer and no message, there being nobody left to make either to. No agent can verify
-the condition from inside an agent, so what an agent believes it has won is still its own
-reading of `n` and `g`.
+round behind the furthest round any seat has played is out of the competition with its
+balance, so the rounds can end there with the condition unmet as well. An episode the
+last agent takes before then owes no transfer and no message, there being nobody left to
+make either to. No agent can verify the condition from inside an agent, so what an agent
+believes it has won is still its own reading of `n` and `g`.
 
 Everything that moves a balance without being a billed turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
