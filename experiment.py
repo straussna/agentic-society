@@ -59,6 +59,9 @@ AGENT_TYPES = (("id", str), ("label", str), ("seats", int), ("starter_files", st
 MEMORY_FROM_KEYS = {"agent", "episode"}
 MEMORY_FROM_TYPES = (("agent", str), ("episode", int))
 
+# The file a write_memory tool keeps, which a memory_from source is read back from.
+MEMORY_FILE = harness.TOOL_KINDS["write_memory"].file
+
 # What an agent may be called to its peers: one path segment, since it lands in
 # paths and file names. The default is the seat number.
 LABEL = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -398,11 +401,11 @@ def inherit_memory(entry: dict, account: dict) -> None:
         matches = [record for record in trace.get("files", [])
                    if record.get("role", "own") == "own"
                    and record.get("channel") == source_channel.name
-                   and record.get("path", "").endswith("/memory.md")]
+                   and record.get("path", "").endswith(f"/{MEMORY_FILE}")]
         if len(matches) > 1:
             raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} "
                              f"contains several memories for tool {name!r}")
-        destination = harness.mirror(agent, target_tool.channel) / "memory.md"
+        destination = harness.mirror(agent, target_tool.channel) / MEMORY_FILE
         if destination in destinations:
             continue
         destinations.add(destination)
@@ -416,7 +419,7 @@ def inherit_memory(entry: dict, account: dict) -> None:
                                  f"does not contain an exact text copy for tool {name!r}")
             if destination.exists() and destination.read_bytes() != data:
                 raise SystemExit(f"agent {agent}: inherited memory would overwrite "
-                                 f"{target_tool.channel}/memory.md")
+                                 f"{target_tool.channel}/{MEMORY_FILE}")
             if not destination.exists():
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(data)
@@ -949,7 +952,7 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
     ballots: dict[str, str] = {}
     cast: list[Path] = []
     for agent in electorate:
-        path = harness.mirror(agent, vote["channel"]) / "vote"
+        path = harness.mirror(agent, vote["channel"]) / harness.TOOL_KINDS["vote"].file
         cast.append(path)
         try:
             target = path.read_text(encoding="utf-8").strip()
