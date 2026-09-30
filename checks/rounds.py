@@ -453,7 +453,9 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     """Rounds stop when no agent can take an episode, without waiting for --rounds.
 
     Every agent spends past zero in the first round, and no peer is left that
-    could put one back, so the rounds are over with four still to go.
+    could put one back, so the rounds are over with four still to go. A round in
+    which no agent's environment builds puts every agent out itself, and ends them
+    the same way.
     """
     cost = turn_cost()
     with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
@@ -471,6 +473,24 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     assert set(rested.values()) == {0}, rested
     assert buf.getvalue().count("drops out: nothing left to spend") == 3, buf.getvalue()
     assert "every agent is out after 1 rounds" in buf.getvalue(), buf.getvalue()
+    assert outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == [], outcome
+
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        harness.start = lambda config=None, **kw: fake(*DEFAULT)
+
+        def unbuildable(agent, prepare=None):
+            raise subprocess.CalledProcessError(1, ["docker", "cp"])
+
+        harness.ready = unbuildable
+        with quiet() as buf:
+            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5",
+                                    "--resume"])
+        took = episodes_taken(ids)
+        outcome = product.records(root, "seats")["outcome"]
+    assert code == 0, code
+    assert took == {"g01": 0, "g02": 0, "g03": 0}, took
+    assert "no agent could take an episode in round 1" in buf.getvalue(), buf.getvalue()
     assert outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == [], outcome
 
 

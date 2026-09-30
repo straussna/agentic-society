@@ -184,52 +184,71 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
     g01's transfer reaches g02's account when g01 settles, and not before. In a
     simultaneous round an episode that ends while a peer's still runs leaves the round
     waiting, and the last to end leaves it resolving actions.
+
+    Where a person plays g02, the round waits on a player for g02's episode: a
+    simultaneous round names its players apart from its autonomous agents, and g01's
+    episode ending while g02's still runs leaves the round waiting on the player.
     """
-    with temp_root() as root:
-        ids = seated(root, "g01", g02={})
-        seen: list[tuple] = []
-        g01_ended = threading.Event()
-        held_back: list[bool] = []
-
-        def progress(phase, round_number, detail):
-            def state(agent):
-                if harness.trace_path(agent, round_number).exists():
-                    return "committed"
-                return "ran" if harness.raw_path(agent, round_number).exists() else "waiting"
-            seen.append((phase, round_number, detail, {agent: state(agent) for agent in ids},
-                         ground_truth("g02").get("received", 0)))
-            if detail == {"completed_autonomous": "g01"}:
-                g01_ended.set()
-
-        def after_g01(n):
-            if threading.current_thread().name == "g02" and n == 1:
-                held_back.append(g01_ended.wait(10))
-
-        live = set(ids)
-        with quiet():
-            experiment.sequential_round(ids, live, 0, fake(run("echo '2 250' > out/transfer"), say()),
-                                        progress=progress)
-            sequential = seen[:]
-            seen.clear()
-            experiment.simultaneous_round(ids, live, 1, per_agent(default=(say(),),
-                                                                  on_request=after_g01),
-                                          progress=progress)
-
     ran, committed, waiting = "ran", "committed", "waiting"
-    assert sequential == [
-        ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}, 0),
-        ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
-        ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 250),
-        ("waiting_autonomous", 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}, 250),
-        ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250),
-        ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250)], sequential
-    assert held_back == [True], f"g02's episode ran on after g01's had ended: {held_back}"
-    assert seen == [
-        ("waiting_autonomous", 2, {"agents": ids}, {"g01": waiting, "g02": waiting}, 250),
-        ("waiting_autonomous", 2, {"completed_autonomous": "g01"}, {"g01": ran, "g02": waiting}, 250),
-        ("resolving_actions", 2, {"completed_autonomous": "g02"}, {"g01": ran, "g02": ran}, 250),
-        ("resolving_actions", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250),
-        ("settling_round", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250)], seen
+    for player in (False, True):
+        with temp_root() as root:
+            ids = seated(root, "g01", g02={})
+            if player:
+                account = harness.load_account("g02")
+                account["provider"], account["model"] = "human", "interactive"
+                harness.save_account("g02", account)
+            seen: list[tuple] = []
+            g01_ended = threading.Event()
+            held_back: list[bool] = []
+
+            def progress(phase, round_number, detail):
+                def state(agent):
+                    if harness.trace_path(agent, round_number).exists():
+                        return "committed"
+                    return "ran" if harness.raw_path(agent, round_number).exists() else "waiting"
+                seen.append((phase, round_number, detail, {agent: state(agent) for agent in ids},
+                             ground_truth("g02").get("received", 0)))
+                if detail == {"completed_autonomous": "g01"}:
+                    g01_ended.set()
+
+            def after_g01(n):
+                if threading.current_thread().name == "g02" and n == 1:
+                    held_back.append(g01_ended.wait(10))
+
+            live = set(ids)
+            with quiet():
+                experiment.sequential_round(ids, live, 0,
+                                            fake(run("echo '2 250' > out/transfer"), say()),
+                                            progress=progress)
+                sequential = seen[:]
+                seen.clear()
+                experiment.simultaneous_round(ids, live, 1, per_agent(default=(say(),),
+                                                                      on_request=after_g01),
+                                              progress=progress)
+
+        g02_waits = "waiting_player" if player else "waiting_autonomous"
+        assert sequential == [
+            ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}, 0),
+            ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
+            ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 250),
+            (g02_waits, 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}, 250),
+            ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250),
+            ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250)], \
+            (player, sequential)
+        assert held_back == [True], f"g02's episode ran on after g01's had ended: {player} {held_back}"
+        unrun = {"g01": waiting, "g02": waiting}
+        started = ([("waiting_autonomous", 2, {"agents": ["g01"]}, unrun, 250),
+                    ("waiting_player", 2, {"agents": ["g02"]}, unrun, 250)] if player else
+                   [("waiting_autonomous", 2, {"agents": ids}, unrun, 250)])
+        ended = [(g02_waits, 2, {"completed_autonomous": "g01"}, {"g01": ran, "g02": waiting}, 250)]
+        # g02's episode ending is written only where g02 is autonomous: a player's end
+        # finds the round already waiting on it.
+        if not player:
+            ended.append(("resolving_actions", 2, {"completed_autonomous": "g02"},
+                          {"g01": ran, "g02": ran}, 250))
+        assert seen == started + ended + [
+            ("resolving_actions", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250),
+            ("settling_round", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250)], (player, seen)
 
 
 def check_a_progress_record_that_fails_costs_no_episode_its_spend():
@@ -238,36 +257,41 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
     committed and an agent whose episode put it out has left the table, never in place
     of either.
 
-    g01's episode ends on an API error after a billed turn, which drops it out.
+    g01's episode ends on an API error after a billed turn, which drops it out. A
+    simultaneous round also writes from each autonomous episode's own thread as it ends,
+    and a write that fails there alone is raised the same way. A second Ctrl+C lands in
+    the main thread, never there.
     """
-    for phase in ("resolving_actions", "settling_round"):
-        for failure in (ValueError, KeyboardInterrupt):
-            def failing(reached, round_number, detail, phase=phase, failure=failure):
-                if reached == phase:
-                    raise failure("progress.json does not read")
+    sequential = (experiment.sequential_round, lambda: fake(run("echo one"), Err(400)),
+                  {"g01": 1, "g02": 0})
+    simultaneous = (experiment.simultaneous_round,
+                    lambda: per_agent(g01=(run("echo one"), Err(400)), default=(say(),)),
+                    {"g01": 1, "g02": 1})
+    # Where the write fails: at a phase, or at every event whose detail has this key.
+    cases = [(at, failure, played) for at in ("resolving_actions", "settling_round")
+             for failure in (ValueError, KeyboardInterrupt) for played in (sequential, simultaneous)]
+    cases.append(("completed_autonomous", ValueError, simultaneous))
+    for at, failure, (a_round, router, took) in cases:
+        def failing(reached, round_number, detail, at=at, failure=failure):
+            if at == reached or at in (detail or {}):
+                raise failure("progress.json does not read")
 
-            for a_round, router, took in (
-                    (experiment.sequential_round, lambda: fake(run("echo one"), Err(400)),
-                     {"g01": 1, "g02": 0}),
-                    (experiment.simultaneous_round,
-                     lambda: per_agent(g01=(run("echo one"), Err(400)), default=(say(),)),
-                     {"g01": 1, "g02": 1})):
-                case = (a_round.__name__, phase, failure.__name__)
-                with temp_root() as root:
-                    ids = seated(root, "g01", g02={})
-                    live = set(ids)
-                    raised: BaseException | None = None
-                    try:
-                        with quiet():
-                            a_round(ids, live, 0, router(), progress=failing)
-                    except (ValueError, KeyboardInterrupt) as e:
-                        raised = e
-                    taken = episodes_taken(ids)
-                    traced = {agent: harness.trace_path(agent, 1).exists() for agent in ids}
-                    first = ground_truth("g01")["episodes"][0]
-                assert type(raised) is failure and "progress.json" in str(raised), (case, raised)
-                assert taken == took, (case, taken)
-                assert traced == {agent: bool(n) for agent, n in took.items()}, \
-                    f"every billed episode is traced: {case} {traced}"
-                assert first["stop"] == "api_error" and first["spent"] > 0, (case, first)
-                assert live == {"g02"}, f"g01 left the table before the raise: {case} {live}"
+        case = (a_round.__name__, at, failure.__name__)
+        with temp_root() as root:
+            ids = seated(root, "g01", g02={})
+            live = set(ids)
+            raised: BaseException | None = None
+            try:
+                with quiet():
+                    a_round(ids, live, 0, router(), progress=failing)
+            except (ValueError, KeyboardInterrupt) as e:
+                raised = e
+            taken = episodes_taken(ids)
+            traced = {agent: harness.trace_path(agent, 1).exists() for agent in ids}
+            first = ground_truth("g01")["episodes"][0]
+        assert type(raised) is failure and "progress.json" in str(raised), (case, raised)
+        assert taken == took, (case, taken)
+        assert traced == {agent: bool(n) for agent, n in took.items()}, \
+            f"every billed episode is traced: {case} {traced}"
+        assert first["stop"] == "api_error" and first["spent"] > 0, (case, first)
+        assert live == {"g02"}, f"g01 left the table before the raise: {case} {live}"
