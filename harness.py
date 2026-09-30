@@ -13,7 +13,7 @@ Sections, in the order an episode meets them:
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
                                     Tool, validate_tools, Settings, SETTINGS
   5. Process constants              HARNESS_SHA256, limits, stop sets, regexes
-  6. Accounts                       load_account, Seating, adjust, penalise
+  6. Accounts                       Account, load_account, Seating, adjust, penalise
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
@@ -58,8 +58,8 @@ import tomllib
 from collections.abc import Set as AbstractSet
 from pathlib import Path
 from types import MappingProxyType
-from typing import (IO, Any, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, Protocol,
-                    Sequence, TypedDict, get_args)
+from typing import (IO, Any, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, NotRequired,
+                    Protocol, Sequence, TypedDict, get_args)
 
 import product
 import providers
@@ -105,7 +105,7 @@ def system_sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def system_of(account: dict | None = None) -> str:
+def system_of(account: Account | None = None) -> str:
     """What this agent is told: the prompt pinned in its account, or the system_prompt in force.
 
     Membership and not truth, because "" is a prompt an experiment can declare: an
@@ -1323,7 +1323,110 @@ def mirror(agent: str, name: str) -> Path:
     return environment_dir(agent) / name
 
 
-def save_account(agent: str, account: dict) -> None:
+class Elimination(TypedDict):
+    """Why an election took an agent out: the round it followed, the reason in words,
+    and the votes the agent received in it."""
+    round: int
+    reason: str
+    votes: int
+
+
+class Election(TypedDict):
+    """One election, as every account it is written to keeps it, each seat by label.
+
+    tally: each candidate's votes. electors: who played the round it follows.
+    abstainers: electors offered a ballot who cast none. interrupted: electors the
+    experimenter's stop ended before they cast one. voted_out: the one the vote took
+    out, "" for none. top_votes, top_tied: the highest total, and whether more than
+    one candidate held it. remaining: the candidates it left in.
+    """
+    round: int
+    tally: dict[str, int]
+    electors: list[str]
+    abstainers: list[str]
+    interrupted: list[str]
+    voted_out: str
+    top_votes: int
+    top_tied: bool
+    remaining: list[str]
+
+
+class AccountEpisode(TypedDict):
+    """One committed episode, as close_episode lists it in the account.
+
+    series_from, series_to: where in the series it starts and ends. transfer,
+    channels: what settle_episode recorded. forgiven: what the floor put back.
+    received: what peers settling in the same round credited inside its span.
+    receipts: what was planted at each receipt path, by digest.
+    """
+    episode: int
+    stop: str
+    spent: int
+    turns: int
+    balance_at_start: int
+    series_from: int
+    series_to: int
+    transfer: TransferRecord
+    forgiven: int
+    received: int
+    channels: dict[str, Mapping[str, Any]]
+    receipts: dict[str, str]
+
+
+class Account(TypedDict):
+    """One agent's account.json, which save_account writes whole.
+
+    load_account and fork create it with every required key. load_account pins the
+    starter terms and the system prompt beside them; fork carries the starter terms
+    only where the parent's starter files had landed by the episode it forks, and the
+    prompt only where the parent holds one, so build_episode pins the tunables for
+    starter terms an account lacks and system_of tells one without a prompt the one
+    in force. The rest are added as they first happen. account_on_disk and the
+    viewer read an account as it stands on disk, {} where there is none, so what they
+    hand one to takes a Mapping.
+    """
+    account_version: int
+    agent: str
+    provider: str
+    model: str
+    initial: int                                   # the budget, in micro-dollars
+    created_at: str
+    seat: str
+    remaining: int
+    series: list[int]
+    episodes: list[AccountEpisode]
+    starter_files: NotRequired[str]
+    starter_files_below: NotRequired[int]
+    system_prompt: NotRequired[str]
+    forked_from: NotRequired[dict[str, Any]]       # agent, episode, modes
+    # What experiment.py stamps before each episode.
+    label: NotRequired[str]
+    peers: NotRequired[dict[str, Any]]             # seen, labels, presentation
+    experiment: NotRequired[dict[str, Any]]        # the stamp, and memory_from
+    # The starter files once they land, each experimenter source as first read, and
+    # the digest's sections as last shown.
+    starter_files_landed: NotRequired[dict[str, Any]]
+    sources_seen: NotRequired[dict[str, dict[str, Any]]]
+    shown_before: NotRequired[dict[str, str]]
+    # Running totals: what transfers sent, received, rebated and debited, what the
+    # floor forgave, and what each channel's penalty took.
+    sent: NotRequired[int]
+    received: NotRequired[int]
+    rebated: NotRequired[int]
+    debited: NotRequired[int]
+    forgiven: NotRequired[int]
+    penalised: NotRequired[dict[str, int]]         # by channel name
+    # experiment.py's memory, election, branch and product records.
+    memory_from: NotRequired[dict[str, Any] | None]
+    memory_inherited: NotRequired[dict[str, Any]]
+    elections: NotRequired[list[Election]]
+    last_election: NotRequired[Election]
+    eliminated: NotRequired[Elimination]
+    branch: NotRequired[dict[str, Any]]
+    product: NotRequired[dict[str, str]]           # quality_tier
+
+
+def save_account(agent: str, account: Account) -> None:
     """Write ground truth atomically: a temporary file, then a rename over the old one."""
     f = account_path(agent)
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -1361,7 +1464,7 @@ def term_shown(key: str, value: Any) -> str:
 def load_account(agent: str, *, provider: str | None = None, model: str | None = None,
                  budget: int | None = None,
                  starter_files: str | None = None, starter_files_below: int | None = None,
-                 system_prompt: str | None = None) -> dict:
+                 system_prompt: str | None = None) -> Account:
     """Read the agent's ground truth, creating the agent on first use.
 
     The pinned settings - the system prompt, provider, model, budget, starter files and
@@ -1373,40 +1476,39 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
     s = SETTINGS
     given = {"provider": provider, "model": model, "budget": budget, "starter_files": starter_files,
              "starter_files_below": starter_files_below, "system_prompt": system_prompt}
-    defaults = {"budget": s.budget, "starter_files": s.starter_files,
-                "starter_files_below": s.starter_files_below, "system_prompt": s.system_prompt}
-    terms = {k: (defaults[k] if v is None and k in defaults else v) for k, v in given.items()}
     records = records_dir(agent)
     f = account_path(agent)
     if not f.exists():
         if provider is None or model is None:
             raise SystemExit(f"agent {agent} needs an explicit provider and model before it can be created")
-        validate_terms("account", provider=provider, model=model, budget=terms["budget"],
-                       starter_files=terms["starter_files"],
-                       starter_files_below=terms["starter_files_below"], who=agent)
+        initial = s.budget if budget is None else budget
+        name = s.starter_files if starter_files is None else starter_files
+        below = s.starter_files_below if starter_files_below is None else starter_files_below
+        prompt = s.system_prompt if system_prompt is None else system_prompt
+        validate_terms("account", provider=provider, model=model, budget=initial,
+                       starter_files=name, starter_files_below=below, who=agent)
         for d in (records / "traces", *(mirror(agent, c.name) for c in s.channels if c.mirrored)):
             d.mkdir(parents=True, exist_ok=True)
         # Element 0 of the series is the initial balance; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
         save_account(agent, {"account_version": ACCOUNT_VERSION, "agent": agent,
-                             "provider": terms["provider"],
-                             "model": terms["model"], "initial": terms["budget"],
+                             "provider": provider,
+                             "model": model, "initial": initial,
                              "seat": "1",
                              "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                             "remaining": terms["budget"], "series": [terms["budget"]],
+                             "remaining": initial, "series": [initial],
                              "episodes": [],
-                             "starter_files": terms["starter_files"],
-                             "starter_files_below": terms["starter_files_below"],
-                             "system_prompt": terms["system_prompt"]})
-        starter = (f", starter_files {terms['starter_files']!r} at or below "
-                   f"{terms['starter_files_below']}") if terms["starter_files"] else ""
+                             "starter_files": name,
+                             "starter_files_below": below,
+                             "system_prompt": prompt})
+        starter = f", starter_files {name!r} at or below {below}" if name else ""
         # The shipped prompt is the arm a silent manifest asks for, so only a
         # declared one is worth a line.
-        declared = ("" if terms["system_prompt"] == SYSTEM else
-                    f", system prompt sha256={system_sha256(terms['system_prompt'])[:12]}")
-        print(f"created agent {agent}: {terms['budget']} micro-dollars, "
-              f"{terms['provider']}/{terms['model']}{declared}{starter}")
+        declared = ("" if prompt == SYSTEM else
+                    f", system prompt sha256={system_sha256(prompt)[:12]}")
+        print(f"created agent {agent}: {initial} micro-dollars, "
+              f"{provider}/{model}{declared}{starter}")
     account = json.loads(f.read_text(encoding="utf-8"))
     if account.get("account_version") != ACCOUNT_VERSION or "provider" not in account:
         raise SystemExit(f"agent {agent} has an account from the version-3 record format; "
@@ -1429,7 +1531,7 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
     return account
 
 
-def account_on_disk(agent: str) -> dict:
+def account_on_disk(agent: str) -> Mapping[str, Any]:
     """Another agent's account as it stands on disk. Empty where the agent has not
     been created yet, which is what the first round of an experiment sees."""
     f = account_path(agent)
@@ -1443,7 +1545,7 @@ def series_on_disk(agent: str) -> list[int]:
     return account_on_disk(agent).get("series") or []
 
 
-def starter_terms(account: dict) -> tuple[str, int]:
+def starter_terms(account: Account) -> tuple[str, int]:
     """The starter files this agent receives and the balance they land at or below.
 
     Pinned in the account at creation; an account without them reads the tunables.
@@ -1452,7 +1554,7 @@ def starter_terms(account: dict) -> tuple[str, int]:
             account.get("starter_files_below", SETTINGS.starter_files_below))
 
 
-def spent_out(account: dict) -> bool:
+def spent_out(account: Mapping[str, Any]) -> bool:
     """Whether the balance has reached zero or less, which is the end of the agent.
 
     A state an agent enters once and does not leave: admits() starts no further
@@ -1461,7 +1563,7 @@ def spent_out(account: dict) -> bool:
     return account["remaining"] <= 0
 
 
-def stalled(account: dict) -> bool:
+def stalled(account: Mapping[str, Any]) -> bool:
     """Whether the agent has refused its last REFUSAL_STREAK episodes running.
 
     Every turn requests the provider and model pinned to the seat, so a streak of
@@ -1472,12 +1574,12 @@ def stalled(account: dict) -> bool:
     return len(recent) == REFUSAL_STREAK and set(recent) == {"refusal"}
 
 
-def admits(account: dict) -> bool:
+def admits(account: Account) -> bool:
     """Whether another episode may start on this agent."""
     return why_out(account) is None
 
 
-def why_out(account: dict) -> str | None:
+def why_out(account: Mapping[str, Any]) -> str | None:
     """Why the agent can take no further episode, or None where it can take one.
 
     Every reason is final: an eliminated agent cannot return, a stalled agent is
@@ -1516,7 +1618,7 @@ class Seating:
         return [seat for seat in self.presentation if seat != self.seat]
 
 
-def seating_of(agent: str, account: dict) -> Seating:
+def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
     """The agent's seating, read from what experiment.py stamps into the account.
 
     experiment.py writes `seat`, `label` and `peers` before each episode of a
@@ -1553,7 +1655,7 @@ def reachable(seating: Seating) -> dict[str, str]:
     return live
 
 
-def adjust(account: dict, delta: int) -> None:
+def adjust(account: Account, delta: int) -> None:
     """Move the balance and append the result to the series.
 
     Everything that moves a balance outside a billed turn goes through here, so
@@ -1564,7 +1666,7 @@ def adjust(account: dict, delta: int) -> None:
         account["series"].append(account["remaining"])
 
 
-def credit_account(account: dict, amount: int) -> None:
+def credit_account(account: Account, amount: int) -> None:
     """Credit a transfer to the receiver's account: one series element, and the running total."""
     adjust(account, amount)
     account["received"] = account.get("received", 0) + amount
@@ -1585,7 +1687,7 @@ def credit_episode(ep: Episode, amount: int) -> None:
     ep.credited += amount
 
 
-def penalise(account: dict, ch: Channel) -> int:
+def penalise(account: Account, ch: Channel) -> int:
     """Take the channel's share of what is left, keep the running total by channel
     name, and return the share. A share of zero moves nothing."""
     share = max(account["remaining"], 0) * ch.silence_penalty_percent // 100
@@ -1629,7 +1731,7 @@ def files_sha256(name: str) -> str:
     return h.hexdigest()
 
 
-def plant_starter_files(agent: str, store: Path, store_path: str, account: dict,
+def plant_starter_files(agent: str, store: Path, store_path: str, account: Account,
                         index: int) -> dict | None:
     """Copy the starter files into the private store once the balance has fallen far enough.
 
@@ -1666,13 +1768,13 @@ def plant_starter_files(agent: str, store: Path, store_path: str, account: dict,
     return record
 
 
-def starter_paths(account: dict) -> set[str]:
+def starter_paths(account: Mapping[str, Any]) -> set[str]:
     """The paths in the private store the starter files put there. `starter` on a
     file record means these alone."""
     return set((account.get("starter_files_landed") or {}).get("paths") or [])
 
 
-def guard_sources(agent: str, account: dict, index: int, instances: list[Instance]) -> None:
+def guard_sources(agent: str, account: Account, index: int, instances: list[Instance]) -> None:
     """Refuse an experimenter channel whose files changed since the agent first saw them.
 
     Recorded in the account the first time, like starter files: an experiment
@@ -1738,7 +1840,8 @@ class Instance:
         return posixpath.dirname(full) if self.is_file else full
 
 
-def environment(agent: str, account: dict, table: list[Channel] | None = None) -> list[Instance]:
+def environment(agent: str, account: Mapping[str, Any],
+                table: list[Channel] | None = None) -> list[Instance]:
     """Every instance of every channel in one agent's environment, in declaration order.
 
     An experimenter channel is one instance; a private store is one; a directory
@@ -1885,7 +1988,7 @@ def render_ledger(rows: list[tuple[str, str, int]]) -> str:
     return "".join(f"{giver} {taker} {amount}\n" for giver, taker, amount in rows)
 
 
-def balances(agent: str, account: dict) -> dict[str, list[int]]:
+def balances(agent: str, account: Account) -> dict[str, list[int]]:
     """Every balance the agent's environment shows, by label.
 
     Each comes from the account of the agent that owns it, so a peer's balance is as
@@ -1897,7 +2000,7 @@ def balances(agent: str, account: dict) -> dict[str, list[int]]:
             for seat in s.presentation}
 
 
-def ledger_events(agent: str, account: dict) -> list[tuple[int, str, str, int]]:
+def ledger_events(agent: str, account: Mapping[str, Any]) -> list[tuple[int, str, str, int]]:
     """Every completed transfer as (round, giver label, receiver label, amount)."""
     s = seating_of(agent, account)
     rows = []
@@ -1912,7 +2015,7 @@ def ledger_events(agent: str, account: dict) -> list[tuple[int, str, str, int]]:
     return [(episode, giver, taker, amount) for episode, _, giver, taker, amount in rows]
 
 
-def ledger(agent: str, account: dict) -> list[tuple[str, str, int]]:
+def ledger(agent: str, account: Mapping[str, Any]) -> list[tuple[str, str, int]]:
     """Every transfer the experiment has made, as (giver label, receiver label, amount).
 
     Derived from the accounts, never kept; a declaration that moved nothing is not
@@ -1922,7 +2025,7 @@ def ledger(agent: str, account: dict) -> list[tuple[str, str, int]]:
     return [(giver, taker, amount) for _, giver, taker, amount in ledger_events(agent, account)]
 
 
-def receipt_text(account: dict, ch: Channel) -> str:
+def receipt_text(account: Account, ch: Channel) -> str:
     """The writer's itemized settlement for its most recently completed episode."""
     episodes = account.get("episodes") or []
     if not episodes:
@@ -2067,14 +2170,15 @@ def digest_name(path: str, instances: list[Instance],
     return path
 
 
-def experimenter_digest_paths(account: dict, instances: list[Instance]) -> frozenset[str]:
+def experimenter_digest_paths(account: Mapping[str, Any],
+                              instances: list[Instance]) -> frozenset[str]:
     """Starter-file paths whose digest presentation must name the experimenter."""
     private = next((inst for inst in instances if inst.channel.is_private_store), None)
     return (frozenset(f"{private.path}/{path}" for path in starter_paths(account))
             if private else frozenset())
 
 
-def harness_digest_name(name: str, agent: str, account: dict) -> str:
+def harness_digest_name(name: str, agent: str, account: Account) -> str:
     """A harness-owned file's semantic heading in a tool-only observation."""
     s = SETTINGS
     if s.shell_tool:
@@ -2114,7 +2218,7 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
             "status: submitted last round; the transfer ledger reports the amount actually moved\n")
 
 
-def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
+def harness_digest_body(name: str, body: str, agent: str, account: Account) -> str:
     """Render harness-owned content semantically when the agent has no shell."""
     if SETTINGS.shell_tool:
         return body
@@ -2146,7 +2250,7 @@ def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
     return body
 
 
-def election_held(agent: str, account: dict, round_number: int) -> bool:
+def election_held(agent: str, account: Account, round_number: int) -> bool:
     """Whether the election that follows `round_number` is held already, as the agent's
     own account or a peer's records it.
 
@@ -2161,7 +2265,7 @@ def election_held(agent: str, account: dict, round_number: int) -> bool:
                for record in records)
 
 
-def render_round_status(account: dict) -> str:
+def render_round_status(account: Account) -> str:
     """The authoritative round and phase announced at the start of an episode."""
     round_number = len(account["episodes"]) + 1
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
@@ -2203,7 +2307,7 @@ def render_round_status(account: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def digest_for(agent: str, account: dict, files: dict[str, str],
+def digest_for(agent: str, account: Account, files: dict[str, str],
                carried: set[str]) -> tuple[str, dict[str, str]]:
     """The digest: what has been said to this agent, and the digests of what it quotes.
 
@@ -2270,7 +2374,7 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
     return "".join(out), shown_now
 
 
-def render_harness_files(agent: str, account: dict) -> tuple[dict[str, str], dict[str, str] | None]:
+def render_harness_files(agent: str, account: Account) -> tuple[dict[str, str], dict[str, str] | None]:
     """Every file the harness writes into /work, by name, and what the digest showed.
 
     The round announcement, balances, ledger, a receipt where the schema channel
@@ -3893,7 +3997,7 @@ def open_episode(shell: Shell, index: int, provider: str, model: str,
     return out, out["observation"]
 
 
-def republish(shell: Shell, label: str, account: dict, out: dict) -> None:
+def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
     """Rewrite the agent's own balance after a billed turn, and record how the write went.
 
     What this write replaces is what the last one left: the series without the
@@ -3933,7 +4037,7 @@ def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
     return None
 
 
-def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, index: int, label: str,
+def run_turns(router: ProviderRouter, shell: Shell, account: Account, agent: str, index: int, label: str,
               raw: Path | None, bound: Iterable[Bound] = ()) -> dict:
     """Drive one episode's turns. API failures are recorded in the returned dict.
 
@@ -4598,7 +4702,7 @@ class Episode:
     """
     agent: str
     index: int
-    account: dict
+    account: Account
     series_before: list[int]
     seating: Seating
     reach: dict[str, str]                # seat -> agent, every peer that is not out
@@ -4995,7 +5099,7 @@ def run_once(agent: str, router: ProviderRouter) -> dict:
     return commit_episode(ep, run_episode(ep, router))
 
 
-def ready(agent: str, prepare: Callable[[dict[str, Any]], None] | None = None) -> Episode | None:
+def ready(agent: str, prepare: Callable[[Account], None] | None = None) -> Episode | None:
     """Build `agent`'s environment if its account admits an episode. The Episode, or None.
 
     `prepare(account)` runs before the environment is built and may add to the
@@ -5013,7 +5117,7 @@ def ready(agent: str, prepare: Callable[[dict[str, Any]], None] | None = None) -
 
 
 def drive(agent: str, router: ProviderRouter,
-          prepare: Callable[[dict[str, Any]], None] | None = None) -> dict | None:
+          prepare: Callable[[Account], None] | None = None) -> dict | None:
     """One episode for `agent`, if its account admits one. The trace, or None."""
     ep = ready(agent, prepare)
     return None if ep is None else commit_episode(ep, run_episode(ep, router))
@@ -5083,7 +5187,7 @@ def catch_signals() -> None:
 
 
 def run_episodes(agent: str, router: ProviderRouter, count: int,
-                 prepare: Callable | None = None) -> int:
+                 prepare: Callable[[Account], None] | None = None) -> int:
     """Run up to `count` episodes back to back. Returns the exit status.
 
     `count` is a ceiling, never a floor; the account decides the rest. An agent
@@ -5168,7 +5272,7 @@ def fork(parent: str, index: int, new: str) -> int:
             or trace.get("trace_version") != TRACE_VERSION):
         raise SystemExit(f"{parent} cannot be forked from an incompatible account or trace; "
                          "start a fresh agent id")
-    account: dict[str, Any] = {
+    account: Account = {
         "account_version": ACCOUNT_VERSION, "agent": new, "provider": parent_account["provider"],
         "model": parent_account["model"], "initial": parent_account["initial"],
         "created_at": parent_account["created_at"], "remaining": series[-1],
@@ -5380,7 +5484,7 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
         for entry in agents:
             if selected is not None and entry["id"] != selected:
                 continue
-            account = account_on_disk(entry["id"])
+            account = load_account(entry["id"])
             instances = environment(entry["id"], account)
             ensure_mirrors(instances)
             store = private_store(s.channels)

@@ -354,7 +354,7 @@ def stamp_of(manifest: Manifest) -> dict[str, Any]:
             "manifest_sha256": manifest["sha256"]}
 
 
-def inherit_memory(entry: dict, account: dict) -> None:
+def inherit_memory(entry: dict, account: harness.Account) -> None:
     """Give a fresh agent the exact private memories recorded by another agent's episode.
 
     Only files owned by write_memory tools cross the boundary. The new agent keeps its
@@ -475,7 +475,18 @@ def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str)
     return "\n".join(lines) + "\n"
 
 
-def branch_totals(account: dict, index: int) -> dict[str, Any]:
+class Totals(TypedDict):
+    """An account's running totals, under its keys: what transfers sent, received,
+    rebated and debited, what the floor forgave, and what each channel's penalty took."""
+    sent: int
+    received: int
+    rebated: int
+    debited: int
+    forgiven: int
+    penalised: dict[str, int]
+
+
+def branch_totals(account: harness.Account, index: int) -> Totals:
     """Cumulative settlement fields as they stood at one completed episode.
 
     A credit from a peer settling in the same simultaneous round lands inside the
@@ -484,8 +495,8 @@ def branch_totals(account: dict, index: int) -> dict[str, Any]:
     series' rise up to where an episode's span starts from where the one before it
     ended, or from the initial balance.
     """
-    totals: dict[str, Any] = {"sent": 0, "received": 0, "rebated": 0, "debited": 0,
-                              "forgiven": 0, "penalised": {}}
+    totals: Totals = {"sent": 0, "received": 0, "rebated": 0, "debited": 0,
+                      "forgiven": 0, "penalised": {}}
     series = account.get("series") or []
     ended: int | None = 0
     for episode in account.get("episodes", [])[:index]:
@@ -555,7 +566,7 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
             if harness.fork(entry["id"], index, new):
                 raise SystemExit(f"could not fork {entry['id']}")
             account = harness.load_account(new)
-            account.update(branch_totals(parent, index))
+            account.update(**branch_totals(parent, index))
             label = manifest["labels"][seat]
             if carried := [held[number] for number in sorted(held)
                            if label in held[number]["tally"]
@@ -609,12 +620,12 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
 
 
 def preparer(agent: str, seats: dict[str, str], stamp: dict[str, Any],
-             labels: dict[str, str] | None = None) -> Callable[[dict], None]:
+             labels: dict[str, str] | None = None) -> Callable[[harness.Account], None]:
     """What an agent's account is told before each episode: where it sits, what it and
     every other agent is called, and how the experiment is being driven. Nothing is
     copied into anything the agent can write, so there is nothing to revert afterwards."""
     named = {seat: (labels or {}).get(seat, seat) for seat in seats}
-    def prepare(account: dict) -> None:
+    def prepare(account: harness.Account) -> None:
         seat = next(s for s, a in seats.items() if a == agent)
         account["seat"] = seat
         account["label"] = named[seat]
@@ -626,7 +637,7 @@ def preparer(agent: str, seats: dict[str, str], stamp: dict[str, Any],
 
 
 def preparers(agents: list[str], stamp: dict[str, Any] | None, labels: dict[str, str] | None,
-              schedule: str = "sequential") -> Callable[[str], Callable[[dict], None]]:
+              schedule: str = "sequential") -> Callable[[str], Callable[[harness.Account], None]]:
     """How each agent's account is stamped this round: its seat, every label, and the schedule.
 
     Both schedules prepare an agent the same way, and a round driven straight from
@@ -673,7 +684,7 @@ def drop_those_out(agents: list[str], live: set[str]) -> None:
             drop_out(agent, live)
 
 
-def behind(account: dict, played: int) -> bool:
+def behind(account: harness.Account, played: int) -> bool:
     """Whether an agent is more than a round behind the table's round, the furthest
     round `played` by any agent: the round an agent is told it is in is its own episode
     count plus one, so it cannot sit at the table's round, and the rounds it missed are
@@ -790,7 +801,8 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, router: Provid
 
 
 def build_all(agents: list[str], live: set[str],
-              prepare: Callable[[str], Callable[[dict], None]]) -> dict[str, harness.Episode]:
+              prepare: Callable[[str], Callable[[harness.Account], None]]
+              ) -> dict[str, harness.Episode]:
     """Every live agent's environment, built in seat order before any episode runs.
 
     An agent whose environment fails ATTEMPTS times drops out; the rest are built.
@@ -961,21 +973,21 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     return True
 
 
-def elector(account: dict, round_number: int) -> bool:
+def elector(account: harness.Account, round_number: int) -> bool:
     """Whether an agent votes in the election that follows `round_number`: it took that
     round's episode and did not drop out in it, so it was at the table as the round ended."""
     episodes = account["episodes"]
     return len(episodes) == round_number and not drops(episodes[-1]["stop"])
 
 
-def elections_of(account: dict) -> list[dict]:
+def elections_of(account: harness.Account) -> list[harness.Election]:
     """Every election an account was written into, oldest first: its `elections`, or its
     last election alone where it keeps no list."""
     return account.get("elections") or (
         [account["last_election"]] if account.get("last_election") else [])
 
 
-def recorded(account: dict, round_number: int) -> bool:
+def recorded(account: harness.Account, round_number: int) -> bool:
     """Whether an account has been written the election that follows `round_number`: it
     holds that election, or a later one, or an elimination at or after the round. A later
     record is never taken for this one missing."""
@@ -1078,7 +1090,7 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
               f"{', '.join(stopped)} before a ballot was cast; no agent is eliminated by the vote")
     voted_out = leaders - abstainers if len(leaders) == 1 and not stopped else set()
     eliminated = abstainers | voted_out
-    result = {
+    result: harness.Election = {
         "round": round_number,
         "tally": {label_by_agent[agent]: tally[agent] for agent in candidates},
         "electors": [label_by_agent[agent] for agent in electorate],

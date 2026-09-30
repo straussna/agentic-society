@@ -21,7 +21,7 @@ import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Mapping, NamedTuple
 
 import analyze
 import experiment
@@ -140,7 +140,7 @@ def agent_names() -> list[str]:
             if harness.account_path(d.name).exists()]
 
 
-def account_of(agent: str) -> dict:
+def account_of(agent: str) -> Mapping[str, Any]:
     """One agent's account, empty where it has none this poll."""
     return read_json(harness.account_path(agent)) or {}
 
@@ -179,7 +179,7 @@ def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None
     return found if digest != found[0]["sha256"] else None
 
 
-def committed(agent: str, account: dict | None = None) -> int:
+def committed(agent: str, account: Mapping[str, Any] | None = None) -> int:
     """How many episodes the agent's account lists: those whose commit finished.
 
     close_episode writes the trace before the account, so a trace past this count is
@@ -190,20 +190,20 @@ def committed(agent: str, account: dict | None = None) -> int:
     return len((account_of(agent) if account is None else account).get("episodes") or [])
 
 
-def traces_of(agent: str, account: dict | None = None) -> list[dict]:
+def traces_of(agent: str, account: Mapping[str, Any] | None = None) -> list[dict]:
     """Every committed episode of an agent, in order."""
     count = committed(agent, account)
     return [t for t in (load_trace(p) for p in harness.trace_paths(agent)
                         if harness.episode_number(p) <= count) if t is not None]
 
 
-def latest_trace(agent: str, account: dict | None = None) -> dict | None:
+def latest_trace(agent: str, account: Mapping[str, Any] | None = None) -> dict | None:
     """The agent's last committed episode, or None before it has one."""
     count = committed(agent, account)
     return load_trace(harness.trace_path(agent, count)) if count else None
 
 
-def live_index(agent: str, account: dict | None = None) -> int | None:
+def live_index(agent: str, account: Mapping[str, Any] | None = None) -> int | None:
     """The episode not yet committed, or None if the agent is between starts.
 
     Unfinished is exactly a raw log past the episodes the account lists, which is
@@ -369,7 +369,7 @@ def from_trace(t: dict) -> list[dict]:
     } for turn in t.get("turns") or []]
 
 
-def from_raw(lines: list[dict], account: dict) -> list[dict]:
+def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     """A running episode's turns from canonical events written after native responses.
 
     Billed by the rule harness.bill_once applies, restated over the logged dict: a
@@ -414,12 +414,12 @@ def from_raw(lines: list[dict], account: dict) -> list[dict]:
     return out
 
 
-def live_turns(agent: str, index: int, account: dict) -> list[dict]:
+def live_turns(agent: str, index: int, account: Mapping[str, Any]) -> list[dict]:
     """The turns of an unfinished episode, read off its raw log."""
     return from_raw(latest_attempt(raw_lines(harness.raw_path(agent, index))), account)
 
 
-def live_state(agent: str, index: int | None, account: dict) -> dict:
+def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dict:
     """What an unfinished episode has done so far, derived from its raw log.
 
     `turns` are its turns, `spent` what they have cost, `balance` what the last
@@ -437,7 +437,7 @@ def live_state(agent: str, index: int | None, account: dict) -> dict:
 # --- who is at the table ----------------------------------------------------
 
 
-def group_of(agent: str, account: dict) -> str:
+def group_of(agent: str, account: Mapping[str, Any]) -> str:
     """The set of agents this one belongs to, as one name.
 
     An experiment knows its own membership, so that is used where it exists; the
@@ -451,7 +451,7 @@ def group_of(agent: str, account: dict) -> str:
     return head if head and all(m.startswith(head) for m in members) else "+".join(members)
 
 
-def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
+def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | None:
     """The experiment an agent is seated in, as its members in seat order.
 
     An agent is seated when the mapping it carries puts it in its own seat; one
@@ -502,7 +502,7 @@ def named_group(members: list[str]) -> str:
     return group_of(members[0], {"peers": {"seen": seen}})
 
 
-def anchored_groups(accounts: dict[str, dict],
+def anchored_groups(accounts: Mapping[str, Mapping[str, Any]],
                     catalog: dict[str, tuple[dict, Path]] | None = None
                     ) -> tuple[list[dict], set[str]]:
     """Experiments identified by a manifest stamp already written to one account.
@@ -1207,7 +1207,7 @@ def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
     return out
 
 
-def given_in(ch: harness.Channel, account: dict) -> set[str]:
+def given_in(ch: harness.Channel, account: Mapping[str, Any]) -> set[str]:
     """The paths the starter files put in this tree: only a private store holds any."""
     return harness.starter_paths(account) if ch.readers == "self" else set()
 

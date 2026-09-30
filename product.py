@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 
 VERSION = 1
@@ -169,8 +169,8 @@ def progress(runtime_root: Path, experiment_id: str, phase: str, round_number: i
     return event
 
 
-def cost(agents: Iterable[str], load_account, policy: dict[str, Any],
-         interactive: Callable[[str | None], bool]) -> dict[str, Any]:
+def cost(agents: Iterable[str], load_account: Callable[[str], Mapping[str, Any]],
+         policy: dict[str, Any], interactive: Callable[[str | None], bool]) -> dict[str, Any]:
     spent = 0
     tiers = {}
     for agent in agents:
@@ -199,7 +199,7 @@ def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | Non
 
 
 def outcome(runtime_root: Path, experiment_id: str, agents: list[str], labels: dict[str, str],
-            remaining: set[str], reason: str, load_account: Callable[[str], dict[str, Any]],
+            remaining: set[str], reason: str, load_account: Callable[[str], Mapping[str, Any]],
             trace_path: Callable[[str, int], Path],
             reveal: dict[str, list[str]]) -> dict[str, Any]:
     """Write outcome.json: who won or survived, the elimination order, the balances, and
