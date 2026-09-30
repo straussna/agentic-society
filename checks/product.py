@@ -476,7 +476,8 @@ def check_a_branch_holds_no_election_again_that_a_later_one_replaced():
 def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     """No round starts once the autonomous spend and the reserve reach the ceiling, and the
     progress and outcome records name the ceiling as what ended the rounds. A run that
-    ends with one agent left under stop_when_one_remains names it the winner."""
+    ends with one agent left under stop_when_one_remains names it the winner, and one
+    that reaches the ceiling as one agent is left ends on the ceiling."""
     cost = turn_cost()
     agents = '[[agent]]\nid = "p1"\n[[agent]]\nid = "p2"\n'
     with temp_root() as root:
@@ -513,6 +514,23 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     outcome = records["outcome"]
     assert outcome["termination_reason"] == "one_remains", outcome
     assert outcome["winners"] == outcome["survivors"] == ["1"], outcome
+
+    # The ceiling is judged first: where it is reached and one agent remains as well,
+    # the round is prepared on the cost that ends the rounds, and the ceiling ends them.
+    with temp_root() as root:
+        manifest = manifest_file(root, 'experiment_id = "both"\nstop_when_one_remains = true\n'
+                                       f'system_prompt = ""\n[cost]\nmaximum = {2 * cost}\n'
+                                       + agents.replace('"p2"\n', f'"p2"\nbudget = {cost - 1}\n'))
+        harness.start = lambda config=None, **kw: fake()
+        with quiet():
+            code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
+        both = episodes_taken(["p1", "p2"])
+        records = product.records(root, "both")
+    assert code == 0 and both == {"p1": 1, "p2": 1}, (code, both)
+    assert [(event["phase"], event["round"]) for event in records["progress"]["events"][-2:]] == \
+        [("preparing_round", 2), ("cost_ceiling", 2)], records["progress"]["events"][-2:]
+    assert records["progress"]["latest"]["termination_reason"] == "cost_ceiling", records["progress"]
+    assert records["outcome"]["termination_reason"] == "cost_ceiling", records["outcome"]
 
 
 def check_an_unreadable_record_is_told_from_an_absent_one():
@@ -667,9 +685,11 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
 
 def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play():
     """progress.jsonl holds one line for each phase each round reaches, in the order it
-    reaches them, and nothing else: every round played is completed once, and one the
-    stops end the rounds before is neither prepared nor completed. The last line names
-    the round the rounds ended at, so the record's rounds never go back.
+    reaches them, and nothing else: every round played is completed once, and one that a
+    stop counting seats ends the rounds before is neither prepared nor completed. The
+    last line names the round the rounds ended at, so the record's rounds never go back.
+    The cost ceiling's round is prepared and goes no further, which
+    check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why pins.
 
     Two seats play two sequential rounds to the round limit. Then g02 spends the last of
     its balance in round 1, and under stop_when_one_remains the rounds end before round

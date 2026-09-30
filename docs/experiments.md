@@ -181,7 +181,7 @@ A line naming a seat that is out gives nothing and is charged the share, exactly
 naming a seat this experiment never had is.
 Nothing is taken from an episode that could not have given — one the API never answered,
 one that spent nothing for the transfer to be drawn from, and an agent with no seat left to give
-to, which is an experiment of one and equally the last agent at a table where every other seat is
+to, which is an experiment of one and equally the last agent left where every other seat is
 out — because a charge for the impossible is not a rule an agent can act on.
 
 **A completed transfer is public and a message is not.** Its prior-round request may be

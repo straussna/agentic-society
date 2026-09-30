@@ -1398,8 +1398,9 @@ def main(argv: list[str] | None = None) -> int:
             round_number = played if finishing else played + 1
             cost = product.cost(agents, harness.load_account, manifest["cost"],
                                 providers.is_interactive)
-            # Judged before the round is prepared, so the record names no round that was
-            # not played. The ceiling comes first, and a round being finished is played.
+            # Judged before the round is prepared, so the record prepares no round that a
+            # stop counting seats ends. The ceiling comes first, its round prepared to
+            # carry the cost that ends the rounds, and a round being finished is played.
             if not cost["ceiling_reached"] and not finishing:
                 ended = before_round(agents, live, played, manifest["stop_when_one_remains"])
                 if ended is not None:

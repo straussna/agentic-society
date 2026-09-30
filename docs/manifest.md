@@ -33,7 +33,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Turn** | One model call and the commands it asks for |
 | **Round** | One episode for every agent still in the experiment |
 | **At the table** | A seat is at the table while the run of `experiment.py` still drives it: from the run's start, unless it is out or more than one round behind the table's round, until it is out or leaves for the rest of the run on a fault of its own or an environment that would not build. **The table's round** is the furthest round any seat has played, whether or not it is at the table |
-| **In the competition** | A seat is in the competition while its account admits an episode and it is at most one round behind the table's round, whether or not the run has it at the table. Every stop, candidate and survivor is judged on the seats in the competition |
+| **In the competition** | A seat is in the competition while its account admits an episode and it is at most one round behind the table's round, whether or not the run has it at the table. Every stop that counts seats counts the seats in the competition, and they alone are candidates and survivors |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
 | **Grace period** | Episodes at the start of an agent's life during which no silence penalty is taken |
@@ -137,19 +137,20 @@ runs one.
 | `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
 
 Each experiment writes under `experiment_records/<experiment_id>/`: `progress.jsonl`,
-one line per phase each round reaches as it reaches it and none for a round the stops end
-the rounds before, the last naming the round the rounds ended at, so its rounds never go
-back; `progress.json`, the latest of those; `outcome.json`; and, for a branch,
-`lineage.json`. The outcome's `termination_reason` is one of `round_limit`,
-`cost_ceiling`, `one_remains`, `final_tie`, `all_eliminated`, `none_can_act` or
-`interrupted`. Every stop is judged on the seats still in the competition, whose accounts
-admit an episode and which are at most one round behind the table's round, the furthest
-round any seat has played, whether or not the run has them at the table: a seat whose
-episode ended on a fault of its own, or whose environment would not build, leaves the
-table for the rest of that run and stays in until it falls further behind, which is once
-the table's round is two past the last it played. One further behind sits out every round
-of every run, and is no longer in: it counts toward no stop, survives nothing and stands
-in no election.
+one line per phase each round reaches as it reaches it, the last naming the round the
+rounds ended at, so its rounds never go back; `progress.json`, the latest of those;
+`outcome.json`; and, for a branch, `lineage.json`. A round that a stop counting seats ends
+the rounds before has no line, and the round the cost ceiling ends them before has its
+preparation alone, which carries the cost that ended them. The outcome's
+`termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,
+`all_eliminated`, `none_can_act` or `interrupted`. Every stop that counts seats is judged
+on the seats still in the competition, whose accounts admit an episode and which are at
+most one round behind the table's round, the furthest round any seat has played, whether
+or not the run has them at the table: a seat whose episode ended on a fault of its own,
+or whose environment would not build, leaves the table for the rest of that run and stays
+in until it falls further behind, which is once the table's round is two past the last it
+played. One further behind sits out every round of every run, and is no longer in: it
+counts toward no stop, survives nothing and stands in no election.
 `all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
 able to take an episode in this run. The outcome's `survivors` are the seats still in as
 the run ends, and its `elimination_order` the seats an election put out, so a seat out of
@@ -483,7 +484,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; the election that follows is below the table |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 

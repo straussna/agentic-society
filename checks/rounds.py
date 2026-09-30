@@ -1829,8 +1829,9 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     g02 plays. In a simultaneous round a receiver closes on the credits of every giver
     that has not failed by then: a lost g01 credits g02 nothing, and a lost g02 has what it
     credited g01, which closed first, taken back. A g01 that overspent, and that the credit
-    lifted back above zero before its floor, is floored once it is taken back, so it
-    stands where it would had g02 given it nothing.
+    lifted back above zero before its floor, stands once it is taken back where it would
+    had g02 given it nothing: floored where the experiment floors, and below zero where
+    it does not.
     """
     rounds = (("sequential", experiment.sequential_round,
                lambda: fake(run("echo '2 100' > out/transfer"), say(),
@@ -1876,29 +1877,34 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     }, ended
 
     cost = turn_cost()
-    floored = {}
-    for lost, transfer in ((True, "echo '1 50' > out/transfer"), (False, "true")):
-        with temp_root(budget=cost - 1, floor_at_zero=True) as root:
-            ids = seated(root, "g01", g02={})
-            real = harness.replace_file
+    stood = {}
+    for floor in (True, False):
+        for lost, transfer in ((True, "echo '1 50' > out/transfer"), (False, "true")):
+            with temp_root(budget=cost - 1, floor_at_zero=floor) as root:
+                ids = seated(root, "g01", g02={})
+                real = harness.replace_file
 
-            def no_room(src, dest, lost=lost):
-                if lost and dest == harness.trace_path("g02", 1):
-                    raise OSError("no space left on device")
-                real(src, dest)
+                def no_room(src, dest, lost=lost):
+                    if lost and dest == harness.trace_path("g02", 1):
+                        raise OSError("no space left on device")
+                    real(src, dest)
 
-            harness.replace_file = no_room
-            try:
-                with quiet():
-                    experiment.simultaneous_round(ids, set(ids), 0, per_agent(
-                        g01=(say(),), g02=(run(transfer), say())))
-            except OSError:
-                pass
-            g01 = ground_truth("g01")
-        floored[lost] = (g01["remaining"], g01.get("forgiven", 0), g01.get("received", 0),
-                         reconciled(g01, g01["episodes"][0]["spent"]), g01["series"][1:])
-    assert floored[True][:4] == floored[False][:4] == (0, 1, 0, 0), floored
-    assert floored[True][4] == [-1, 49, -1, 0] and floored[False][4] == [-1, 0], floored
+                harness.replace_file = no_room
+                try:
+                    with quiet():
+                        experiment.simultaneous_round(ids, set(ids), 0, per_agent(
+                            g01=(say(),), g02=(run(transfer), say())))
+                except OSError:
+                    pass
+                g01 = ground_truth("g01")
+            stood[floor, lost] = (g01["remaining"], g01.get("forgiven", 0), g01.get("received", 0),
+                                  reconciled(g01, g01["episodes"][0]["spent"]), g01["series"][1:])
+    # Floored, a take-back forgives what its close would have; unfloored, it forgives
+    # nothing, and the balance stays below zero where the close left it.
+    assert stood[True, True][:4] == stood[True, False][:4] == (0, 1, 0, 0), stood
+    assert stood[True, True][4] == [-1, 49, -1, 0] and stood[True, False][4] == [-1, 0], stood
+    assert stood[False, True][:4] == stood[False, False][:4] == (-1, 0, 0, -1), stood
+    assert stood[False, True][4] == [-1, 49, -1] and stood[False, False][4] == [-1], stood
 
 
 def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_committed():
