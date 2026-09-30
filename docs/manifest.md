@@ -126,7 +126,7 @@ runs one.
 | `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
 | `-r N` | Up to N rounds, default 1, stopping early as budgets end; under `--resume` a round the last run left unfinished is finished first, and is one of the N |
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
-| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind sits out. Without it, previous state moves under `displaced/` and a fresh run starts |
+| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind the furthest round any seat has played sits out. Without it, previous state moves under `displaced/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
 | `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
@@ -138,8 +138,13 @@ Each experiment writes under `experiment_records/<experiment_id>/`: `progress.js
 one line per phase each round reaches as it reaches it; `progress.json`, the latest of
 those; `outcome.json`; and, for a branch, `lineage.json`. The outcome's
 `termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`,
-`final_tie`, `all_eliminated` or `interrupted`. Human seats are answered as
-[docs/human.md](human.md) describes.
+`final_tie`, `all_eliminated`, `none_can_act` or `interrupted`. Every stop is judged on
+the seats still in the competition, whose accounts admit an episode, whether or not the
+run has them at its table: a seat whose episode ended on a fault of its own, or whose
+environment would not build, leaves the table for the rest of that run and stays in.
+`all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
+able to take an episode in this run. The outcome's `survivors` are the seats still in as
+the run ends. Human seats are answered as [docs/human.md](human.md) describes.
 
 ## 2. Top level
 
@@ -468,7 +473,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated, and a seat whose episode the experimenter's stop ended before it voted is not a nonvoter; if two or more agents share the highest total, nobody is eliminated by vote |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included, and not to a seat that takes that round after its election was held, whose episode is a discussion; a later call replaces the earlier vote. After that round every seat still in the competition is a candidate, and a ballot counts toward the candidate it names; the electors are the seats that took the round's episode without a fault. An elector offered the ballot that cast none is eliminated; one with no peer left to name was offered none. The candidate with the unique highest total above zero is eliminated by vote. Nobody is eliminated by vote where two or more candidates share the highest total, or where the experimenter's stop ended an elector's episode before it cast the ballot it was offered; such an elector is not a nonvoter. The result goes to every candidate and elector, whose account keeps each election it was in |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -617,7 +622,8 @@ the round, the agent's label, the agents still active and the current phase. A v
 supplies the cycle length. The first round after a vote also summarizes its result.
 Rounds on the vote cadence say `vote only`, identify communication as unavailable and
 name the vote tool the agent must call before ending the episode. Private-memory tools
-remain available.
+remain available. A seat that takes such a round after its election was held takes it as
+a discussion, and is offered every tool but the ballot.
 
 A transfer channel's `ledger` names its ledger file (`"g"` in the default table): three integers a line,
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
@@ -927,7 +933,10 @@ whether it was submitted, what moved, and `penalty`. The account keeps `penalise
 running total per channel.
 
 Every tool record carries `tool` (`bash` or the declared name), `result`, and then
-`command` for the shell or `input` for a declared tool, the other being null.
+`command` for the shell or `input` for a declared tool, the other being null. The
+trace's `offered` names the tools the episode's request carried, `bash` among them where
+the shell was: an election reads it to tell a seat that cast no ballot from one that was
+offered none.
 `trace_version` is 4. The trace names `provider`, `requested_model`, and
 `resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
 native stop reasons, and the provider provenance. Raw logs write the provider and complete

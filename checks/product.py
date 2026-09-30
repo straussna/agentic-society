@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import threading
 from pathlib import Path
 
@@ -312,6 +313,67 @@ def check_a_branch_carries_the_elections_its_round_had_held_and_no_later_one():
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert resumed == {agent: forks[agent] for agent in resumed}, \
         f"the election the branch carries is not held again: {resumed}"
+
+
+def check_a_branch_holds_no_election_again_that_a_later_one_replaced():
+    """Each account keeps every election it was written into, so a branch at a voting
+    round carries that round's election even where a later one has taken its place in
+    every source account, and the branch run does not hold it again.
+
+    g03's environment will not build in round 2, whose election g01 and g02 tie. g03
+    finishes the round on --resume, and round 4's election, tied too, takes the place of
+    round 2's as every seat's last. Held again at the branch, round 2's would take seat 3
+    for an elector, and put it out for casting no ballot.
+    """
+    ballot = {"name": "ballot", "writer": "self", "readers": "self", "shape": "directory",
+              "path": "ballot", "pushed": False}
+    tools = [{"name": "bash", "kind": "bash"},
+             {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}]
+    keys = ("last_election", "eliminated")
+    with temp_root(channels=tables(ballot), tools=tools) as root:
+        source = manifest_file(root, 'experiment_id = "source"\nsystem_prompt = ""\n'
+                               + "".join(f'[[agent]]\nid = "g0{i}"\n' for i in range(1, 4))
+                               + channel_toml(tables(ballot)) + "".join(
+                                   "\n[[tool]]\n" + "".join(f"{key} = {json.dumps(value)}\n"
+                                                            for key, value in tool.items())
+                                   for tool in tools), name="source.toml")
+        real = harness.ready
+
+        def unbuildable(agent, prepare=None):
+            if agent == "g03" and harness.account_on_disk(agent)["episodes"]:
+                raise subprocess.CalledProcessError(1, ["docker", "cp"])
+            return real(agent, prepare)
+
+        harness.ready = unbuildable
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), say(), use("vote", to="2"), say(), use("vote", to="1"), say())
+        with quiet():
+            assert experiment.main(["--manifest", str(source), "--rounds", "2"]) == 0
+        second = ground_truth("g01")["last_election"]
+        harness.ready = real
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), say(), say(),
+            use("vote", to="2"), say(), use("vote", to="3"), say(), use("vote", to="1"), say())
+        with quiet():
+            assert experiment.main(["--manifest", str(source), "--rounds", "3", "--resume"]) == 0
+        fourth = ground_truth("g01")["last_election"]
+        histories = [ground_truth(agent)["elections"] for agent in ("g01", "g02", "g03")]
+        with quiet():
+            experiment.branch_experiment(source, 2, "second", "3", root / "second.toml")
+        forks = {agent: {key: ground_truth(agent).get(key) for key in (*keys, "elections")}
+                 for agent in ("second-01", "second-02", "second-03")}
+        harness.start = lambda config=None, **kw: fake()
+        with quiet() as output:
+            code = experiment.main(["--manifest", str(root / "second.toml"), "--resume"])
+        resumed = {agent: {key: ground_truth(agent).get(key) for key in (*keys, "elections")}
+                   for agent in forks}
+    assert second["round"] == 2 and second["top_tied"] and second["electors"] == ["1", "2"], second
+    assert fourth["round"] == 4 and fourth["top_tied"], fourth
+    assert histories == [[second, fourth]] * 3, histories
+    assert all(fork == {"last_election": second, "eliminated": None, "elections": [second]}
+               for fork in forks.values()), forks
+    assert code == 0 and "eliminated after round" not in output.getvalue(), output.getvalue()
+    assert resumed == forks, f"the election the branch carries is not held again: {resumed}"
 
 
 def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():

@@ -2046,6 +2046,21 @@ def harness_digest_body(name: str, body: str, agent: str, account: dict) -> str:
     return body
 
 
+def election_held(agent: str, account: dict, round_number: int) -> bool:
+    """Whether the election that follows `round_number` is held already, as the agent's
+    own account or a peer's records it.
+
+    Only a seat that takes its round after the seats that played it held its election
+    finds one. A ballot it cast would be counted by nobody, so its episode of that
+    round is a discussion like any other and offers none.
+    """
+    seating = seating_of(agent, account)
+    records = [account, *(account_on_disk(other) for seat, other in seating.seen.items()
+                          if seat != seating.seat)]
+    return any((record.get("last_election") or {}).get("round", 0) >= round_number
+               for record in records)
+
+
 def render_round_status(account: dict) -> str:
     """The authoritative round and phase announced at the start of an episode."""
     round_number = len(account["episodes"]) + 1
@@ -2061,7 +2076,8 @@ def render_round_status(account: dict) -> str:
     else:
         position = (round_number - 1) % vote.every + 1
         cycle = (round_number - 1) // vote.every + 1
-        voting = position == vote.every
+        voting = position == vote.every and not election_held(account["agent"], account,
+                                                              round_number)
         lines = [f"round: {round_number} (cycle {cycle}, {position}/{vote.every})",
                  f"you: {seating.label}", f"remaining agents: {remaining}"]
         previous = account.get("last_election") or {}
@@ -3514,25 +3530,27 @@ TOOL_KINDS: dict[str, ToolKind] = {
 
 def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
                instances: Iterable[Instance], reach: Iterable[str] | None = None,
-               episode: int | None = None) -> list[Bound]:
+               episode: int | None = None, held: bool = False) -> list[Bound]:
     """Every declared tool this environment can actually offer, in declaration order.
 
     A tool whose channel this episode did not plant - a mailbox in an agent with
     no peers - is not offered, because an affordance that cannot act is not one.
     A write needs the instance the agent writes, and a slot needs a peer to reach.
-    On a vote cadence, only the ballot and private-memory tools are offered.
+    On a vote cadence, only the ballot and private-memory tools are offered; where
+    `held` says that round's election is held already, no ballot is, and every
+    other tool is offered as on any other episode.
 
     `reach` is the labels this episode can still reach, which an episode passes
     and a caller inspecting a table outside one leaves as None.
     """
     table, chans, instances = list(table), list(chans), list(instances)
     reach = None if reach is None else tuple(reach)
-    voting = episode is not None and any(
+    voting = episode is not None and not held and any(
         TOOL_KINDS[tool.kind].ballot and episode % tool.every == 0 for tool in table)
     out: list[Bound] = []
     for t in table:
         kind = TOOL_KINDS[t.kind]
-        if kind.ballot and episode is not None and episode % t.every:
+        if kind.ballot and episode is not None and (held or episode % t.every):
             continue
         if voting and not kind.on_ballot:
             continue
@@ -4590,7 +4608,8 @@ def build_episode(agent: str) -> Episode:
     # left of it, so an agent with nothing to act with is refused here rather than
     # asked for a turn it has no way to answer.
     bound = bind_tools(tools(), channels(), instances,
-                       [seating.labels[seat] for seat in reach], index)
+                       [seating.labels[seat] for seat in reach], index,
+                       election_held(agent, account, index))
     if not SHELL_TOOL and not bound:
         raise SystemExit(f"agent {agent} is offered no shell and none of the "
                          f"{len(tools())} declared tools can act in this environment, so "
@@ -4798,6 +4817,9 @@ def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int,
             "requested_model": account["model"], "resolved_model": out.get("resolved_model"),
             "system_sha256": ep.prov["system_sha256"],
             "provenance": ep.prov, "provenance_drift": ep.drifted,
+            # The tools the episode's request carried, by name, the shell among them
+            # where it was: what an election reads to tell a seat offered no ballot.
+            "offered": [spec.name for spec in episode_specs(ep.bound)],
             "missing_tools": ep.missing,     # reached for; the image does not have it
             # Written outside every channel and moved into the private store, so
             # the work survives and the agent will not find it where it left it.

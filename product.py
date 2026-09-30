@@ -199,18 +199,22 @@ def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | Non
 
 
 def outcome(runtime_root: Path, experiment_id: str, agents: list[str], labels: dict[str, str],
-            live: set[str], reason: str, load_account: Callable[[str], dict[str, Any]],
+            remaining: set[str], reason: str, load_account: Callable[[str], dict[str, Any]],
             trace_path: Callable[[str, int], Path],
             reveal: dict[str, list[str]]) -> dict[str, Any]:
     """Write outcome.json: who won or survived, the elimination order, the balances, and
-    the digest of each agent's last trace, which `trace_path` locates."""
+    the digest of each agent's last trace, which `trace_path` locates.
+
+    The survivors are `remaining`, the agents still in the competition whether or not
+    the run that ended had them at its table; the winners are the survivors where
+    `reason` is a stop that names them."""
     label_by_agent = {agent: labels[str(index)] for index, agent in enumerate(agents, 1)}
     accounts = {agent: load_account(agent) for agent in agents}
     last = {agent: len(account.get("episodes", [])) for agent, account in accounts.items()}
     eliminated = sorted((account["eliminated"]["round"], label_by_agent[agent],
                          account["eliminated"].get("reason", ""))
                         for agent, account in accounts.items() if account.get("eliminated"))
-    survivors = [label_by_agent[agent] for agent in agents if agent in live]
+    survivors = [label_by_agent[agent] for agent in agents if agent in remaining]
     winners = survivors if reason in ("one_remains", "final_tie") else []
     evidence = [item for agent, episode in last.items()
                 if (item := trace_evidence(agent, episode, trace_path(agent, episode)))]

@@ -795,6 +795,7 @@ function electionHtml(h) {
     : latest.top_tied ? `top vote tied at ${num(latest.top_votes)}; nobody eliminated by vote`
     : `nobody eliminated by vote`;
   if ((latest.abstainers || []).length) outcome += ` · abstainers: ${latest.abstainers.map(esc).join(", ")}`;
+  if ((latest.interrupted || []).length) outcome += ` · stopped before voting: ${latest.interrupted.map(esc).join(", ")}`;
   return `<div class="election"><div class="kv"><div class="k">round ${latest.round} election · aggregate</div></div>
     <div class="tally">${tally}</div><div class="result">${outcome}</div>
     <div class="note">remaining: ${(latest.remaining || []).map(esc).join(", ") || "none"}</div></div>`;
