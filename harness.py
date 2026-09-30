@@ -241,8 +241,8 @@ def load_config(path: Path | None = None) -> Path | None:
     return f
 
 
-# How a validator refuses: it raises SystemExit carrying the message and never
-# returns, so every rule after a refusal may take the one before it as holding.
+# How a validator refuses: it ends the run with SystemExit and never returns, so
+# every rule after a refusal may take the one before it as holding.
 Refuse = Callable[[str], NoReturn]
 
 
@@ -254,8 +254,8 @@ def check_keys(refuse: Refuse, where: str, raw: dict, allowed: Iterable[str],
     The one place config.toml, a manifest, an [[agent]] table and a [[channel]]
     table are held to their keys, so every refusal reads alike. `where` leads
     each message, `types` fixes the type of the keys that have one, `retired`
-    names where a key went, `elsewhere` names the file a real key belongs in, and
-    `expected` replaces the list of allowed keys.
+    names where each refused key's setting is declared, `elsewhere` names the file
+    a real key belongs in, and `expected` replaces the list of allowed keys.
     """
     for key in raw:
         if retired and key in retired:
@@ -371,7 +371,7 @@ def validate_terms(source: str, *, provider: str | None, model: str | None, budg
 
 # What each enumerated field of a channel may hold. WRITERS, SHAPE_PATHS,
 # TRANSFER_FUNDERS and AGENT_VIEWS, which a declaration is checked against, are
-# read out of these, so each value is written once.
+# read out of these, so the check and the field's type cannot disagree.
 Writer = Literal["self", "experimenter"]
 Readers = Literal["self", "all", "addressee", "harness"]
 Shape = Literal["directory", "mailbox", "file"]
