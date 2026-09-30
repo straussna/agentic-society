@@ -673,7 +673,8 @@ def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
             "agent": agent, "episode": taken[agent], "stop": "end_turn", "spent": 1,
             "turns": [], "remaining": 0, "files": [], "state_saved": True,
             "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats,
-                           "harness_files": dict(harness.HARNESS_FILES)},
+                           "harness_files": dict(harness.HARNESS_FILES),
+                           "message_delivery": "episode"},
             **trace_fields, **(more[0] if more else {})}), encoding="utf-8")
     for seat, agent in seats.items():
         harness.records_dir(agent).mkdir(parents=True, exist_ok=True)

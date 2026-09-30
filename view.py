@@ -1025,8 +1025,11 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
 def messages(exp: dict, since: int = 0) -> dict:
     """Every mailbox and schema-channel event, in round order.
 
-    A message lasts one episode, so what a committed outbox holds was sent afresh
-    by that episode and is not diffed against the one before it.
+    Under episode delivery a message lasts one episode, so what a committed outbox
+    holds was sent afresh by that episode. A trace naming no message_delivery was
+    written while an outbox stood until changed, so its messages are diffed against
+    the sender's episode before: standing where unchanged, withdrawn where gone.
+    A transfer declaration is every episode's own under either.
     """
     rows = experiment_episodes(exp)
     room = mailroom(exp)
@@ -1040,8 +1043,14 @@ def messages(exp: dict, since: int = 0) -> dict:
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
-            for path in sorted(now):
-                events.append(message_event(room, row, path, ABSENT, now[path]))
+            episodic = row["trace"]["provenance"].get("message_delivery") == "episode"
+            for path in sorted(now if episodic else set(prev) | set(now)):
+                if episodic or transfer_path(room, path):
+                    if path in now:
+                        events.append(message_event(room, row, path, ABSENT, now[path]))
+                else:
+                    events.append(message_event(room, row, path,
+                                                prev.get(path, ABSENT), now.get(path, ABSENT)))
             prev, last = now, row
         head = last or {"round": None, "at": None, "episode": None, "seat": seat,
                         "agent": agent, "trace": None}

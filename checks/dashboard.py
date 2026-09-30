@@ -645,6 +645,35 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
     assert m["committed"] == len(m["events"]) and not m["tip"]
 
 
+def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
+    """A trace naming no message_delivery was written while an outbox stood until
+    changed, so the log reads it against the sender's episode before.
+
+    The same outbox held over two episodes and then emptied is sent, standing and
+    withdrawn there, and sent twice under episode delivery, where a message the
+    sender dropped simply was not sent.
+    """
+    def held(*paths: str) -> dict:
+        return {"files": [{"path": path, "channel": "mail", "writer": "self", "readers": "addressee",
+                           "role": "own", "text": "hello\n", "size": 6, "starter": False}
+                          for path in paths]}
+
+    def changes(delivery: str | None) -> list[tuple]:
+        with rooted(HostBox):
+            c = fake_experiment([("g01", "00:01", held("out/2")), ("g01", "00:02", held("out/2")),
+                                 ("g01", "00:03", held())], agents=("g01", "g02"))
+            for path in harness.trace_paths("g01"):
+                trace = json.loads(path.read_text(encoding="utf-8"))
+                trace["provenance"].pop("message_delivery")
+                if delivery:
+                    trace["provenance"]["message_delivery"] = delivery
+                path.write_text(json.dumps(trace), encoding="utf-8")
+            return [(e["episode"], e["change"]) for e in view.messages(c)["events"]]
+
+    assert changes(None) == [(1, "sent"), (2, "standing"), (3, "withdrawn")], changes(None)
+    assert changes("episode") == [(1, "sent"), (2, "sent")], changes("episode")
+
+
 def check_the_view_shows_what_the_receiver_has_not_seen_yet():
     """The outbox on disk stands ahead of the last trace, and the log says so.
 
