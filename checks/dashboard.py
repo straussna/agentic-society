@@ -321,6 +321,8 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
             trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
             trace["episode"], trace["provenance"]["tools"] = 2, tools
             harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
+            account["episodes"].append({"episode": 2, "stop": "end_turn", "spent": 1})
+            harness.account_path("g01").write_text(json.dumps(account), encoding="utf-8")
             landed = view.experiment_named("g")
         finally:
             view.read_json = real

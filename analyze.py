@@ -23,12 +23,17 @@ TOKEN_STACK_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write
 
 
 def load(agent_id: str | None) -> dict[str, list[dict]]:
-    """Read every trace, keyed by agent and ordered by episode."""
+    """Read every committed episode's trace, keyed by agent and ordered by episode.
+
+    A trace past the episodes its account lists is one whose commit stopped between
+    writing it and saving the account, and is no episode of the agent's.
+    """
     agents = {}
     for d in sorted(harness.records_root().glob("*")):
         if agent_id and d.name != agent_id:
             continue
-        traces = harness.trace_paths(d.name)
+        committed = len(harness.account_on_disk(d.name).get("episodes") or [])
+        traces = [p for p in harness.trace_paths(d.name) if harness.episode_number(p) <= committed]
         if traces:
             loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
             incompatible = [t.get("trace_version") for t in loaded

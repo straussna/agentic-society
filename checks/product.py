@@ -420,9 +420,9 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
     runs, resolves its actions after it ran and before it settles, and settles it
     before it is committed, so no phase is written once the round has left it.
 
-    g01's transfer reaches g02's account when g01 settles, and not before. In a
-    simultaneous round an episode that ends while a peer's still runs leaves the round
-    waiting, and the last to end leaves it resolving actions.
+    g01's transfer reaches g02's account once g01's episode is committed, and not when
+    it settles. In a simultaneous round an episode that ends while a peer's still runs
+    leaves the round waiting, and the last to end leaves it resolving actions.
 
     Where a person plays g02, the round waits on a player for g02's episode: a
     simultaneous round names its players apart from its autonomous agents, and g01's
@@ -469,7 +469,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
         assert sequential == [
             ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}, 0),
             ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
-            ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 250),
+            ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
             (g02_waits, 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}, 250),
             ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250),
             ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250)], \

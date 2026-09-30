@@ -1472,7 +1472,8 @@ def credit_account(account: dict, amount: int) -> None:
 
 
 def credit_on_disk(agent: str, amount: int) -> None:
-    """Credit a transfer to a receiver's account on disk: the receiver is not in flight."""
+    """Credit a transfer to a receiver's account on disk, or take one back with a negative
+    amount: the receiver is not in flight."""
     taker = load_account(agent)
     credit_account(taker, amount)
     save_account(agent, taker)
@@ -4672,8 +4673,9 @@ def settle_episode(ep: Episode, out: dict, credit: Callable[[str, int], None] | 
     series. Every penalty is a share of what is left, so the order decides the
     amounts. An episode the API never answered chose none of them and is charged
     for none, and GRACE_EPISODES waives the charges without stopping the
-    measurement. `credit` is how a transfer reaches its receiver; the default
-    writes the receiver's account on disk.
+    measurement. `credit` is how a transfer reaches its receiver. By default it is
+    held in the settlement's `credits`, which close_episode pays once the giver's
+    episode is committed, so no receiver is paid by an episode that was not.
     """
     account = ep.account
     # One element per turn, so an episode that never got a turn adds nothing. A
@@ -4682,22 +4684,26 @@ def settle_episode(ep: Episode, out: dict, credit: Callable[[str, int], None] | 
     account["series"].extend(out["balances"])
 
     settles = bool(out["turns"]) and ep.index > GRACE_EPISODES
-    credit = credit or credit_on_disk
+    credits: list[tuple[str, int]] = []
+    pay = credit or (lambda receiver, amount: credits.append((receiver, amount)))
     own = [i for i in ep.instances if i.writable and i.channel.obligated]
     ordered = sorted(own, key=lambda i: not i.channel.schema)
     records: dict[str, Mapping[str, Any]] = {}
     for inst in ordered:
         records[inst.name] = SETTLEMENTS[inst.channel.settles_as].resolve(
-            ep, inst, out["spent"], settles, credit)
+            ep, inst, out["spent"], settles, pay)
     parsed = records[ordered[0].name] if ordered and ordered[0].channel.schema else None
     return {"transfer": parsed or EMPTY_TRANSFER.copy(), "channels": records,
             # The channels beside their records, so the console line and anything
             # else that reads them need not find them by name in a global.
-            "settled": [(i.channel, records[i.channel.name]) for i in ordered]}
+            "settled": [(i.channel, records[i.channel.name]) for i in ordered],
+            # What the transfers owe their receivers, where no `credit` took it.
+            "credits": credits}
 
 
 def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
-    """Floor, write the trace, record the episode in the account, print the line.
+    """Floor, write the trace, record the episode in the account, pay what its
+    transfers owe, print the line.
 
     Last of the phases, after every credit that reaches this agent's account has
     landed: the floor is what decides whether an agent that crossed zero is out,
@@ -4705,8 +4711,10 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     trace is whole on disk before the account lists its episode, so no account
     names an episode whose trace is missing or cut short. Nothing of the episode
     is committed until save_account: a failure before it, building the trace or
-    writing it, loses the spend, the record and the trace together, and a credit
-    settle_episode already paid a receiver stands.
+    writing it, loses the spend, the record and the trace together. The credits
+    settle_episode held are paid on disk only once save_account has returned, so a
+    receiver is never paid by an episode that was not committed; a failure paying
+    one is raised with the episode committed and that receiver unpaid.
     """
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
@@ -4745,6 +4753,8 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
                                 # the next build tells a receipt from the agent's file.
                                 "receipts": receipts_planted(ep.shown)})
     save_account(agent, account)
+    for receiver, amount in settled["credits"]:
+        credit_on_disk(receiver, amount)
 
     print(console_line(ep, trace, settled))
     transfer = settled["transfer"]

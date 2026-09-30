@@ -28,6 +28,7 @@ from checks.lanes import (
     plant,
     put_out,
     quiet,
+    reconciled,
     recording,
     refused,
     rooted,
@@ -1368,6 +1369,62 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
     assert (sent["agent"], sent["amount"]) == ("g02", 250), sent
     assert g02["received"] == 250 and g02["remaining"] == before["remaining"] + 250, g02
     assert g02["series"] == before["series"] + [before["remaining"] + 250], g02["series"]
+
+
+def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
+    """A transfer reaches its receiver only once the giver's episode is committed, under
+    either schedule, so no receiver holds a credit that no giver's record accounts for,
+    and what a committed giver sent reaches a receiver whose own episode was lost, as a
+    credit between its episodes.
+
+    g01 gives seat 2 100 and g02 gives seat 1 250, and one of their traces does not land.
+    Sequentially a lost giver's credit is never paid, and a lost g01 ends the round before
+    g02 plays. In a simultaneous round a receiver closes on the credits of every giver
+    that has not failed by then: a lost g01 credits g02 nothing, and a lost g02 has what it
+    credited g01, which closed first, taken back.
+    """
+    rounds = (("sequential", experiment.sequential_round,
+               lambda: fake(run("echo '2 100' > out/transfer"), say(),
+                            run("echo '1 250' > out/transfer"), say())),
+              ("simultaneous", experiment.simultaneous_round,
+               lambda: per_agent(g01=(run("echo '2 100' > out/transfer"), say()),
+                                 g02=(run("echo '1 250' > out/transfer"), say()))))
+    ended = {}
+    for schedule, a_round, router in rounds:
+        for lost in ("g01", "g02"):
+            with temp_root() as root:
+                ids = seated(root, "g01", g02={})
+                real = harness.replace_file
+
+                def no_room(src, dest):
+                    if dest == harness.trace_path(lost, 1):
+                        raise OSError("no space left on device")
+                    real(src, dest)
+
+                harness.replace_file = no_room
+                raised = None
+                try:
+                    with quiet():
+                        a_round(ids, set(ids), 0, router())
+                except OSError as e:
+                    raised = e
+                accounts = {agent: ground_truth(agent) for agent in ids}
+            assert isinstance(raised, OSError), (schedule, lost, raised)
+            for agent, account in accounts.items():
+                spent = sum(episode["spent"] for episode in account["episodes"])
+                assert reconciled(account, spent) == account["remaining"] == account["series"][-1], \
+                    (schedule, lost, account)
+            ended[schedule, lost] = {
+                agent: ([episode["received"] for episode in account["episodes"]],
+                        account.get("received", 0)) for agent, account in accounts.items()}
+    # What each committed episode received inside its span, and what each account holds
+    # as received in all.
+    assert ended == {
+        ("sequential", "g01"): {"g01": ([], 0), "g02": ([], 0)},
+        ("sequential", "g02"): {"g01": ([0], 0), "g02": ([], 100)},
+        ("simultaneous", "g01"): {"g01": ([], 250), "g02": ([0], 0)},
+        ("simultaneous", "g02"): {"g01": ([250], 0), "g02": ([], 100)},
+    }, ended
 
 
 def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight():

@@ -12,8 +12,10 @@ import inspect
 import json
 import signal
 import sys
+import analyze
 import harness
 import providers
+import view
 
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think, usage
 from checks.lanes import (
@@ -162,6 +164,80 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
     assert t["episode"] == 1, "the next episode takes the index the lost one never claimed"
     turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
     assert turns == [1, 2, 1], f"the raw log holds both attempts at the index, lost first: {turns}"
+
+
+def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
+    """A transfer reaches its receiver once the giver's account has saved the episode, and
+    not before. An episode whose trace does not land, or whose account does not save, has
+    no debit, spend or record to show for it, and pays its receiver nothing either, so no
+    receiver holds a credit that no giver's record accounts for.
+
+    t declares 100 for seat 2, which is other's.
+    """
+    lost = {}
+    for refused_at in ("trace", "account"):
+        with temp_root() as root:
+            seated(root, other={})
+            before = ground_truth("other")
+            real = harness.replace_file
+            full = harness.trace_path("t", 1) if refused_at == "trace" else harness.account_path("t")
+
+            def no_room(src, dest):
+                if dest == full:
+                    raise OSError("no space left on device")
+                real(src, dest)
+
+            harness.replace_file = no_room
+            try:
+                episode_once(run("echo '2 100' > out/transfer"), say())
+            except OSError:
+                pass
+            else:
+                raise AssertionError(f"an episode whose {refused_at} did not save was committed")
+            harness.replace_file = real
+            lost[refused_at] = (harness.trace_path("t", 1).exists(), ground_truth()["episodes"],
+                                before, ground_truth("other"))
+            paid = episode_once(run("echo '2 100' > out/transfer"), say())
+            received = ground_truth("other")
+    for refused_at, (traced, episodes, before, other) in lost.items():
+        assert traced == (refused_at == "account") and episodes == [], (refused_at, episodes)
+        assert other == before, f"the receiver was paid by an episode never committed: {refused_at}"
+    assert paid["transfer"]["amount"] == 100 and received["received"] == 100, received
+
+
+def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
+    """A commit that stops between writing the trace and saving the account leaves a trace
+    the account does not list. Every reader of the traces stops at the episodes the account
+    lists: the analysis and the page read no episode there, and the page shows its index
+    as one not yet committed, as the next episode at that index will overwrite it.
+    """
+    with temp_root():
+        episode_once(say())
+        real = harness.replace_file
+
+        def no_room_for_the_account(src, dest):
+            if dest == harness.account_path("t"):
+                raise OSError("no space left on device")
+            real(src, dest)
+
+        harness.replace_file = no_room_for_the_account
+        try:
+            episode_once(say())
+        except OSError:
+            pass
+        else:
+            raise AssertionError("an episode whose account did not save was committed")
+        harness.replace_file = real
+        orphaned = harness.trace_path("t", 2).exists()
+        analysed = [t["episode"] for t in analyze.load("t")["t"]]
+        shown = [t["episode"] for t in view.traces_of("t")]
+        latest = view.latest_trace("t")
+        live = view.live_index("t")
+        watched = view.episode_view("t", 2)
+    assert orphaned, "the trace landed and the account did not"
+    assert analysed == shown == [1], (analysed, shown)
+    assert latest is not None and latest["episode"] == 1, latest
+    assert live == 2 and watched is not None and watched["source"] == "raw", (live, watched)
 
 
 def check_a_stop_ends_the_episode_at_the_turn_boundary():

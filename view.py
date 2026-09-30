@@ -179,28 +179,39 @@ def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None
     return found if digest != found[0]["sha256"] else None
 
 
+def committed(agent: str) -> int:
+    """How many episodes the agent's account lists: those whose commit finished.
+
+    close_episode writes the trace before the account, so a trace past this count is
+    one whose commit stopped between the two, and no episode of the agent's.
+    """
+    return len(account_of(agent).get("episodes") or [])
+
+
 def traces_of(agent: str) -> list[dict]:
-    """Every finished episode of an agent, in order."""
-    return [t for t in (load_trace(p) for p in harness.trace_paths(agent)) if t is not None]
+    """Every committed episode of an agent, in order."""
+    count = committed(agent)
+    return [t for t in (load_trace(p) for p in harness.trace_paths(agent)
+                        if harness.episode_number(p) <= count) if t is not None]
 
 
 def latest_trace(agent: str) -> dict | None:
     """The agent's last committed episode, or None before it has one."""
-    paths = harness.trace_paths(agent)
-    return load_trace(paths[-1]) if paths else None
+    count = committed(agent)
+    return load_trace(harness.trace_path(agent, count)) if count else None
 
 
 def live_index(agent: str) -> int | None:
-    """The episode with no trace yet, or None if the agent is between starts.
+    """The episode not yet committed, or None if the agent is between starts.
 
-    Unfinished is exactly a raw log with no trace beside it, which is not the
-    same as running: how long since the log grew is what live_age reports.
+    Unfinished is exactly a raw log past the episodes the account lists, which is
+    not the same as running: how long since the log grew is what live_age reports.
     """
     raws = harness.raw_paths(agent)
     if not raws:
         return None
     index = harness.episode_number(raws[-1])
-    return None if harness.trace_path(agent, index).exists() else index
+    return None if index <= committed(agent) else index
 
 
 def live_age(agent: str, index: int | None) -> float | None:
@@ -1408,7 +1419,7 @@ def episode_view(agent: str, index: int, since: int = 0) -> dict | None:
     """
     if not harness.trace_path(agent, index).exists() and not harness.raw_path(agent, index).exists():
         return None
-    trace = load_trace(harness.trace_path(agent, index))
+    trace = load_trace(harness.trace_path(agent, index)) if index <= committed(agent) else None
     out = raw_view(agent, index, since) if trace is None else traced_view(agent, index, trace, since)
     turns = out["turns"]
     out["turns"] = [t for t in turns if (t["turn"] or 0) > since]

@@ -636,8 +636,13 @@ def put_out(agent: str) -> None:
 
 
 def unfinished() -> None:
-    """Take away the first episode's trace, leaving the raw log a running one leaves."""
+    """Take away the first episode's trace, and its commit from the account, leaving the
+    raw log a running one leaves and the account as it stood when the episode started."""
     harness.trace_path("t", 1).unlink()
+    account = ground_truth()
+    account["series"] = account["series"][:account["episodes"][0]["series_from"] + 1]
+    account["remaining"], account["episodes"] = account["series"][-1], []
+    harness.save_account("t", account)
 
 
 @contextlib.contextmanager
@@ -657,30 +662,34 @@ def two_seats():
 
 def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
                     agents: tuple[str, ...] = ("g01", "g02", "g03"), **trace_fields) -> dict:
-    """An experiment written straight to disk: one trace per episode taken, one account per seat.
+    """An experiment written straight to disk: one trace per episode taken, one account per
+    seat, which lists every episode it took as committed.
 
     `acted` is the episodes in the order they started, each `(agent, "hh:mm")` or
     `(agent, "hh:mm", {fields})` for a trace with more in it; `trace_fields` go
     into every trace. Returns the experiment as view.py reads it.
     """
     seats = experiment.seats_of(list(agents))
-    taken: dict[str, int] = {}
+    taken: dict[str, list[dict]] = {}
     for agent, at, *more in acted:
-        taken[agent] = taken.get(agent, 0) + 1
-        p = harness.trace_path(agent, taken[agent])
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps({
-            "agent": agent, "episode": taken[agent], "stop": "end_turn", "spent": 1,
+        episodes = taken.setdefault(agent, [])
+        trace = {
+            "agent": agent, "episode": len(episodes) + 1, "stop": "end_turn", "spent": 1,
             "turns": [], "remaining": 0, "files": [], "state_saved": True,
             "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats,
                            "harness_files": dict(harness.HARNESS_FILES),
                            "message_delivery": "episode"},
-            **trace_fields, **(more[0] if more else {})}), encoding="utf-8")
+            **trace_fields, **(more[0] if more else {})}
+        episodes.append({key: trace[key] for key in ("episode", "stop", "spent")})
+        p = harness.trace_path(agent, len(episodes))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(trace), encoding="utf-8")
     for seat, agent in seats.items():
         harness.records_dir(agent).mkdir(parents=True, exist_ok=True)
         harness.account_path(agent).write_text(json.dumps({
             "agent": agent, "seat": seat, "peers": {"seen": seats},
-            "series": list(series), "remaining": series[-1], "initial": 1000, "episodes": [],
+            "series": list(series), "remaining": series[-1], "initial": 1000,
+            "episodes": taken.get(agent, []),
         }), encoding="utf-8")
     return view.experiment_named("g")
 

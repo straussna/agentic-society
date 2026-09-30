@@ -801,12 +801,21 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     """One episode for each agent still in the experiment, all at once.
 
     Every environment is built first, so no episode reads this round's writes. The
-    episodes run in threads. Then each settles in seat order, the transfers they
-    made are credited, and each closes in seat order: a credit lands after the
-    receiver's own turns and before its floor, so an agent is out on the round's
-    net and never lifted back by a transfer that had already arrived. Each phase
-    goes to `progress` as the round reaches it, and so does each autonomous episode
-    as it ends. Returns whether any agent took an episode.
+    episodes run in threads. Then each settles in seat order, holding what its
+    transfers owe, and each closes in seat order. A credit to an agent whose episode
+    is in this round lands in its account in hand just before it closes: after its
+    own turns and before its floor, so an agent is out on the round's net and never
+    lifted back by a transfer that had already arrived. Each phase goes to
+    `progress` as the round reaches it, and so does each autonomous episode as it
+    ends. Returns whether any agent took an episode.
+
+    No receiver keeps a credit from a giver whose episode was not committed. A
+    receiver closes on the credits of every giver that has not failed by then, and
+    since two agents can pay each other, one of them closes before the other has
+    committed: a giver that then fails to commit has what it credited to a receiver
+    that closed first taken back on disk. Every other credit is paid on disk once
+    its giver has committed, to a receiver not in this round or one whose own
+    commit failed, as a credit between two of its episodes.
     """
     built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
     if harness.STOPPING:
@@ -857,10 +866,11 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     # Each agent settles and closes on its own, so one agent's failure to commit
     # does not discard the others' billed spend; the first failure is raised after
     # every agent has had its turn.
-    pending: list[tuple[str, int]] = []
+    # giver, receiver, amount: what each settled episode's transfers owe.
+    owed: list[tuple[str, str, int]] = []
 
-    def defer(receiver: str, amount: int) -> None:
-        pending.append((receiver, amount))
+    def owing(giver: str) -> Callable[[str, int], None]:
+        return lambda receiver, amount: owed.append((giver, receiver, amount))
 
     tell(progress, held, "resolving_actions", rnd + 1,
          {"agents": [agent for agent in built if agent in outs]})
@@ -869,23 +879,35 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
         if agent not in outs:
             continue
         try:
-            settled[agent] = harness.settle_episode(ep, outs[agent], defer)
+            settled[agent] = harness.settle_episode(ep, outs[agent], owing(agent))
         except BaseException as e:
             errors.setdefault(agent, e)
-    for receiver, amount in pending:
-        if receiver in settled:
-            harness.credit_episode(built[receiver], amount)
-        else:
-            harness.credit_on_disk(receiver, amount)
     tell(progress, held, "settling_round", rnd + 1, {"agents": list(settled)})
     traces: dict[str, dict] = {}
+    # receiver -> (giver, amount): the credits each receiver closed on.
+    carried: dict[str, list[tuple[str, int]]] = {}
     for agent, ep in built.items():
         if agent not in settled:
             continue
+        carried[agent] = [(giver, amount) for giver, receiver, amount in owed
+                          if receiver == agent and giver in settled and giver not in errors]
+        for _, amount in carried[agent]:
+            harness.credit_episode(ep, amount)
         try:
             traces[agent] = harness.close_episode(ep, outs[agent], settled[agent])
         except BaseException as e:
             errors.setdefault(agent, e)
+    for giver, receiver, amount in owed:
+        try:
+            if giver in traces and receiver not in traces:
+                harness.credit_on_disk(receiver, amount)
+            elif giver not in traces and receiver in traces and \
+                    (giver, amount) in carried[receiver]:
+                print(f"{receiver}: the {amount} transferred by {giver} is taken back, as "
+                      f"that episode was not committed", file=sys.stderr)
+                harness.credit_on_disk(receiver, -amount)
+        except BaseException as e:
+            errors.setdefault(receiver, e)
     if errors:
         raise next(iter(errors.values()))
 

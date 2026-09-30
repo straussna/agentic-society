@@ -141,7 +141,10 @@ one recipient slot nonempty during the current episode, so an episode gives once
 all; content that is not one positive whole number moves nothing. Under the competition's `funded_by = "giver"`, the
 amount leaves the giver and reaches the receiver, nothing is rebated, and the experiment's
 total is conserved apart from API spending and penalties. The declaration is cleared
-before the giver's next episode and cannot execute again unless submitted again.
+before the giver's next episode and cannot execute again unless submitted again. A
+transfer is paid once the giver's episode is committed, its trace and its account both
+saved: an episode whose commit fails moves nothing to anyone, and under a simultaneous
+round a receiver that closed on its credit before the giver failed has it taken back.
 
 Under `harness` funding the receiver is credited from outside the agents' balances and the
 giver receives the configured rebate. Under `none` a declaration moves nothing, the trace records that
