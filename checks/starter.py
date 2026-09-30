@@ -21,6 +21,7 @@ from checks.lanes import (
     refused,
     rooted,
     seated,
+    seats_manifest,
     temp_root,
     trace_on_disk,
     turn_cost,
@@ -403,7 +404,32 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
         with quiet():
             blind = harness.run_once("f", fake(say()))
     assert first["episode"] == 2, first["episode"]
-    assert any(d.startswith("context_fraction:") for d in first["provenance_drift"]), \
-        first["provenance_drift"]
+    # The fork's own id in its seat is no drift: a new id is what a fork is.
+    assert first["provenance_drift"] == ["context_fraction: 0.85 -> 0.5"], first["provenance_drift"]
     assert later["provenance_drift"] == [], "its own trace after that, and nothing moved"
     assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind["provenance_drift"]
+
+
+def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its_seats():
+    """A branch forks every seat, so every seat of its first episode is held by a new id;
+    each is a fork of the agent the parent's trace seated there, and none is drift.
+
+    What the branch changed is: its seats run under another experiment and manifest
+    from there on, so their episodes are another arm and the record says where.
+    """
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={})
+        path = seats_manifest(root, ids)
+        source = experiment.load_manifest(path)
+        with quiet():
+            experiment.sequential_round(ids, set(ids), 0, fake(say(), say()),
+                                        experiment.stamp_of(source), source["labels"])
+            branch = experiment.load_manifest(
+                experiment.branch_experiment(path, 1, "br", "2", root / "br.toml"))
+            experiment.sequential_round(["br-01", "br-02"], {"br-01"}, 1, fake(say()),
+                                        experiment.stamp_of(branch), branch["labels"])
+        was, t = trace_on_disk("g01", 1)["provenance"], trace_on_disk("br-01", 2)
+    assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"]["peers"]
+    assert t["provenance_drift"] == [
+        f"experiment_id: {was['experiment_id']!r} -> 'br'",
+        f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}"], t["provenance_drift"]

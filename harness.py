@@ -1695,24 +1695,22 @@ def receipts_planted(files: Mapping[str, str]) -> dict[str, str]:
             for c in channels() if c.schema and c.receipt and c.receipt in files}
 
 
-def receipt_files(instances: list[Instance],
-                  planted: Mapping[str, str]) -> list[tuple[str, Path, bool]]:
-    """Every file at a receipt path inside a directory the agent writes, as (its path in
-    /work, the file in the mirror, whether it holds the bytes `planted` names for it).
+def receipt_files(instances: list[Instance], planted: Mapping[str, str]) -> dict[Path, bool]:
+    """Every file at a receipt path inside a directory the agent writes, as the file in
+    the mirror -> whether it holds the bytes `planted` names for its path in /work.
 
     The directory is the agent's, so it can remove a receipt and write a file of its
     own there; only one holding what the harness planted is the harness's.
     """
     claimed = {n.host for n in instances if n.nested}
-    out = []
+    out: dict[Path, bool] = {}
     for inst in instances:
         if not inst.writable or inst.is_file:
             continue
         for rel in sorted(inst.exclude):
             p = inst.host / rel
             if p.is_file() and p not in claimed:
-                path = f"{inst.path}/{rel}"
-                out.append((path, p, file_sha256(p) == planted.get(path)))
+                out[p] = file_sha256(p) == planted.get(f"{inst.path}/{rel}")
     return out
 
 
@@ -1723,7 +1721,7 @@ def scrub_receipts(instances: list[Instance], planted: Mapping[str, str]) -> Non
     anything else is the agent's, recorded by the trace of the episode that left it,
     and stays.
     """
-    for _, p, receipt in receipt_files(instances, planted):
+    for p, receipt in receipt_files(instances, planted).items():
         if receipt:
             p.unlink()
 
@@ -4216,8 +4214,13 @@ def drift(agent: str, index: int, now: dict, forked_from: dict | None = None) ->
 
     Reported, never enforced: episodes either side of a change are separate arms.
     A fork's first episode follows the one it was forked at, whose trace is the
-    parent's, and is held against that. An episode with no trace to be held
-    against reports nothing.
+    parent's, and is held against that. A fork is a new id by definition, and a
+    branch forks every seat, so there a seat held by a fork of the agent the
+    parent's trace seated in it has not moved: an agent id never reaches the agent.
+    What a branch does change is reported: its experiment_id and manifest_sha256,
+    and a takeover seat's provider and model, since from there on its episodes run
+    under another manifest and are another arm. An episode with no trace to be
+    held against reports nothing.
     """
     if index < 2:
         return []
@@ -4232,11 +4235,23 @@ def drift(agent: str, index: int, now: dict, forked_from: dict | None = None) ->
         raise SystemExit(f"agent {owner} has incompatible version-{previous.get('trace_version')} "
                          "traces; start a fresh agent id")
     was = previous.get("provenance") or {}
+    if owner != agent and "peers" in was:
+        was = {**was, "peers": seated_as_forked(was["peers"], now["peers"])}
     # system_sha256 names a changed prompt in one line; the text would arrive as
     # two whole prompts in a banner.
     skip = {"started_at", "system"}
     return [f"{k}: {was[k]!r} -> {now[k]!r}"
             for k in now if k not in skip and k in was and was[k] != now[k]]
+
+
+def seated_as_forked(was: dict[str, str], now: dict[str, str]) -> dict[str, str]:
+    """A seating read from the trace a fork was made from, seat -> agent, with each agent
+    replaced by the one `now` seats in its place where that one's account names it as
+    the agent it was forked from."""
+    def parent_of(agent: str) -> str | None:
+        return (account_on_disk(agent).get("forked_from") or {}).get("agent")
+    return {seat: now[seat] if seat in now and parent_of(now[seat]) == agent else agent
+            for seat, agent in was.items()}
 
 
 def bounded_read(p: Path) -> tuple[int, str, bool] | None:
@@ -4303,7 +4318,7 @@ def snapshot(instances: list[Instance], series: list[int],
     numbers = {str(v) for v in series}
     patterns = balance_patterns(HARNESS_FILES["balance"], labels or tuple(
         dict.fromkeys(i.label for i in instances if i.label)))
-    written = {p for _, p, receipt in receipt_files(instances, receipts or {}) if not receipt}
+    written = {p for p, receipt in receipt_files(instances, receipts or {}).items() if not receipt}
     for inst in instances:
         ch = inst.channel
         store = inst.role == "own" and ch.is_private_store

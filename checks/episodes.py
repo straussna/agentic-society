@@ -135,6 +135,8 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
 
     A trace that fails to land leaves the account as it stood, naming no episode it
     has no record of, and leaves nothing cut short where a reader looks for traces.
+    The next episode takes the index, and its responses are appended to that index's
+    raw log after the lost attempt's, which stay there as the one record of them.
     """
     with temp_root():
         real = harness.replace_file
@@ -155,7 +157,11 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
         assert ground_truth()["episodes"] == [], "the account names an episode with no trace"
         assert harness.trace_paths("t") == [], harness.trace_paths("t")
         t = episode_once(say())
+        raw = [json.loads(line) for line in
+               harness.raw_path("t", 1).read_text(encoding="utf-8").splitlines()]
     assert t["episode"] == 1, "the next episode takes the index the lost one never claimed"
+    turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
+    assert turns == [1, 2, 1], f"the raw log holds both attempts at the index, lost first: {turns}"
 
 
 def check_a_stop_ends_the_episode_at_the_turn_boundary():

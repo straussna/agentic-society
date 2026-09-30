@@ -595,8 +595,9 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
     """A swap whose rollback fails too leaves the tree in its .previous sidecar, and no
     empty mirror is made in its place.
 
-    The next build, or the next save of that tree, puts it back before anything
-    else, so a False still loses nothing the agent wrote.
+    The same save tries the rollback once more; where that fails as well, the next
+    build, or the next save of that tree, puts it back before anything else. A False
+    still loses nothing the mirror held.
     """
     with rooted(HostBox):
         with quiet():
@@ -612,13 +613,28 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
 
         real = harness.replace_file
 
-        def refusing_the_swap_and_its_rollback(src, dest):
-            if src.name in ("notes.incoming", "notes.previous"):
-                raise OSError("the rename failed")
-            real(src, dest)
+        def refusing_the_swap_and_rollbacks(refused):
+            """replace_file with the swap refused, and the first `refused` renames of the
+            tree put aside back into place."""
+            def replace(src, dest):
+                nonlocal refused
+                if src.name == "notes.incoming":
+                    raise OSError("the swap failed")
+                if src.name == "notes.previous" and refused:
+                    refused -= 1
+                    raise OSError("the rollback failed")
+                real(src, dest)
+            return replace
+
+        harness.replace_file = refusing_the_swap_and_rollbacks(1)
+        assert harness.save_state(mirror, fetch, lambda: None) is False
+        harness.replace_file = real
+        assert mirror.is_dir() and sorted(p.name for p in mirror.iterdir()) == ["keep.txt"], \
+            f"the second rollback did not put the tree back: {sorted(p.name for p in mirror.parent.iterdir())}"
+        assert not previous.exists(), "and the tree is not left aside as well"
 
         for route in ("build", "save"):
-            harness.replace_file = refusing_the_swap_and_its_rollback
+            harness.replace_file = refusing_the_swap_and_rollbacks(2)
             assert harness.save_state(mirror, fetch, lambda: None) is False
             assert not mirror.exists(), f"an empty mirror was made over the tree put aside ({route})"
             assert (previous / "keep.txt").read_text(encoding="utf-8") == "kept\n", route
