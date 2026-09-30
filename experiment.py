@@ -842,11 +842,11 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     is paid one twice. A receiver closes on the credits of every giver that has not
     failed to commit by then, and since two agents can pay each other, one of them
     closes before the other has committed: a giver that then fails to commit has what
-    it credited to a receiver that closed first taken back on disk. Every other credit
-    is paid on disk once its giver has committed, to a receiver not in this round or
-    one whose own commit failed, as a credit between two of its episodes. An episode
-    is committed where its account on disk lists it, whatever its close raised after
-    the save.
+    it credited to a receiver that closed first taken back on disk, before the round
+    says so. Every other credit is paid on disk once its giver has committed, to a
+    receiver not in this round or one whose own commit failed, as a credit between two
+    of its episodes. An episode is committed where its account on disk lists it,
+    whatever its close raised after the save.
     """
     built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
     if harness.STOPPING:
@@ -939,9 +939,9 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
                 harness.credit_on_disk(receiver, amount)
             elif giver not in done and receiver in done and \
                     (giver, amount) in carried[receiver]:
+                harness.credit_on_disk(receiver, -amount)
                 print(f"{receiver}: the {amount} transferred by {giver} is taken back, as "
                       f"that episode was not committed", file=sys.stderr)
-                harness.credit_on_disk(receiver, -amount)
         except BaseException as e:
             errors.setdefault(receiver, e)
     if errors:

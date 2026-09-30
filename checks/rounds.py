@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import re
 import subprocess
+import sys
 import threading
 from pathlib import Path
 import experiment
@@ -1798,7 +1801,8 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
 
     g01 gives seat 2 100 and g02 gives seat 1 250, and the console line of one of them
     raises once its account is saved. Sequentially that ends the round, its transfer
-    paid. In a simultaneous round the other's trace may also fail to land.
+    paid. In a simultaneous round the other's trace may also fail to land, and where
+    what a lost giver credited is taken back, the line saying so may raise as well.
     """
     rounds = {"sequential": (experiment.sequential_round,
                              lambda: fake(run("echo '2 100' > out/transfer"), say(),
@@ -1806,11 +1810,18 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
               "simultaneous": (experiment.simultaneous_round,
                                lambda: per_agent(g01=(run("echo '2 100' > out/transfer"), say()),
                                                  g02=(run("echo '1 250' > out/transfer"), say())))}
-    cases = (("sequential", "g01", None), ("sequential", "g02", None),
-             ("simultaneous", "g01", None), ("simultaneous", "g02", None),
-             ("simultaneous", "g01", "g02"), ("simultaneous", "g02", "g01"))
+    class Broken(io.StringIO):
+        def write(self, text):
+            if "taken back" in text:
+                raise BrokenPipeError("stderr is gone")
+            return super().write(text)
+
+    cases = (("sequential", "g01", None, False), ("sequential", "g02", None, False),
+             ("simultaneous", "g01", None, False), ("simultaneous", "g02", None, False),
+             ("simultaneous", "g01", "g02", False), ("simultaneous", "g02", "g01", False),
+             ("simultaneous", None, "g02", True))
     ended = {}
-    for schedule, unprinted, lost in cases:
+    for schedule, unprinted, lost, broken in cases:
         a_round, router = rounds[schedule]
         with temp_root() as root:
             ids = seated(root, "g01", g02={})
@@ -1830,12 +1841,12 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
             harness.replace_file = no_room
             raised = None
             try:
-                with quiet():
+                with quiet(), contextlib.redirect_stderr(Broken() if broken else sys.stderr):
                     a_round(ids, set(ids), 0, router())
             except (KeyboardInterrupt, OSError) as e:
                 raised = e
             accounts = {agent: ground_truth(agent) for agent in ids}
-        case = (schedule, unprinted, lost)
+        case = (schedule, unprinted, lost, broken)
         assert raised is not None, case
         for account in accounts.values():
             spent = sum(episode["spent"] for episode in account["episodes"])
@@ -1846,12 +1857,13 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
     # What each committed episode received inside its span, and what each account holds
     # as received in all.
     assert ended == {
-        ("sequential", "g01", None): {"g01": ([0], 0), "g02": ([], 100)},
-        ("sequential", "g02", None): {"g01": ([0], 250), "g02": ([0], 100)},
-        ("simultaneous", "g01", None): {"g01": ([250], 250), "g02": ([100], 100)},
-        ("simultaneous", "g02", None): {"g01": ([250], 250), "g02": ([100], 100)},
-        ("simultaneous", "g01", "g02"): {"g01": ([250], 0), "g02": ([], 100)},
-        ("simultaneous", "g02", "g01"): {"g01": ([], 250), "g02": ([0], 0)},
+        ("sequential", "g01", None, False): {"g01": ([0], 0), "g02": ([], 100)},
+        ("sequential", "g02", None, False): {"g01": ([0], 250), "g02": ([0], 100)},
+        ("simultaneous", "g01", None, False): {"g01": ([250], 250), "g02": ([100], 100)},
+        ("simultaneous", "g02", None, False): {"g01": ([250], 250), "g02": ([100], 100)},
+        ("simultaneous", "g01", "g02", False): {"g01": ([250], 0), "g02": ([], 100)},
+        ("simultaneous", "g02", "g01", False): {"g01": ([], 250), "g02": ([0], 0)},
+        ("simultaneous", None, "g02", True): {"g01": ([250], 0), "g02": ([], 100)},
     }, ended
 
 
