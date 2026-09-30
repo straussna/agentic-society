@@ -138,6 +138,12 @@ def check_config_is_validated():
     with pinned():
         declared(context_fraction=1)
         assert harness.SETTINGS.context_fraction == 1.0, "an int must widen into a float field"
+    # A refusal installs nothing, the good key given beside the refused one included.
+    with pinned():
+        before = harness.SETTINGS
+        refused(lambda: declared(budget=7, delivery="fetch"), "delivery",
+                because="a manifest accepted delivery = 'fetch'")
+        assert harness.SETTINGS is before, "a refused manifest left part of itself in force"
 
     # A transfer is the giver's own budget moving; a rebate on top would mint. No
     # share for a transfer nobody can make.

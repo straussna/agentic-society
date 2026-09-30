@@ -314,7 +314,8 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
     """An experiment launched without a seat's key is told which key and where it goes.
 
     The refusal comes before either SDK builds a client, since one may refuse a
-    missing key itself, in words that say nothing of the shell.
+    missing key itself, in words that say nothing of the shell. A start that refuses
+    installs none of the settings it read: the tool table it was given included.
     """
     unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL",
                            "OPENAI_BASE_URL"))
@@ -324,6 +325,7 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
         with swapped(os.environ, **unset), swapped(sys.modules, **sdks), pinned(), \
                 tempfile.TemporaryDirectory() as folder, quiet() as out:
             amend(root=Path(folder))
+            before = harness.SETTINGS
             try:
                 harness.start(requirements=[(provider, model)],
                               tool_tables=[{"name": "bash", "kind": "bash"}])
@@ -331,6 +333,7 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
                 assert error.code == 2, error.code
             else:
                 raise AssertionError(f"{provider} started without {variable}")
+            assert harness.SETTINGS is before, "a refused start leaves the settings as it found them"
         refusal = out.getvalue().strip().splitlines()[-1]
         assert refusal == (f"{provider} preflight failed: {variable} is not set. Set {variable} "
                            "in the shell this experiment is launched from."), refusal
