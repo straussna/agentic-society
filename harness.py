@@ -4601,7 +4601,10 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     landed: the floor is what decides whether an agent that crossed zero is out,
     and a transfer that arrived in the same round counts toward the answer. The
     trace is whole on disk before the account lists its episode, so no account
-    names an episode whose trace is missing or cut short.
+    names an episode whose trace is missing or cut short. Nothing of the episode
+    is committed until save_account: a failure before it, building the trace or
+    writing it, loses the spend, the record and the trace together, and a credit
+    settle_episode already paid a receiver stands.
     """
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
@@ -4884,6 +4887,13 @@ def fork(parent: str, index: int, new: str) -> int:
         return 2
 
     parent_account = json.loads(account_path(parent).read_text(encoding="utf-8"))
+    if index > len(parent_account["episodes"]):
+        # close_episode writes the trace before the account, so a trace can outlive
+        # an episode whose commit stopped between the two.
+        print(f"{parent} episode {index} has a trace but its account lists "
+              f"{len(parent_account['episodes'])} episodes: that episode was never committed",
+              file=sys.stderr)
+        return 2
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
     table = table_of(trace)
     written = [c for c in table if c.mirrored]

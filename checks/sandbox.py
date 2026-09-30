@@ -661,13 +661,18 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
         second = episode_once(run("cat out/receipt"),
                               run("rm -f out/receipt && echo mine > out/receipt"), say())
         receipt = harness.mirror("t", "mail") / "receipt"
-        with quiet():
-            account = harness.load_account("t")
-        instances = harness.environment("t", account)
-        harness.scrub_receipts(instances, account["episodes"][-1]["receipts"])
-        left = receipt.read_text(encoding="utf-8")
+
+        def build_and_abandon() -> None:
+            # A build scrubs the mirror and an abandoned one mirrors nothing back,
+            # so the mirror is left as the build's scrub left it.
+            with quiet():
+                harness.build_episode("t").abandon()
+
+        build_and_abandon()
+        left = receipt.read_text(encoding="utf-8") if receipt.exists() else None
         third = episode_once(run("cat out/receipt"), say())
-        harness.scrub_receipts(instances, ground_truth()["episodes"][-1]["receipts"])
+        planted = receipt.read_text(encoding="utf-8")
+        build_and_abandon()
         scrubbed = not receipt.exists()
 
     for t, text in ((first, "early\n"), (second, "mine\n")):
@@ -680,6 +685,7 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
     assert left == "mine\n", f"the agent's file was scrubbed as a receipt: {left!r}"
     assert third["turns"][0]["tools"][0]["result"].startswith("round: 2\n"), third["turns"][0]
     assert "out/receipt" not in files_by_path(third), "a receipt the agent left alone is in no record"
+    assert planted.startswith("round: 2\n"), f"the receipt came back to the mirror: {planted!r}"
     assert scrubbed, "and it is what the next build scrubs"
 
 

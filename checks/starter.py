@@ -343,6 +343,15 @@ def check_fork_refuses_what_it_cannot_rebuild():
             assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), \
                 f"a refused fork left a {name} agent behind"
 
+        # A trace whose episode the account never came to list: the commit stopped
+        # between writing the one and saving the other.
+        harness.trace_path("p", 2).write_text(
+            json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8")
+        with quiet() as said:
+            assert harness.fork("p", 2, "x-orphan") == 2, "forked an episode its account never listed"
+        assert "never committed" in said.getvalue(), said.getvalue()
+        assert not harness.records_dir("x-orphan").exists(), "a refused fork left an agent behind"
+
         harness.trace_path("p", 1).write_text(json.dumps(trace()), encoding="utf-8")
         with quiet():
             assert harness.fork("p", 9, "x-missing") != 0, "forked an episode that never ran"
