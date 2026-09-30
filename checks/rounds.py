@@ -738,8 +738,8 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
                 "stopped twice": lambda: stopping_at(1, run("echo one"), say())}
     ended, said = {}, {}
     for name in ("whole", "stopped", "stopped twice"):
-        with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE], BUDGET=3 * turn_cost(),
-                       FLOOR_AT_ZERO=True) as root:
+        with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE], budget=3 * turn_cost(),
+                       floor_at_zero=True) as root:
             ids = seated(root, "g01", g02={}, g03={})
             manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True,
                               head="stop_when_one_remains = true\n")
@@ -1476,7 +1476,7 @@ def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
     """The survivors are the seats still in the competition as the run ends, so a seat
     that spent out in the last round is not one, whether or not that round held an
     election."""
-    with temp_root(BUDGET=turn_cost() - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=turn_cost() - 1, floor_at_zero=True) as root:
         ids = seated(root, "g01", g02={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet():

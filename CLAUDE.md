@@ -73,7 +73,7 @@ A plain run does not collect what a run killed outright leaves behind; `--sweep-
 does, and is the only mode that reaches a container this process did not make.
 
 Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
-flood against a deadline) and anything setting `COMMAND_TIMEOUT`.
+flood against a deadline) and anything setting `command_timeout`.
 `a_simultaneous_round_runs_its_episodes_at_once` and
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight` use a 10
 second thread barrier and also fail under contention. `-j` must not exceed the
