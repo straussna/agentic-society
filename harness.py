@@ -1860,15 +1860,14 @@ def receipt_text(account: dict, ch: Channel) -> str:
         if not channel.obligated or channel.name not in records:
             continue
         record = records[channel.name]
-        if channel.schema:
-            met = bool(record.get("amount"))
+        kind = channel.settles_as
+        met = SETTLEMENTS[kind].met(record)
+        if kind == "transfer":
             detail = "transfer moved money" if met else "no transfer moved money"
-        elif channel.shape == "mailbox":
-            addressed = record.get("addressed") or []
-            met = bool(addressed)
-            detail = ("message sent to " + ", ".join(addressed)) if met else "no message sent"
+        elif kind == "mailbox":
+            detail = ("message sent to " + ", ".join(record["addressed"]) if met
+                      else "no message sent")
         else:
-            met = bool(record.get("posted"))
             detail = "public post published" if met else "no public post"
         lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} ({detail})")
         lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")

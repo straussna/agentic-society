@@ -457,7 +457,7 @@ def channel_cols(t: dict) -> dict:
         met = met_of(ch, rec)
         cols[f"{ch.name}_met"] = "" if met is None else met
         cols[f"{ch.name}_penalised"] = rec.get("penalty", "")
-        if ch.shape == "mailbox" and not ch.schema:
+        if ch.settles_as == "mailbox":
             # Which labels this episode newly said something to, against which of
             # them it left holding anything but one file. One of these is the
             # obligation and the other is the break.
