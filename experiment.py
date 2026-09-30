@@ -535,6 +535,11 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
         if harness.rebuildable(trace, entry["id"], index) is None:
             raise SystemExit(f"{entry['id']} cannot be rebuilt at round {at_round}")
         sources.append((seat, entry, account, index))
+    # The elections held by the round. A later one takes the place of an earlier one in
+    # the accounts of the seats still in, so a seat whose own record is later than the
+    # round is given the latest of these that names it, from whichever seat holds it.
+    held = [record for _, _, parent, _ in sources
+            if (record := parent.get("last_election")) and record["round"] <= at_round]
     # Until lineage.json names them, the agents forked here are no branch's: a failure
     # before then moves them, the manifest and the record aside, so the branch can be
     # made again under the same id.
@@ -548,10 +553,15 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
                 raise SystemExit(f"could not fork {entry['id']}")
             account = harness.load_account(new)
             account.update(branch_totals(parent, index))
-            for key in ("last_election", "eliminated"):
-                value = parent.get(key)
-                if value and value.get("round", at_round + 1) <= at_round:
-                    account[key] = value
+            election = parent.get("last_election")
+            if election and election["round"] > at_round:
+                election = max((record for record in held
+                                if manifest["labels"][seat] in record["tally"]),
+                               key=lambda record: record["round"], default=None)
+            if election:
+                account["last_election"] = election
+            if (eliminated := parent.get("eliminated")) and eliminated["round"] <= at_round:
+                account["eliminated"] = eliminated
             account["branch"] = {"experiment_id": experiment_id, "source_experiment_id":
                                  manifest["experiment_id"], "source_agent": entry["id"],
                                  "source_episode": index, "source_round": at_round}
@@ -892,8 +902,8 @@ def elector(account: dict, round_number: int) -> bool:
 def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
                  vote: dict | None) -> int | None:
     """Resolve the election of a voting round every agent at the table has completed,
-    and remove every eliminated agent. The round's number, or None where nothing was
-    resolved.
+    and remove every eliminated agent. The round's number where its election stands,
+    held now or by an earlier run, or None where the table's round has none.
 
     The vote tool's cadence defines the cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
@@ -901,9 +911,11 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
 
     The electorate is read from the accounts, so an election resolved when a run
     resumes counts the voters one resolved as the round ended would have. An election
-    every elector's account already records is not held again. Every elector's account
-    is saved before any ballot is removed, so a run that stops in between leaves the
-    ballots for the election to be held again, to the same result.
+    is held once. Once any account records it, its electorate is the one its tally
+    names, so a seat that took the round's episode after it was held has no vote in it,
+    and it is held again, by that electorate, only where one of them lacks the record.
+    Every elector's account is saved before any ballot is removed, so a run that stops
+    between two saves leaves the ballots for that holding to come to the same result.
     """
     if vote is None or not live:
         return None
@@ -912,12 +924,18 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
     every = vote["every"]
     if len(rounds) != 1 or not (round_number := next(iter(rounds))) or round_number % every:
         return None
-    electorate = [agent for agent in agents if elector(accounts[agent], round_number)]
-    if all((accounts[agent].get("last_election") or {}).get("round") == round_number
-           for agent in electorate):
-        return None
+    label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
+    recorded = {agent: accounts[agent].get("last_election") or {} for agent in agents}
+    held = next((record for record in recorded.values() if record.get("round") == round_number),
+                None)
+    if held is None:
+        electorate = [agent for agent in agents if elector(accounts[agent], round_number)]
+    else:
+        electorate = [agent for agent in agents if label_by_agent[agent] in held["tally"]]
+        if all(recorded[agent].get("round") == round_number for agent in electorate):
+            return round_number
 
-    agent_by_label = {labels[str(i)]: agent for i, agent in enumerate(agents, 1)}
+    agent_by_label = {label: agent for agent, label in label_by_agent.items()}
     ballots: dict[str, str] = {}
     cast: list[Path] = []
     for agent in electorate:
@@ -930,7 +948,6 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
         if target in agent_by_label and agent_by_label[target] != agent:
             ballots[agent] = agent_by_label[target]
 
-    label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
     tally = {agent: 0 for agent in electorate}
     for target in ballots.values():
         if target in tally:
@@ -978,11 +995,12 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
 
 def concluded(election: int | None, agents: list[str], live: set[str],
               stop_when_one_remains: bool, stop_when_two_remain_after_tie: bool) -> str | None:
-    """Why the election just resolved ends the rounds, or None where they go on or
-    there was no election.
+    """Why the election that stands after round `election` ends the rounds, or None
+    where they go on or there was no election.
 
     "all_eliminated" when it left nobody, "one_remains" when the manifest stops after
-    one agent remains, and "final_tie" when it stops at a tied vote between the last two.
+    one agent remains, and "final_tie" when it stops at a tied vote between the last
+    two, both of whom were in it.
     """
     if election is None:
         return None
@@ -993,8 +1011,8 @@ def concluded(election: int | None, agents: list[str], live: set[str],
         print(f"{next(iter(live))} is the only agent left; the competition ends")
         return "one_remains"
     if stop_when_two_remain_after_tie and len(live) == 2:
-        result = harness.load_account(next(iter(live))).get("last_election", {})
-        if result.get("top_tied"):
+        results = [harness.load_account(agent).get("last_election") or {} for agent in live]
+        if all(result.get("round") == election and result.get("top_tied") for result in results):
             survivors = [agent for agent in agents if agent in live]
             print(f"the final vote tied between {' and '.join(survivors)}; "
                   "both survive and the competition ends")
@@ -1011,7 +1029,8 @@ def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, rout
 
     `finishing` names the agents that missed a round an earlier run left unfinished:
     only they act in it, in seat order or together as the schedule has it, and the
-    agents that played it wait, and are back at the table for its election.
+    agents that played it wait, and are back at the table for its election where that
+    is still to be held.
 
     The reason is the outcome's termination_reason: "all_eliminated" when every agent
     is out, "one_remains" when the manifest stops after one agent remains, and
@@ -1138,7 +1157,8 @@ def main(argv: list[str] | None = None) -> int:
     code = 0
     try:
         # A voting round every agent finished before the last run stopped keeps its
-        # election, and one already held is not held again.
+        # election, and one already held is not held again; an election that ended the
+        # competition ends the rounds before any begins.
         ended = concluded(resolve_vote(agents, live, manifest["labels"], vote), agents, live,
                           manifest["stop_when_one_remains"],
                           manifest["stop_when_two_remain_after_tie"])
@@ -1170,11 +1190,14 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,
         # so the experiment can be started again from where it stopped. What ends is
-        # the rounds; a voting round every agent at the table finished keeps its election.
-        resolve_vote(agents, live, manifest["labels"], vote)
+        # the rounds; a voting round every agent at the table finished keeps its
+        # election, and an election that ends the competition is what they end on.
+        ended = concluded(resolve_vote(agents, live, manifest["labels"], vote), agents, live,
+                          manifest["stop_when_one_remains"],
+                          manifest["stop_when_two_remain_after_tie"])
         print(f"interrupted; the rounds end here with {len(live)} agents at the table",
               file=sys.stderr)
-        reason, code = "interrupted", 130
+        reason, code = ended or "interrupted", 130
     progress(reason if reason in ("interrupted", "cost_ceiling") else "completed",
              max((len(harness.load_account(agent).get("episodes", [])) for agent in agents),
                  default=0), {"termination_reason": reason})

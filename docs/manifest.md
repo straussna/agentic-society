@@ -126,7 +126,7 @@ runs one.
 | `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
 | `-r N` | Up to N rounds, default 1, stopping early as budgets end; under `--resume` a round the last run left unfinished is finished first, and is one of the N |
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
-| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not; a seat more than one round behind sits out. Without it, previous state moves under `displaced/` and a fresh run starts |
+| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind sits out. Without it, previous state moves under `displaced/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
 | `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |

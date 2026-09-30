@@ -12,7 +12,7 @@ import experiment
 import harness
 import product
 
-from checks.fake import DEFAULT, Err, fake, per_agent, run, say, stopping_at
+from checks.fake import DEFAULT, Err, fake, per_agent, run, say, stopping_at, use
 from checks.lanes import (
     ALL_OWED,
     HostBox,
@@ -320,15 +320,18 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
     assert outcome["winners"] == outcome["survivors"] == ["2", "3"], outcome
 
 
-# The private channel a ballot is cast in, and a vote every second round.
+# The private channel a ballot is cast in, and a vote every second round; the shell, for
+# an episode that is not a vote to have something to do.
 BALLOT = {"name": "ballot", "writer": "self", "readers": "self",
           "shape": "directory", "path": "ballot", "pushed": False}
 VOTE = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}
+SHELL = {"name": "bash", "kind": "bash"}
 
 
-def voting(root: Path, taken: dict[str, int], ballots: dict[str, str], head: str = "") -> Path:
+def voting(root: Path, taken: dict[str, int], ballots: dict[str, str], head: str = "",
+           shell: bool = False) -> Path:
     """Seat an experiment under VOTE, each agent `taken` episodes in, with `ballots` cast;
-    its manifest, led by `head`."""
+    its manifest, led by `head`, and offering SHELL too where `shell` says so."""
     for agent, count in taken.items():
         account = harness.load_account(agent)
         account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, count + 1)]
@@ -339,8 +342,9 @@ def voting(root: Path, taken: dict[str, int], ballots: dict[str, str], head: str
         path.write_text(target + "\n", encoding="utf-8")
     manifest = seats_manifest(root, list(taken))
     manifest.write_text(head + manifest.read_text(encoding="utf-8") + "\n"
-                        + channel_toml(tables(BALLOT)) + '\n[[tool]]\nname = "vote"\n'
-                        'kind = "vote"\nchannel = "ballot"\nevery = 2\n',
+                        + channel_toml(tables(BALLOT))
+                        + ('\n[[tool]]\nname = "bash"\nkind = "bash"\n' if shell else "")
+                        + '\n[[tool]]\nname = "vote"\nkind = "vote"\nchannel = "ballot"\nevery = 2\n',
                         encoding="utf-8", newline="\n")
     return manifest
 
@@ -411,10 +415,49 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
     assert ended["termination_reason"] == "one_remains" and ended["winners"] == ["1"], ended
 
 
+def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
+    """Under stop_when_two_remain_after_tie, a stop that lands in the last seat of a voting
+    round whose election ties the last two ends the competition on the tie, and the records
+    say so. The election stands, so --resume ends on it too, before any round: a run killed
+    once its electors were saved and before its outcome was written ends there as well.
+    """
+    driven = experiment.sequential_round
+    stopped: list[tuple[int, str]] = []
+    resumed: list[tuple[int, str]] = []
+    try:
+        with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
+            ids = seated(root, "g01", g02={})
+            manifest = voting(root, dict.fromkeys(ids, 1), {"g01": "2", "g02": "1"},
+                              head="stop_when_two_remain_after_tie = true\n")
+            harness.start = lambda config=None, **kw: fake()
+            experiment.sequential_round = episodes_for(stopped, stop=True)
+            with quiet() as output:
+                stop_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"])
+            said = output.getvalue()
+            records = product.records(root, "seats")
+            tie, latest = records["outcome"], records["progress"]["latest"]
+            (product.directory(root, "seats") / "outcome.json").unlink()
+            experiment.sequential_round = episodes_for(resumed)
+            with quiet() as output:
+                resume_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            again = product.records(root, "seats")["outcome"]
+    finally:
+        experiment.sequential_round = driven
+    assert stop_code == 130 and stopped == [(2, "g01"), (2, "g02")], (stop_code, stopped)
+    assert "both survive and the competition ends" in said, said
+    assert tie["termination_reason"] == "final_tie" and tie["draw"], tie
+    assert tie["winners"] == tie["survivors"] == ["1", "2"], tie
+    assert latest["phase"] == "completed" and latest["termination_reason"] == "final_tie", latest
+    assert resume_code == 0 and resumed == [], f"no round follows the final tie: {resumed}"
+    assert "both survive and the competition ends" in output.getvalue(), output.getvalue()
+    assert again["termination_reason"] == "final_tie" and again["winners"] == ["1", "2"], again
+
+
 def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
     """An election that fails partway through saving its electors has removed no ballot,
-    so holding it again comes to the result it would have had. Once held it is not held
-    again: the ballots are gone, and a second holding would find every elector abstaining.
+    so holding it again comes to the result it would have had. Once held it stands and is
+    not held again: the ballots are gone, and a second holding would find every elector
+    abstaining.
     """
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={}, g04={}, g05={})
@@ -457,7 +500,7 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
         "round": 2, "tally": {"1": 3, "2": 1, "3": 0, "4": 0, "5": 0}, "abstainers": ["4"],
         "voted_out": "1", "top_votes": 3, "top_tied": False, "remaining": ["2", "3", "5"],
     } for a in after.values()), after
-    assert again is None and unchanged and gone, (again, unchanged, gone)
+    assert again == 2 and unchanged and gone, (again, unchanged, gone)
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
@@ -716,6 +759,54 @@ def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
     assert election["voted_out"] == "2" and results["g03"] == election, results
     assert results["g04"] is None and out["g04"] is None, "g04 is neither an elector nor eliminated"
     assert "received the most votes (2) in round 6" in out["g02"], out
+
+
+def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_of_it():
+    """A seat whose environment would not build misses a voting round, and the seats that
+    played it hold its election. --resume finishes the round for that seat and does not
+    hold the election again: nobody is eliminated by it twice, and every record it left
+    stands as it was.
+
+    g04 misses round 2. g01 and g03 vote for seat 2, g02 for seat 1, so g02 goes out.
+    """
+    with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={})
+        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)
+        real = harness.ready
+
+        def unbuildable(agent, prepare=None):
+            if agent == "g04" and harness.account_on_disk(agent)["episodes"]:
+                raise subprocess.CalledProcessError(1, ["docker", "cp"])
+            return real(agent, prepare)
+
+        harness.ready = unbuildable
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), say(), say(),
+            use("vote", to="2"), say(), use("vote", to="1"), say(), use("vote", to="2"), say())
+        with quiet():
+            missed_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+        missed = episodes_taken(ids)
+        held = {agent: {key: ground_truth(agent).get(key) for key in ("last_election", "eliminated")}
+                for agent in ids}
+
+        harness.ready = real
+        harness.start = lambda config=None, **kw: fake(use("vote", to="1"), say())
+        with quiet() as output:
+            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+        took = episodes_taken(ids)
+        after = {agent: {key: ground_truth(agent).get(key) for key in ("last_election", "eliminated")}
+                 for agent in ids}
+        outcome = product.records(root, "seats")["outcome"]
+    assert missed_code == 0 and missed == {"g01": 2, "g02": 2, "g03": 2, "g04": 1}, missed
+    assert held["g01"]["last_election"]["tally"] == {"1": 1, "2": 2, "3": 0}, held
+    assert held["g02"]["eliminated"]["reason"] == "received the most votes (2) in round 2", held
+    assert code == 0 and took == {"g01": 3, "g02": 2, "g03": 3, "g04": 3}, (code, took)
+    assert "--- round 2 (g04) ---" in output.getvalue(), output.getvalue()
+    assert "eliminated after round" not in output.getvalue(), output.getvalue()
+    assert after == held, f"the election already held is not held again: {after}"
+    assert after["g04"] == {"last_election": None, "eliminated": None}, after["g04"]
+    assert outcome["survivors"] == ["1", "3", "4"] and outcome["elimination_order"] == [
+        {"round": 2, "seat": "2", "reason": "received the most votes (2) in round 2"}], outcome
 
 
 def check_a_round_nobody_can_act_in_ends_the_rounds():

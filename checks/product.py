@@ -11,9 +11,9 @@ import experiment
 import harness
 import product
 import providers
-from checks.fake import Err, fake, per_agent, run, say
-from checks.lanes import (episodes_taken, ground_truth, manifest_file, quiet, reconciled, refused,
-                          seated, seats_manifest, temp_root, turn_cost)
+from checks.fake import Err, fake, per_agent, run, say, use
+from checks.lanes import (channel_toml, episodes_taken, ground_truth, manifest_file, quiet, reconciled,
+                          refused, seated, seats_manifest, tables, temp_root, turn_cost)
 
 
 def check_product_controls_are_declared_and_validated():
@@ -157,36 +157,55 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
 
 
 def check_a_branch_that_fails_partway_can_be_made_again():
-    """A branch that fails after forking some of its seats moves the agents it forked, and
-    anything else it wrote, under displaced/, so the same branch can then be made."""
+    """A branch that fails partway moves the agents it forked, and anything else it wrote,
+    under displaced/, so the same branch can then be made.
+
+    It fails once forking its second seat, before anything else is written, and once
+    writing its lineage, with its manifest and its record's directory already in place.
+    """
     with temp_root() as root:
         source = branch_source(root)
         output = root / "experiments" / "branches" / "takeover.toml"
-        loading = harness.load_account
+        loading, replacing = harness.load_account, product.replace
 
         def full(agent, **terms):
             if agent == "takeover-02":
                 raise OSError("no space left on device")
             return loading(agent, **terms)
 
-        harness.load_account = full
-        with quiet():
+        def unwritable(temporary, destination):
+            if destination.name == "lineage.json":
+                raise OSError("no space left on device")
+            replacing(temporary, destination)
+
+        failed = []
+        for module, name, broken in ((harness, "load_account", full),
+                                     (product, "replace", unwritable)):
+            real = getattr(module, name)
+            setattr(module, name, broken)
             refused_branch = None
             try:
-                experiment.branch_experiment(source, 1, "takeover", "2", output)
+                with quiet():
+                    experiment.branch_experiment(source, 1, "takeover", "2", output)
             except OSError as e:
                 refused_branch = e
-        left = [agent for agent in ("takeover-01", "takeover-02")
-                if harness.records_dir(agent).exists() or harness.environment_dir(agent).exists()]
-        moved = sorted(p.name for p in (root / "displaced").glob("*/records/*"))
-        written = output.exists() or product.directory(root, "takeover").exists()
-        harness.load_account = loading
+            finally:
+                setattr(module, name, real)
+            left = [agent for agent in ("takeover-01", "takeover-02")
+                    if harness.records_dir(agent).exists() or harness.environment_dir(agent).exists()]
+            written = output.exists() or product.directory(root, "takeover").exists()
+            failed.append((refused_branch, left, written))
+        bundles = sorted((root / "displaced").iterdir())
+        moved = [sorted(f"{kind.name}/{p.name}" for kind in bundle.iterdir() for p in kind.iterdir())
+                 for bundle in bundles]
         with quiet():
             made = experiment.branch_experiment(source, 1, "takeover", "2", output)
         lineage = product.records(root, "takeover")["lineage"]
-    assert isinstance(refused_branch, OSError), refused_branch
-    assert not left and not written, (left, written)
-    assert moved == ["takeover-01", "takeover-02"], moved
+    for refused_branch, left, written in failed:
+        assert isinstance(refused_branch, OSError), refused_branch
+        assert not left and not written, (left, written)
+    forked = [f"{kind}/takeover-0{seat}" for kind in ("environments", "records") for seat in (1, 2)]
+    assert moved == [forked, sorted(forked + ["experiment_records/takeover"])], moved
     assert made == output and lineage["created_agents"] == {"1": "takeover-01", "2": "takeover-02"}
 
 
@@ -234,6 +253,63 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
         assert reconciled(fork, spent) == fork["remaining"], (agent, fork)
         for key in ("sent", "received", "rebated", "debited", "forgiven"):
             assert fork[key] == parents[agent].get(key, 0), (agent, key, fork[key])
+
+
+def check_a_branch_carries_the_elections_its_round_had_held_and_no_later_one():
+    """Each fork carries the last election and the elimination its seat's account held as
+    the round ended. Forked at a voting round whose election was held, every seat carries
+    that election, and the branch run with --resume does not hold it again. Forked at the
+    round before a later election, no seat carries that one or what it eliminated.
+
+    Seat 3 is voted out at round 2's election. Seat 2 abstains at round 4's, whose record
+    takes the place of round 2's in the accounts of the seats still in.
+    """
+    ballot = {"name": "ballot", "writer": "self", "readers": "self", "shape": "directory",
+              "path": "ballot", "pushed": False}
+    tools = [{"name": "bash", "kind": "bash"},
+             {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}]
+    keys = ("last_election", "eliminated")
+    with temp_root(channels=tables(ballot), tools=tools) as root:
+        source = manifest_file(root, 'experiment_id = "source"\nsystem_prompt = ""\n'
+                               + "".join(f'[[agent]]\nid = "g0{i}"\n' for i in range(1, 4))
+                               + channel_toml(tables(ballot)) + "".join(
+                                   "\n[[tool]]\n" + "".join(f"{key} = {json.dumps(value)}\n"
+                                                            for key, value in tool.items())
+                                   for tool in tools), name="source.toml")
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), say(),
+            use("vote", to="3"), say(), use("vote", to="3"), say(), use("vote", to="1"), say(),
+            say(), say(),
+            use("vote", to="2"), say(), say())
+        with quiet():
+            assert experiment.main(["--manifest", str(source), "--rounds", "4"]) == 0
+            experiment.branch_experiment(source, 2, "second", "3", root / "second.toml")
+            experiment.branch_experiment(source, 3, "third", "3", root / "third.toml")
+        parents = {agent: {key: ground_truth(agent).get(key) for key in keys}
+                   for agent in ("g01", "g02", "g03")}
+        forks = {f"{branch}-0{seat}": {key: ground_truth(f"{branch}-0{seat}").get(key) for key in keys}
+                 for branch in ("second", "third") for seat in (1, 2, 3)}
+        harness.start = lambda config=None, **kw: fake()
+        with quiet() as output:
+            code = experiment.main(["--manifest", str(root / "second.toml"), "--resume"])
+        resumed = {agent: {key: ground_truth(agent).get(key) for key in keys} for agent in
+                   ("second-01", "second-02", "second-03")}
+        took = episodes_taken(["second-01", "second-02", "second-03"])
+    second, fourth = parents["g03"]["last_election"], parents["g01"]["last_election"]
+    assert second["round"] == 2 and second["voted_out"] == "3", second
+    assert fourth["round"] == 4 and fourth["abstainers"] == ["2"], fourth
+    assert parents["g02"] == {"last_election": fourth, "eliminated": {
+        "round": 4, "reason": "did not vote in round 4", "votes": 1}}, parents["g02"]
+    out = parents["g03"]["eliminated"]
+    assert out["round"] == 2, out
+    for branch in ("second", "third"):
+        assert forks[f"{branch}-01"] == forks[f"{branch}-02"] == {
+            "last_election": second, "eliminated": None}, (branch, forks)
+        assert forks[f"{branch}-03"] == {"last_election": second, "eliminated": out}, (branch, forks)
+    assert code == 0 and took == {"second-01": 3, "second-02": 3, "second-03": 2}, (code, took)
+    assert "eliminated after round" not in output.getvalue(), output.getvalue()
+    assert resumed == {agent: forks[agent] for agent in resumed}, \
+        f"the election the branch carries is not held again: {resumed}"
 
 
 def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
