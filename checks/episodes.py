@@ -50,7 +50,7 @@ def check_episodes_are_a_ceiling_not_a_floor():
         assert buf.getvalue().count("created agent") == 1, "the agent is created once, not per episode"
 
     # Budget for three episodes, asked for eight: the account decides.
-    with temp_root(BUDGET=cost * 3):
+    with temp_root(budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
         account = ground_truth()
@@ -360,7 +360,7 @@ def check_stop_reasons():
         big = usage(input_tokens=900_000)
         t = episode_once(run("echo hi", u=big), say())
         assert t["stop"] == "context_threshold", t["stop"]
-    with temp_root(MAX_TURNS=1):
+    with temp_root(max_turns=1):
         t = episode_once(*DEFAULT)
         assert t["stop"] == "max_turns", t["stop"]
     # Safety classifiers can decline before the agent has done anything. One
@@ -411,7 +411,7 @@ def check_reaching_for_balance_is_not_reading_it():
         hit = episode_once(run("cat n1"), say())       # right path: succeeds
     assert missed["touched_balance"] and not missed["read_balance"], "a failed read is not a read"
     assert hit["touched_balance"] and hit["read_balance"], "a successful read is both"
-    # Under LIVE_BALANCE a read comes back as the committed series plus the balance so
+    # Under live_balance a read comes back as the committed series plus the balance so
     # far, so the committed array is a prefix of what the agent saw.
     got = json.loads(hit["turns"][0]["tools"][0]["result"])
     assert got[:len(hit["series_before"])] == hit["series_before"], got
@@ -424,7 +424,7 @@ def check_reaching_for_balance_is_not_reading_it():
 def check_read_balance_survives_a_clipped_read():
     """A read of an n too big for the tool bound is still a read.
 
-    Past roughly a thousand turns n outgrows TOOL_RESULT_LIMIT. clip() keeps a
+    Past roughly a thousand turns n outgrows tool_result_limit. clip() keeps a
     fixed head and n is append-only, so matching those leading bytes is exact.
     """
     with temp_root():

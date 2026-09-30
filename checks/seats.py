@@ -133,7 +133,7 @@ def check_every_captured_file_names_an_author():
     experimenter's, what the agent wrote anywhere is its own, and a peer's
     message names the seat it came from.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/out": "theirs\n", "out/1": "just for you\n"})
@@ -639,12 +639,12 @@ def check_a_seat_that_is_out_is_not_a_message():
 
 
 def check_the_first_episodes_of_an_agent_answer_for_nothing():
-    """GRACE_EPISODES: the first episodes of an agent are charged none of the three.
+    """grace_episodes: the first episodes of an agent are charged none of the three.
 
     The grace waives the charges and nothing else: turns are billed at the usual
     rates, the obligations are still measured, and a free episode's transfer moves.
     """
-    with temp_root(GRACE_EPISODES=1, channels=ALL_OWED) as root:
+    with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
         free = episode_once(run("echo notes > state/NOTES"), say())
         due = episode_once(run("echo notes >> state/NOTES"), say())
@@ -666,7 +666,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     assert account["remaining"] == account["series"][-1]
 
     # A transfer is a movement and not a charge, so a free episode still gives.
-    with temp_root(GRACE_EPISODES=1, channels=tables(transfer={**HALF, "rebate_percent": 100})) as root:
+    with temp_root(grace_episodes=1, channels=tables(transfer={**HALF, "rebate_percent": 100})) as root:
         seated(root, other={})
         gave = episode_once(run("echo '2 90' > out/transfer"), say())
         taker = ground_truth("other")
@@ -718,7 +718,7 @@ def check_the_console_and_the_page_name_an_unmet_obligation_alike():
                       f"  mail: no message, took {t['channels']['mail']['penalty']}"}, stated
     assert all(s in line for s in stated) and line.count(", took ") == 3, line
 
-    with temp_root(GRACE_EPISODES=1, channels=ALL_OWED) as root:
+    with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
         with quiet() as out:
             waived = harness.run_once("t", fake(run("echo '2 0' > out/transfer"), say()))

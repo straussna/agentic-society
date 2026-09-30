@@ -847,7 +847,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "manifest:", "no [[tool]] is declared")
 
-    with temp_root(DELIVERY="pull"):
+    with temp_root(delivery="pull"):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest", "'pull'")
 
@@ -856,7 +856,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
                 "manifest:", "opens on the digest")
 
     # All three stand once the shell is offered again.
-    with temp_root(DELIVERY="pull"):
+    with temp_root(delivery="pull"):
         harness.apply_tools([BASH], chans, "manifest")
         assert harness.SETTINGS.shell_tool is True
 

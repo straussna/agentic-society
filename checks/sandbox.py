@@ -172,7 +172,7 @@ def check_a_message_already_shown_is_named_and_not_repeated():
 def check_pull_delivery_leaves_the_record_to_be_fetched():
     """Under pull nothing is quoted: the episode opens on the listing alone, there
     is no m, and every message still sits in the environment at the ordinary price."""
-    with temp_root(DELIVERY="pull") as root:
+    with temp_root(delivery="pull") as root:
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/message": "the standing position\n",
                             "out/1": "the standing note\n"})
@@ -348,7 +348,7 @@ def check_hostile_output_survives():
     The flood is 4MB, which exercises Shell.run's scan at a size where decoding
     the whole buffer per poll overruns the deadline by orders of magnitude.
     """
-    with docker_root(COMMAND_TIMEOUT=5):
+    with docker_root(command_timeout=5):
         t = episode_once(run("head -c 4096 /dev/urandom"),
                       run("head -c 4000000 /dev/zero | tr '\\0' x"),
                       run("sleep 30"), say())
@@ -393,9 +393,9 @@ def check_a_live_balance_counts_as_a_number_written():
     """A balance that arrived mid-episode counts as a number the agent wrote.
 
     mentions["number"] is decided against the balances the agent could have
-    read, which under LIVE_BALANCE include the episode's own elements.
+    read, which under live_balance include the episode's own elements.
     """
-    with temp_root(LIVE_BALANCE=True):
+    with temp_root(live_balance=True):
         t = episode_once(run("echo hi"),
                       run("tr -d '[]' < n1 | tr ',' '\\n' | tail -1 > state/note.txt"),
                       say())
@@ -528,7 +528,7 @@ def check_a_container_failure_stops_the_episode_cleanly():
     The container, the state copy, and the shell all come before the first API
     call, so nothing reaching this path was billed and there is no trace.
     """
-    with docker_root(IMAGE="mtr-No-Such-Image:latest"):     # rejected on sight, no pull
+    with docker_root(image="mtr-No-Such-Image:latest"):     # rejected on sight, no pull
         with quiet() as buf:
             assert harness.run_episodes("t", fake(*DEFAULT), 3) == 4
         assert "could not build an environment" in buf.getvalue(), buf.getvalue()
@@ -727,11 +727,11 @@ def check_containers_are_reaped():
 def check_an_unterminated_heredoc_is_not_probed_for_tools():
     """A heredoc whose terminator never arrived is body, not commands.
 
-    A turn truncated at MAX_TOKENS mid-heredoc leaves one, and none of its prose
+    A turn truncated at max_tokens mid-heredoc leaves one, and none of its prose
     reaches probe_missing.
     """
     cut = "cd /work/state && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
-    with docker_root(MAX_TURNS=1, COMMAND_TIMEOUT=5):
+    with docker_root(max_turns=1, command_timeout=5):
         t = episode_once(run(cut, stop="max_tokens"))
     assert t["missing_tools"] == [], t["missing_tools"]
 
@@ -783,7 +783,7 @@ def check_a_balance_resists_every_route():
     A mode denies writing a file and says nothing about replacing it: rm and mv
     ask the directory. Every balance sits in /work, which is root's.
     """
-    with docker_root(LIVE_BALANCE=True):
+    with docker_root(live_balance=True):
         t = episode_once(run("printf X >> n1 2>&1 || echo DENIED",
                           "chmod 666 n1 2>&1 || echo DENIED",
                           "rm -f n1 2>&1 || echo DENIED",
@@ -817,7 +817,7 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     Written as root from outside the agent's shell, so the mode the agent sees
     is the locked one either way. The stage file lives in /tmp.
     """
-    with docker_root(LIVE_BALANCE=True):
+    with docker_root(live_balance=True):
         t = episode_once(run("stat -c '%a %U:%G %n' n1", "ls -a /work", "ls -a state"), say())
     stat, work, listing = (c["result"] for c in t["turns"][0]["tools"])
     assert stat.strip() == "444 root:root n1", stat

@@ -25,8 +25,8 @@ SERVED = usage(output_tokens=200)
 
 # A root under which an agent meets its starter files at once, carries on past
 # one refusal, and is priced at opus-5's rates.
-BUSY = {"REFUSAL_TURNS": 2, "BUDGET": 500_000,
-        "STARTER_FILES": "s", "STARTER_FILES_BELOW": 500_000}
+BUSY = {"REFUSAL_TURNS": 2, "budget": 500_000,
+        "starter_files": "s", "starter_files_below": 500_000}
 
 
 def busy_episodes(root) -> list[dict]:

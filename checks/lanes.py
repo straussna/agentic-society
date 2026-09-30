@@ -413,7 +413,6 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     """
     provider = overrides.pop("PROVIDER", "anthropic")
     model = overrides.pop("MODEL", "claude-sonnet-5")
-    overrides = {k.lower() if k in harness.TUNABLES else k: v for k, v in overrides.items()}
     fields = {k: v for k, v in overrides.items() if k in TUNED - {"root"}}
     seams = {k: v for k, v in overrides.items() if k not in fields}
     unknown = set(seams) - (SEAMS - {"SETTINGS"})

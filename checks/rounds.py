@@ -1431,7 +1431,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     nobody still in could act.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True) as root:
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
@@ -1722,7 +1722,7 @@ def check_a_simultaneous_credit_lands_before_the_floor():
     results = {}
     for name, transfer in (("transfer", "echo '2 50' > out/transfer"), ("none", "true"),
                            ("exact", "echo '2 1' > out/transfer")):
-        with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+        with temp_root(budget=cost - 1, floor_at_zero=True) as root:
             ids = seated(root, "g01", g02={})
             live = set(ids)
             with quiet():

@@ -789,7 +789,7 @@ def check_the_view_states_an_obligation_the_grace_waived():
     A share is taken only past the grace, so an episode inside it can leave all
     three undone for nothing. Every pane says the same thing about that episode.
     """
-    with temp_root(GRACE_EPISODES=1, channels=ALL_OWED) as root:
+    with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
         t = episode_once(run("cat n1"), say())
         v = view.episode_view("t", 1)

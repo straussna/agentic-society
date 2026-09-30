@@ -193,7 +193,7 @@ def check_episodes_reconcile():
             "the last trace carries the series the account committed"
 
     # And with every term live at once, the identity still closes.
-    with temp_root(FLOOR_AT_ZERO=True, channels=tables(
+    with temp_root(floor_at_zero=True, channels=tables(
             transfer={"rebate_percent": 50, **HALF}, blackboard=HALF, mail=HALF)) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())          # a transfer, and no post
@@ -214,7 +214,7 @@ def check_episodes_reconcile():
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
 
     # And under a giver-funded transfer, where the transfer is a debit and not a rebate.
-    with temp_root(FLOOR_AT_ZERO=True, channels=tables(
+    with temp_root(floor_at_zero=True, channels=tables(
             transfer={"funded_by": "giver", "rebate_percent": 0, **HALF})) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())
@@ -232,12 +232,12 @@ def check_episodes_reconcile():
 
 
 def check_balance_grows_within_an_episode():
-    """LIVE_BALANCE: every billed turn appends its balance to n while the episode runs.
+    """live_balance: every billed turn appends its balance to n while the episode runs.
 
     Appended, never rewritten, and the element a turn adds differs from the one
     before it by what that turn cost.
     """
-    with temp_root(LIVE_BALANCE=True):
+    with temp_root(live_balance=True):
         t = episode_once(run("cat n1"), run("cat n1"), say())
     before, balances = t["series_before"], [x["balance"] for x in t["turns"]]
     first, second = (json.loads(t["turns"][i]["tools"][0]["result"]) for i in (0, 1))
@@ -252,11 +252,11 @@ def check_balance_grows_within_an_episode():
 
 
 def check_live_balance_can_be_turned_off():
-    """LIVE_BALANCE off leaves n fixed for the whole episode; the turns arrive at the next episode.
+    """live_balance off leaves n fixed for the whole episode; the turns arrive at the next episode.
 
     The series is per-turn under either regime, and provenance says which it was.
     """
-    with temp_root(LIVE_BALANCE=False):
+    with temp_root(live_balance=False):
         t = episode_once(run("cat n1"), run("cat n1"), say())
     reads = [c["result"].strip() for x in t["turns"][:2] for c in x["tools"]]
     assert reads[0] == reads[1] == harness.render_balance(t["series_before"]).strip(), reads
@@ -276,7 +276,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
     # One short of a turn, so the first episode cannot help but overshoot zero.
     cost = turn_cost()
 
-    with temp_root(BUDGET=cost - 1):
+    with temp_root(budget=cost - 1):
         first = episode_once(*DEFAULT)
         assert first["balance_floor"] == 0, "an episode stops at zero"
         assert first["remaining"] < 0, "the last turn overshoots; that is the value at stake"
@@ -285,7 +285,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
             assert harness.run_episodes("t", fake(), 1) == 3, "so no episode may start on it"
 
     # However many are asked for, the agent ends on the one that crossed.
-    with temp_root(BUDGET=cost - 1):
+    with temp_root(budget=cost - 1):
         with quiet():
             assert harness.run_episodes("t", fake(), 6) == 0
         account = ground_truth()
@@ -385,7 +385,7 @@ def check_tool_result_limit_is_tunable_and_bounded():
             harness.load_config(f)
             assert harness.SETTINGS.tool_result_limit == 2000
 
-    with temp_root(TOOL_RESULT_LIMIT=2_000):
+    with temp_root(tool_result_limit=2_000):
         t = episode_once(run("yes ABCDEFGHIJ | head -2000"), say())
         result = t["turns"][0]["tools"][0]["result"]
     assert len(result) < 2_200, f"clipped at the configured limit, got {len(result)}"
@@ -468,7 +468,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
         assert "SYSTEM drifted" in buf.getvalue() and "--print-system" in buf.getvalue(), buf.getvalue()
 
     seen = []
-    with temp_root(SYSTEM_PROMPT=""):
+    with temp_root(system_prompt=""):
         t = episode_once(say(), seen=seen)
         pinned_text = ground_truth()["system_prompt"]
     assert next(x for x in seen if x["kind"] == "session")["system"] == ""
@@ -478,7 +478,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
 
     # A declared arm records the words, and not the silence it did not keep.
     said, spoken = "You are one of several.", []
-    with temp_root(SYSTEM_PROMPT=said):
+    with temp_root(system_prompt=said):
         d = episode_once(say(), seen=spoken)
     session = next(x for x in spoken if x["kind"] == "session")
     assert session["system"] == said, session.get("system")

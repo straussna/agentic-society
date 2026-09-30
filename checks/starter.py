@@ -61,7 +61,7 @@ def check_starter_files_land_when_the_balance_falls():
     """
     # A say() episode spends 1750, so this is above episode 1's balance and below
     # episode 2's: the starter files land at the second episode and not the first.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         before = episode_once(say())
         after = episode_once(say())
@@ -87,7 +87,7 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     # episodes run whatever a turn costs under the model in force.
     below = 500_000 - 2 * turn_cost()
     for name, steps in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
-        with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=below) as root:
+        with temp_root(budget=500_000, starter_files="s", starter_files_below=below) as root:
             plant(root)
             with quiet():
                 harness.run_episodes(name, fake(*steps), 4)
@@ -106,7 +106,7 @@ def check_starter_files_are_recorded_and_idempotent():
     """The account records what landed, and a later episode does not plant it again."""
     # At the budget itself the threshold is met at episode 1: material that was
     # always there, not material that appeared.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())     # the agent overwrites it
         after = episode_once(say())
@@ -123,7 +123,7 @@ def check_starter_files_are_recorded_and_idempotent():
 
 def check_starter_files_are_not_the_agents():
     """What the agent was given is `ours`; only what it invented is not."""
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         t = episode_once(run("echo doctrine > state/NOTES.md"), say())
 
@@ -142,7 +142,7 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
     """A starter-files path the agent already wrote stops the agent instead of clobbering it."""
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())
         refused(lambda: episode_once(say()), "m1",
@@ -157,7 +157,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
     is ignored, other terms are refused, and an account from before the terms
     were pinned adopts the config at its next episode.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         first = episode_once(say())
@@ -195,7 +195,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
     A fork from before they landed carries none, and takes the config it is next
     run under.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         episode_once(say())

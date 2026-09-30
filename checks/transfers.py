@@ -333,7 +333,7 @@ def check_a_negative_balance_is_floored_to_zero():
     stops asking. The floor decides what n holds, not whether an episode follows.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True) as root:
         seated(root, other={})
         t = episode_once(*DEFAULT)
         account = ground_truth("t")
@@ -356,7 +356,7 @@ def check_an_agent_at_zero_is_not_asked_again():
     is the whole of the state, and zero is one nothing moves it off.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True) as root:
         seated(root, other={})
         with quiet():
             assert harness.run_episodes("t", fake(), 4) == 0
@@ -376,7 +376,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
     own, and still moves nothing: an agent that reached zero stays there.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True, channels=OWED_AND_REBATED) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True, channels=OWED_AND_REBATED) as root:
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(*DEFAULT))

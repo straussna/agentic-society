@@ -450,7 +450,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     # does not lift it: the episodes still stop at the floor and no further one
     # starts, exactly as they do where the agent can read what it holds.
     cost = turn_cost()
-    with temp_root(harness_files={"balance": "", "digest": "digest"}, BUDGET=cost * 3):
+    with temp_root(harness_files={"balance": "", "digest": "digest"}, budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
         spent_out = ground_truth()
