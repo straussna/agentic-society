@@ -345,6 +345,24 @@ def check_a_record_holding_no_object_reads_as_no_record():
     assert names == ["g"], names
 
 
+def check_a_trace_that_predates_the_harness_file_names_still_groups():
+    """A trace whose provenance names no harness files is read under the names in
+    force, as one naming no channel table is read under the default table, so its
+    experiment still groups and its header still opens instead of failing every poll."""
+    with rooted(HostBox):
+        fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
+        path = harness.trace_path("g01", 1)
+        trace = json.loads(path.read_text(encoding="utf-8"))
+        del trace["provenance"]["harness_files"]
+        path.write_text(json.dumps(trace), encoding="utf-8")
+        names = [exp["name"] for exp in view.experiments()]
+        exp = view.experiment_named("g")
+        head = view.header(exp) if exp else {}
+
+    assert names == ["g"], names
+    assert head.get("balance") == harness.HARNESS_FILES["balance"], head
+
+
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():
     """Election state comes from accounts without exposing individual ballots."""
     result = {"round": 5, "tally": {"1": 1, "2": 0}, "abstainers": ["2"],

@@ -217,7 +217,8 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
 
 def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     """The shell's call is the command it ran, or "(restart)" for the bare form, and a
-    declared tool's is the call itself.
+    declared tool's is the call itself. A call naming no tool is the shell's, as
+    run_tools runs it.
 
     One rule, analyze's, which the transcript and the page's two sources of a turn
     all read, so a call cannot read one way in the transcript and another on the page.
@@ -225,20 +226,22 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     shell = harness.SHELL_SPEC.name
     records = [{"tool": shell, "command": "ls", "input": None, "result": "x"},
                {"tool": shell, "command": None, "input": None, "result": " "},
-               {"tool": "post", "command": None, "input": {"body": "hi"}, "result": "posted"}]
+               {"tool": "post", "command": None, "input": {"body": "hi"}, "result": "posted"},
+               {"command": "ls", "result": "x"}]
     calls = [{"id": "1", "name": shell, "input": {"command": "ls"}},
              {"id": "2", "name": shell, "input": {"command": None}},
-             {"id": "3", "name": "post", "input": {"body": "hi"}}]
+             {"id": "3", "name": "post", "input": {"body": "hi"}},
+             {"id": "4", "input": {"command": "ls"}}]
     logged = [{"kind": "normalized_response", "turn": 1,
                "response": {"id": "r", "tool_calls": calls, "charges": []}}]
     traced = view.from_trace({"turns": [{"turn": 1, "tools": records}]})[0]["tools"]
     live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
 
-    shown = ["ls", "(restart)", "post(body='hi')"]
+    shown = ["ls", "(restart)", "post(body='hi')", "ls"]
     assert [analyze.tool_call(rec) for rec in records] == shown
     assert [c["call"] for c in traced] == shown and [c["call"] for c in live] == shown, \
         (traced, live)
-    assert [c["shell"] for c in traced] == [c["shell"] for c in live] == [True, True, False], \
-        (traced, live)
+    assert [c["shell"] for c in traced] == [c["shell"] for c in live] \
+        == [True, True, False, True], (traced, live)
     assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, \
         "and only the declared tool's is a tool call"

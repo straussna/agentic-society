@@ -119,8 +119,9 @@ def label_of(t: dict) -> str:
 
 
 def harness_files_of(t: dict) -> dict[str, str]:
-    """What the harness's own files were called this episode."""
-    return t["provenance"]["harness_files"]
+    """What the harness's own files were called this episode; the names in force
+    where the trace predates them, as table_of reads a trace that predates the table."""
+    return t["provenance"].get("harness_files") or dict(harness.HARNESS_FILES)
 
 
 def channel_records(t: dict) -> dict[str, dict]:
