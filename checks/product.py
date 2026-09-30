@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 
 import experiment
 import harness
 import product
 import providers
-from checks.fake import fake, per_agent, say
-from checks.lanes import episodes_taken, manifest_file, quiet, seated, temp_root
+from checks.fake import Err, fake, per_agent, run, say
+from checks.lanes import episodes_taken, ground_truth, manifest_file, quiet, seated, temp_root
 
 
 def check_product_controls_are_declared_and_validated():
@@ -177,64 +178,96 @@ def check_progress_appends_each_event_and_reads_its_history_back():
 
 def check_a_round_writes_each_phase_as_it_reaches_it():
     """Progress follows the round as it goes: the round waits on an episode before it
-    runs, and its actions resolve and it settles after it ran and before it is
-    committed, so no phase is written once the round has left it."""
+    runs, resolves its actions after it ran and before it settles, and settles it
+    before it is committed, so no phase is written once the round has left it.
+
+    g01's transfer reaches g02's account when g01 settles, and not before. In a
+    simultaneous round an episode that ends while a peer's still runs leaves the round
+    waiting, and the last to end leaves it resolving actions.
+    """
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         seen: list[tuple] = []
+        g01_ended = threading.Event()
+        held_back: list[bool] = []
 
         def progress(phase, round_number, detail):
             def state(agent):
                 if harness.trace_path(agent, round_number).exists():
                     return "committed"
                 return "ran" if harness.raw_path(agent, round_number).exists() else "waiting"
-            seen.append((phase, round_number, detail, {agent: state(agent) for agent in ids}))
+            seen.append((phase, round_number, detail, {agent: state(agent) for agent in ids},
+                         ground_truth("g02").get("received", 0)))
+            if detail == {"completed_autonomous": "g01"}:
+                g01_ended.set()
+
+        def after_g01(n):
+            if threading.current_thread().name == "g02" and n == 1:
+                held_back.append(g01_ended.wait(10))
 
         live = set(ids)
         with quiet():
-            experiment.sequential_round(ids, live, 0, fake(), progress=progress)
+            experiment.sequential_round(ids, live, 0, fake(run("echo '2 250' > out/transfer"), say()),
+                                        progress=progress)
             sequential = seen[:]
             seen.clear()
-            experiment.simultaneous_round(ids, live, 1, per_agent(default=(say(),)),
+            experiment.simultaneous_round(ids, live, 1, per_agent(default=(say(),),
+                                                                  on_request=after_g01),
                                           progress=progress)
 
     ran, committed, waiting = "ran", "committed", "waiting"
     assert sequential == [
-        ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}),
-        ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}),
-        ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}),
-        ("waiting_autonomous", 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}),
-        ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}),
-        ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran})], sequential
-    assert seen[0] == ("waiting_autonomous", 2, {"agents": ids},
-                       {"g01": waiting, "g02": waiting}), seen
-    finished = seen[1:3]
-    assert sorted(detail["completed_autonomous"] for _, _, detail, _ in finished) == ids, seen
-    assert {phase for phase, *_ in finished} <= {"waiting_autonomous", "resolving_actions"} and \
-        any(phase == "resolving_actions" for phase, *_ in finished), \
-        f"the last episode to end leaves the round nothing to wait on: {finished}"
-    assert seen[3:] == [("resolving_actions", 2, {"agents": ids}, {"g01": ran, "g02": ran}),
-                        ("settling_round", 2, {"agents": ids}, {"g01": ran, "g02": ran})], seen
+        ("waiting_autonomous", 1, {"agents": ["g01"]}, {"g01": waiting, "g02": waiting}, 0),
+        ("resolving_actions", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 0),
+        ("settling_round", 1, {"agents": ["g01"]}, {"g01": ran, "g02": waiting}, 250),
+        ("waiting_autonomous", 1, {"agents": ["g02"]}, {"g01": committed, "g02": waiting}, 250),
+        ("resolving_actions", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250),
+        ("settling_round", 1, {"agents": ["g02"]}, {"g01": committed, "g02": ran}, 250)], sequential
+    assert held_back == [True], f"g02's episode ran on after g01's had ended: {held_back}"
+    assert seen == [
+        ("waiting_autonomous", 2, {"agents": ids}, {"g01": waiting, "g02": waiting}, 250),
+        ("waiting_autonomous", 2, {"completed_autonomous": "g01"}, {"g01": ran, "g02": waiting}, 250),
+        ("resolving_actions", 2, {"completed_autonomous": "g02"}, {"g01": ran, "g02": ran}, 250),
+        ("resolving_actions", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250),
+        ("settling_round", 2, {"agents": ids}, {"g01": ran, "g02": ran}, 250)], seen
 
 
 def check_a_progress_record_that_fails_costs_no_episode_its_spend():
-    """A progress write that fails between an episode's billing and its commit is raised
-    once the round's billed episodes are committed, never in place of them."""
-    def failing(phase, round_number, detail):
-        if phase == "resolving_actions":
-            raise ValueError("progress.json does not read")
+    """A progress write that fails between an episode's billing and its commit, or a
+    second Ctrl+C that lands in one, is raised once the round's billed episodes are
+    committed and an agent whose episode put it out has left the table, never in place
+    of either.
 
-    for a_round, took in ((experiment.sequential_round, {"g01": 1, "g02": 0}),
-                          (experiment.simultaneous_round, {"g01": 1, "g02": 1})):
-        with temp_root() as root:
-            ids = seated(root, "g01", g02={})
-            try:
-                with quiet():
-                    a_round(ids, set(ids), 0, per_agent(default=(say(),)), progress=failing)
-            except ValueError as e:
-                assert "progress.json" in str(e), str(e)
-            else:
-                raise AssertionError(f"{a_round.__name__} swallowed a progress failure")
-            assert episodes_taken(ids) == took, (a_round.__name__, episodes_taken(ids))
-            assert all(harness.trace_path(agent, 1).exists()
-                       for agent, n in took.items() if n), "every billed episode is traced"
+    g01's episode ends on an API error after a billed turn, which drops it out.
+    """
+    for phase in ("resolving_actions", "settling_round"):
+        for failure in (ValueError, KeyboardInterrupt):
+            def failing(reached, round_number, detail, phase=phase, failure=failure):
+                if reached == phase:
+                    raise failure("progress.json does not read")
+
+            for a_round, router, took in (
+                    (experiment.sequential_round, lambda: fake(run("echo one"), Err(400)),
+                     {"g01": 1, "g02": 0}),
+                    (experiment.simultaneous_round,
+                     lambda: per_agent(g01=(run("echo one"), Err(400)), default=(say(),)),
+                     {"g01": 1, "g02": 1})):
+                case = (a_round.__name__, phase, failure.__name__)
+                with temp_root() as root:
+                    ids = seated(root, "g01", g02={})
+                    live = set(ids)
+                    raised: BaseException | None = None
+                    try:
+                        with quiet():
+                            a_round(ids, live, 0, router(), progress=failing)
+                    except (ValueError, KeyboardInterrupt) as e:
+                        raised = e
+                    taken = episodes_taken(ids)
+                    traced = {agent: harness.trace_path(agent, 1).exists() for agent in ids}
+                    first = ground_truth("g01")["episodes"][0]
+                assert type(raised) is failure and "progress.json" in str(raised), (case, raised)
+                assert taken == took, (case, taken)
+                assert traced == {agent: bool(n) for agent, n in took.items()}, \
+                    f"every billed episode is traced: {case} {traced}"
+                assert first["stop"] == "api_error" and first["spent"] > 0, (case, first)
+                assert live == {"g02"}, f"g01 left the table before the raise: {case} {live}"

@@ -157,8 +157,8 @@ def progress(runtime_root: Path, experiment_id: str, phase: str, round_number: i
     if phase not in PHASES:
         raise ValueError(f"unknown progress phase {phase!r}")
     base = directory(runtime_root, experiment_id)
-    event = {"at": now(), "phase": phase, "round": round_number, **(detail or {})}
     with _LOCK:
+        event = {"at": now(), "phase": phase, "round": round_number, **(detail or {})}
         previous = read(base / "progress.json") or {}
         log = base / "progress.jsonl"
         # A progress.json that holds its own events list starts the log with them.

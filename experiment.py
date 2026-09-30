@@ -632,16 +632,17 @@ def unrecorded(phase: str, round_number: int, detail: dict[str, Any] | None) -> 
     experiment record to write to."""
 
 
-def tell(progress: Progress, held: list[Exception], phase: str, round_number: int,
-         agents: list[str]) -> None:
+def tell(progress: Progress, held: list[BaseException], phase: str, round_number: int,
+         detail: dict[str, Any]) -> None:
     """Write a phase reached between billed episodes and their commit.
 
-    A raise there would leave billed spend uncommitted, so a write that fails is kept
-    in `held`, for the round to raise once its episodes are committed.
+    A raise there would leave billed spend uncommitted, so a write that fails, or a
+    second Ctrl+C that lands in it, is kept in `held`, for the round to raise once its
+    episodes are committed and its agents that dropped out have left the table.
     """
     try:
-        progress(phase, round_number, {"agents": agents})
-    except Exception as e:
+        progress(phase, round_number, detail)
+    except BaseException as e:
         held.append(e)
 
 
@@ -673,22 +674,22 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, router: Provid
             drop_out(agent, live)
             continue
         out = harness.run_episode(ep, router)
-        held: list[Exception] = []
-        tell(progress, held, "resolving_actions", rnd + 1, [agent])
+        held: list[BaseException] = []
+        tell(progress, held, "resolving_actions", rnd + 1, {"agents": [agent]})
         settled = harness.settle_episode(ep, out)
-        tell(progress, held, "settling_round", rnd + 1, [agent])
+        tell(progress, held, "settling_round", rnd + 1, {"agents": [agent]})
         trace = harness.close_episode(ep, out, settled)
+        acted = True
+        if trace["stop"] in harness.STOPS_THE_AGENT and trace["stop"] not in harness.STOPS_THE_EXPERIMENT:
+            print(f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
+                  file=sys.stderr)
+            live.discard(agent)
         if held:
             raise held[0]
-        acted = True
         if trace["stop"] in harness.STOPS_THE_EXPERIMENT:
             # Ctrl+C is the experimenter: the episode it landed in is committed and
             # traced above, and main() ends the rounds.
             raise KeyboardInterrupt
-        if trace["stop"] in harness.STOPS_THE_AGENT:
-            print(f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
-                  file=sys.stderr)
-            live.discard(agent)
     return acted
 
 
@@ -745,16 +746,18 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
                    for agent, ep in built.items()}
     outs: dict[str, dict] = {}
     errors: dict[str, BaseException] = {}
+    held: list[BaseException] = []
     def go(agent: str, ep: harness.Episode) -> None:
         try:
             outs[agent] = harness.run_episode(ep, router)
-            if not interactive[agent]:
-                running = [name for name in built if name not in outs and name not in errors]
-                phase = ("waiting_player" if any(interactive[name] for name in running) else
-                         "waiting_autonomous" if running else "resolving_actions")
-                progress(phase, rnd + 1, {"completed_autonomous": agent})
         except BaseException as e:      # run_episode has saved and reaped on its way out
             errors[agent] = e
+            return
+        if not interactive[agent]:
+            running = [name for name in built if name not in outs and name not in errors]
+            phase = ("waiting_player" if any(interactive[name] for name in running) else
+                     "waiting_autonomous" if running else "resolving_actions")
+            tell(progress, held, phase, rnd + 1, {"completed_autonomous": agent})
 
     threads = [threading.Thread(target=go, args=(agent, ep), name=agent, daemon=True)
                for agent, ep in built.items()]
@@ -785,8 +788,8 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     def defer(receiver: str, amount: int) -> None:
         pending.append((receiver, amount))
 
-    held: list[Exception] = []
-    tell(progress, held, "resolving_actions", rnd + 1, [agent for agent in built if agent in outs])
+    tell(progress, held, "resolving_actions", rnd + 1,
+         {"agents": [agent for agent in built if agent in outs]})
     settled: dict[str, dict] = {}
     for agent, ep in built.items():
         if agent not in outs:
@@ -800,7 +803,7 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
             harness.credit_episode(built[receiver], amount)
         else:
             harness.credit_on_disk(receiver, amount)
-    tell(progress, held, "settling_round", rnd + 1, list(settled))
+    tell(progress, held, "settling_round", rnd + 1, {"agents": list(settled)})
     traces: dict[str, dict] = {}
     for agent, ep in built.items():
         if agent not in settled:
@@ -811,14 +814,14 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
             errors.setdefault(agent, e)
     if errors:
         raise next(iter(errors.values()))
-    if held:
-        raise held[0]
 
     for agent, trace in traces.items():
         if trace["stop"] in harness.STOPS_THE_AGENT and trace["stop"] not in harness.STOPS_THE_EXPERIMENT:
             print(f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
                   file=sys.stderr)
             live.discard(agent)
+    if held:
+        raise held[0]
     if any(trace["stop"] in harness.STOPS_THE_EXPERIMENT for trace in traces.values()):
         # Every episode in flight ended at its next turn and is committed and
         # traced above; what does not happen is the next round.
