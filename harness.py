@@ -3505,8 +3505,8 @@ def refusal_reply(calls: Iterable[ToolCall]) -> tuple[ToolResult, ...] | str:
 def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
     """What a whole turn ends the episode on, or None to carry on.
 
-    max_tokens and refusal are answered before this. A reason this loop has no
-    branch for ends the episode by name, so it is not filed as the agent choosing
+    max_tokens, refusal and other are answered before this. A reason this loop has
+    no branch for ends the episode by name, so it is not filed as the agent choosing
     to stop; text with no tool call is no_tool_call on turn one and end_turn later.
     """
     if stop_reason not in HANDLED_STOPS:
