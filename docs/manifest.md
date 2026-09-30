@@ -538,7 +538,7 @@ would end every episode on its first turn:
 |---|---|
 | no `[[tool]]` at all | the agent is offered nothing to act with, and an empty tool set is not a request the API takes |
 | no declared `bash` tool with `delivery = "pull"` or `[harness_files] digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
-| no declared `bash` tool where this seating leaves every declared tool out | the table is not empty but the request would be, for the same reason and with the same result |
+| no declared `bash` tool where this seating leaves every declared tool out | the tool table is not empty but the request would be, for the same reason and with the same result |
 
 The first two are settled when the harness starts, before any environment is built. The
 third is a seat's rather than
