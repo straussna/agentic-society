@@ -97,8 +97,8 @@ class Manifest(TypedDict):
 Progress = Callable[[str, int, dict[str, Any] | None], object]
 
 # How a round is driven, sequential_round or simultaneous_round. Called with the agents
-# in seat order, those still at the table, the round's index, the router, the stamp,
-# the labels and the progress record; returns whether any agent took an episode.
+# in seat order, those at the table that act in it, the round's index, the router, the
+# stamp, the labels and the progress record; returns whether any agent took an episode.
 Round = Callable[[list[str], set[str], int, ProviderRouter, dict[str, Any] | None,
                   dict[str, str] | None, Progress], bool]
 
@@ -473,15 +473,27 @@ def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str)
 
 
 def branch_totals(account: dict, index: int) -> dict[str, Any]:
-    """Cumulative settlement fields as they stood at one completed episode."""
+    """Cumulative settlement fields as they stood at one completed episode.
+
+    A credit from a peer settling in the same simultaneous round lands inside the
+    receiver's episode and is in its record. Any other lands before or between the
+    receiver's episodes, where nothing but a credit moves a balance, so it is the
+    series' rise up to where an episode's span starts from where the one before it
+    ended, or from the initial balance.
+    """
     totals: dict[str, Any] = {"sent": 0, "received": 0, "rebated": 0, "debited": 0,
                               "forgiven": 0, "penalised": {}}
+    series = account.get("series") or []
+    ended: int | None = 0
     for episode in account.get("episodes", [])[:index]:
         transfer = episode.get("transfer") or {}
         totals["sent"] += int(transfer.get("amount", 0))
         totals["rebated"] += int(transfer.get("rebate", 0))
         totals["debited"] += int(transfer.get("debit", 0))
         totals["received"] += int(episode.get("received", 0))
+        if ended is not None and "series_from" in episode:
+            totals["received"] += series[episode["series_from"]] - series[ended]
+        ended = episode.get("series_to")
         totals["forgiven"] += int(episode.get("forgiven", 0))
         for name, record in (episode.get("channels") or {}).items():
             penalty = int(record.get("penalty", 0))
@@ -507,9 +519,8 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
     check_ids(list(new_ids.values()), "branch")
     sources = []
     for seat, entry in zip(manifest["labels"], manifest["agents"]):
-        account_path = harness.records_dir(entry["id"]) / "account.json"
         try:
-            account = json.loads(account_path.read_text(encoding="utf-8"))
+            account = json.loads(harness.account_path(entry["id"]).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise SystemExit(f"{entry['id']} has no readable source account") from None
         index = min(at_round, len(account.get("episodes", [])))
@@ -518,53 +529,67 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
         if index < 1 or not harness.trace_path(entry["id"], index).exists():
             raise SystemExit(f"{entry['id']} has no completed state at round {at_round}")
         if harness.records_dir(new_ids[seat]).exists() or \
-                (harness.ROOT / "environments" / new_ids[seat]).exists():
+                harness.environment_dir(new_ids[seat]).exists():
             raise SystemExit(f"branch target {new_ids[seat]!r} already exists")
         trace = json.loads(harness.trace_path(entry["id"], index).read_text(encoding="utf-8"))
         if harness.rebuildable(trace, entry["id"], index) is None:
             raise SystemExit(f"{entry['id']} cannot be rebuilt at round {at_round}")
         sources.append((seat, entry, account, index))
-    entries, evidence = [], []
-    for seat, entry, parent, index in sources:
-        new = new_ids[seat]
-        if harness.fork(entry["id"], index, new):
-            raise SystemExit(f"could not fork {entry['id']}")
-        account = harness.load_account(new)
-        account.update(branch_totals(parent, index))
-        for key in ("last_election", "eliminated"):
-            value = parent.get(key)
-            if value and value.get("round", at_round + 1) <= at_round:
-                account[key] = value
-        account["branch"] = {"experiment_id": experiment_id, "source_experiment_id":
-                             manifest["experiment_id"], "source_agent": entry["id"],
-                             "source_episode": index, "source_round": at_round}
-        if seat == takeover_seat:
-            account["provider"], account["model"] = "human", "interactive"
-        quality_tier = ("interactive" if seat == takeover_seat
-                        else entry.get("quality_tier", "standard"))
-        account["product"] = {"quality_tier": quality_tier}
-        harness.save_account(new, account)
-        generated = {"id": new, "label": manifest["labels"][seat],
-                     "provider": account["provider"], "model": account["model"],
-                     "budget": account["initial"],
-                     "system_prompt": account.get("system_prompt", ""),
-                     "quality_tier": (account.get("product") or {}).get("quality_tier", "standard")}
-        for key in ("starter_files", "starter_files_below"):
-            if key in account:
-                generated[key] = account[key]
-        entries.append(generated)
-        trace_path = harness.trace_path(entry["id"], index)
-        evidence.append({"seat": seat, "source_agent": entry["id"], "source_episode": index,
-                         "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
-                         "new_agent": new, "provider": account["provider"], "model": account["model"]})
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(branch_manifest(manifest, entries, experiment_id), encoding="utf-8", newline="\n")
-    lineage = {"version": 1, "experiment_id": experiment_id,
-               "source_experiment_id": manifest["experiment_id"], "source_manifest": str(source),
-               "source_manifest_sha256": manifest["sha256"], "source_round": at_round,
-               "takeover_seat": takeover_seat, "created_agents": new_ids, "traces": evidence,
-               "branch_manifest": str(output)}
-    product.atomic(product.directory(harness.ROOT, experiment_id) / "lineage.json", lineage)
+    # Until lineage.json names them, the agents forked here are no branch's: a failure
+    # before then moves them, the manifest and the record aside, so the branch can be
+    # made again under the same id.
+    created: list[str] = []
+    try:
+        entries, evidence = [], []
+        for seat, entry, parent, index in sources:
+            new = new_ids[seat]
+            created.append(new)
+            if harness.fork(entry["id"], index, new):
+                raise SystemExit(f"could not fork {entry['id']}")
+            account = harness.load_account(new)
+            account.update(branch_totals(parent, index))
+            for key in ("last_election", "eliminated"):
+                value = parent.get(key)
+                if value and value.get("round", at_round + 1) <= at_round:
+                    account[key] = value
+            account["branch"] = {"experiment_id": experiment_id, "source_experiment_id":
+                                 manifest["experiment_id"], "source_agent": entry["id"],
+                                 "source_episode": index, "source_round": at_round}
+            if seat == takeover_seat:
+                account["provider"], account["model"] = "human", "interactive"
+            quality_tier = ("interactive" if seat == takeover_seat
+                            else entry.get("quality_tier", "standard"))
+            account["product"] = {"quality_tier": quality_tier}
+            harness.save_account(new, account)
+            generated = {"id": new, "label": manifest["labels"][seat],
+                         "provider": account["provider"], "model": account["model"],
+                         "budget": account["initial"],
+                         "system_prompt": account.get("system_prompt", ""),
+                         "quality_tier": (account.get("product") or {}).get("quality_tier", "standard")}
+            for key in ("starter_files", "starter_files_below"):
+                if key in account:
+                    generated[key] = account[key]
+            entries.append(generated)
+            trace_path = harness.trace_path(entry["id"], index)
+            evidence.append({"seat": seat, "source_agent": entry["id"], "source_episode": index,
+                             "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
+                             "new_agent": new, "provider": account["provider"],
+                             "model": account["model"]})
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(branch_manifest(manifest, entries, experiment_id), encoding="utf-8",
+                          newline="\n")
+        lineage = {"version": 1, "experiment_id": experiment_id,
+                   "source_experiment_id": manifest["experiment_id"], "source_manifest": str(source),
+                   "source_manifest_sha256": manifest["sha256"], "source_round": at_round,
+                   "takeover_seat": takeover_seat, "created_agents": new_ids, "traces": evidence,
+                   "branch_manifest": str(output)}
+        product.atomic(product.directory(harness.ROOT, experiment_id) / "lineage.json", lineage)
+    except BaseException:
+        print(f"branch {experiment_id} was not made; moving aside what it had made",
+              file=sys.stderr)
+        output.unlink(missing_ok=True)
+        product.displace(harness.ROOT, experiment_id, harness.displace_agents(created))
+        raise
     return output
 
 
@@ -627,6 +652,34 @@ def drop_out(agent: str, live: set[str]) -> None:
     live.discard(agent)
 
 
+def drops(stop: str) -> bool:
+    """Whether an episode that ended on `stop` takes its agent off the table for the
+    rest of the run: a fault of the agent's, where the experimenter's stop is not."""
+    return stop in harness.STOPS_THE_AGENT and stop not in harness.STOPS_THE_EXPERIMENT
+
+
+def take_seats(agents: list[str], live: set[str]) -> None:
+    """Take off the table, before the first round of a run, every agent that cannot act
+    in the round the table is in.
+
+    An agent whose account admits no episode drops out. The table's round is the
+    furthest any agent left at it has played, and one more than a round behind that
+    sits out every round: the round an agent is told it is in is its own episode count
+    plus one, so it cannot sit at the table's round, and the rounds it missed are over.
+    One that missed only the last round stays, and finishes that round first.
+    """
+    accounts = {agent: harness.load_account(agent) for agent in agents}
+    for agent in agents:
+        if agent in live and harness.why_out(accounts[agent]):
+            drop_out(agent, live)
+    played = max((len(accounts[agent]["episodes"]) for agent in live), default=0)
+    for agent in agents:
+        if agent in live and (taken := len(accounts[agent]["episodes"])) < played - 1:
+            print(f"{agent:<6} sits out: it took {taken} episodes and the table has played "
+                  f"{played} rounds")
+            live.discard(agent)
+
+
 def unrecorded(phase: str, round_number: int, detail: dict[str, Any] | None) -> None:
     """The progress of a round driven straight from a list of ids, which has no
     experiment record to write to."""
@@ -680,7 +733,7 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, router: Provid
         tell(progress, held, "settling_round", rnd + 1, {"agents": [agent]})
         trace = harness.close_episode(ep, out, settled)
         acted = True
-        if trace["stop"] in harness.STOPS_THE_AGENT and trace["stop"] not in harness.STOPS_THE_EXPERIMENT:
+        if drops(trace["stop"]):
             print(f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
                   file=sys.stderr)
             live.discard(agent)
@@ -816,7 +869,7 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
         raise next(iter(errors.values()))
 
     for agent, trace in traces.items():
-        if trace["stop"] in harness.STOPS_THE_AGENT and trace["stop"] not in harness.STOPS_THE_EXPERIMENT:
+        if drops(trace["stop"]):
             print(f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
                   file=sys.stderr)
             live.discard(agent)
@@ -829,32 +882,51 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     return True
 
 
+def elector(account: dict, round_number: int) -> bool:
+    """Whether an agent votes in the election that follows `round_number`: it took that
+    round's episode and did not drop out in it, so it was at the table as the round ended."""
+    episodes = account["episodes"]
+    return len(episodes) == round_number and not drops(episodes[-1]["stop"])
+
+
 def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
                  vote: dict | None) -> int | None:
-    """Resolve one completed voting round and remove every eliminated agent.
+    """Resolve the election of a voting round every agent at the table has completed,
+    and remove every eliminated agent. The round's number, or None where nothing was
+    resolved.
 
     The vote tool's cadence defines the cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
     tool call. The result contains aggregate totals, never voter-to-target mappings.
+
+    The electorate is read from the accounts, so an election resolved when a run
+    resumes counts the voters one resolved as the round ended would have. An election
+    every elector's account already records is not held again. Every elector's account
+    is saved before any ballot is removed, so a run that stops in between leaves the
+    ballots for the election to be held again, to the same result.
     """
     if vote is None or not live:
         return None
-    counts = {agent: len(harness.load_account(agent)["episodes"]) for agent in live}
-    rounds = set(counts.values())
+    accounts = {agent: harness.load_account(agent) for agent in agents}
+    rounds = {len(accounts[agent]["episodes"]) for agent in live}
     every = vote["every"]
     if len(rounds) != 1 or not (round_number := next(iter(rounds))) or round_number % every:
         return None
+    electorate = [agent for agent in agents if elector(accounts[agent], round_number)]
+    if all((accounts[agent].get("last_election") or {}).get("round") == round_number
+           for agent in electorate):
+        return None
 
-    electorate = [agent for agent in agents if agent in live]
     agent_by_label = {labels[str(i)]: agent for i, agent in enumerate(agents, 1)}
     ballots: dict[str, str] = {}
+    cast: list[Path] = []
     for agent in electorate:
         path = harness.mirror(agent, vote["channel"]) / "vote"
+        cast.append(path)
         try:
             target = path.read_text(encoding="utf-8").strip()
         except OSError:
             target = ""
-        path.unlink(missing_ok=True)
         if target in agent_by_label and agent_by_label[target] != agent:
             ballots[agent] = agent_by_label[target]
 
@@ -886,7 +958,7 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
         "remaining": [label_by_agent[agent] for agent in electorate if agent not in eliminated],
     }
     for agent in electorate:
-        account = harness.load_account(agent)
+        account = accounts[agent]
         account["last_election"] = result
         if agent in eliminated:
             total = tally[agent]
@@ -897,17 +969,49 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
         if agent in eliminated:
             live.discard(agent)
             print(f"{agent}: eliminated after round {round_number}: {reason}")
+    for path in cast:
+        path.unlink(missing_ok=True)
     if not ballots:
         print(f"election after round {round_number}: no ballots were cast")
     return round_number
 
 
+def concluded(election: int | None, agents: list[str], live: set[str],
+              stop_when_one_remains: bool, stop_when_two_remain_after_tie: bool) -> str | None:
+    """Why the election just resolved ends the rounds, or None where they go on or
+    there was no election.
+
+    "all_eliminated" when it left nobody, "one_remains" when the manifest stops after
+    one agent remains, and "final_tie" when it stops at a tied vote between the last two.
+    """
+    if election is None:
+        return None
+    if not live:
+        print(f"every agent is out after {election} rounds")
+        return "all_eliminated"
+    if stop_when_one_remains and len(live) == 1:
+        print(f"{next(iter(live))} is the only agent left; the competition ends")
+        return "one_remains"
+    if stop_when_two_remain_after_tie and len(live) == 2:
+        result = harness.load_account(next(iter(live))).get("last_election", {})
+        if result.get("top_tied"):
+            survivors = [agent for agent in agents if agent in live]
+            print(f"the final vote tied between {' and '.join(survivors)}; "
+                  "both survive and the competition ends")
+            return "final_tie"
+    return None
+
+
 def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, router: ProviderRouter,
                stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool,
                vote: dict | None = None, stop_when_two_remain_after_tie: bool = False,
-               progress: Progress = unrecorded) -> str | None:
-    """One round: drop the agents that cannot act, name the round, run it, and say
-    why the rounds end, or None while they go on.
+               progress: Progress = unrecorded, finishing: set[str] | None = None) -> str | None:
+    """One round: drop the agents that cannot act, name the round, run it, resolve its
+    election, and say why the rounds end, or None while they go on.
+
+    `finishing` names the agents that missed a round an earlier run left unfinished:
+    only they act in it, in seat order or together as the schedule has it, and the
+    agents that played it wait, and are back at the table for its election.
 
     The reason is the outcome's termination_reason: "all_eliminated" when every agent
     is out, "one_remains" when the manifest stops after one agent remains, and
@@ -928,30 +1032,23 @@ def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, rout
     # The seat order decides who acts on this round's information and who on last
     # round's, so it is on screen beside the round number. Under a simultaneous
     # round nobody acts on this round's.
-    acting = [agent for agent in agents if agent in live]
+    acting = [agent for agent in agents if agent in live and (finishing is None or agent in finishing)]
     print(f"--- round {rnd + 1} ({' '.join(acting)}) ---")
 
-    if not a_round(agents, live, rnd, router, stamp, labels, progress):
+    waiting = live - set(acting)
+    live -= waiting
+    try:
+        acted = a_round(agents, live, rnd, router, stamp, labels, progress)
+    finally:
+        live |= waiting
+    if not acted and not live:
         # Every agent at the table either takes an episode or leaves it, so a round
         # nobody took one in has put every agent out.
-        print(f"no agent could take an episode in round {rnd + 1}; "
-              f"the rounds end here with {len(live)} agents at the table")
+        print(f"no agent could take an episode in round {rnd + 1}, so every agent is out; "
+              "the rounds end here")
         return "all_eliminated"
-    election = resolve_vote(agents, live, labels, vote)
-    if election is not None and not live:
-        print(f"every agent is out after {election} rounds")
-        return "all_eliminated"
-    if election is not None and stop_when_one_remains and len(live) == 1:
-        print(f"{next(iter(live))} is the only agent left; the competition ends")
-        return "one_remains"
-    if election is not None and stop_when_two_remain_after_tie and len(live) == 2:
-        result = harness.load_account(next(iter(live))).get("last_election", {})
-        if result.get("top_tied"):
-            survivors = [agent for agent in agents if agent in live]
-            print(f"the final vote tied between {' and '.join(survivors)}; "
-                  "both survive and the competition ends")
-            return "final_tie"
-    return None
+    return concluded(resolve_vote(agents, live, labels, vote), agents, live,
+                     stop_when_one_remains, stop_when_two_remain_after_tie)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -966,7 +1063,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-m", "--manifest", dest="named", metavar="NAME",
                     help="the same manifest, given as a flag")
     ap.add_argument("-r", "--rounds", type=int, default=1, metavar="N",
-                    help="up to N episodes for each agent, stopping early as budgets end")
+                    help="up to N rounds of one episode for each agent, stopping early as "
+                         "budgets end; under --resume a round the last run left unfinished "
+                         "is finished first, and is one of the N")
     ap.add_argument("--provider", metavar="PROVIDER",
                     help="use PROVIDER for every seat together with --model")
     ap.add_argument("--model", metavar="MODEL",
@@ -1033,33 +1132,46 @@ def main(argv: list[str] | None = None) -> int:
         inherit_memory(entry, account)
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
           f"{manifest['schedule']})")
+    take_seats(agents, live)
     progress = functools.partial(product.progress, harness.ROOT, experiment_id)
     reason = "round_limit"
     code = 0
     try:
-        for _ in range(a.rounds):
-            round_number = max((len(harness.load_account(agent).get("episodes", []))
-                                for agent in agents), default=0) + 1
-            rnd = round_number - 1
+        # A voting round every agent finished before the last run stopped keeps its
+        # election, and one already held is not held again.
+        ended = concluded(resolve_vote(agents, live, manifest["labels"], vote), agents, live,
+                          manifest["stop_when_one_remains"],
+                          manifest["stop_when_two_remain_after_tie"])
+        for _ in range(a.rounds if ended is None else 0):
+            counts = {agent: len(harness.load_account(agent)["episodes"]) for agent in agents}
+            played = max((counts[agent] for agent in live), default=max(counts.values()))
+            # A round an agent at the table missed is finished before the next begins,
+            # so every agent is told the round the others are in.
+            finishing = [agent for agent in agents if agent in live and counts[agent] < played]
+            round_number = played if finishing else played + 1
             cost = product.cost(agents, harness.load_account, manifest["cost"],
                                 providers.is_interactive)
             progress("preparing_round", round_number,
-                     {"cost": cost, "agents": agents, "schedule": manifest["schedule"]})
+                     {"cost": cost, "agents": agents, "schedule": manifest["schedule"],
+                      **({"finishing": finishing} if finishing else {})})
             if cost["ceiling_reached"]:
                 reason = "cost_ceiling"
                 break
-            ended = play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
-                               manifest["stop_when_one_remains"], vote,
-                               manifest["stop_when_two_remain_after_tie"], progress)
+            ended = play_round(a_round, agents, live, round_number - 1, router, stamp,
+                               manifest["labels"], manifest["stop_when_one_remains"], vote,
+                               manifest["stop_when_two_remain_after_tie"], progress,
+                               set(finishing) or None)
             progress("round_completed", round_number,
                      {"active": [agent for agent in agents if agent in live]})
             if ended is not None:
-                reason = ended
                 break
+        if ended is not None:
+            reason = ended
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,
         # so the experiment can be started again from where it stopped. What ends is
-        # the rounds.
+        # the rounds; a voting round every agent at the table finished keeps its election.
+        resolve_vote(agents, live, manifest["labels"], vote)
         print(f"interrupted; the rounds end here with {len(live)} agents at the table",
               file=sys.stderr)
         reason, code = "interrupted", 130

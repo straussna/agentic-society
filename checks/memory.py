@@ -9,7 +9,7 @@ import sys
 
 import experiment
 import harness
-from checks.lanes import HostBox, manifest_file, offers, plant, quiet, rooted
+from checks.lanes import HostBox, manifest_file, offers, plant, quiet, refused, rooted
 
 
 def source_trace(agent: str, episode: int, body: str) -> None:
@@ -68,6 +68,60 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
 
         experiment.inherit_memory(entry, inherited)
         assert copied.read_bytes() == body.encode("utf-8"), "resuming recopied the memory"
+
+
+def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
+    """Every memory_from that cannot give the exact recorded memory is refused, and leaves
+    the new agent's memory as it found it and nothing recorded as inherited: a changed
+    source on an agent that already has one, a missing trace, another trace version, an
+    episode that did not save its state, unmatched write_memory tools, two memories for
+    one tool, a text copy that is not the file, and a memory already there that differs.
+    """
+    body = "A complete inherited memory.\n"
+
+    def rewritten(change):
+        def source():
+            source_trace("old", 7, body)
+            path = harness.trace_path("old", 7)
+            trace = json.loads(path.read_text(encoding="utf-8"))
+            change(trace)
+            path.write_text(json.dumps(trace), encoding="utf-8")
+        return source
+
+    def pinned_elsewhere():
+        source_trace("old", 7, body)
+        account = harness.load_account("new")
+        account["memory_from"] = {"agent": "old", "episode": 6}
+        harness.save_account("new", account)
+
+    def planted_differently():
+        source_trace("old", 7, body)
+        mine = harness.mirror("new", "notes") / "memory.md"
+        mine.parent.mkdir(parents=True, exist_ok=True)
+        mine.write_text("what the new agent already remembers\n", encoding="utf-8")
+
+    cases = {
+        "was created with memory_from": pinned_elsewhere,
+        "does not exist": lambda: None,
+        "trace version": rewritten(lambda t: t.update(trace_version=harness.TRACE_VERSION - 1)),
+        "did not save its state": rewritten(lambda t: t.update(state_saved=False)),
+        "matching write_memory tools": rewritten(lambda t: t["provenance"].update(tools=[])),
+        "several memories": rewritten(lambda t: t["files"].append(dict(t["files"][0]))),
+        "exact text copy": rewritten(lambda t: t["files"][0].update(size=len(body) + 1)),
+        "would overwrite": planted_differently,
+    }
+    for why, arrange in cases.items():
+        with rooted(HostBox, tools=offers("write_memory:notes")), quiet():
+            arrange()
+            destination = harness.mirror("new", "notes") / "memory.md"
+            held = destination.read_bytes() if destination.exists() else None
+            entry = {"id": "new", "memory_from": {"agent": "old", "episode": 7}}
+            refused(lambda: experiment.inherit_memory(entry, harness.load_account("new")), why,
+                    because=f"inherited from a source it should refuse: {why}")
+            now = destination.read_bytes() if destination.exists() else None
+            recorded = harness.account_on_disk("new")
+        assert now == held, f"{why}: the memory changed from {held!r} to {now!r}"
+        assert "memory_inherited" not in recorded, f"{why}: {recorded.get('memory_inherited')}"
 
 
 def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():

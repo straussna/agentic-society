@@ -5,13 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from pathlib import Path
 
 import experiment
 import harness
 import product
 import providers
 from checks.fake import Err, fake, per_agent, run, say
-from checks.lanes import episodes_taken, ground_truth, manifest_file, quiet, seated, temp_root
+from checks.lanes import (episodes_taken, ground_truth, manifest_file, quiet, reconciled, refused,
+                          seated, seats_manifest, temp_root, turn_cost)
 
 
 def check_product_controls_are_declared_and_validated():
@@ -113,6 +115,165 @@ def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
         assert lineage["source_experiment_id"] == "source" and lineage["source_round"] == 1
         assert len(lineage["traces"]) == 2
         assert all(path.read_bytes() == before for path, before in source_bytes.items())
+
+
+def branch_source(root: Path) -> Path:
+    """Two agents, A and B, one episode each, and the manifest that seats them."""
+    source = manifest_file(
+        root, 'experiment_id = "source"\nsystem_prompt = ""\n'
+              '[[agent]]\nid = "source-a"\nlabel = "A"\n'
+              '[[agent]]\nid = "source-b"\nlabel = "B"\n', name="source.toml")
+    for agent in ("source-a", "source-b"):
+        with quiet():
+            harness.run_once(agent, fake(say()))
+    return source
+
+
+def check_a_branch_refuses_a_boundary_it_cannot_fork():
+    """A branch needs a positive round every seat completed, a seat to hand over, and an
+    id, manifest and agents nothing else holds. Each refusal makes nothing."""
+    with temp_root() as root:
+        source = branch_source(root)
+        output = root / "experiments" / "branches" / "takeover.toml"
+        harness.records_dir("other-01").mkdir(parents=True)
+        with quiet():
+            for args, why in (((0, "takeover", "2", output), "--at-round must be positive"),
+                              ((1, "takeover", "9", output), "no seat '9'"),
+                              ((2, "takeover", "2", output), "did not reach completed round 2"),
+                              ((1, "other", "2", root / "other.toml"),
+                               "branch target 'other-01' already exists")):
+                refused(lambda: experiment.branch_experiment(source, *args), why,
+                        because=f"branched what it should refuse: {why}")
+            made = sorted(p.name for p in harness.records_root().iterdir())
+            assert made == ["other-01", "source-a", "source-b"], made
+            assert not (root / "other.toml").exists() and not output.exists()
+            assert product.records(root, "takeover")["lineage"] is None
+            experiment.branch_experiment(source, 1, "takeover", "2", output)
+            refused(lambda: experiment.branch_experiment(source, 1, "takeover", "2", output),
+                    f"branch manifest {output} already exists")
+            refused(lambda: experiment.branch_experiment(source, 1, "takeover", "2",
+                                                         root / "again.toml"),
+                    "experiment record 'takeover' already exists")
+
+
+def check_a_branch_that_fails_partway_can_be_made_again():
+    """A branch that fails after forking some of its seats moves the agents it forked, and
+    anything else it wrote, under displaced/, so the same branch can then be made."""
+    with temp_root() as root:
+        source = branch_source(root)
+        output = root / "experiments" / "branches" / "takeover.toml"
+        loading = harness.load_account
+
+        def full(agent, **terms):
+            if agent == "takeover-02":
+                raise OSError("no space left on device")
+            return loading(agent, **terms)
+
+        harness.load_account = full
+        with quiet():
+            refused_branch = None
+            try:
+                experiment.branch_experiment(source, 1, "takeover", "2", output)
+            except OSError as e:
+                refused_branch = e
+        left = [agent for agent in ("takeover-01", "takeover-02")
+                if harness.records_dir(agent).exists() or harness.environment_dir(agent).exists()]
+        moved = sorted(p.name for p in (root / "displaced").glob("*/records/*"))
+        written = output.exists() or product.directory(root, "takeover").exists()
+        harness.load_account = loading
+        with quiet():
+            made = experiment.branch_experiment(source, 1, "takeover", "2", output)
+        lineage = product.records(root, "takeover")["lineage"]
+    assert isinstance(refused_branch, OSError), refused_branch
+    assert not left and not written, (left, written)
+    assert moved == ["takeover-01", "takeover-02"], moved
+    assert made == output and lineage["created_agents"] == {"1": "takeover-01", "2": "takeover-02"}
+
+
+def check_branch_totals_are_each_ledger_field_as_it_stood_at_the_episode():
+    """Every cumulative field of a branch sums the episodes up to the one it forks at: what
+    was sent, rebated, debited, forgiven and taken by each channel, and what was received
+    inside an episode or, from a peer settling outside it, between two."""
+    first = {"episode": 1, "spent": 100, "series_from": 1, "series_to": 5, "received": 20,
+             "forgiven": 0, "transfer": {"amount": 100, "rebate": 100, "debit": 0, "penalty": 0},
+             "channels": {"transfer": {"penalty": 0}, "blackboard": {"penalty": 10},
+                          "mail": {"penalty": 0}}}
+    second = {"episode": 2, "spent": 200, "series_from": 6, "series_to": 11, "received": 0,
+              "forgiven": 7, "transfer": {"amount": 50, "rebate": 0, "debit": 50, "penalty": 0},
+              "channels": {"transfer": {"penalty": 0}, "blackboard": {"penalty": 20},
+                           "mail": {"penalty": 15}}}
+    # 30 arrives before the first episode and 40 between the two; 20 inside the first.
+    series = [1000, 1030, 930, 1030, 1050, 1040, 1080, 880, 830, 810, 795, 802]
+    account = {"initial": 1000, "series": series, "episodes": [first, second]}
+    at = {index: experiment.branch_totals(account, index) for index in (1, 2)}
+    assert at[1] == {"sent": 100, "received": 50, "rebated": 100, "debited": 0, "forgiven": 0,
+                     "penalised": {"blackboard": 10}}, at[1]
+    assert at[2] == {"sent": 150, "received": 90, "rebated": 100, "debited": 50, "forgiven": 7,
+                     "penalised": {"blackboard": 30, "mail": 15}}, at[2]
+    for index, episode in ((1, first), (2, second)):
+        spent = sum(e["spent"] for e in (first, second)[:index])
+        assert reconciled({"initial": 1000, **at[index]}, spent) == series[episode["series_to"]], \
+            (index, at[index])
+
+
+def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
+    """Each fork's account balances against its own series. Under a sequential round a
+    transfer reaches a later seat before its episode starts, and its fork has received it."""
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={})
+        live = set(ids)
+        with quiet():
+            experiment.sequential_round(ids, live, 0, fake(run("echo '2 250' > out/transfer"), say()))
+            experiment.branch_experiment(seats_manifest(root, ids), 1, "ledger", "2",
+                                         root / "ledger.toml")
+        parents = {agent: ground_truth(agent) for agent in ids}
+        forks = {agent: ground_truth(f"ledger-0{seat}") for seat, agent in enumerate(ids, 1)}
+    assert parents["g02"]["received"] == 250 and forks["g02"]["received"] == 250, forks["g02"]
+    for agent, fork in forks.items():
+        spent = sum(e["spent"] for e in fork["episodes"])
+        assert reconciled(fork, spent) == fork["remaining"], (agent, fork)
+        for key in ("sent", "received", "rebated", "debited", "forgiven"):
+            assert fork[key] == parents[agent].get(key, 0), (agent, key, fork[key])
+
+
+def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
+    """No round starts once the autonomous spend and the reserve reach the ceiling, and the
+    progress and outcome records name the ceiling as what ended the rounds. A run that
+    ends with one agent left under stop_when_one_remains names it the winner."""
+    cost = turn_cost()
+    agents = '[[agent]]\nid = "p1"\n[[agent]]\nid = "p2"\n'
+    with temp_root() as root:
+        manifest = manifest_file(root, 'experiment_id = "capped"\nsystem_prompt = ""\n'
+                                       f'[cost]\nmaximum = {2 * cost + 1}\n' + agents)
+        harness.start = lambda config=None, **kw: fake()
+        with quiet():
+            code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
+        capped = episodes_taken(["p1", "p2"])
+        records = product.records(root, "capped")
+    assert code == 0 and capped == {"p1": 2, "p2": 2}, (code, capped)
+    latest = records["progress"]["latest"]
+    assert latest["phase"] == "cost_ceiling" and latest["termination_reason"] == "cost_ceiling", latest
+    stopped_at = [event for event in records["progress"]["events"]
+                  if event["phase"] == "preparing_round"][-1]
+    assert stopped_at["round"] == 3 and stopped_at["cost"]["autonomous_spend"] == 4 * cost, stopped_at
+    assert stopped_at["cost"]["ceiling_reached"], stopped_at
+    assert records["outcome"]["termination_reason"] == "cost_ceiling", records["outcome"]
+
+    with temp_root() as root:
+        manifest = manifest_file(root, 'experiment_id = "last"\nstop_when_one_remains = true\n'
+                                       'system_prompt = ""\n'
+                                       + agents.replace('"p2"\n', f'"p2"\nbudget = {cost - 1}\n'))
+        harness.start = lambda config=None, **kw: fake()
+        with quiet():
+            code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
+        alone = episodes_taken(["p1", "p2"])
+        records = product.records(root, "last")
+    assert code == 0 and alone == {"p1": 1, "p2": 1}, (code, alone)
+    latest = records["progress"]["latest"]
+    assert latest["phase"] == "completed" and latest["termination_reason"] == "one_remains", latest
+    outcome = records["outcome"]
+    assert outcome["termination_reason"] == "one_remains", outcome
+    assert outcome["winners"] == outcome["survivors"] == ["1"], outcome
 
 
 def check_an_unreadable_record_is_told_from_an_absent_one():

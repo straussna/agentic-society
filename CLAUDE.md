@@ -57,7 +57,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 refuse every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 280 of 305.
+down. `--no-docker` runs 292 of 317.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -86,7 +86,8 @@ turn loop reads where it reads the account floor, so the episode ends the way an
 exhausted budget ends it — the turn in flight finishes, its spend is committed,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
-`py -3 experiment.py <name> -r N --resume` continues it from where it stopped, as
+`py -3 experiment.py <name> -r N --resume` continues it from where it stopped, finishing
+the round the stop landed in before the next begins, as
 `py -3 harness.py --agent <id> --manifest <path> --resume` continues one agent. The same
 command without `--resume` moves what the stopped run left under `displaced/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
