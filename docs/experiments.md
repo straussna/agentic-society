@@ -254,8 +254,10 @@ call the silence off, because `move_transfer` refuses a seat that is out. There 
 mark — the balance is the whole of the state, and it is one an agent enters once and does not
 leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of
 the experiment learns from the agent that got there first: a flat zero, or the size of the
-overshoot, which is a balance having crossed zero where a decay law cannot. What was
-forgiven is in the account and in every trace either way.
+overshoot, which is a balance having crossed zero where a decay law cannot. What an
+episode's close forgave is in the account and in that episode's trace; what the floor
+forgave once a credit the receiver closed on was taken back is in the account and its
+series alone.
 
 **Which makes the win condition reachable, and what the experiment ends on.** It asks that
 every other agent end at zero or less with the agent's own `n` positive, and under

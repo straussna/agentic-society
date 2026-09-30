@@ -379,7 +379,9 @@ def from_trace(t: dict) -> list[dict]:
         "text": turn.get("text") or "",
         "thinking": turn.get("thinking") or "",
         "tools": [{"result": tool.get("result"),
-                   "shell": analyze.is_shell(tool.get("tool")),
+                   # A shell call run_tools answered as no tool carries its input and
+                   # is drawn as the call it was, as call_shown writes it.
+                   "shell": analyze.is_shell(tool.get("tool")) and tool.get("input") is None,
                    "call": analyze.call_shown(tool.get("tool"), tool.get("command"),
                                               tool.get("input"))}
                   for tool in turn.get("tools") or []],

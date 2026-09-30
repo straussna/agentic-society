@@ -9,6 +9,7 @@ import shlex
 import analyze
 import experiment
 import harness
+import view
 
 from checks.fake import fake, run, say, use
 from checks.lanes import (
@@ -746,6 +747,8 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
     assert not ran and "echo ran > state/ran" not in t["commands"], t["commands"]
     shown = analyze.tool_call(t["turns"][0]["tools"][0])
     assert shown == "bash(command='echo ran > state/ran')", shown
+    page = view.from_trace(t)[0]["tools"][0]
+    assert page["call"] == shown and page["shell"] is False, page
 
 
 def check_the_audit_prints_the_tools_each_episode_is_sent():

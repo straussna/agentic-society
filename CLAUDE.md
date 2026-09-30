@@ -79,8 +79,11 @@ fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
 `a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
 `a_round_writes_each_phase_as_it_reaches_it`,
-`two_clients_racing_one_request_leave_one_winner_and_one_conflict` and
-`one_submission_sent_twice_at_once_returns_the_winner_to_both`. `-j` must not
+`two_clients_racing_one_request_leave_one_winner_and_one_conflict`,
+`one_submission_sent_twice_at_once_returns_the_winner_to_both`,
+`human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn`,
+`human_provider_ends_the_turn_on_an_end_turn_submission` and
+`human_provider_cancels_its_request_when_the_episode_stops`. `-j` must not
 exceed the core count; the default is sized for this machine.
 
 # Stopping an agent early
