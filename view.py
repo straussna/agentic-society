@@ -1227,7 +1227,9 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
     latest = rounds[-1]
     if live_rows(exp, rows):
         return rounds[:-1]
-    active = {agent for _, agent in places_of(exp) if harness.why_out(account_of(agent)) is None}
+    # A seat whose account this poll cannot read is still to act, so its round stays open.
+    active = {agent for _, agent in places_of(exp)
+              if not (account := account_of(agent)) or harness.why_out(account) is None}
     acted = {row["agent"] for row in rows if row["round"] == latest}
     return rounds if not active or active <= acted else rounds[:-1]
 

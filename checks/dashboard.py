@@ -416,6 +416,19 @@ def check_the_view_shows_every_seat_side_by_side():
         ["secret.md", "secret.md"], "each store holds its own, and neither holds the other's"
 
 
+def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
+    """A seat whose account a poll cannot read counts as still to act, not as out."""
+    acted = [("g01", "00:01"), ("g02", "00:02"), ("g01", "00:03")]
+    with rooted(HostBox):
+        fake_experiment(acted, agents=("g01", "g02"))
+        c = view.experiment_named("g")
+        rows = view.experiment_episodes(c)
+        assert view.completed_rounds(c, rows) == [1], "g02 has not taken round 2"
+        harness.account_path("g02").unlink()
+        assert view.completed_rounds(c, rows) == [1], \
+            "an unreadable account leaves the seat's round open rather than raising"
+
+
 def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     """Committed traces retain public posts each round and ballots only on vote rounds."""
     def files(seat, rnd):
