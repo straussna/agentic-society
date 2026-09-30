@@ -195,9 +195,11 @@ def call_shown(name: str | None, command: str | None, args: dict | None) -> str:
     """The one line a tool call is shown as, in the transcript and on the page.
 
     The shell's is the command it ran, or "(restart)" for the bare form. A declared
-    tool ran no command of its own, so its call is shown instead.
+    tool ran no command of its own, so its call is shown instead, and so is a shell
+    call run_tools answered as no tool, which it records with the input it carried
+    where a shell call that ran has none.
     """
-    if not is_shell(name):
+    if not is_shell(name) or args is not None:
         carried = ", ".join(f"{k}={v!r}" for k, v in sorted((args or {}).items()))
         return f"{name}({carried})"
     return "(restart)" if command is None else command

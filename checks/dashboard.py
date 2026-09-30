@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import urllib.error
 import urllib.request
@@ -216,8 +217,10 @@ def check_the_view_serves_its_api():
 def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
     """An account a poll cannot read - save_account's rename caught mid-poll, or a file
     that does not parse - says nothing of what committed, so that poll counts the traces
-    on disk. A committed episode is served from its trace with nothing in flight, one in
-    flight from its raw log, and the experiment, the agent and the episode all answer."""
+    on disk and shows no ledger. Whether the grouping is the one read before the account
+    moved or is read again without it, a committed episode is served from its trace with
+    nothing in flight, one in flight from its raw log, and the experiment, the agent and
+    the episode all answer."""
     def answer(base: str, path: str) -> tuple[int, dict]:
         try:
             return got(base, path)
@@ -232,7 +235,8 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
             elif path.startswith("/api/agent/"):
                 out[path] = (status, body.get("live"), [e["episode"] for e in body.get("episodes", [])])
             else:
-                out[path] = (status, [s["live"] for s in body.get("seats", [])])
+                out[path] = (status, body.get("members"), [s["live"] for s in body.get("seats", [])],
+                             body.get("ledger"))
         return out
 
     with temp_root() as root:
@@ -243,7 +247,11 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
         account = harness.account_path("t")
         real = view.read_json
         with serving() as base:
-            def lost() -> dict[str, tuple]:
+            def lost(moved: bool) -> dict[str, tuple]:
+                view.experiments()
+                if moved:
+                    st = account.stat()
+                    os.utime(account, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
                 view.read_json = lambda path: None if path == account else real(path)
                 try:
                     return seen({path: answer(base, path) for path in routes})
@@ -254,20 +262,19 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
                 held = account.read_bytes()
                 account.write_text("{not json", encoding="utf-8")
                 try:
-                    return seen({path: answer(base, path) for path in routes[1:]})
+                    return seen({path: answer(base, path) for path in routes})
                 finally:
                     account.write_bytes(held)
 
-            committed = lost(), unparsed()
+            committed = lost(False), lost(True), unparsed()
             unfinished()
-            in_flight = lost(), unparsed()
+            in_flight = lost(False), lost(True), unparsed()
 
-    assert committed == ({routes[0]: (200, [None, None]), routes[1]: (200, None, [1]),
-                          routes[2]: (200, "trace")},
-                         {routes[1]: (200, None, [1]), routes[2]: (200, "trace")}), committed
-    assert in_flight == ({routes[0]: (200, [1, None]), routes[1]: (200, 1, [1]),
-                          routes[2]: (200, "raw")},
-                         {routes[1]: (200, 1, [1]), routes[2]: (200, "raw")}), in_flight
+    for answers, live, source in ((committed, None, "trace"), (in_flight, 1, "raw")):
+        served = tuple({routes[0]: (200, members, [live, None], []),
+                        routes[1]: (200, live, [1]), routes[2]: (200, source)}
+                       for members in (["t", "u"], ["u"], ["u"]))
+        assert answers == served, answers
 
 
 def check_a_name_off_the_url_cannot_leave_records():
@@ -434,6 +441,30 @@ def check_a_record_holding_no_object_reads_as_no_record():
 
     assert read is None, read
     assert names == ["g"], names
+
+
+def check_a_grouping_read_without_an_account_is_read_again_next_poll():
+    """A poll that cannot read an account - save_account's rename caught mid-poll -
+    groups without that seat, and that grouping is kept for no later poll: the next
+    one reads the account again and the seat is a member, though nothing on disk has
+    moved since."""
+    with rooted(HostBox):
+        fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
+        before = [exp["members"] for exp in view.experiments()]
+        account = harness.account_path("g01")
+        st = account.stat()
+        os.utime(account, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+        real = view.read_json
+        view.read_json = lambda path: None if path == account else real(path)
+        try:
+            missed = [exp["members"] for exp in view.experiments()]
+        finally:
+            view.read_json = real
+        again = [exp["members"] for exp in view.experiments()]
+
+    assert before == [["g01", "g02"]], before
+    assert missed == [["g02"]], missed
+    assert again == before, f"a grouping read without g01's account was kept: {again}"
 
 
 def check_a_trace_that_predates_the_harness_file_names_still_groups():

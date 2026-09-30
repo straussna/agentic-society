@@ -722,7 +722,8 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
 
 def check_a_ballots_episode_runs_no_command_it_did_not_offer():
     """A ballot's episode withholds the shell, so a bash call there is answered as a tool
-    that is not there and runs nothing, whatever the table offers on other episodes."""
+    that is not there and runs nothing, whatever the table offers on other episodes. The
+    transcript and the page show it as the call it made, and not as the shell restarted."""
     ballot = {"name": "ballot", "writer": "self", "readers": "self",
               "shape": "directory", "path": "ballot", "pushed": False}
     vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}
@@ -743,6 +744,8 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
     said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
     assert said[0] == "there is no tool named 'bash'. Nothing was done.", said
     assert not ran and "echo ran > state/ran" not in t["commands"], t["commands"]
+    shown = analyze.tool_call(t["turns"][0]["tools"][0])
+    assert shown == "bash(command='echo ran > state/ran')", shown
 
 
 def check_the_audit_prints_the_tools_each_episode_is_sent():

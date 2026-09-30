@@ -385,7 +385,8 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     Billed by the rule harness.bill_once applies, restated over the logged dict: a
     response id's charges count once and a replay of it is zeroed, so each balance
     is the one the account commits, counted down from zero where this poll could not
-    read the account. Command results are None until the trace lands.
+    read the account. Command results are None until the trace lands, and a shell
+    call is the command it asked for: whether run_tools ran it is the trace's to say.
     """
     remaining = account.get("remaining", 0)
     centi, seen, out = 0, set(), []
@@ -416,9 +417,9 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
             "thinking": "\n".join(data.get("reasoning") or []),
             "tools": [{"result": None,
                        "shell": analyze.is_shell(call.get("name")),
-                       "call": analyze.call_shown(call.get("name"),
-                                                  (call.get("input") or {}).get("command"),
-                                                  call.get("input"))}
+                       "call": analyze.call_shown(
+                           call.get("name"), (call.get("input") or {}).get("command"),
+                           None if analyze.is_shell(call.get("name")) else call.get("input"))}
                       for call in calls],
             "tokens": u,
         })
@@ -569,27 +570,35 @@ def experiments() -> list[dict]:
     """Every set of agents on disk, the seated ones first, each with how many of its
     members are acting.
 
-    The grouping is read again only when what it is read from has moved. Acting is
-    a question of the clock as well, so it is asked on every call.
+    The grouping is read again only when what it is read from has moved. One read
+    without an account agent_names() lists - save_account's rename caught mid-poll -
+    is served to that poll and kept for none, so the next poll reads it again. Acting
+    is a question of the clock as well, so it is asked on every call.
     """
     global _EXPERIMENTS
     state = grouping_state()
     with _EXPERIMENTS_LOCK:
-        if _EXPERIMENTS is None or _EXPERIMENTS[0] != state:
-            _EXPERIMENTS = (state, read_experiments())
-        out = copy.deepcopy(_EXPERIMENTS[1])
+        if _EXPERIMENTS is not None and _EXPERIMENTS[0] == state:
+            grouping = _EXPERIMENTS[1]
+        else:
+            grouping, whole = read_experiments()
+            if whole:
+                _EXPERIMENTS = (state, grouping)
+        out = copy.deepcopy(grouping)
     for exp in out:
         exp["running"] = sum(acting(agent, live_index(agent)) for agent in exp["members"])
     return out
 
 
-def read_experiments() -> list[dict]:
-    """Every set of agents on disk, the seated ones first, read afresh.
+def read_experiments() -> tuple[list[dict], bool]:
+    """Every set of agents on disk, the seated ones first, read afresh, and whether
+    every account agent_names() lists was read into it.
 
     Agents sharing a seating are one experiment, named by group_of. One whose mapping
     does not seat it is grouped by its id's letters and marked unseated.
     """
-    accounts = {agent: account for agent in agent_names()
+    listed = agent_names()
+    accounts = {agent: account for agent in listed
                 if (account := read_json(harness.account_path(agent))) is not None}
     anchored, claimed = anchored_groups(accounts)
     groups: dict[tuple, dict] = {}
@@ -637,7 +646,7 @@ def read_experiments() -> list[dict]:
             found = manifest_of(first)
             exp["tools"] = ((found[0]["tools"] or []) if found else
                             (last["provenance"].get("tools") if last else []) or [])
-    return out
+    return out, len(accounts) == len(listed)
 
 
 def experiment_named(name: str) -> dict | None:
@@ -841,7 +850,9 @@ def header(exp: dict) -> dict:
 
     Each balance comes from its agent's own account, the source the harness
     renders the balance files from. The ledger is harness.ledger for any one
-    member; every reader computes it alike.
+    member; every reader computes it alike. It reads every other member's account
+    from disk, so a poll that cannot read one - save_account's rename caught
+    mid-poll - shows no ledger and leaves it to the next.
     """
     rows = experiment_episodes(exp)
     rnd = round_now(exp, rows)
@@ -864,6 +875,10 @@ def header(exp: dict) -> dict:
     experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
     records = product.records(harness.SETTINGS.root, experiment_id)
     cost = product.cost(exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive)
+    try:
+        ledger = [list(g) for g in harness.ledger(first, account)] if exp["seated"] else []
+    except (OSError, ValueError):
+        ledger = []
     return {
         "experiment": exp["name"], "experiment_id": experiment_id,
         "seated": exp["seated"], "posts": exp["posts"],
@@ -871,7 +886,7 @@ def header(exp: dict) -> dict:
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
         "seats": seats,
-        "ledger": [list(g) for g in harness.ledger(first, account)] if exp["seated"] else [],
+        "ledger": ledger,
         "round": rnd,
         "schedule": (last["provenance"].get("schedule") if last else None)
                     or stamp.get("schedule") or "",

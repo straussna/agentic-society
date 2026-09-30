@@ -57,7 +57,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 refuse every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 336 of 362.
+down. `--no-docker` runs 337 of 363.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -74,10 +74,11 @@ does, and is the only mode that reaches a container this process did not make.
 
 Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
 flood against a deadline) and anything setting `command_timeout`. Every check that
-races threads on a 10 second barrier also fails under contention:
-`a_simultaneous_round_runs_its_episodes_at_once`,
+holds one thread on another for up to 10 seconds, on a barrier or an event, also
+fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
 `a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
+`a_round_writes_each_phase_as_it_reaches_it`,
 `two_clients_racing_one_request_leave_one_winner_and_one_conflict` and
 `one_submission_sent_twice_at_once_returns_the_winner_to_both`. `-j` must not
 exceed the core count; the default is sized for this machine.
