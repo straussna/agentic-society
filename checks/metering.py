@@ -43,7 +43,7 @@ def check_system_is_pinned():
     """
     assert harness.SYSTEM == "", f"the harness ships no words, got {harness.SYSTEM!r}"
     assert hashlib.sha256(harness.SYSTEM.encode()).hexdigest() == harness.SYSTEM_SHA256
-    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing says nothing"
+    assert harness.SETTINGS.system_prompt == harness.SYSTEM, "declaring nothing says nothing"
     assert harness.SHELL_SPEC.name == "bash" and harness.SHELL_SPEC.input_schema["additionalProperties"] is False
 
 
@@ -88,11 +88,11 @@ def check_config_is_validated():
         except SystemExit as e:                             # reported as a failure
             raise AssertionError(f"config.toml is invalid: {e}") from None
         assert providers.model_spec("anthropic", "claude-sonnet-5").context_window == 1_000_000
-        assert 0 < harness.CONTEXT_FRACTION <= 1
-        assert harness.MAX_TOKENS <= harness.MAX_TOKENS_CEILING
-        assert type(harness.LIVE_BALANCE) is bool
-        assert harness.DIGEST_FILE_LIMIT >= harness.DIGEST_FILE_FLOOR
-        assert harness.OBSERVATION_LIMIT >= harness.TOOL_RESULT_LIMIT
+        assert 0 < harness.SETTINGS.context_fraction <= 1
+        assert harness.SETTINGS.max_tokens <= harness.MAX_TOKENS_CEILING
+        assert type(harness.SETTINGS.live_balance) is bool
+        assert harness.SETTINGS.digest_file_limit >= harness.DIGEST_FILE_FLOOR
+        assert harness.SETTINGS.observation_limit >= harness.SETTINGS.tool_result_limit
 
     def declared(**values):
         """One experiment setting, applied the way a manifest's defaults are."""
@@ -121,7 +121,7 @@ def check_config_is_validated():
         f.write_text("max_turns = 300" + chr(10) + "command_timeout = 30", encoding="utf-8")
         with pinned():
             assert harness.load_config(f) == f, "the file used is reported back"
-            assert harness.MAX_TURNS == 300 and harness.COMMAND_TIMEOUT == 30, \
+            assert harness.SETTINGS.max_turns == 300 and harness.SETTINGS.command_timeout == 30, \
                 "a good value must actually apply"
 
     # An experiment owns the rest, and its values are held to the same ranges.
@@ -130,14 +130,14 @@ def check_config_is_validated():
                 {"digest_file_limit": harness.DIGEST_FILE_FLOOR - 1},
                 # The initial observation carries the whole digest and is never smaller
                 # than what one ordinary call may return.
-                {"observation_limit": harness.TOOL_RESULT_LIMIT - 1},
+                {"observation_limit": harness.SETTINGS.tool_result_limit - 1},
                 # The process parameters are refused here, saying where they live.
                 {"max_turns": 7}, {"image": "x"}, {"tool_result_limit": 2000}):
         with pinned():
             refused(lambda: declared(**bad), "manifest", because=f"a manifest accepted {bad}")
     with pinned():
         declared(context_fraction=1)
-        assert harness.CONTEXT_FRACTION == 1.0, "an int must widen into a float field"
+        assert harness.SETTINGS.context_fraction == 1.0, "an int must widen into a float field"
 
     # A transfer is the giver's own budget moving; a rebate on top would mint. No
     # share for a transfer nobody can make.
@@ -359,14 +359,14 @@ def check_the_safety_stops_are_held_to_their_ranges():
                 f.write_text(f"{key} = {good}\n", encoding="utf-8")
                 with pinned():
                     harness.load_config(f)
-                    assert getattr(harness, key.upper()) == good, \
+                    assert getattr(harness.SETTINGS, key) == good, \
                         f"{key} = {good} is in range and must apply"
 
     with pinned():
         amend(max_turns=1, command_timeout=2)
         harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT,
                              harness.NOT_MANIFEST)
-        assert (harness.MAX_TURNS, harness.COMMAND_TIMEOUT) == (1, 2), \
+        assert (harness.SETTINGS.max_turns, harness.SETTINGS.command_timeout) == (1, 2), \
             "a manifest's settings leave the stops a check set alone"
 
 
@@ -383,7 +383,7 @@ def check_tool_result_limit_is_tunable_and_bounded():
         f.write_text("tool_result_limit = 2000\n", encoding="utf-8")
         with pinned():
             harness.load_config(f)
-            assert harness.TOOL_RESULT_LIMIT == 2000
+            assert harness.SETTINGS.tool_result_limit == 2000
 
     with temp_root(TOOL_RESULT_LIMIT=2_000):
         t = episode_once(run("yes ABCDEFGHIJ | head -2000"), say())
@@ -446,12 +446,13 @@ def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix(
 def check_the_shipped_prompt_is_pinned_against_a_declaration():
     """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
 
-    SYSTEM_PROMPT is what the harness says and SYSTEM is what it ships. A declaration
-    moves the first and never the second, so start() still refuses a shipped string
-    that has drifted from its digest while one is in force. An experiment that
-    declares "" is told nothing at all, and has that recorded like any other prompt.
+    The system_prompt in force is what the harness says and SYSTEM is what it ships.
+    A declaration moves the first and never the second, so start() still refuses a
+    shipped string that has drifted from its digest while one is in force. An
+    experiment that declares "" is told nothing at all, and has that recorded like
+    any other prompt.
     """
-    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing is the shipped arm"
+    assert harness.SETTINGS.system_prompt == harness.SYSTEM, "declaring nothing is the shipped arm"
     assert "SYSTEM_PROMPT" in harness.TUNABLES, "so config.toml and a manifest can declare it"
     assert harness.system_of() == harness.SYSTEM and harness.system_of({}) == harness.SYSTEM
     assert harness.system_of({"system_prompt": "spoken"}) == "spoken", "the account's own wins"

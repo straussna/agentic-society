@@ -362,7 +362,7 @@ def check_a_trace_that_predates_the_harness_file_names_still_groups():
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
-    assert head.get("balance") == harness.HARNESS_FILES["balance"], head
+    assert head.get("balance") == harness.SETTINGS.harness_files["balance"], head
 
 
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():

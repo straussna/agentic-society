@@ -235,7 +235,8 @@ def check_starter_files_config_is_validated():
 
         with pinned():
             declared(starter_files="ok", starter_files_below=400_000)
-            assert (harness.STARTER_FILES, harness.STARTER_FILES_BELOW) == ("ok", 400_000)
+            assert (harness.SETTINGS.starter_files, harness.SETTINGS.starter_files_below) == \
+                ("ok", 400_000)
         # The digest covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")

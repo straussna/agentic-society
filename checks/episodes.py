@@ -106,7 +106,7 @@ def check_print_system_and_print_files_audit_without_starting():
         assert "2 files" in buf.getvalue() and harness.files_sha256("s") in buf.getvalue(), buf.getvalue()
         with quiet() as buf:
             assert harness.main(["--print-files", "nope"]) == 2
-        assert str(harness.ROOT / "files") in buf.getvalue(), buf.getvalue()
+        assert str(harness.SETTINGS.root / "files") in buf.getvalue(), buf.getvalue()
         with quiet():
             refused(lambda: harness.main(["--print-context"]), code=2,
                     because="--print-context without a manifest was accepted")
@@ -438,8 +438,9 @@ def check_read_balance_survives_a_clipped_read():
 
     result = t["turns"][0]["tools"][0]["result"]
     assert "[truncated:" in result, "the read has to have actually been clipped"
-    assert len(result) < harness.TOOL_RESULT_LIMIT + 500, len(result)
-    assert t["balance_bytes"] > harness.TOOL_RESULT_LIMIT and t["balance_fits"] is False, t["balance_bytes"]
+    assert len(result) < harness.SETTINGS.tool_result_limit + 500, len(result)
+    assert t["balance_bytes"] > harness.SETTINGS.tool_result_limit and t["balance_fits"] is False, \
+        t["balance_bytes"]
     assert t["read_balance"], "a clipped read of n is still a read"
     assert t["touched_balance"]
 

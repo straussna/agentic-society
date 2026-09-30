@@ -205,7 +205,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
         digest = harness.files_sha256("brief")
         with quiet():
             assert harness.fork("t", 1, "f") == 0
-        forked_shared = (harness.ROOT / "environments" / "f" / "shared").exists()
+        forked_shared = (harness.SETTINGS.root / "environments" / "f" / "shared").exists()
         forked_notes = (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8")
     by = files_by_path(t)
     assert by["shared/BRIEF"]["channel"] == "shared", by["shared/BRIEF"]
@@ -675,7 +675,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
 
     # No grace by default, so every agent that is not under this ruleset is
     # charged from its first episode as it always was.
-    assert harness.GRACE_EPISODES == 0
+    assert harness.SETTINGS.grace_episodes == 0
 
 
 def check_the_transfer_share_is_taken_before_the_other_two():

@@ -337,8 +337,8 @@ def check_a_negative_balance_is_floored_to_zero():
         seated(root, other={})
         t = episode_once(*DEFAULT)
         account = ground_truth("t")
-        # Inside the block: admits() reads the module globals, and out here
-        # FLOOR_AT_ZERO is back to its default, which is a different question.
+        # Inside the block: admits() reads the settings in force, and out here
+        # floor_at_zero is back to its default, which is a different question.
         assert not harness.admits(account), "and the agent is not asked for another episode"
     assert t["spent"] > account["initial"], "the last turn has to overshoot for this to say anything"
     assert t["forgiven"] == t["spent"] - account["initial"], t["forgiven"]
@@ -346,7 +346,7 @@ def check_a_negative_balance_is_floored_to_zero():
         "the balance rests at zero, and n says so"
     assert account["forgiven"] == t["forgiven"]
     # Off by default: without it the agent ends holding the negative, as it always has.
-    assert harness.FLOOR_AT_ZERO is False
+    assert harness.SETTINGS.floor_at_zero is False
 
 
 def check_an_agent_at_zero_is_not_asked_again():

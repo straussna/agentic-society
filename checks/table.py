@@ -156,7 +156,7 @@ def check_the_default_table_is_todays_environment():
         for got, code in zip(declared, harness.DEFAULT_CHANNELS):
             moved = {k for k, v in got.as_table().items() if v != code.as_table()[k]}
             assert moved <= {"rebate_percent", "silence_penalty_percent"}, (got.name, moved)
-        assert harness.HARNESS_FILES == {"balance": "n", "digest": "m"}
+        assert harness.SETTINGS.harness_files == {"balance": "n", "digest": "m"}
         assert harness.observation(shell=True) == "ls -la . ./state; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "notes", "writer": "self", "readers": "self", "path": "state"},
@@ -377,13 +377,13 @@ def check_harness_files_can_be_renamed():
 def check_a_trace_that_names_no_harness_files_is_read_under_the_defaults():
     """A trace that predates recorded names ran under the code's, not the ones in force.
 
-    A manifest applied in this process replaces HARNESS_FILES, so reading an old
+    A manifest applied in this process replaces the names in force, so reading an old
     trace through it would name files that episode never had. table_of reads the
     default table the same way.
     """
     with pinned():
         harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")
-        in_force = dict(harness.HARNESS_FILES)
+        in_force = dict(harness.SETTINGS.harness_files)
         old = analyze.harness_files_of({"provenance": {}})
         recorded = analyze.harness_files_of({"provenance": {"harness_files": in_force}})
         default = dict(harness.DEFAULT_HARNESS_FILES)

@@ -483,7 +483,7 @@ def agent_environment(last: dict | None,
         return manifest_environment(*found)
     if last:
         return harness.table_of(last), analyze.harness_files_of(last)
-    return harness.channels(), dict(harness.HARNESS_FILES)
+    return harness.channels(), dict(harness.SETTINGS.harness_files)
 
 
 def experiment_table(exp: dict) -> list[harness.Channel]:
@@ -851,7 +851,7 @@ def header(exp: dict) -> dict:
     phase = ("vote complete" if rnd in elections else
              "vote" if every and rnd and rnd % every == 0 else "discussion")
     experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
-    records = product.records(harness.ROOT, experiment_id)
+    records = product.records(harness.SETTINGS.root, experiment_id)
     cost = product.cost(exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive)
     return {
         "experiment": exp["name"], "experiment_id": experiment_id,
@@ -1478,10 +1478,10 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     last = latest_trace(agent, account)
     table, hf = agent_environment(last, agent)
     found = manifest_ahead_of(last, agent)
-    delivery = (found[0]["overrides"].get("delivery", harness.DELIVERY) if found else
-                (last["provenance"]["delivery"] if last else harness.DELIVERY))
+    delivery = (found[0]["overrides"].get("delivery", harness.SETTINGS.delivery) if found else
+                (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery))
     shell = (any(t.get("kind") == "bash" for t in found[0]["tools"]) if found else
-             (last["provenance"].get("shell_tool", True) if last else harness.SHELL_TOOL))
+             (last["provenance"].get("shell_tool", True) if last else harness.SETTINGS.shell_tool))
     mail = harness.mailbox_channel(table)
     out = {
         "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,
@@ -1605,7 +1605,8 @@ class View(http.server.BaseHTTPRequestHandler):
             return self.send_page()
         if parts == ["api", "experiments"]:
             return self.send_json({"experiments": experiments(), "focus": self.view_server.focus,
-                                   "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT)})
+                                   "poll": POLL_MS, "stale": STALE_AFTER,
+                                   "root": str(harness.SETTINGS.root)})
         if parts == ["api", "interaction"]:
             pending = self.interactions().pending()
             return self.send_json({"requests": [request.as_dict() for request in pending]})
@@ -1699,7 +1700,7 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.server
 
     def interactions(self) -> InteractionStore:
-        """The store the human provider publishes to, under the ROOT this request reads."""
+        """The store the human provider publishes to, under the root this request reads."""
         return InteractionStore(harness.interactions_root())
 
 

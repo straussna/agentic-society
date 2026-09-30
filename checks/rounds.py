@@ -166,15 +166,11 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
                                 "required private ballot: call vote_to_eliminate; peers receive only the result, "
                                 "never individual ballots; a tie for the highest total eliminates nobody by vote"), fifth
 
-    runtime_names = harness.TUNABLES | {
-        "ROOT", "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL",
-    }
-    runtime = {name: getattr(harness, name) for name in runtime_names}
+    before = harness.SETTINGS
     with quiet() as buf:
         assert harness.print_context(None, path, "survivor02") == 0
     context = buf.getvalue()
-    assert {name: getattr(harness, name) for name in runtime_names} == runtime, \
-        "the read-only audit leaves the caller's runtime in force"
+    assert harness.SETTINGS is before, "the read-only audit leaves the caller's settings in force"
     assert "=== agent survivor02 ===" in context and "=== agent survivor01 ===" not in context
     assert "--- episode 1 opening ---" in context and "--- episode 5 opening ---" in context
     assert "Experimenter material: survivor" in context
@@ -1638,7 +1634,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
     assert asked[0] == ({"grace_episodes": 2, "system_prompt": ""},
                         {("anthropic", "claude-sonnet-5")}) and len(asked) == 2, asked
     assert {r: m["starter_files"] for r, m in accounts.items()} == {"g01": "a", "g02": "b", "g03": ""}
-    assert accounts["g02"]["initial"] == 600000 and accounts["g01"]["initial"] == harness.BUDGET
+    assert accounts["g02"]["initial"] == 600000 and \
+        accounts["g01"]["initial"] == harness.SETTINGS.budget
     assert starter == {"g01": "alpha\n", "g02": "bravo\n", "g03": None}, starter
     for r, t in traces.items():
         assert t["provenance"]["starter_files"] == accounts[r]["starter_files"], (r, t["provenance"])

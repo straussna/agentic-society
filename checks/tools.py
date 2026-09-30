@@ -257,9 +257,9 @@ def check_bash_requires_an_explicit_declaration():
     with temp_root():
         chans = harness.channels()
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SHELL_TOOL is True
+        assert harness.SETTINGS.shell_tool is True
         harness.apply_tools([POST], chans, "manifest")
-        assert harness.SHELL_TOOL is False
+        assert harness.SETTINGS.shell_tool is False
         assert harness.validate_tools(None, chans, "manifest") == []
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "no [[tool]] is declared")
@@ -829,7 +829,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
         assert said[2] == "theirs\n", said
 
     # Bash is disabled outside a declared experiment.
-    assert harness.SHELL_TOOL is False, "bash requires a declaration"
+    assert harness.SETTINGS.shell_tool is False, "bash requires a declaration"
     assert "SHELL_TOOL" not in harness.TREATMENT, "the tool table decides bash access"
 
 
@@ -858,7 +858,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
     # All three stand once the shell is offered again.
     with temp_root(DELIVERY="pull"):
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SHELL_TOOL is True
+        assert harness.SETTINGS.shell_tool is True
 
 
 def check_running_one_seat_carries_the_whole_experiment_it_names():

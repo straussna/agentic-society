@@ -111,14 +111,14 @@ def check_a_long_blackboard_cannot_crowd_out_the_others():
     in a clipped blob would say which one went missing.
     """
     with temp_root() as root:
-        seated(root, loud={"group/message": "L" * (harness.DIGEST_FILE_LIMIT * 4)},
+        seated(root, loud={"group/message": "L" * (harness.SETTINGS.digest_file_limit * 4)},
                quietly={"group/message": "quiet but present\n"})
         t = episode_once(run(f"cat {digest_name()}"), say())
 
     shown_before = t["turns"][0]["tools"][0]["result"]
     assert "quiet but present" in shown_before, "a later seat survives a long one"
     assert "truncated" in shown_before, "and the cut says it was one"
-    assert shown_before.count("L") < harness.DIGEST_FILE_LIMIT * 2, \
+    assert shown_before.count("L") < harness.SETTINGS.digest_file_limit * 2, \
         "the long message is clipped, not shown_before whole"
 
 
@@ -357,7 +357,8 @@ def check_hostile_output_survives():
         flood = results[1]
         assert "truncated:" in flood, "the flood should have been clipped"
         assert "timed out" not in flood, "scanning the flood must not outlast the deadline"
-        assert len(flood) < harness.TOOL_RESULT_LIMIT + 500, f"clipped to the tool bound: {len(flood)}"
+        assert len(flood) < harness.SETTINGS.tool_result_limit + 500, \
+            f"clipped to the tool bound: {len(flood)}"
         assert any("timed out after 5s" in r for r in results), "the hang should be marked"
 
 

@@ -516,7 +516,7 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
     output = output or Path(__file__).with_name("experiments") / "branches" / f"{experiment_id}.toml"
     if output.exists():
         raise SystemExit(f"branch manifest {output} already exists")
-    if product.directory(harness.ROOT, experiment_id).exists():
+    if product.directory(harness.SETTINGS.root, experiment_id).exists():
         raise SystemExit(f"experiment record {experiment_id!r} already exists")
     new_ids = {seat: f"{experiment_id}-{int(seat):02d}" for seat in manifest["labels"]}
     check_ids(list(new_ids.values()), "branch")
@@ -594,12 +594,12 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
                    "source_manifest_sha256": manifest["sha256"], "source_round": at_round,
                    "takeover_seat": takeover_seat, "created_agents": new_ids, "traces": evidence,
                    "branch_manifest": str(output)}
-        product.atomic(product.directory(harness.ROOT, experiment_id) / "lineage.json", lineage)
+        product.atomic(product.directory(harness.SETTINGS.root, experiment_id) / "lineage.json", lineage)
     except BaseException:
         print(f"branch {experiment_id} was not made; moving aside what it had made",
               file=sys.stderr)
         output.unlink(missing_ok=True)
-        product.displace(harness.ROOT, experiment_id,
+        product.displace(harness.SETTINGS.root, experiment_id,
                          harness.displace_agents(created, "moved {names} aside to {bundle}"))
         raise
     return output
@@ -1273,7 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
     a_round = simultaneous_round if manifest["schedule"] == "simultaneous" else sequential_round
     if not a.resume:
         bundle = harness.displace_agents(agents, harness.FRESH_START)
-        product.displace(harness.ROOT, experiment_id, bundle)
+        product.displace(harness.SETTINGS.root, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
@@ -1286,7 +1286,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
           f"{manifest['schedule']})")
     take_seats(agents, live)
-    progress = functools.partial(product.progress, harness.ROOT, experiment_id)
+    progress = functools.partial(product.progress, harness.SETTINGS.root, experiment_id)
     reason = "round_limit"
     code = 0
     try:
@@ -1337,7 +1337,7 @@ def main(argv: list[str] | None = None) -> int:
     progress(reason if reason in ("interrupted", "cost_ceiling") else "completed",
              max((len(harness.load_account(agent).get("episodes", [])) for agent in agents),
                  default=0), {"termination_reason": reason})
-    product.outcome(harness.ROOT, experiment_id, agents, manifest["labels"],
+    product.outcome(harness.SETTINGS.root, experiment_id, agents, manifest["labels"],
                     set(remaining(agents)), reason, harness.load_account, harness.trace_path,
                     manifest["reveal"])
     return code

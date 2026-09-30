@@ -52,7 +52,7 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         copied = harness.mirror("new", "notes") / "memory.md"
 
         assert copied.read_bytes() == body.encode("utf-8")
-        assert inherited["episodes"] == [] and inherited["series"] == [harness.BUDGET]
+        assert inherited["episodes"] == [] and inherited["series"] == [harness.SETTINGS.budget]
         assert inherited["memory_from"] == entry["memory_from"]
         record = inherited["memory_inherited"]
         assert record["agent"] == "old" and record["episode"] == 7
@@ -125,10 +125,10 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
 
 
 def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
-    """inherit_memory reads the globals of the harness experiment.py imports, so
+    """inherit_memory reads the settings of the harness experiment.py imports, so
     `harness.py` run as a file runs its CLI in that module and not in a copy of it.
 
-    The ROOT set here is the imported module's; a copy would read its own and find
+    The root set here is the imported module's; a copy would read its own and find
     no starter files by that name.
     """
     argv = sys.argv
