@@ -357,7 +357,7 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 # puts back. temp_root refuses any name outside this set.
 RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
                                 "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PINNED", "load_account",
-                                "replace_file",
+                                "replace_file", "console_line",
                             # Set per check and put back by pinned(), so no check
                             # carries into the next in the same worker.
                             "STOPPING", "catch_signals"}

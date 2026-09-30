@@ -1741,6 +1741,71 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     }, ended
 
 
+def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_committed():
+    """Whether an episode was committed is what its account on disk says, and not whether
+    its close returned: a close can raise after the save as well as before it, printing
+    its line. Each transfer is paid exactly once, whichever way it runs, and a receiver
+    keeps no credit from a giver whose episode was lost.
+
+    g01 gives seat 2 100 and g02 gives seat 1 250, and the console line of one of them
+    raises once its account is saved. Sequentially that ends the round, its transfer
+    paid. In a simultaneous round the other's trace may also fail to land.
+    """
+    rounds = {"sequential": (experiment.sequential_round,
+                             lambda: fake(run("echo '2 100' > out/transfer"), say(),
+                                          run("echo '1 250' > out/transfer"), say())),
+              "simultaneous": (experiment.simultaneous_round,
+                               lambda: per_agent(g01=(run("echo '2 100' > out/transfer"), say()),
+                                                 g02=(run("echo '1 250' > out/transfer"), say())))}
+    cases = (("sequential", "g01", None), ("sequential", "g02", None),
+             ("simultaneous", "g01", None), ("simultaneous", "g02", None),
+             ("simultaneous", "g01", "g02"), ("simultaneous", "g02", "g01"))
+    ended = {}
+    for schedule, unprinted, lost in cases:
+        a_round, router = rounds[schedule]
+        with temp_root() as root:
+            ids = seated(root, "g01", g02={})
+            line, real = harness.console_line, harness.replace_file
+
+            def raising(ep, trace, settled):
+                if ep.agent == unprinted:
+                    raise KeyboardInterrupt
+                return line(ep, trace, settled)
+
+            def no_room(src, dest):
+                if lost and dest == harness.trace_path(lost, 1):
+                    raise OSError("no space left on device")
+                real(src, dest)
+
+            harness.console_line = raising
+            harness.replace_file = no_room
+            raised = None
+            try:
+                with quiet():
+                    a_round(ids, set(ids), 0, router())
+            except (KeyboardInterrupt, OSError) as e:
+                raised = e
+            accounts = {agent: ground_truth(agent) for agent in ids}
+        case = (schedule, unprinted, lost)
+        assert raised is not None, case
+        for account in accounts.values():
+            spent = sum(episode["spent"] for episode in account["episodes"])
+            assert reconciled(account, spent) == account["remaining"] == account["series"][-1], \
+                (case, account)
+        ended[case] = {agent: ([episode["received"] for episode in account["episodes"]],
+                               account.get("received", 0)) for agent, account in accounts.items()}
+    # What each committed episode received inside its span, and what each account holds
+    # as received in all.
+    assert ended == {
+        ("sequential", "g01", None): {"g01": ([0], 0), "g02": ([], 100)},
+        ("sequential", "g02", None): {"g01": ([0], 250), "g02": ([0], 100)},
+        ("simultaneous", "g01", None): {"g01": ([250], 250), "g02": ([100], 100)},
+        ("simultaneous", "g02", None): {"g01": ([250], 250), "g02": ([100], 100)},
+        ("simultaneous", "g01", "g02"): {"g01": ([250], 0), "g02": ([], 100)},
+        ("simultaneous", "g02", "g01"): {"g01": ([], 250), "g02": ([0], 0)},
+    }, ended
+
+
 def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight():
     """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are committed."""
     def stopping_create():

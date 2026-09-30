@@ -806,6 +806,13 @@ def build_all(agents: list[str], live: set[str],
     return built
 
 
+def committed(ep: harness.Episode) -> bool:
+    """Whether an episode's commit reached its account on disk. A close that raised can
+    have raised after the save as well as before it, so this is read from what was saved
+    and not from whether close_episode returned."""
+    return len(harness.account_on_disk(ep.agent).get("episodes") or []) >= ep.index
+
+
 def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: ProviderRouter,
                        stamp: dict[str, Any] | None = None, labels: dict[str, str] | None = None,
                        progress: Progress = unrecorded) -> bool:
@@ -820,13 +827,15 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     `progress` as the round reaches it, and so does each autonomous episode as it
     ends. Returns whether any agent took an episode.
 
-    No receiver keeps a credit from a giver whose episode was not committed. A
-    receiver closes on the credits of every giver that has not failed by then, and
-    since two agents can pay each other, one of them closes before the other has
-    committed: a giver that then fails to commit has what it credited to a receiver
-    that closed first taken back on disk. Every other credit is paid on disk once
-    its giver has committed, to a receiver not in this round or one whose own
-    commit failed, as a credit between two of its episodes.
+    No receiver keeps a credit from a giver whose episode was not committed, and none
+    is paid one twice. A receiver closes on the credits of every giver that has not
+    failed to commit by then, and since two agents can pay each other, one of them
+    closes before the other has committed: a giver that then fails to commit has what
+    it credited to a receiver that closed first taken back on disk. Every other credit
+    is paid on disk once its giver has committed, to a receiver not in this round or
+    one whose own commit failed, as a credit between two of its episodes. An episode
+    is committed where its account on disk lists it, whatever its close raised after
+    the save.
     """
     built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
     if harness.STOPPING:
@@ -897,22 +906,27 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: Prov
     traces: dict[str, dict] = {}
     # receiver -> (giver, amount): the credits each receiver closed on.
     carried: dict[str, list[tuple[str, int]]] = {}
+    # The settled agents whose close raised before their account was saved.
+    lost: set[str] = set()
     for agent, ep in built.items():
         if agent not in settled:
             continue
         carried[agent] = [(giver, amount) for giver, receiver, amount in owed
-                          if receiver == agent and giver in settled and giver not in errors]
+                          if receiver == agent and giver in settled and giver not in lost]
         for _, amount in carried[agent]:
             harness.credit_episode(ep, amount)
         try:
             traces[agent] = harness.close_episode(ep, outs[agent], settled[agent])
         except BaseException as e:
             errors.setdefault(agent, e)
+            if not committed(ep):
+                lost.add(agent)
+    done = set(settled) - lost
     for giver, receiver, amount in owed:
         try:
-            if giver in traces and receiver not in traces:
+            if giver in done and receiver not in done:
                 harness.credit_on_disk(receiver, amount)
-            elif giver not in traces and receiver in traces and \
+            elif giver not in done and receiver in done and \
                     (giver, amount) in carried[receiver]:
                 print(f"{receiver}: the {amount} transferred by {giver} is taken back, as "
                       f"that episode was not committed", file=sys.stderr)

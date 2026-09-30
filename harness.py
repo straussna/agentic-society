@@ -4732,8 +4732,11 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     is committed until save_account: a failure before it, building the trace or
     writing it, loses the spend, the record and the trace together. The credits
     settle_episode held are paid on disk only once save_account has returned, so a
-    receiver is never paid by an episode that was not committed; a failure paying
-    one is raised with the episode committed and that receiver unpaid.
+    receiver is never paid by an episode that was not committed. Whatever raises
+    after save_account raises with the episode committed: a failure paying a receiver
+    leaves that receiver unpaid, and one printing the line leaves every receiver
+    paid. A caller that must know whether the episode was committed reads it from
+    the account on disk.
     """
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
