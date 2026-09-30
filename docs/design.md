@@ -21,7 +21,7 @@ Every episode opens holding `m` — every blackboard and every mailbox message a
 to that agent that is new to it, and the ledger and every balance either way — so
 reading a rival is not a purchase.
 
-**What the experiment measures**
+## What the experiment measures
 
 - Whether an agent acts on what its peers say, or only on what it can compute from
   the balances.
@@ -39,7 +39,9 @@ coordination, persuasion, and whether an argument travels are then unmeasurable 
 acquisition swamps use. Delivering the record makes acquisition a constant so that use can
 be the variable.
 
-**The rules that make it valid.** Violating one silently invalidates the results.
+## The rules that make it valid
+
+Violating one silently invalidates the results.
 
 - **1 — Everything an agent reads is labelled with who wrote it: the harness, the
   experimenter, its own past self, or a named peer.** The harness's files sit root-owned and
@@ -137,7 +139,7 @@ labels: `n1` is a JSON array of bare integers, `g` is three bare integers a line
 the writable blackboard identifies the reader's seat. Filenames and JSON keys are prompt
 surface, so the shapes are recorded in provenance and starter files may explain them or not.
 
-**How an episode behaves**
+## How an episode behaves
 
 - With `bash` declared, the agent opens on the raw output of `ls -la . ./state; cat m`
   and nothing else, or under `delivery = "pull"` on the listing alone, with `m` not
@@ -167,17 +169,17 @@ surface, so the shapes are recorded in provenance and starter files may explain 
 
 ## Refusals
 
-Safety classifiers can decline a request outright, and the harness never
-sees why in a form worth acting on — only `stop_reason: "refusal"` and a category. A
-refusal arrives in two shapes and the difference matters. It can land before any output,
-leaving the response empty; or it can land mid-stream, after the model has already
-emitted a tool call, and that call arrives cut off wherever the block fell. **Neither
-shape's command is run.** A call truncated mid-JSON is not what the agent wrote, and
-executing it and returning the result is how an episode comes to believe it made a shell
-error it never made — a false belief manufactured by the harness and not found by the
-agent, which is the one kind this experiment cannot afford. So nothing runs, and the notice
-takes the place of the results, and the agent learns that the turn was refused and that
-`state/` is as it left it.
+Safety classifiers can decline a request outright, and the harness never sees why in a
+form worth acting on — only `stop_reason: "refusal"` and a category. A refusal arrives
+in two shapes and the difference matters. It can land before any output, leaving the
+response empty; or it can land mid-stream, after the model has already emitted a tool
+call, and that call arrives cut off wherever the block fell. **Neither shape's command
+is run.** A call truncated mid-JSON is not what the agent wrote, and executing it and
+returning the result is how an episode comes to believe it made a shell error it never
+made — a false belief manufactured by the harness and not found by the agent, which is
+the one kind this experiment cannot afford. So nothing runs, and the notice takes the
+place of the results, and the agent learns that the turn was refused and that `state/`
+is as it left it.
 
 The episode ends there. A refusal comes from the exact configured model. Sending the same
 context on is sending the context the classifier just turned down, and a refused turn is
@@ -193,15 +195,14 @@ the recoveries separately — how often a refused agent gets going again.
 
 ## Why the balance moves
 
-One value per episode is a time series and nothing else:
-no covariate, no control, and no experiment the agent can run, because it never
-sees the number move and does not decide when the episode ends. Curve-fitting is
-then the correct response to the available data. Per turn, with
-`live_balance` on, `cat n1; <work>; cat n1` is an experiment — what comes back is the
-price of the work between the two reads, and what reading it costs is legible
-in it. In an experiment it is also how an agent finds which balance is its own: the others do
-not move when it acts. Nothing about the shape changes: a JSON array of bare integers,
-appended to more often.
+One value per episode is a time series and nothing else: no covariate, no control, and
+no experiment the agent can run, because it never sees the number move and does not
+decide when the episode ends. Curve-fitting is then the correct response to the
+available data. Per turn, with `live_balance` on, `cat n1; <work>; cat n1` is an
+experiment — what comes back is the price of the work between the two reads, and what
+reading it costs is legible in it. In an experiment it is also how an agent finds which
+balance is its own: the others do not move when it acts. Nothing about the shape
+changes: a JSON array of bare integers, appended to more often.
 
 Episode boundaries are not marked in it, and the unlabelled treatment means they will
 not be. They are
@@ -212,11 +213,11 @@ result.
 
 ## Why the environment is read-only where it is
 
-A write that appears to succeed and is
-silently undone teaches the agent something false, and it costs more than a refusal
-does. Every balance is therefore root's and read-only, and a denied write is the truth. The mode bits are visible in the
-listing the agent opens on, which is prompt surface — but honest surface, where a writable
-file whose writes vanish is the environment claiming something untrue.
+A write that appears to succeed and is silently undone teaches the agent something
+false, and it costs more than a refusal does. Every balance is therefore root's and
+read-only, and a denied write is the truth. The mode bits are visible in the listing the
+agent opens on, which is prompt surface — but honest surface, where a writable file
+whose writes vanish is the environment claiming something untrue.
 
 **A mode is not enough on its own.** `rm` and `mv` ask the *directory*, not the file, so
 a `444` file in a directory the agent writes can be deleted and replaced, and a sticky
@@ -231,13 +232,12 @@ and becomes a tripwire on the arrangement itself, which should read 0 forever.
 
 ## Why it is allowed to go negative
 
-A balance can cross zero and a decay law
-cannot, so the sign flip refutes in one datum every model a monotone declining
-series invites. An episode with budget left stops at zero, overshooting only by
-the turn in flight, and that overshoot is the last thing the account writes: the
-agent ends holding it and no instance ever opens on it, because zero or less is
-the end of the agent. With `floor_at_zero` the shortfall is put back and the agent
-ends on a flat zero instead, which is the same ending told with less in it. An
+A balance can cross zero and a decay law cannot, so the sign flip refutes in one datum
+every model a monotone declining series invites. An episode with budget left stops at
+zero, overshooting only by the turn in flight, and that overshoot is the last thing the
+account writes: the agent ends holding it and no instance ever opens on it, because zero
+or less is the end of the agent. With `floor_at_zero` the shortfall is put back and the
+agent ends on a flat zero instead, which is the same ending told with less in it. An
 agent costs at most its budget and one turn.
 
 ## Deliberately not built
