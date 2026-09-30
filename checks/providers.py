@@ -48,8 +48,10 @@ class Raising:
     def __init__(self, error):
         self.error = error
 
-    def create(self, **params):
+    def create(self, *args, **params):
         raise self.error
+
+    retrieve = create
 
 
 # Stand-ins for the SDKs' exception classes, named and nested as both SDKs declare
@@ -78,6 +80,11 @@ class APIStatusError(APIError):
 class AuthenticationError(APIStatusError):
     def __init__(self):
         super().__init__(401)
+
+
+def statusless(name):
+    """An exception of a class called `name` with no status code, which only its name classifies."""
+    return type(name, (APIError,), {})()
 
 
 @contextlib.contextmanager
@@ -253,7 +260,10 @@ def check_cli_provider_and_model_overrides_are_paired():
 
 
 def check_provider_preflight_requires_only_its_own_key():
-    """A provider without its key refuses, and its own refusal says where the key goes."""
+    """A provider without its key, or whose key is refused, says where the key goes.
+
+    A preflight that got no answer is not about the key, and does not say so.
+    """
     class Models:
         def retrieve(self, *args, **kwargs):
             return NS(id=args[0] if args else kwargs.get("model_id"))
@@ -274,6 +284,22 @@ def check_provider_preflight_requires_only_its_own_key():
             assert "Set OPENAI_API_KEY in the shell" in str(error), str(error)
         else:
             raise AssertionError("OpenAI started without its key")
+
+    with swapped(os.environ, ANTHROPIC_API_KEY="test", OPENAI_API_KEY="test"):
+        for build, variable, model in ((AnthropicProvider, "ANTHROPIC_API_KEY", "claude-sonnet-5"),
+                                       (OpenAIProvider, "OPENAI_API_KEY", "gpt-5.6-terra")):
+            for error, category in ((AuthenticationError(), "authentication"),
+                                    (APIConnectionError(), "retryable_api")):
+                try:
+                    build(NS(models=Raising(error))).preflight([model])
+                except providers.ProviderError as failure:
+                    assert failure.category == category, (variable, failure.as_dict())
+                    assert failure.status_code == getattr(error, "status_code", None)
+                    hint = f"Set {variable} in the shell this experiment is launched from."
+                    assert str(failure).endswith(hint) == (category == "authentication"), \
+                        str(failure)
+                else:
+                    raise AssertionError(f"{variable}: preflight passed {error!r}")
 
 
 def check_start_refuses_a_missing_key_before_any_client_is_built():
@@ -364,7 +390,9 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
              (APIStatusError(400), "permanent_api"), (APIStatusError(404), "permanent_api"),
              (APIStatusError(401), "authentication"), (APIStatusError(403), "authentication"),
              (AuthenticationError(), "authentication"), (APIError("unreadable"), "adapter"),
-             (ValueError("unreadable"), "adapter"))
+             (ValueError("unreadable"), "adapter"),
+             (statusless("AuthenticationError"), "authentication"),
+             (statusless("PermissionDeniedError"), "authentication"))
     sessions = {
         "anthropic": lambda raising: AnthropicProvider(NS(messages=raising)).open_session(
             "claude-sonnet-5", "", TOOLS, 1, CONTEXT),

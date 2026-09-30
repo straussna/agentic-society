@@ -171,13 +171,15 @@ class ProviderConfigurationError(ProviderError):
         super().__init__(message, category="adapter", provider=provider)
 
 
-def classify_error(error: Exception, provider: str) -> ProviderError:
+def classify_error(error: Exception, provider: str,
+                   key_variable: str | None = None) -> ProviderError:
     """Classify an SDK exception by its status code and the names of its classes.
 
     401 and 403, or a class named for authentication or a denied permission, are
     authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
     is permanent. With no status, a class named in RETRYABLE is a request that got
-    no answer, and is retried; anything else is the adapter's.
+    no answer, and is retried; anything else is the adapter's. An authentication
+    failure says where `key_variable` goes, when one is given.
     """
     status = getattr(error, "status_code", None)
     name = type(error).__name__
@@ -192,7 +194,10 @@ def classify_error(error: Exception, provider: str) -> ProviderError:
         category = "retryable_api"
     else:
         category = "adapter"
-    return ProviderError(f"{name}: {error}", category=category, provider=provider,
+    message = f"{name}: {error}"
+    if category == "authentication" and key_variable:
+        message = f"{message} {where_key_goes(key_variable)}"
+    return ProviderError(message, category=category, provider=provider,
                          status_code=status, native_type=name)
 
 
@@ -204,12 +209,15 @@ def refuse_custom_endpoint(variable: str, provider: str) -> None:
             provider=provider)
 
 
+def where_key_goes(variable: str) -> str:
+    return f"Set {variable} in the shell this experiment is launched from."
+
+
 def require_key(variable: str, provider: str) -> None:
     """Refuse a provider whose API key is not in the environment, saying where it goes."""
     if not os.environ.get(variable):
-        raise ProviderError(f"{variable} is not set. Set {variable} in the shell this "
-                            "experiment is launched from.", category="authentication",
-                            provider=provider)
+        raise ProviderError(f"{variable} is not set. {where_key_goes(variable)}",
+                            category="authentication", provider=provider)
 
 
 class PendingResponse:

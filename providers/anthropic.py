@@ -156,7 +156,7 @@ class AnthropicProvider:
                 import anthropic
                 client = anthropic.Anthropic(max_retries=0)
             except Exception as error:
-                raise classify_error(error, self.name) from error
+                raise classify_error(error, self.name, self.key_variable) from error
         self.client = client
 
     def preflight(self, models: Iterable[str]) -> None:
@@ -165,7 +165,7 @@ class AnthropicProvider:
             try:
                 self.client.models.retrieve(model_id=model)
             except Exception as error:
-                raise classify_error(error, self.name) from error
+                raise classify_error(error, self.name, self.key_variable) from error
 
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
                      max_tokens: int, context: SessionContext) -> AnthropicSession:
