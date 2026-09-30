@@ -21,6 +21,7 @@ from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think
 from checks.lanes import (
     HostShell,
     NoBox,
+    amend,
     differs,
     digest_name,
     episode_once,
@@ -492,7 +493,7 @@ def check_provenance_is_recorded():
 
             # A rate change between episodes makes early and late entries of the
             # same series mean different things, so the seam is recorded.
-            harness.CONTEXT_FRACTION = 0.5
+            amend(context_fraction=0.5)
             second = harness.run_once("t", fake(*DEFAULT))
     assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), \
         "a provider-affecting change between episodes must be recorded"
@@ -583,7 +584,7 @@ def check_the_harness_digest_is_read_once():
     must not change what an episode records having run.
     """
     with pinned():
-        harness.ROOT = Path(harness.__file__).parent
+        amend(root=Path(harness.__file__).parent)
         prov = harness.provenance("anthropic", "claude-sonnet-5")
     assert prov["harness_sha256"] == harness.HARNESS_SHA256
     assert harness.HARNESS_SHA256 == hashlib.sha256(

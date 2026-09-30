@@ -12,6 +12,7 @@ import harness
 from checks.fake import fake, run, say
 from checks.lanes import (
     HostBox,
+    amend,
     episode_once,
     files_by_path,
     ground_truth,
@@ -165,7 +166,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert first["provenance"]["starter_files"] == "s"
 
         # The config moves on; the agent does not.
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "other", 500_000
+        amend(starter_files="other", starter_files_below=500_000)
         second = episode_once(say())
         assert second["provenance"]["starter_files"] == "s" and second["provenance"]["starter_files_below"] == 499_000
         assert ground_truth()["starter_files_landed"]["name"] == "s", \
@@ -183,7 +184,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         m = ground_truth()
         del m["starter_files"], m["starter_files_below"]
         harness.save_account("t", m)
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "s", 499_000
+        amend(starter_files="s", starter_files_below=499_000)
         episode_once(say())
         assert ground_truth()["starter_files"] == "s"
 
@@ -207,7 +208,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
         assert ground_truth("after")["starter_files_landed"]["name"] == "s"
         assert "starter_files" not in ground_truth("before")
         assert "starter_files_landed" not in ground_truth("before")
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "other", 500_000
+        amend(starter_files="other", starter_files_below=500_000)
         with quiet():
             harness.run_once("before", fake(say()))
         assert ground_truth("before")["starter_files"] == "other", "adopted at its first episode"
@@ -405,7 +406,7 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
         episode_once(say())
         with quiet():
             assert harness.fork("t", 1, "f") == 0
-        harness.CONTEXT_FRACTION = 0.5
+        amend(context_fraction=0.5)
         with quiet():
             first = harness.run_once("f", fake(say()))
             later = harness.run_once("f", fake(say()))

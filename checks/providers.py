@@ -20,7 +20,7 @@ from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
 from checks.fake import DEFAULT, per_agent, say
-from checks.lanes import episode_once, pinned, quiet, temp_root
+from checks.lanes import amend, episode_once, pinned, quiet, temp_root
 
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
@@ -323,7 +323,7 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
         variable = f"{provider.upper()}_API_KEY"
         with swapped(os.environ, **unset), swapped(sys.modules, **sdks), pinned(), \
                 tempfile.TemporaryDirectory() as folder, quiet() as out:
-            harness.ROOT = Path(folder)
+            amend(root=Path(folder))
             try:
                 harness.start(requirements=[(provider, model)],
                               tool_tables=[{"name": "bash", "kind": "bash"}])

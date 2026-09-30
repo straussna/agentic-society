@@ -355,12 +355,15 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 
 # Every harness global a check is allowed to move, and therefore every one pinned()
 # puts back. temp_root refuses any name outside this set.
-RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
+RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "ready", "start",
                                 "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PINNED", "load_account",
                                 "replace_file", "console_line",
                             # Set per check and put back by pinned(), so no check
                             # carries into the next in the same worker.
                             "STOPPING", "catch_signals"}
+
+# How many pinned() blocks are open: amend() moves a setting only inside one.
+_depth = 0
 
 
 @contextlib.contextmanager
@@ -370,13 +373,24 @@ def pinned():
     catch_signals is stubbed and not restored: a handler installed by a check
     driving harness.main would outlive it and answer the suite's own Ctrl+C.
     """
+    global _depth
     saved = {k: getattr(harness, k) for k in RESTORED}
     harness.catch_signals = lambda: None
+    _depth += 1
     try:
         yield
     finally:
+        _depth -= 1
         for k, v in saved.items():
             setattr(harness, k, v)
+
+
+def amend(**fields) -> None:
+    """Move settings for the rest of a pinned() block: amend(max_turns=1, command_timeout=2)."""
+    assert _depth, "amend() outside pinned(): nothing would put the settings back"
+    for name, value in fields.items():
+        assert name.upper() in RESTORED, f"{name} is not a setting pinned() puts back"
+        setattr(harness, name.upper(), value)
 
 
 @contextlib.contextmanager

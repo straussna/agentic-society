@@ -17,6 +17,7 @@ from providers.anthropic import normalize as normalize_anthropic
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, usage
 from checks.lanes import (
     HALF,
+    amend,
     channel_toml,
     elements_of,
     episode_once,
@@ -341,8 +342,8 @@ def check_per_turn_micros_partition_the_spend():
 def check_the_safety_stops_are_held_to_their_ranges():
     """config.toml's max_turns and command_timeout are refused outside their ranges.
 
-    Each bound itself is accepted and applied. A stop a check sets on the module
-    directly is not a value config.toml gave, so a manifest applied after it stands.
+    Each bound itself is accepted and applied. A stop a check amends directly is not
+    a value config.toml gave, so a manifest applied after it stands.
     """
     stops = (("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
              ("command_timeout", harness.COMMAND_TIMEOUT_FLOOR, harness.COMMAND_TIMEOUT_CEILING))
@@ -362,7 +363,7 @@ def check_the_safety_stops_are_held_to_their_ranges():
                         f"{key} = {good} is in range and must apply"
 
     with pinned():
-        harness.MAX_TURNS, harness.COMMAND_TIMEOUT = 1, 2
+        amend(max_turns=1, command_timeout=2)
         harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT,
                              harness.NOT_MANIFEST)
         assert (harness.MAX_TURNS, harness.COMMAND_TIMEOUT) == (1, 2), \
@@ -456,7 +457,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     assert harness.system_of({"system_prompt": "spoken"}) == "spoken", "the account's own wins"
 
     with pinned():
-        harness.SYSTEM_PROMPT = "declared"
+        amend(system_prompt="declared")
         assert harness.system_of() == "declared" and harness.system_of({}) == "declared"
         assert harness.system_of({"system_prompt": ""}) == "",             '"" is a prompt an experiment can declare, not an absent one'
         # The pin is on what the harness ships, so a declaration does not lift it.

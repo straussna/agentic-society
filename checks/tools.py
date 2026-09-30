@@ -801,7 +801,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
     digest, which is content, and not on a listing.
     """
     with temp_root(channels=tables(mail={"silence_penalty_percent": 50}),
-                   tools=[SEND, POST, LOOK], SHELL_TOOL=False) as root:
+                   tools=[SEND, POST, LOOK]) as root:
         seated(root, "t", t={}, o={"group/note": "theirs\n"})
         seen = []
         with quiet():
@@ -841,17 +841,17 @@ def check_withholding_the_shell_needs_something_to_act_with():
     user turn would be empty because the listing is gone and no digest replaces it.
     """
     chans = list(harness.DEFAULT_CHANNELS)
-    with temp_root(SHELL_TOOL=False):
+    with temp_root():
         refused(lambda: harness.apply_tools([], chans, "manifest"),
                 "manifest:", "no [[tool]] is declared", "nothing to act with")
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "manifest:", "no [[tool]] is declared")
 
-    with temp_root(SHELL_TOOL=False, DELIVERY="pull"):
+    with temp_root(DELIVERY="pull"):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest", "'pull'")
 
-    with temp_root(SHELL_TOOL=False, harness_files={"digest": ""}):
+    with temp_root(harness_files={"digest": ""}):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest")
 
@@ -899,7 +899,7 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_refused():
     no peers, is left out and leaves nothing behind it. Refused as the environment
     is built, before the container starts and before anything is billed.
     """
-    with temp_root(tools=[SEND], SHELL_TOOL=False) as root:
+    with temp_root(tools=[SEND]) as root:
         # Accepted at declaration: the table is not empty and the digest is pushed.
         assert [t.name for t in harness.tools()] == ["send"]
         with quiet():
