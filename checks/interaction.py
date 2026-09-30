@@ -131,7 +131,7 @@ def check_human_provider_returns_canonical_zero_charge_turn():
         turn = pending_response.normalize()
         assert turn.provider == "human" and turn.stop_reason == "tool_use"
         assert turn.tool_calls[0].as_dict() == submission(pending)["tool_calls"][0]
-        assert turn.usage == Usage.zero() and turn.charges == ()
+        assert turn.usage == Usage() and turn.charges == ()
 
         finished = {}
         second = threading.Thread(target=lambda: finished.update(

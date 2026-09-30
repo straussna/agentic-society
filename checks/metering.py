@@ -377,6 +377,40 @@ def check_a_refusal_is_billed_only_if_it_produced_output():
     assert t["turns"][2]["micros"] > 0, "the turn that answered was billed"
 
 
+def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix():
+    """The adapter itself carries the refusal rule and the long-context rates.
+
+    A refusal that emitted nothing is not billed, and says why from its stop details;
+    one that emitted a tool call is billed. A prefix past 200k tokens on a 1M-window
+    model prices input at twice and output at one and a half times the base rate.
+    """
+    def response(stop, content, **tokens):
+        return NS(id="r", model="claude-opus-5", stop_reason=stop, content=content,
+                  stop_details=(NS(type="refusal", category="cyber", explanation="x")
+                                if stop == "refusal" else None), usage=usage(**tokens))
+
+    declined = normalize_anthropic(response("refusal", [], input_tokens=1000, output_tokens=10),
+                                   "claude-opus-5")
+    assert declined.stop_reason == "refusal" and declined.charges == (), declined.charges
+    assert declined.refusal and declined.refusal.explanation == "x", declined.refusal
+    assert declined.refusal.details and declined.refusal.details["category"] == "cyber"
+
+    call = NS(type="tool_use", id="t1", name="bash", input={"command": "ls"})
+    acted = normalize_anthropic(response("refusal", [call], input_tokens=1000, output_tokens=10),
+                                "claude-opus-5")
+    assert acted.stop_reason == "refusal" and acted.tool_calls, acted
+    assert sum(c.centi_micros for c in acted.charges) == 1000 * 500 + 10 * 2500, acted.charges
+
+    at = normalize_anthropic(response("end_turn", [], input_tokens=200_000, output_tokens=100),
+                             "claude-opus-5")
+    past = normalize_anthropic(response("end_turn", [], input_tokens=250_000, output_tokens=100),
+                               "claude-opus-5")
+    assert {c.kind: c.centi_micros for c in at.charges}["output"] == 100 * 2500, "the threshold is base"
+    priced = {c.kind: c.centi_micros for c in past.charges}
+    assert priced["output"] == 100 * 2500 * 3 // 2, priced
+    assert priced["uncached_input"] == 250_000 * 500 * 2, priced
+
+
 def check_the_shipped_prompt_is_pinned_against_a_declaration():
     """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
 

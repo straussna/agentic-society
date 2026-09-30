@@ -10,12 +10,14 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 
 import experiment
+import harness
 import providers
 from providers import SessionContext, ToolResult, ToolSpec
-from providers.anthropic import AnthropicProvider, normalize as normalize_anthropic
+from providers.anthropic import AnthropicProvider
+from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
-from checks.fake import per_agent, say
-from checks.lanes import quiet, temp_root
+from checks.fake import DEFAULT, per_agent, say
+from checks.lanes import episode_once, quiet, temp_root
 
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
@@ -35,6 +37,44 @@ class Messages:
 
 class Responses(Messages):
     pass
+
+
+class Raising:
+    """An SDK resource whose every call fails with `error`."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def create(self, **params):
+        raise self.error
+
+
+# Stand-ins for the SDKs' exception classes, named and nested as both SDKs declare
+# them; the checks import neither SDK. classify_error reads a class's name, the
+# names in its MRO, and status_code.
+class APIError(Exception):
+    pass
+
+
+class APIConnectionError(APIError):
+    def __init__(self, message="Connection error."):
+        super().__init__(message)
+
+
+class APITimeoutError(APIConnectionError):
+    def __init__(self):
+        super().__init__("Request timed out.")
+
+
+class APIStatusError(APIError):
+    def __init__(self, status):
+        super().__init__(f"Error code: {status}")
+        self.status_code = status
+
+
+class AuthenticationError(APIStatusError):
+    def __init__(self):
+        super().__init__(401)
 
 
 def check_anthropic_messages_wire_shape_and_state():
@@ -182,6 +222,7 @@ def check_cli_provider_and_model_overrides_are_paired():
 
 
 def check_provider_preflight_requires_only_its_own_key():
+    """A provider without its key refuses, and its own refusal says where the key goes."""
     class Models:
         def retrieve(self, *args, **kwargs):
             return NS(id=args[0] if args else kwargs.get("model_id"))
@@ -193,9 +234,18 @@ def check_provider_preflight_requires_only_its_own_key():
         try:
             AnthropicProvider(NS(models=Models())).preflight(["claude-sonnet-5"])
         except providers.ProviderError as error:
-            assert error.category == "authentication"
+            assert error.category == "authentication" and error.provider == "anthropic"
+            assert str(error).endswith(
+                "Set ANTHROPIC_API_KEY in the shell this experiment is launched from."), str(error)
         else:
             raise AssertionError("Anthropic started without its key")
+        os.environ.pop("OPENAI_API_KEY")
+        try:
+            OpenAIProvider(NS(models=Models())).preflight(["gpt-5.6-terra"])
+        except providers.ProviderError as error:
+            assert "Set OPENAI_API_KEY in the shell" in str(error), str(error)
+        else:
+            raise AssertionError("OpenAI started without its key")
     finally:
         for name, value in old.items():
             if value is None:
@@ -234,3 +284,120 @@ def check_version_three_accounts_are_refused():
             assert "version-3" in str(error) and "fresh agent id" in str(error)
         else:
             raise AssertionError("accepted a version-3 account")
+
+
+def check_each_adapter_declares_the_provenance_its_traces_record():
+    """A trace's provider record is the name, the adapter's own facts, and the model spec.
+
+    The facts are declared once, on the adapter class, and pinned here as a reader of
+    earlier traces knows them: a change to an adapter's is a change to every trace.
+    """
+    declared = {
+        "anthropic": {"adapter": "anthropic-messages-v1", "endpoint": "first-party"},
+        "openai": {"adapter": "openai-responses-v1", "endpoint": "first-party", "store": False,
+                   "reasoning_state": "encrypted"},
+        "human": {"adapter": "interaction-store-v1", "endpoint": "local"},
+    }
+    assert list(providers.FACTORIES) == list(declared), list(providers.FACTORIES)
+    for name, factory in providers.FACTORIES.items():
+        assert providers.CATALOGS[name] is factory.models, f"{name}: the catalog is the adapter's"
+        for model, spec in factory.models.items():
+            record = providers.provenance(name, model)
+            assert list(record) == ["name", *declared[name], "model_spec"], (name, list(record))
+            assert record == {"name": name, **declared[name], "model_spec": spec.as_dict()}, record
+            assert (record["model_spec"]["provider"], record["model_spec"]["name"]) == (name, model)
+    assert [name for name in providers.FACTORIES if providers.is_interactive(name)] == ["human"], \
+        "a person answers the human seat's turns, and no other's"
+
+
+def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
+    """A request that got no answer is retried like a 429, whichever adapter sent it.
+
+    The SDKs raise APIConnectionError and APITimeoutError with no status code. Read
+    by status alone they are the adapter's fault, and one dropped connection ends a
+    billed episode as harness_error on its first attempt.
+    """
+    cases = ((APIConnectionError(), "retryable_api"), (APITimeoutError(), "retryable_api"),
+             (ConnectionResetError(), "retryable_api"), (TimeoutError(), "retryable_api"),
+             (APIStatusError(429), "retryable_api"), (APIStatusError(503), "retryable_api"),
+             (APIStatusError(400), "permanent_api"), (APIStatusError(404), "permanent_api"),
+             (APIStatusError(401), "authentication"), (APIStatusError(403), "authentication"),
+             (AuthenticationError(), "authentication"), (APIError("unreadable"), "adapter"),
+             (ValueError("unreadable"), "adapter"))
+    sessions = {
+        "anthropic": lambda raising: AnthropicProvider(NS(messages=raising)).open_session(
+            "claude-sonnet-5", "", TOOLS, 1, CONTEXT),
+        "openai": lambda raising: OpenAIProvider(NS(responses=raising)).open_session(
+            "gpt-5.6-terra", "", TOOLS, 1, CONTEXT),
+    }
+    for error, category in cases:
+        for name, session in sessions.items():
+            try:
+                session(Raising(error)).request("x")
+            except providers.ProviderError as failure:
+                assert (failure.provider, failure.category) == (name, category), \
+                    (name, type(error).__name__, failure.as_dict())
+                assert failure.status_code == getattr(error, "status_code", None)
+                assert failure.native_type == type(error).__name__ and failure.__cause__ is error
+            else:
+                raise AssertionError(f"{name} returned a response for {error!r}")
+
+    # The retry is the harness's: a lost connection is tried again, and one that
+    # outlasts every attempt ends the episode as the API's failure.
+    with temp_root():
+        t = episode_once(classify_error(APIConnectionError(), "anthropic"), *DEFAULT)
+    assert t["stop"] == "end_turn", t["stop"]
+    assert t["retries"] == [{"attempt": 1, "provider": "anthropic", "error": "ProviderError",
+                             "category": "retryable_api", "status": None}], t["retries"]
+    with temp_root():
+        t = episode_once(*(classify_error(APITimeoutError(), "anthropic")
+                           for _ in range(harness.RETRY_ATTEMPTS)))
+    assert t["stop"] == "api_error", t["stop"]
+    assert len(t["retries"]) == harness.RETRY_ATTEMPTS - 1, t["retries"]
+    assert t["provider_error"]["native_type"] == "APITimeoutError", t["provider_error"]
+
+
+def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
+    """Every way a Responses turn can end reaches its canonical stop.
+
+    A refusal part is a refusal, a response cut at max_output_tokens is max_tokens,
+    one neither completed nor cut there is other, and function arguments that are
+    not a JSON object are the adapter's failure and never a tool call.
+    """
+    def response(output, status="completed", incomplete=None):
+        return NS(id="r", model="gpt-5.6-terra", status=status, incomplete_details=incomplete,
+                  output=output, usage=NS(input_tokens=10, output_tokens=5,
+                                          input_tokens_details=NS(cached_tokens=0,
+                                                                  cache_write_tokens=0),
+                                          output_tokens_details=NS(reasoning_tokens=0)))
+
+    def message(*parts):
+        return NS(type="message", content=list(parts))
+
+    refused = normalize_openai(response([message(
+        NS(type="output_text", text="partial"),
+        NS(type="refusal", refusal="I can't help with that."))]), "gpt-5.6-terra")
+    assert refused.stop_reason == "refusal", refused.stop_reason
+    assert refused.refusal and refused.refusal.explanation == "I can't help with that.", refused.refusal
+    assert refused.text == ("partial",) and refused.charges, "a refusal that wrote text is billed"
+
+    cut = normalize_openai(response([message(NS(type="output_text", text="half"))], "incomplete",
+                                    NS(reason="max_output_tokens")), "gpt-5.6-terra")
+    assert (cut.stop_reason, cut.native_stop_reason) == ("max_tokens", "max_output_tokens"), cut
+    assert cut.native_stop_details == {"reason": "max_output_tokens"}, cut.native_stop_details
+    assert cut.refusal is None
+
+    filtered = normalize_openai(response([], "incomplete", NS(reason="content_filter")),
+                                "gpt-5.6-terra")
+    assert (filtered.stop_reason, filtered.native_stop_reason) == ("other", "content_filter")
+    pending = normalize_openai(response([], "in_progress"), "gpt-5.6-terra")
+    assert (pending.stop_reason, pending.native_stop_reason) == ("other", "in_progress"), pending
+
+    for arguments in ("[1]", "{"):
+        call = NS(type="function_call", call_id="c", name="bash", arguments=arguments)
+        try:
+            normalize_openai(response([call]), "gpt-5.6-terra")
+        except providers.ProviderError as error:
+            assert (error.provider, error.category) == ("openai", "adapter"), error.as_dict()
+        else:
+            raise AssertionError(f"arguments {arguments!r} became a tool call")

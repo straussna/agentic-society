@@ -20,6 +20,7 @@ from typing import Any, Callable, TypeVar
 
 import harness
 import product
+import providers
 from harness import check_keys
 
 T = TypeVar("T")
@@ -687,9 +688,10 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
     def go(agent: str, ep: harness.Episode) -> None:
         try:
             outs[agent] = harness.run_episode(ep, create)
-            if ep.account.get("provider") != "human" and stamp and stamp.get("experiment_id"):
-                human_waiting = any(other.account.get("provider") == "human" and name not in outs
-                                    for name, other in built.items())
+            if (not providers.is_interactive(ep.account.get("provider"))
+                    and stamp and stamp.get("experiment_id")):
+                human_waiting = any(providers.is_interactive(other.account.get("provider"))
+                                    and name not in outs for name, other in built.items())
                 product.progress(harness.ROOT, stamp["experiment_id"],
                                  "waiting_player" if human_waiting else "resolving_actions",
                                  rnd + 1, {"completed_autonomous": agent})
@@ -951,7 +953,7 @@ def main(argv: list[str] | None = None) -> int:
     for entry in manifest["agents"]:
         account = harness.load_account(entry["id"], **terms_of(entry))
         account["product"] = {"quality_tier": entry.get(
-            "quality_tier", "interactive" if entry["provider"] == "human" else "standard")}
+            "quality_tier", "interactive" if providers.is_interactive(entry["provider"]) else "standard")}
         harness.save_account(entry["id"], account)
         inherit_memory(entry, account)
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
@@ -963,7 +965,8 @@ def main(argv: list[str] | None = None) -> int:
             round_number = max((len(harness.load_account(agent).get("episodes", []))
                                 for agent in agents), default=0) + 1
             rnd = round_number - 1
-            cost = product.cost(agents, harness.load_account, manifest["cost"])
+            cost = product.cost(agents, harness.load_account, manifest["cost"],
+                                providers.is_interactive)
             product.progress(harness.ROOT, experiment_id, "preparing_round", round_number,
                              {"cost": cost, "agents": agents,
                               "schedule": manifest["schedule"]})
@@ -971,9 +974,9 @@ def main(argv: list[str] | None = None) -> int:
                 reason = "cost_ceiling"
                 break
             autonomous = [entry["id"] for entry in manifest["agents"]
-                          if entry["id"] in live and entry["provider"] != "human"]
+                          if entry["id"] in live and not providers.is_interactive(entry["provider"])]
             players = [entry["id"] for entry in manifest["agents"]
-                       if entry["id"] in live and entry["provider"] == "human"]
+                       if entry["id"] in live and providers.is_interactive(entry["provider"])]
             if autonomous:
                 product.progress(harness.ROOT, experiment_id, "waiting_autonomous", round_number,
                                  {"agents": autonomous})

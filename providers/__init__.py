@@ -7,26 +7,29 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
-from .anthropic import AnthropicProvider, MODELS as ANTHROPIC_MODELS
-from .base import (Charge, ModelProvider, ModelSession, ModelSpec, NormalizedTurn,
-                   PendingResponse, ProviderConfigurationError, ProviderError, ProviderFailure, ProviderRouter,
-                   Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, USAGE_FIELDS, Usage)
-from .human import HumanProvider, MODELS as HUMAN_MODELS
-from .openai import MODELS as OPENAI_MODELS, OpenAIProvider
+from .anthropic import AnthropicProvider
+from .base import (Charge, FailureCategory, ModelProvider, ModelSession, ModelSpec, NormalizedTurn,
+                   PendingResponse, ProviderConfigurationError, ProviderError, ProviderRouter,
+                   Refusal, SessionContext, StopReason, ToolCall, ToolResult, ToolSpec, USAGE_FIELDS,
+                   Usage)
+from .human import HumanProvider
+from .openai import OpenAIProvider
 
 
-CATALOGS = {"anthropic": ANTHROPIC_MODELS, "openai": OPENAI_MODELS, "human": HUMAN_MODELS}
 FACTORIES = {"anthropic": AnthropicProvider, "openai": OpenAIProvider, "human": HumanProvider}
-PROVENANCE = {
-    "anthropic": {"adapter": "anthropic-messages-v1", "endpoint": "first-party"},
-    "openai": {"adapter": "openai-responses-v1", "endpoint": "first-party", "store": False,
-               "reasoning_state": "encrypted"},
-    "human": {"adapter": "interaction-store-v1", "endpoint": "local"},
-}
+CATALOGS = {name: factory.models for name, factory in FACTORIES.items()}
 
 
 def provider_names() -> tuple[str, ...]:
     return tuple(FACTORIES)
+
+
+def is_interactive(provider: str | None) -> bool:
+    """Whether a person, not a model, answers this provider's turns.
+
+    No one answers for a provider no adapter is registered under, or for none.
+    """
+    return provider in FACTORIES and FACTORIES[provider].interactive
 
 
 def model_spec(provider: str, model: str) -> ModelSpec:
@@ -42,8 +45,9 @@ def model_spec(provider: str, model: str) -> ModelSpec:
 
 
 def provenance(provider: str, model: str) -> dict[str, Any]:
+    """The trace's provider record: the name, what the adapter declares, and the model."""
     spec = model_spec(provider, model)
-    return {"name": provider, **PROVENANCE[provider], "model_spec": spec.as_dict()}
+    return {"name": provider, **FACTORIES[provider].provenance_facts, "model_spec": spec.as_dict()}
 
 
 def lapsed_prices(requirements: Iterable[tuple[str, str]], today: dt.date | None = None) -> list[str]:
@@ -80,11 +84,9 @@ class DirectProviderRouter:
         model_spec(provider, model)
         return self.providers[provider].open_session(model, system, tools, max_tokens, context)
 
-    def provenance(self, provider: str, model: str) -> dict[str, Any]:
-        return self.providers[provider].provenance(model)
 
-
-__all__ = ["Charge", "DirectProviderRouter", "ModelProvider", "ModelSession", "ModelSpec",
-           "NormalizedTurn", "PendingResponse", "ProviderConfigurationError", "ProviderError", "ProviderFailure",
-           "ProviderRouter", "Refusal", "SessionContext", "ToolCall", "ToolResult", "ToolSpec", "USAGE_FIELDS",
-           "Usage", "lapsed_prices", "model_spec", "provenance", "provider_names"]
+__all__ = ["Charge", "DirectProviderRouter", "FailureCategory", "ModelProvider", "ModelSession",
+           "ModelSpec", "NormalizedTurn", "PendingResponse", "ProviderConfigurationError",
+           "ProviderError", "ProviderRouter", "Refusal", "SessionContext", "StopReason", "ToolCall",
+           "ToolResult", "ToolSpec", "USAGE_FIELDS", "Usage", "is_interactive", "lapsed_prices",
+           "model_spec", "provenance", "provider_names"]

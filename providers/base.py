@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 
-USAGE_FIELDS = ("prefix_tokens", "uncached_input_tokens", "cache_read_tokens",
-                "cache_write_tokens", "output_tokens", "reasoning_tokens")
+# What every adapter maps its native stop reasons onto, and the turn loop branches on.
+StopReason = Literal["end_turn", "tool_use", "max_tokens", "refusal", "other"]
+
+# How a provider failure is classified; retryable_api is the one a retry can cure.
+FailureCategory = Literal["authentication", "retryable_api", "permanent_api", "adapter"]
+
+# Exception classes, by name, of a request that got no answer: a dropped connection
+# or a timeout. They carry no status code. A name anywhere in an exception's MRO
+# counts, so the SDKs' subclasses of these and the standard library's do too.
+RETRYABLE = {"APIConnectionError", "APITimeoutError", "ConnectionError", "TimeoutError"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -69,9 +78,8 @@ class Usage:
     def as_dict(self) -> dict[str, int]:
         return dataclasses.asdict(self)
 
-    @classmethod
-    def zero(cls) -> "Usage":
-        return cls()
+
+USAGE_FIELDS = tuple(f.name for f in dataclasses.fields(Usage))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -104,7 +112,7 @@ class NormalizedTurn:
     provider: str
     requested_model: str
     resolved_model: str
-    stop_reason: str
+    stop_reason: StopReason
     native_stop_reason: str | None
     text: tuple[str, ...]
     reasoning: tuple[str, ...]
@@ -138,41 +146,69 @@ class ModelSpec:
         return json.loads(json.dumps(dataclasses.asdict(self)))
 
 
-@dataclasses.dataclass(frozen=True)
-class ProviderFailure:
-    category: str
-    provider: str
-    message: str
-    status_code: int | None = None
-    native_type: str | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
-
-
 class ProviderError(RuntimeError):
     """A provider failure classified without exposing SDK exception types."""
 
-    def __init__(self, message: str, *, category: str, provider: str,
+    def __init__(self, message: str, *, category: FailureCategory, provider: str,
                  status_code: int | None = None, native_type: str | None = None):
         super().__init__(message)
-        self.category = category
+        self.category: FailureCategory = category
         self.provider = provider
         self.status_code = status_code
         self.native_type = native_type
-        self.failure = ProviderFailure(category, provider, message, status_code, native_type)
 
     @property
     def retryable(self) -> bool:
         return self.category == "retryable_api"
 
     def as_dict(self) -> dict[str, Any]:
-        return self.failure.as_dict()
+        return {"category": self.category, "provider": self.provider, "message": str(self),
+                "status_code": self.status_code, "native_type": self.native_type}
 
 
 class ProviderConfigurationError(ProviderError):
     def __init__(self, message: str, *, provider: str):
         super().__init__(message, category="adapter", provider=provider)
+
+
+def classify_error(error: Exception, provider: str) -> ProviderError:
+    """Classify an SDK exception by its status code, or by its class where it has none.
+
+    401 and 403 are authentication; 408, 409, 429 and 5xx are worth retrying, and
+    any other status is permanent. With no status, a class named in RETRYABLE is a
+    request that got no answer, and is retried; anything else is the adapter's.
+    """
+    status = getattr(error, "status_code", None)
+    name = type(error).__name__
+    category: FailureCategory
+    if status in (401, 403) or "Authentication" in name or "PermissionDenied" in name:
+        category = "authentication"
+    elif status in (408, 409, 429) or isinstance(status, int) and status >= 500:
+        category = "retryable_api"
+    elif status is not None:
+        category = "permanent_api"
+    elif any(cls.__name__ in RETRYABLE for cls in type(error).__mro__):
+        category = "retryable_api"
+    else:
+        category = "adapter"
+    return ProviderError(f"{name}: {error}", category=category, provider=provider,
+                         status_code=status, native_type=name)
+
+
+def refuse_custom_endpoint(variable: str, provider: str) -> None:
+    """Refuse an endpoint redirected through `variable`: the adapters speak first-party only."""
+    if os.environ.get(variable):
+        raise ProviderConfigurationError(
+            f"{variable} is not supported; provider adapters use first-party endpoints",
+            provider=provider)
+
+
+def require_key(variable: str, provider: str) -> None:
+    """Refuse a provider whose API key is not in the environment, saying where it goes."""
+    if not os.environ.get(variable):
+        raise ProviderError(f"{variable} is not set. Set {variable} in the shell this "
+                            "experiment is launched from.", category="authentication",
+                            provider=provider)
 
 
 class PendingResponse:
@@ -201,13 +237,24 @@ class ModelSession(Protocol):
 
 @runtime_checkable
 class ModelProvider(Protocol):
+    """A provider adapter, whose class declares what is recorded of it.
+
+    `interactive` says a person, not a model, answers its turns. `provenance_facts`
+    is the adapter's part of a trace's provider record, in the order the trace keeps
+    it; providers.provenance() puts the name before it and the model spec after.
+    """
+
     name: str
-    models: Mapping[str, ModelSpec]
+    interactive: bool
+
+    @property
+    def models(self) -> Mapping[str, ModelSpec]: ...
+    @property
+    def provenance_facts(self) -> Mapping[str, Any]: ...
 
     def preflight(self, models: Iterable[str]) -> None: ...
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
                      max_tokens: int, context: SessionContext) -> ModelSession: ...
-    def provenance(self, model: str) -> dict[str, Any]: ...
 
 
 @runtime_checkable
@@ -216,7 +263,6 @@ class ProviderRouter(Protocol):
     def open_session(self, provider: str, model: str, system: str,
                      tools: tuple[ToolSpec, ...], max_tokens: int,
                      context: SessionContext) -> ModelSession: ...
-    def provenance(self, provider: str, model: str) -> dict[str, Any]: ...
 
 
 def native_dict(value: Any) -> dict[str, Any]:

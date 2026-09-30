@@ -8,6 +8,7 @@ import json
 import experiment
 import harness
 import product
+import providers
 from checks.fake import fake, say
 from checks.lanes import manifest_file, quiet, temp_root
 
@@ -57,7 +58,8 @@ def check_product_records_cost_progress_and_outcome_from_accounts_and_traces():
             trace.write_text(json.dumps({"agent": agent}), encoding="utf-8")
         load = accounts.__getitem__
         cost = product.cost(accounts, load,
-                            {"maximum": 130, "reserved_completion": 100, "warning": 20})
+                            {"maximum": 130, "reserved_completion": 100, "warning": 20},
+                            providers.is_interactive)
         assert cost["autonomous_spend"] == 30 and cost["warning_reached"]
         assert cost["ceiling_reached"], "the reserve is protected before another round starts"
         first = product.progress(root, "pilot", "preparing_round", 1)

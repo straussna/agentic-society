@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .base import (ModelSpec, NormalizedTurn, PendingResponse, SessionContext, ToolResult,
-                   ToolSpec, Usage)
+from .base import (ModelSpec, NormalizedTurn, PendingResponse, SessionContext, StopReason,
+                   ToolResult, ToolSpec, Usage)
 
 
 MODELS = {
@@ -41,21 +41,23 @@ class HumanSession:
         except InteractionCancelled as error:
             raise KeyboardInterrupt from error
         calls = submission.tool_calls
-        stop = "tool_use" if submission.action == "tool_calls" else "end_turn"
+        stop: StopReason = "tool_use" if submission.action == "tool_calls" else "end_turn"
         native = {"id": submission.submission_id, "provider": self.provider,
                   "model": self.requested_model, "stop_reason": stop,
                   "request_id": request.request_id,
                   "content": [call.as_dict() for call in calls],
-                  "usage": Usage.zero().as_dict()}
+                  "usage": Usage().as_dict()}
         turn = NormalizedTurn(submission.submission_id, self.provider, self.requested_model,
                               self.requested_model, stop, stop, (), (), calls,
-                              Usage.zero(), ())
+                              Usage(), ())
         return PendingResponse(self.provider, native, lambda: turn)
 
 
 class HumanProvider:
     name = "human"
+    interactive = True
     models = MODELS
+    provenance_facts = {"adapter": "interaction-store-v1", "endpoint": "local"}
 
     def preflight(self, models: Iterable[str]) -> None:
         for model in models:
@@ -65,7 +67,3 @@ class HumanProvider:
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
                      max_tokens: int, context: SessionContext) -> HumanSession:
         return HumanSession(model, system, tools, context)
-
-    def provenance(self, model: str) -> dict:
-        return {"name": self.name, "adapter": "interaction-store-v1", "endpoint": "local",
-                "model_spec": self.models[model].as_dict()}

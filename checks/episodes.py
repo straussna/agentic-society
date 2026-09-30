@@ -13,6 +13,7 @@ import json
 import signal
 import sys
 import harness
+import providers
 
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think, usage
 from checks.lanes import (
@@ -22,7 +23,6 @@ from checks.lanes import (
     digest_name,
     episode_once,
     ground_truth,
-    host_root,
     never_start,
     pinned,
     plant,
@@ -645,3 +645,29 @@ def check_a_stalled_agent_stops_itself():
     # A runaway guard, not a productivity filter: a healthy agent can refuse a
     # few episodes running and recover.
     assert streak > 3, f"REFUSAL_STREAK={streak} would stop an agent that recovers"
+
+
+def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_commits():
+    """What is not the API failing is harness_error, and the spend before it commits.
+
+    An adapter that cannot read what the API sent and an exception from anywhere
+    else are both on this side of the line. Neither is retried, the error names its
+    type, and only the adapter's carries the provider's classification.
+    """
+    faults = ((providers.ProviderError("bad", category="adapter", provider="anthropic"),
+               "ProviderError"), (ValueError("bad"), "ValueError"))
+    for fault, kind in faults:
+        with temp_root():
+            t = episode_once(run("echo before"), fault)
+            account = ground_truth()
+        assert t["stop"] == "harness_error", (kind, t["stop"])
+        assert t["error"] == f"{kind}: bad" and t["retries"] == [], (t["error"], t["retries"])
+        assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
+        assert t["spent"] > 0 and account["initial"] - account["remaining"] == t["spent"], \
+            "the turn before the fault was billed and reached the series"
+        if kind == "ProviderError":
+            assert t["provider_error"] == {"category": "adapter", "provider": "anthropic",
+                                           "message": "bad", "status_code": None,
+                                           "native_type": None}, t["provider_error"]
+        else:
+            assert "provider_error" not in t, t["provider_error"]

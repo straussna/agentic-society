@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 VERSION = 1
@@ -80,12 +80,13 @@ def progress(runtime_root: Path, experiment_id: str, phase: str, round_number: i
     return record
 
 
-def cost(agents: Iterable[str], load_account, policy: dict[str, Any]) -> dict[str, Any]:
+def cost(agents: Iterable[str], load_account, policy: dict[str, Any],
+         interactive: Callable[[str | None], bool]) -> dict[str, Any]:
     spent = 0
     tiers = {}
     for agent in agents:
         account = load_account(agent)
-        if account.get("provider") != "human":
+        if not interactive(account.get("provider")):
             spent += sum(int(episode.get("spent", 0)) for episode in account.get("episodes", []))
         tiers[agent] = (account.get("product") or {}).get("quality_tier", "standard")
     maximum = policy.get("maximum")

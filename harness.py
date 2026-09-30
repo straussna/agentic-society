@@ -60,7 +60,7 @@ from typing import Any, Callable, Iterable
 
 import providers
 from providers import (NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult,
-                       SessionContext, ToolSpec, Usage)
+                       SessionContext, ToolSpec)
 
 
 # --- 1. What the harness says ----------------------------------------------------
@@ -1048,8 +1048,6 @@ WATCH_LIMIT = 2_000          # agent text on screen; the trace still keeps it al
 # running at once each label their own lines.
 WATCH_AGENT: contextvars.ContextVar[str] = contextvars.ContextVar("WATCH_AGENT", default="")
 
-RETRYABLE = {"APIConnectionError", "APITimeoutError", "ConnectionError", "TimeoutError"}
-
 # Set by SIGINT and SIGTERM once catch_signals has run. The turn loop reads it
 # where it reads the account floor, so an interrupt ends the episode the way the
 # floor does: after a whole turn, with the trace written and the spend
@@ -1082,12 +1080,11 @@ STOPS_THE_AGENT = {"interrupted", "api_error", "harness_error"}
 # STOPS_THE_AGENT.
 STOPS_THE_EXPERIMENT = {"interrupted"}
 
-# The stop reasons run_turns() knows how to act on. max_tokens and refusal have
-# branches of their own before this is consulted; the rest mean the turn is
-# whole, and what happens next is decided by whether it called a tool. Anything
-# outside this set ends the episode as unhandled:<reason> instead of being read
-# as an ordinary finished turn.
-HANDLED_STOPS = {"end_turn", "tool_use", "max_tokens", "refusal", "other"}
+# The stop reasons stop_of() reads as a whole turn, whose next step is decided by
+# whether it called a tool. run_turns() answers max_tokens, refusal and other
+# before it asks; any other reason reaching stop_of() ends the episode as
+# unhandled:<reason> instead of being read as an ordinary finished turn.
+HANDLED_STOPS = {"end_turn", "tool_use"}
 
 COST_WORDS = re.compile(r"\b(cost|price|token|budget|dollar|spend|spent|charge|consum\w*)\b", re.I)
 
@@ -3270,23 +3267,24 @@ def bill_once(turn: NormalizedTurn, seen: set[str]) -> tuple[tuple, int, bool]:
     return turn.charges, sum(item.centi_micros for item in turn.charges), False
 
 
-def call(request: Callable[[], Any], log: list) -> Any:
+def call[T](request: Callable[[], T], log: list[dict[str, Any]]) -> T:
     """Retry 429/5xx/network up to RETRY_ATTEMPTS with jittered backoff.
 
-    The client is built with max_retries=0, so this is the only retry layer.
+    Only a ProviderError its adapter classified as retryable is tried again;
+    anything else is raised at once. The client is built with max_retries=0, so
+    this is the only retry layer.
     """
-    for attempt in range(1, RETRY_ATTEMPTS + 1):
+    attempt = 1
+    while True:
         try:
             return request()
-        except Exception as e:
-            status = getattr(e, "status_code", None)
-            retryable = isinstance(e, ProviderError) and e.retryable
-            if not retryable or attempt == RETRY_ATTEMPTS:
+        except ProviderError as e:
+            if not e.retryable or attempt >= RETRY_ATTEMPTS:
                 raise
-            log.append({"attempt": attempt, "provider": getattr(e, "provider", None),
-                        "error": type(e).__name__, "category": getattr(e, "category", None),
-                        "status": status})
+            log.append({"attempt": attempt, "provider": e.provider, "error": type(e).__name__,
+                        "category": e.category, "status": e.status_code})
             time.sleep(min(RETRY_CAP_S, RETRY_BASE ** attempt) * (1 + random.random() * RETRY_JITTER))
+            attempt += 1
 
 
 def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) -> None:
@@ -4491,9 +4489,7 @@ def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
         router = providers.DirectProviderRouter(requirements)
         router.preflight()
     except ProviderError as error:
-        key = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}.get(error.provider)
-        suffix = f" Set {key} in the shell this experiment is launched from." if key else ""
-        refuse(f"{error.provider} preflight failed ({error}).{suffix}")
+        refuse(f"{error.provider} preflight failed: {error}")
     return router
 
 

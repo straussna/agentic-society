@@ -8,6 +8,7 @@ import threading
 import harness
 import providers
 from providers import Charge, NormalizedTurn, PendingResponse, Refusal, ToolCall, Usage
+from providers.base import classify_error
 
 
 def usage(**kw):
@@ -49,10 +50,20 @@ def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn")
             "id": id, "stop": stop}
 
 
-class Err(providers.ProviderError):
+class FakeError(Exception):
+    """What an SDK raises for an answer with an HTTP status."""
+
     def __init__(self, status):
-        retryable = status in (408, 409, 429) or status >= 500
-        super().__init__(f"status {status}", category="retryable_api" if retryable else "permanent_api",
+        super().__init__(f"status {status}")
+        self.status_code = status
+
+
+class Err(providers.ProviderError):
+    """A failed request with `status`, classified the way an adapter classifies one."""
+
+    def __init__(self, status):
+        super().__init__(f"status {status}",
+                         category=classify_error(FakeError(status), "anthropic").category,
                          provider="anthropic", status_code=status, native_type="FakeError")
 
 
@@ -152,9 +163,6 @@ class FakeRouter:
             if self.scripts:
                 self.scripts[name] = steps
         return FakeSession(steps, provider, model, self.seen, self.on_request)
-
-    def provenance(self, provider, model):
-        return providers.provenance(provider, model)
 
 
 def fake(*steps, seen=None):

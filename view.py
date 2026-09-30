@@ -24,6 +24,7 @@ import analyze
 import experiment
 import harness
 import product
+import providers
 from interaction import (InteractionConflict, InteractionError, InteractionStore,
                          InvalidSubmission, StaleRequest)
 
@@ -807,7 +808,7 @@ def header(exp: dict) -> dict:
              "vote" if every and rnd and rnd % every == 0 else "discussion")
     experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
     records = product.records(harness.ROOT, experiment_id)
-    cost = product.cost(exp["members"], account_of, stamp.get("cost") or {})
+    cost = product.cost(exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive)
     return {
         "experiment": exp["name"], "experiment_id": experiment_id,
         "seated": exp["seated"], "posts": exp["posts"],
