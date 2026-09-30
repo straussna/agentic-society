@@ -82,6 +82,11 @@ class AuthenticationError(APIStatusError):
         super().__init__(401)
 
 
+class PermissionDeniedError(APIStatusError):
+    def __init__(self):
+        super().__init__(403)
+
+
 def statusless(name):
     """An exception of a class called `name` with no status code, which only its name classifies."""
     return type(name, (APIError,), {})()
@@ -262,7 +267,8 @@ def check_cli_provider_and_model_overrides_are_paired():
 def check_provider_preflight_requires_only_its_own_key():
     """A provider without its key, or whose key is refused, says where the key goes.
 
-    A preflight that got no answer is not about the key, and does not say so.
+    A preflight that got no answer is not about the key, and does not say so; nor is
+    one the key was accepted for and not permitted, whose key is already set.
     """
     class Models:
         def retrieve(self, *args, **kwargs):
@@ -288,15 +294,17 @@ def check_provider_preflight_requires_only_its_own_key():
     with swapped(os.environ, ANTHROPIC_API_KEY="test", OPENAI_API_KEY="test"):
         for build, variable, model in ((AnthropicProvider, "ANTHROPIC_API_KEY", "claude-sonnet-5"),
                                        (OpenAIProvider, "OPENAI_API_KEY", "gpt-5.6-terra")):
-            for error, category in ((AuthenticationError(), "authentication"),
-                                    (APIConnectionError(), "retryable_api")):
+            for error, category, hinted in ((AuthenticationError(), "authentication", True),
+                                            (PermissionDeniedError(), "authentication", False),
+                                            (APIConnectionError(), "retryable_api", False)):
                 try:
                     build(NS(models=Raising(error))).preflight([model])
                 except providers.ProviderError as failure:
                     assert failure.category == category, (variable, failure.as_dict())
                     assert failure.status_code == getattr(error, "status_code", None)
                     hint = f"Set {variable} in the shell this experiment is launched from."
-                    assert str(failure).endswith(hint) == (category == "authentication"), \
+                    assert str(failure).endswith(hint) == hinted, str(failure)
+                    assert hinted or str(failure) == f"{type(error).__name__}: {error}", \
                         str(failure)
                 else:
                     raise AssertionError(f"{variable}: preflight passed {error!r}")
@@ -408,6 +416,9 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
                     (name, type(error).__name__, failure.as_dict())
                 assert failure.status_code == getattr(error, "status_code", None)
                 assert failure.native_type == type(error).__name__ and failure.__cause__ is error
+                # What a trace's provider_error says of a failure mid-episode: the
+                # SDK's words and no more, the key having been accepted to get there.
+                assert str(failure) == f"{type(error).__name__}: {error}", str(failure)
             else:
                 raise AssertionError(f"{name} returned a response for {error!r}")
 

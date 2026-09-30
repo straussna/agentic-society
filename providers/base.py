@@ -178,8 +178,10 @@ def classify_error(error: Exception, provider: str,
     401 and 403, or a class named for authentication or a denied permission, are
     authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
     is permanent. With no status, a class named in RETRYABLE is a request that got
-    no answer, and is retried; anything else is the adapter's. An authentication
-    failure says where `key_variable` goes, when one is given.
+    no answer, and is retried; anything else is the adapter's. A refused key - 401,
+    or a class named for authentication - says where `key_variable` goes, when one
+    is given. A denied permission does not: the key was accepted, and is not
+    allowed what was asked.
     """
     status = getattr(error, "status_code", None)
     name = type(error).__name__
@@ -195,7 +197,7 @@ def classify_error(error: Exception, provider: str,
     else:
         category = "adapter"
     message = f"{name}: {error}"
-    if category == "authentication" and key_variable:
+    if key_variable and (status == 401 or "Authentication" in name):
         message = f"{message} {where_key_goes(key_variable)}"
     return ProviderError(message, category=category, provider=provider,
                          status_code=status, native_type=name)
