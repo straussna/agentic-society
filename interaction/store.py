@@ -100,7 +100,15 @@ class InteractionStore:
     def publish(self, agent: str, label: str, episode: int, turn: int, system_prompt: str,
                 content: str | tuple[ToolResult, ...],
                 tools: tuple[ToolSpec, ...]) -> InteractionRequest:
-        previous = self.current(agent)
+        """A new pending request for `agent`, which cancels the one it replaces.
+
+        A pending pointer that does not read names nothing to cancel, and this one
+        is written over it.
+        """
+        try:
+            previous = self.current(agent)
+        except UnreadableRecord:
+            previous = None
         if previous is not None:
             self.cancel(agent, previous.request_id)
         request_id = uuid.uuid4().hex
@@ -142,26 +150,42 @@ class InteractionStore:
 
     def history(self, agent: str) -> list[tuple[InteractionRequest, Submission]]:
         """Every request of `agent`'s that a submission answered, with that submission,
-        in episode and turn order."""
+        in episode and turn order.
+
+        A pair either of whose files does not read is left out, as pending() leaves
+        out a seat it cannot read.
+        """
         directory = self._requests(agent)
         if not directory.is_dir():
             return []
         out = []
         for path in directory.glob("*.json"):
-            submission = self._load(self._submission_path(agent, path.stem), Submission.from_dict)
-            if submission is None:
+            try:
+                submission = self._load(self._submission_path(agent, path.stem),
+                                        Submission.from_dict)
+                request = None if submission is None else self.request(agent, path.stem)
+            except UnreadableRecord:
                 continue
-            request = self.request(agent, path.stem)
-            if request is not None:
+            if request is not None and submission is not None:
                 out.append((request, submission))
         return sorted(out, key=lambda pair: (pair[0].episode, pair[0].turn, pair[0].created_at))
 
     def _finish(self, agent: str, request_id: str, status: str) -> None:
-        request = self.request(agent, request_id)
-        if request is None:
+        """Mark the request `status` and take down the pending pointer if it names it.
+
+        Either file is left as it is when it does not read: nothing can be rewritten
+        from it, and the next publish writes over the pointer.
+        """
+        try:
+            request = self.request(agent, request_id)
+        except UnreadableRecord:
+            request = None
+        if request is not None:
+            atomic(self._request_path(agent, request_id), {**request.as_dict(), "status": status})
+        try:
+            pointer = self._read(self._pending_path(agent))
+        except UnreadableRecord:
             return
-        atomic(self._request_path(agent, request_id), {**request.as_dict(), "status": status})
-        pointer = self._read(self._pending_path(agent))
         if pointer and pointer.get("request_id") == request_id:
             self._pending_path(agent).unlink(missing_ok=True)
 
@@ -176,7 +200,8 @@ class InteractionStore:
 
         An envelope Submission.parse refuses raises InvalidSubmission, a request no
         longer pending StaleRequest, and any submission but the winner InteractionConflict;
-        the winner sent again is returned.
+        the winner sent again is returned. A request, pending pointer or submission that
+        is there and does not read raises UnreadableRecord.
         """
         request = self.request(agent, request_id)
         if request is None:

@@ -18,8 +18,9 @@ from typing import Any, Callable, Iterable
 
 import product
 import view
-from interaction import (InteractionConflict, InteractionError, InteractionStore,
-                         InvalidSubmission, StaleRequest, Submission, UnreadableRecord)
+from interaction import (InteractionCancelled, InteractionConflict, InteractionError,
+                         InteractionStore, InvalidSubmission, StaleRequest, Submission,
+                         UnreadableRecord)
 from interaction import cli
 from providers import SessionContext, ToolResult, ToolSpec, Usage
 from providers.human import HumanProvider, HumanSession
@@ -243,6 +244,24 @@ def check_one_submission_sent_twice_at_once_returns_the_winner_to_both():
         assert got["first"] == got["again"], "both copies return the one that won"
 
 
+def check_the_winners_submission_id_on_other_calls_or_another_action_is_a_conflict():
+    """Only the winner sent again gets the winner back: a client that reused its id on
+    a different turn would otherwise be told it won while its own calls were dropped."""
+    with temp_root() as root:
+        store = InteractionStore(root / "interactions")
+        request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
+        won = store.submit("a", request.request_id, submission(request))
+        reused = {
+            "other calls": submission(request, "other"),
+            "another action": {**end_submission(request), "submission_id": won.submission_id},
+        }
+        for case, value in reused.items():
+            assert value["submission_id"] == won.submission_id, case
+            raised(InteractionConflict, lambda: store.submit("a", request.request_id, value),
+                   f"the winner's submission_id with {case} was answered as the winner")
+        assert store.wait(request, lambda: False, 0) == won, "and the winner is the turn"
+
+
 def check_an_unreadable_submission_ends_the_wait_instead_of_polling_forever():
     """A submission that is there and does not read can never be replaced, so waiting
     on it would hold the seat, and a simultaneous round with it, for good."""
@@ -311,23 +330,82 @@ def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent
                "a pending pointer to an incomplete request read as nothing pending")
 
 
-def check_history_pairs_each_answered_request_with_its_submission_in_turn_order():
+def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_wait():
+    """The pointer only says which request is pending. The next request is written over
+    one that does not read, and a wait on its own request ends as it would have: stopped
+    as stopped, answered with the submission that landed."""
     with temp_root() as root:
         store = InteractionStore(root / "interactions")
-        first = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
-        store.submit("a", first.request_id, submission(first, "one"))
-        store.wait(first, lambda: False, 0)
-        store.publish("a", "A", 1, 2, "", (ToolResult("call-1", "ok"),), TOOLS)
-        third = store.publish("a", "A", 2, 1, "", "observation", TOOLS)
-        store.submit("a", third.request_id, end_submission(third))
+        pointer = root / "interactions" / "pending" / "a.json"
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text("[]", encoding="utf-8")
+        stopped = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
+        assert store.current("a") == stopped, "the request's own pointer replaced the broken one"
+
+        pointer.write_text("[]", encoding="utf-8")
+        raised(InteractionCancelled, lambda: store.wait(stopped, lambda: True, 0),
+               "a stopped wait over an unreadable pointer ended some other way")
+        assert store.request("a", stopped.request_id).status == "cancelled"
+        assert pointer.read_text(encoding="utf-8") == "[]", "the pointer is left as it was"
+
+        taken = store.publish("a", "A", 1, 2, "", (ToolResult("call-1", "ok"),), TOOLS)
+        store.submit("a", taken.request_id, submission(taken))
+        pointer.write_text("[]", encoding="utf-8")
+        assert store.wait(taken, lambda: False, 0).tool_calls[0].input == {"body": "hello"}, \
+            "the submission that landed is the turn"
+        assert store.request("a", taken.request_id).status == "completed"
+
+        broken = store.publish("a", "A", 2, 1, "", "observation", TOOLS)
+        request_file = root / "interactions" / "requests" / "a" / f"{broken.request_id}.json"
+        request_file.write_text('{"version": 1}', encoding="utf-8")
+        raised(InteractionCancelled, lambda: store.wait(broken, lambda: True, 0),
+               "a stopped wait on a request that no longer reads ended some other way")
+        assert not pointer.exists(), "the pointer to the request it stopped is taken down"
+        pointer.write_text(json.dumps({"request_id": broken.request_id}), encoding="utf-8")
+        after = store.publish("a", "A", 3, 1, "", "observation", TOOLS)
+        assert store.current("a") == after, "a pointer to a request that does not read is written over"
+
+
+def answered(store: InteractionStore, episode: int, turn: int, end: bool = False):
+    """Seat a's request for one turn, published, answered and taken, as a human provider's is."""
+    request = store.publish("a", "A", episode, turn, "", "observation", TOOLS)
+    store.submit("a", request.request_id,
+                 end_submission(request) if end else submission(request, f"{episode}.{turn}"))
+    store.wait(request, lambda: False, 0)
+    return request
+
+
+def check_history_pairs_each_answered_request_with_its_submission_in_turn_order():
+    """Six turns over three episodes, so a directory listing in that order by chance is
+    one in 720."""
+    with temp_root() as root:
+        store = InteractionStore(root / "interactions")
+        turns = [(episode, turn) for episode in (1, 2, 3) for turn in (1, 2)]
+        for episode, turn in turns:
+            answered(store, episode, turn, end=turn == 2)
+        store.publish("a", "A", 4, 1, "", "observation", TOOLS)
         history = store.history("a")
-        assert [(r.episode, r.turn) for r, _ in history] == [(1, 1), (2, 1)], \
-            "the request nobody answered is left out"
-        assert [s.action for _, s in history] == ["tool_calls", "end_turn"]
-        assert history[0][1].tool_calls[0].input == {"body": "one"}
+        assert [(r.episode, r.turn) for r, _ in history] == turns, \
+            "every answered turn in order, and the request nobody answered left out"
+        assert all(r.request_id == s.request_id for r, s in history), "each with its own submission"
+        assert [s.action for _, s in history] == ["tool_calls", "end_turn"] * 3
+        assert [s.tool_calls[0].input for _, s in history if s.tool_calls] == \
+            [{"body": f"{episode}.1"} for episode in (1, 2, 3)]
         assert store.history("b") == []
         raised(InteractionError, lambda: store.history("../a"),
                "an agent name walked out of the store")
+
+
+def check_history_leaves_out_a_turn_whose_request_or_submission_does_not_read():
+    """A seat's history is still served when one of its turns is not: the player page
+    asks for it on every poll."""
+    with temp_root() as root:
+        store = InteractionStore(root / "interactions")
+        kept, cut, lost = (answered(store, 1, turn) for turn in (1, 2, 3))
+        submission_file(root, "a", cut.request_id).write_text("{truncated", encoding="utf-8")
+        request_file = root / "interactions" / "requests" / "a" / f"{lost.request_id}.json"
+        request_file.write_text('{"version": 1}', encoding="utf-8")
+        assert [r.request_id for r, _ in store.history("a")] == [kept.request_id]
 
 
 @contextlib.contextmanager
@@ -434,6 +512,41 @@ def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
         assert third.tool_calls[0].input == {"body": "from the browser"}, "and the browser kept its win"
 
 
+def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_going():
+    """At the start, on refresh and after a request moves on: the file is named, the
+    terminal goes on as if there were none, and the request after it can be answered."""
+    with temp_root() as root:
+        store = InteractionStore(root / "interactions")
+        pointer = root / "interactions" / "pending" / "a.json"
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text("[]", encoding="utf-8")
+        turns: dict[str, Any] = {}
+        drafts = root / "interactions" / "drafts" / "a"
+
+        def session():
+            yield "refresh"
+            turns["first"] = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
+            yield "refresh"
+            turns["second"] = second = store.publish("a", "A", 1, 2, "",
+                                                     (ToolResult("call-1", "ok"),), TOOLS)
+            drafts.mkdir(parents=True, exist_ok=True)
+            (drafts / f"{second.request_id}.json").write_text("{cut", encoding="utf-8")
+            yield "done"
+            yield "draft"
+            yield "done"
+
+        with terminal(session()) as out:
+            assert cli.run("a", root / "interactions") == 0, "end of input leaves the terminal"
+        said_in_order(out, f"unreadable: {pointer}", "No pending interaction for a.",
+                      f"unreadable: {pointer}", "No pending interaction.",
+                      "A · a · episode 1 · turn 1",
+                      "request changed: the request is no longer pending",
+                      f"unreadable: {drafts / turns['second'].request_id}.json", "empty",
+                      "submitted end_turn")
+        ended = store.wait(turns["second"], lambda: False, 0)
+        assert ended.action == "end_turn", "the request after the broken files took the answer"
+
+
 def human_session(root: Path, agent: str,
                   stopping: threading.Event | None = None) -> tuple[HumanSession, threading.Event]:
     """A human provider session, and an event set each time it waits on a published request.
@@ -519,7 +632,6 @@ def check_human_provider_cancels_its_request_when_the_episode_stops():
         assert isinstance(outcome.get("error"), KeyboardInterrupt), outcome
         assert store.request("b", pending.request_id).status == "cancelled"
         assert store.current("b") is None, "nothing is left pending for a client to answer"
-
 
 
 def check_view_interaction_route_requires_origin_token_and_pending_request():
@@ -627,6 +739,11 @@ def check_view_interaction_route_answers_each_refusal_with_its_own_status():
                 "the same submission again": (to(answer, submission(pending)), 201),
                 "a different submission after it": (
                     to(answer, {**submission(pending, "other"), "submission_id": "other"}), 409),
+                "the winner's submission_id on other calls": (
+                    to(answer, submission(pending, "other")), 409),
+                "the winner's submission_id on another action": (
+                    to(answer, {**end_submission(pending),
+                                "submission_id": submission(pending)["submission_id"]}), 409),
             }
             unread = store.publish("t", "1", 3, 1, "system", "observation", TOOLS)
             path = submission_file(root, "t", unread.request_id)

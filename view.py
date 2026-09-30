@@ -726,8 +726,8 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     try:
         interaction = InteractionStore(harness.interactions_root()).current(agent)
     except InteractionError:
-        # Left out, as /api/interaction leaves it out: the human provider meets the same
-        # file and ends its episode naming it.
+        # Left out, as /api/interaction leaves it out: the seat's own route reports the
+        # file, and the seat's next request is written over it.
         interaction = None
     going = live_state(agent, live, account)
     mine = [r for r in rows if r["agent"] == agent]

@@ -37,10 +37,30 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
     print(f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}")
 
 
+def waiting(store: InteractionStore,
+            agent: str) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
+    """The request pending for `agent` and its draft.
+
+    A pending pointer or request that does not read is reported and reads as none; a
+    draft that does not read is reported and starts empty, since the next save replaces it.
+    """
+    try:
+        request = store.current(agent)
+    except UnreadableRecord as error:
+        print(f"unreadable: {error}")
+        return None, []
+    if request is None:
+        return None, []
+    try:
+        return request, store.load_draft(agent, request.request_id)
+    except UnreadableRecord as error:
+        print(f"unreadable: {error}")
+        return request, []
+
+
 def run(agent: str, root: Path) -> int:
     store = InteractionStore(root)
-    request = store.current(agent)
-    draft = store.load_draft(agent, request.request_id) if request else []
+    request, draft = waiting(store, agent)
     if request:
         describe(request, draft)
     else:
@@ -58,8 +78,7 @@ def run(agent: str, root: Path) -> int:
             if command in ("quit", "q"):
                 return 0
             if command in ("tools", "refresh"):
-                request = store.current(agent)
-                draft = store.load_draft(agent, request.request_id) if request else []
+                request, draft = waiting(store, agent)
                 if request:
                     describe(request, draft)
                 else:
@@ -115,8 +134,7 @@ def run(agent: str, root: Path) -> int:
             print(f"unreadable: {error}")
         except InteractionError as error:
             print(f"request changed: {error}")
-            request = store.current(agent)
-            draft = store.load_draft(agent, request.request_id) if request else []
+            request, draft = waiting(store, agent)
     return 0
 
 
