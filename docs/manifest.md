@@ -148,7 +148,7 @@ those; `outcome.json`; and, for a branch, `lineage.json`. The outcome's
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
-| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain, both of them electors in it |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
@@ -468,7 +468,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; if two or more agents share the highest total, nobody is eliminated by vote |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated, and a seat whose episode the experimenter's stop ended before it voted is not a nonvoter; if two or more agents share the highest total, nobody is eliminated by vote |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 

@@ -662,6 +662,15 @@ def drop_out(agent: str, live: set[str]) -> None:
     live.discard(agent)
 
 
+def drop_those_out(agents: list[str], live: set[str]) -> None:
+    """Take off the table, in seat order, every agent at it whose account admits no
+    further episode. Every reason why_out gives is final, so the table this leaves is the
+    same whether it is asked as one round ends or as the next begins."""
+    for agent in agents:
+        if agent in live and harness.why_out(harness.load_account(agent)):
+            drop_out(agent, live)
+
+
 def drops(stop: str) -> bool:
     """Whether an episode that ended on `stop` takes its agent off the table for the
     rest of the run: a fault of the agent's, where the experimenter's stop is not."""
@@ -678,10 +687,8 @@ def take_seats(agents: list[str], live: set[str]) -> None:
     plus one, so it cannot sit at the table's round, and the rounds it missed are over.
     One that missed only the last round stays, and finishes that round first.
     """
+    drop_those_out(agents, live)
     accounts = {agent: harness.load_account(agent) for agent in agents}
-    for agent in agents:
-        if agent in live and harness.why_out(accounts[agent]):
-            drop_out(agent, live)
     played = max((len(accounts[agent]["episodes"]) for agent in live), default=0)
     for agent in agents:
         if agent in live and (taken := len(accounts[agent]["episodes"])) < played - 1:
@@ -908,6 +915,9 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
     The vote tool's cadence defines the cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
     tool call. The result contains aggregate totals, never voter-to-target mappings.
+    An elector that cast no ballot abstained, unless the experimenter's stop ended its
+    episode of the round: that is not the agent's doing, so it keeps its seat, and it
+    is in the tally like any elector, to be voted out or not.
 
     The electorate is read from the accounts, so an election resolved when a run
     resumes counts the voters one resolved as the round ended would have. An election
@@ -952,7 +962,9 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
     for target in ballots.values():
         if target in tally:
             tally[target] += 1
-    abstainers = set(electorate) - set(ballots)
+    abstainers = {agent for agent in electorate if agent not in ballots and
+                  accounts[agent]["episodes"][round_number - 1]["stop"]
+                  not in harness.STOPS_THE_EXPERIMENT}
     leaders: set[str] = set()
     if ballots:
         most = max(tally.values())
@@ -999,11 +1011,15 @@ def concluded(election: int | None, agents: list[str], live: set[str],
     where they go on or there was no election.
 
     "all_eliminated" when it left nobody, "one_remains" when the manifest stops after
-    one agent remains, and "final_tie" when it stops at a tied vote between the last
-    two, both of whom were in it.
+    one agent remains, and "final_tie" when it stops at a tied vote and exactly two
+    remain, both of whom were in it. An agent the round left spent out, or otherwise
+    with no further episode, does not remain: it leaves the table first, as it would at
+    the next round's start, so an election is judged the same whether the rounds go on
+    in this run or in one that resumes it.
     """
     if election is None:
         return None
+    drop_those_out(agents, live)
     if not live:
         print(f"every agent is out after {election} rounds")
         return "all_eliminated"
@@ -1039,9 +1055,7 @@ def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, rout
     # Asked before the round, so the header names who will act. Between here and
     # an agent's own turn its balance can only move up, a peer's transfer being
     # the only thing that reaches it, so this is the answer its episode would give.
-    for agent in agents:
-        if agent in live and harness.why_out(harness.load_account(agent)):
-            drop_out(agent, live)
+    drop_those_out(agents, live)
     if not live:
         print(f"every agent is out after {rnd} rounds")
         return "all_eliminated"
