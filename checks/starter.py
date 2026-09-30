@@ -306,7 +306,8 @@ def check_fork_refuses_what_it_cannot_rebuild():
     with rooted(HostBox):
         priv = harness.records_dir("p") / "traces"
         priv.mkdir(parents=True)
-        harness.save_account("p", {"account_version": 2, "agent": "p", "provider": "anthropic",
+        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
+                                   "provider": "anthropic",
                                    "model": "claude-opus-5", "initial": 10,
                                    "created_at": "now", "remaining": 9, "series": [10, 9],
                                    "episodes": [{"episode": 1, "stop": "end_turn",
@@ -346,3 +347,63 @@ def check_fork_refuses_what_it_cannot_rebuild():
             assert harness.fork("p", 9, "x-missing") != 0, "forked an episode that never ran"
             assert harness.fork("nosuch", 1, "x-none") != 0, "forked an agent that is not there"
             assert harness.fork("p", 1, "good") == 0, "and a storable episode still forks"
+
+
+def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
+    """A record outside every tree the agent writes stops the fork before anything is written.
+
+    Otherwise the records ahead of it would sit in the new id's mirrors, and the
+    corrected fork under the same id would be refused as an agent that exists.
+    """
+    with rooted(HostBox):
+        (harness.records_dir("p") / "traces").mkdir(parents=True)
+        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
+                                   "provider": "anthropic", "model": "claude-opus-5",
+                                   "initial": 10, "created_at": "now", "remaining": 9,
+                                   "series": [10, 9],
+                                   "episodes": [{"episode": 1, "stop": "end_turn",
+                                                 "spent": 1, "turns": 1}]})
+        mine = {"path": "state/a.txt", "channel": "notes", "writer": "self", "readers": "self",
+                "role": "own", "size": 3, "author": "self", "ours": False, "starter": False,
+                "text": "hi\n"}
+        trace = {"trace_version": harness.TRACE_VERSION, "episode": 1, "state_saved": True,
+                 "series_after": [10, 9], "files": [mine, {**mine, "path": "elsewhere/b.txt"}]}
+        harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
+        with quiet() as said:
+            assert harness.fork("p", 1, "f") == 2, "forked a record no tree holds"
+        assert "elsewhere/b.txt" in said.getvalue(), said.getvalue()
+        assert not harness.environment_dir("f").exists(), \
+            f"a refused fork left mirrors behind: {sorted(harness.environment_dir('f').rglob('*'))}"
+        assert not harness.records_dir("f").exists(), "and records"
+
+        trace["files"] = [mine]
+        harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
+        with quiet():
+            assert harness.fork("p", 1, "f") == 0, "the corrected fork takes the same id"
+        assert (harness.mirror("f", "notes") / "a.txt").read_text(encoding="utf-8") == "hi\n"
+
+
+def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
+    """drift() reads the previous episode's trace, and before a fork's first that is the parent's.
+
+    A fork is given its parent's episodes without their traces, so its first episode is
+    compared with the parent's trace of the episode it was forked at, and every later
+    one with its own. An episode whose previous trace is absent reports nothing and is
+    not refused: an account can list a history no trace here recorded.
+    """
+    with temp_root():
+        episode_once(say())
+        with quiet():
+            assert harness.fork("t", 1, "f") == 0
+        harness.CONTEXT_FRACTION = 0.5
+        with quiet():
+            first = harness.run_once("f", fake(say()))
+            later = harness.run_once("f", fake(say()))
+        harness.trace_path("f", 3).unlink()
+        with quiet():
+            blind = harness.run_once("f", fake(say()))
+    assert first["episode"] == 2, first["episode"]
+    assert any(d.startswith("context_fraction:") for d in first["provenance_drift"]), \
+        first["provenance_drift"]
+    assert later["provenance_drift"] == [], "its own trace after that, and nothing moved"
+    assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind["provenance_drift"]

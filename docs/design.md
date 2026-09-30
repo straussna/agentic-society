@@ -230,6 +230,13 @@ what is not. There is no gap left to report: no `rm`, `mv`, `chmod`, symlink or 
 path reaches a balance, and `live_balance_tampered` stops being a record of what an agent did
 and becomes a tripwire on the arrangement itself, which should read 0 forever.
 
+A receipt is the one harness file an experiment can place inside a directory the agent
+writes, such as its outbox. There it is root's and read-only, so a write to it is refused,
+but `rm` takes it like anything else in that directory. What the agent writes at that path
+in its place is its own: its episode's trace records it as the agent's, the next build
+leaves it where it is, and the next receipt is planted over it. Only a file holding
+exactly the bytes the harness planted there is scrubbed as the receipt.
+
 ## Why it is allowed to go negative
 
 A balance can cross zero and a decay law cannot, so the sign flip refutes in one datum

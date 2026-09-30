@@ -185,7 +185,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
             setattr(module, name, broken)
             refused_branch = None
             try:
-                with quiet():
+                with quiet() as said:
                     experiment.branch_experiment(source, 1, "takeover", "2", output)
             except OSError as e:
                 refused_branch = e
@@ -194,16 +194,18 @@ def check_a_branch_that_fails_partway_can_be_made_again():
             left = [agent for agent in ("takeover-01", "takeover-02")
                     if harness.records_dir(agent).exists() or harness.environment_dir(agent).exists()]
             written = output.exists() or product.directory(root, "takeover").exists()
-            failed.append((refused_branch, left, written))
+            failed.append((refused_branch, left, written, said.getvalue()))
         bundles = sorted((root / "displaced").iterdir())
         moved = [sorted(f"{kind.name}/{p.name}" for kind in bundle.iterdir() for p in kind.iterdir())
                  for bundle in bundles]
         with quiet():
             made = experiment.branch_experiment(source, 1, "takeover", "2", output)
         lineage = product.records(root, "takeover")["lineage"]
-    for refused_branch, left, written in failed:
+    for refused_branch, left, written, said in failed:
         assert isinstance(refused_branch, OSError), refused_branch
         assert not left and not written, (left, written)
+        # What was moved is the branch's own, not a previous run's state.
+        assert "moved takeover-01, takeover-02 aside to" in said and "starting fresh" not in said, said
     forked = [f"{kind}/takeover-0{seat}" for kind in ("environments", "records") for seat in (1, 2)]
     assert moved == [forked, sorted(forked + ["experiment_records/takeover"])], moved
     assert made == output and lineage["created_agents"] == {"1": "takeover-01", "2": "takeover-02"}

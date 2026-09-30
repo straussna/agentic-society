@@ -17,7 +17,7 @@ Sections, in the order an episode meets them:
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
- 10. The container and the shell    Container, Shell, load_state, save_state, clip,
+ 10. The container and the shell    Box, Container, Shell, load_state, save_state, clip,
                                     Bound, TOOL_KINDS, bind_tools, episode_specs
  11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
@@ -55,8 +55,9 @@ import tempfile
 import threading
 import time
 import tomllib
+from collections.abc import Set as AbstractSet
 from pathlib import Path
-from typing import Any, Callable, Iterable, NoReturn, Sequence
+from typing import IO, Any, Callable, Iterable, Mapping, NoReturn, Protocol, Sequence
 
 import product
 import providers
@@ -1022,6 +1023,9 @@ FILE_CONTENT_LIMIT = 100_000
 # role and author, and every episode record settles its channels by name.
 TRACE_VERSION = 4
 
+# The shape of an account: provider-neutral, its pinned terms beside the series.
+ACCOUNT_VERSION = 2
+
 # --watch only. Not in TUNABLES, so config.toml cannot set it, and it never
 # reaches the agent.
 WATCH = False
@@ -1099,8 +1103,17 @@ def records_dir(agent: str) -> Path:
     return records_root() / agent
 
 
-def displace_agents(agents: Iterable[str]) -> Path | None:
-    """Move existing records and environment mirrors into one preserved run bundle."""
+# What a run started without --resume says of the records it moved aside.
+FRESH_START = ("warning: starting fresh; displaced previous state for {names} to {bundle} "
+               "(use --resume to continue existing compatible records)")
+
+
+def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
+    """Move existing records and environment mirrors into one preserved run bundle.
+
+    `notice` is the line that says why, printed with {names} and {bundle} filled in
+    where anything was moved.
+    """
     agents = tuple(agents)
     sources = [(kind, place(agent))
                for kind, place in (("records", records_dir), ("environments", environment_dir))
@@ -1137,8 +1150,7 @@ def displace_agents(agents: Iterable[str]) -> Path | None:
         raise
 
     names = sorted({source.name for _, source in sources})
-    print(f"warning: starting fresh; displaced previous state for {', '.join(names)} to "
-          f"{bundle} (use --resume to continue existing compatible records)", file=sys.stderr)
+    print(notice.format(names=", ".join(names), bundle=bundle), file=sys.stderr)
     return bundle
 
 
@@ -1195,6 +1207,16 @@ def save_account(agent: str, account: dict) -> None:
     replace_file(tmp, f)
 
 
+def save_trace(agent: str, index: int, trace: dict) -> None:
+    """Write one episode's trace the way save_account writes an account, so a reader
+    finds it whole or not at all."""
+    f = trace_path(agent, index)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
+    replace_file(tmp, f)
+
+
 def replace_file(src: Path, dest: Path) -> None:
     """os.replace, retried while a Windows reader holds `dest` open: product.replace."""
     product.replace(src, dest)
@@ -1241,7 +1263,8 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
         # Element 0 of the series is the initial balance; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
-        save_account(agent, {"account_version": 2, "agent": agent, "provider": terms["provider"],
+        save_account(agent, {"account_version": ACCOUNT_VERSION, "agent": agent,
+                             "provider": terms["provider"],
                              "model": terms["model"], "initial": terms["budget"],
                              "seat": "1",
                              "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1259,7 +1282,7 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
         print(f"created agent {agent}: {terms['budget']} micro-dollars, "
               f"{terms['provider']}/{terms['model']}{declared}{starter}")
     account = json.loads(f.read_text(encoding="utf-8"))
-    if account.get("account_version") != 2 or "provider" not in account:
+    if account.get("account_version") != ACCOUNT_VERSION or "provider" not in account:
         raise SystemExit(f"agent {agent} has an account from the version-3 record format; "
                          "start a fresh agent id for provider-neutral records")
     try:
@@ -1654,7 +1677,8 @@ def reserved(instances: list[Instance], paths: list[str]) -> list[Instance]:
 
     A receipt sits inside a directory the agent writes and comes back with it at
     the episode's end; excluding it keeps it out of the digest, the obligation and
-    the record, where it would read as the agent's.
+    the record, where it would read as the agent's. A file the agent puts at that
+    path in its place is its own: snapshot records it and scrub_receipts leaves it.
     """
     for path in paths:
         for i, d in enumerate(instances):
@@ -1663,20 +1687,53 @@ def reserved(instances: list[Instance], paths: list[str]) -> list[Instance]:
     return instances
 
 
-def scrub_receipts(instances: list[Instance]) -> None:
-    """Remove last episode's receipts from the mirrors before this one is planted."""
+def receipts_planted(files: Mapping[str, str]) -> dict[str, str]:
+    """The receipts among the harness files an episode planted, as path -> sha256 of the
+    bytes planted. Kept in the episode's record, it is what tells a receipt from a file
+    the agent put in its place."""
+    return {c.receipt: hashlib.sha256(files[c.receipt].encode("utf-8")).hexdigest()
+            for c in channels() if c.schema and c.receipt and c.receipt in files}
+
+
+def receipt_files(instances: list[Instance],
+                  planted: Mapping[str, str]) -> list[tuple[str, Path, bool]]:
+    """Every file at a receipt path inside a directory the agent writes, as (its path in
+    /work, the file in the mirror, whether it holds the bytes `planted` names for it).
+
+    The directory is the agent's, so it can remove a receipt and write a file of its
+    own there; only one holding what the harness planted is the harness's.
+    """
+    claimed = {n.host for n in instances if n.nested}
+    out = []
     for inst in instances:
-        if inst.writable and not inst.is_file:
-            for rel in inst.exclude:
-                p = inst.host / rel
-                if p.is_file() and not any(n.nested and n.host == p for n in instances):
-                    p.unlink()
+        if not inst.writable or inst.is_file:
+            continue
+        for rel in sorted(inst.exclude):
+            p = inst.host / rel
+            if p.is_file() and p not in claimed:
+                path = f"{inst.path}/{rel}"
+                out.append((path, p, file_sha256(p) == planted.get(path)))
+    return out
+
+
+def scrub_receipts(instances: list[Instance], planted: Mapping[str, str]) -> None:
+    """Remove last episode's receipts from the mirrors before this one is planted.
+
+    `planted` is what the last episode's record says was planted. A file there holding
+    anything else is the agent's, recorded by the trace of the episode that left it,
+    and stays.
+    """
+    for _, p, receipt in receipt_files(instances, planted):
+        if receipt:
+            p.unlink()
 
 
 def ensure_mirrors(instances: list[Instance]) -> None:
-    """Create the host mirror of every directory the agent writes."""
+    """Create the host mirror of every directory the agent writes, putting back first a
+    tree a failed swap left aside. Raises OSError where that tree cannot be put back."""
     for inst in instances:
         if inst.writable and not inst.is_file:
+            restore_previous(inst.host)
             inst.host.mkdir(parents=True, exist_ok=True)
 
 
@@ -2385,14 +2442,17 @@ def save_state(mirror: Path, fetch: Callable[[Path], bool],
 
     Staged in a sibling directory and swapped in whole, deletions included;
     False if the mirror was not updated, in which case the mirror still holds
-    the previous episode's tree. `fetch(dest)` copies the files in; `modes()`
-    lists their modes, which the host filesystem cannot store and the sidecar
-    beside the mirror keeps.
+    the previous episode's tree. Where the swap and its rollback both fail, that
+    tree stays aside in the .previous sidecar with nothing made in its place,
+    and the next call, like the next build, puts it back before anything else.
+    `fetch(dest)` copies the files in; `modes()` lists their modes, which the
+    host filesystem cannot store and the sidecar beside the mirror keeps.
     """
     incoming = mirror.with_name(mirror.name + ".incoming")
     previous = mirror.with_name(mirror.name + ".previous")
     try:
         shutil.rmtree(incoming, ignore_errors=True)
+        restore_previous(mirror)
         shutil.rmtree(previous, ignore_errors=True)
         incoming.mkdir(parents=True, exist_ok=True)
         if not fetch(incoming):
@@ -2422,9 +2482,23 @@ def save_state(mirror: Path, fetch: Callable[[Path], bool],
         return False
     finally:
         shutil.rmtree(incoming, ignore_errors=True)
+        if not mirror.exists():
+            # A rollback that failed is tried once more; one that fails again
+            # leaves the tree aside, and an empty mirror made here would hide it.
+            with contextlib.suppress(OSError):
+                restore_previous(mirror)
         if mirror.exists():
             shutil.rmtree(previous, ignore_errors=True)
-        mirror.mkdir(parents=True, exist_ok=True)
+        elif not previous.exists():
+            mirror.mkdir(parents=True, exist_ok=True)
+
+
+def restore_previous(mirror: Path) -> None:
+    """Put back a tree a failed swap left in the mirror's .previous sidecar, where the
+    mirror itself is absent. Raises OSError where the rename does not land."""
+    previous = mirror.with_name(mirror.name + ".previous")
+    if previous.is_dir() and not mirror.exists():
+        replace_file(previous, mirror)
 
 
 class EnvironmentBuildError(RuntimeError):
@@ -2440,11 +2514,30 @@ class EnvironmentBuildError(RuntimeError):
 BUILD_FAILURES = (subprocess.CalledProcessError, OSError, EnvironmentBuildError)
 
 
+class Box(Protocol):
+    """What build_episode and run_episode ask of the environment an episode runs in.
+
+    Container is the one the harness runs; a check binds its own class in BOX.
+    """
+
+    @classmethod
+    def start(cls, name: str) -> Box: ...
+
+    def load(self, instances: list[Instance], files: dict[str, str]) -> None: ...
+
+    def shell(self) -> Shell: ...
+
+    def save(self, instances: list[Instance]) -> bool: ...
+
+    def close(self) -> None: ...
+
+
 class Container:
     """The environment an episode runs in: started, loaded, mirrored back, reaped.
 
     build_episode starts one and run_episode closes it; these five methods are
-    everything they ask. An episode elsewhere puts its own class in BOX.
+    everything they ask, which Box states. An episode elsewhere puts its own class
+    in BOX.
     """
 
     def __init__(self, name: str) -> None:
@@ -2503,7 +2596,7 @@ class Container:
         reap(self.name)
 
 # The class build_episode starts an episode in. check.py binds its HostBox here.
-BOX = Container
+BOX: type[Box] = Container
 
 
 class Shell:
@@ -2519,11 +2612,11 @@ class Shell:
     CEILING = 8 << 20            # stop reading one command at 8MB, not the disk
 
     def __init__(self, container: str) -> None:
-        self.container, self.proc, self.buf = container, None, bytearray()
+        self.container = container
         # Counted so a caller can ask whether the shell it addressed is the one
         # that answered. A restart loses cwd, exports and any output in flight.
         self.restarts = 0
-        self.restart()
+        self.proc: subprocess.Popen[bytes] = self._spawn()
 
     def argv(self) -> list[str]:
         """The command that is the shell. An episode running somewhere other than
@@ -2546,15 +2639,28 @@ class Shell:
         """Start a fresh shell, losing cwd and exports - which is what restart is."""
         self.restarts += 1
         self.close()
-        self.proc = subprocess.Popen(
+        self.proc = self._spawn()
+
+    def _spawn(self) -> subprocess.Popen[bytes]:
+        """Start the shell process, keep the pipe run() writes commands into, and start
+        the thread that drains its output into a fresh buffer.
+
+        Raises OSError where the process came up without either pipe.
+        """
+        # Bytes, named: popen_kwargs() could otherwise be read as asking for text.
+        proc = subprocess.Popen[bytes](
             self.argv(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, bufsize=0, **self.popen_kwargs())
-        self.buf = buf = bytearray()
-        threading.Thread(target=self._drain, args=(self.proc, buf), daemon=True).start()
+        if proc.stdin is None or proc.stdout is None:
+            proc.kill()
+            raise OSError(f"{self.argv()[0]} started without a pipe to its stdin and stdout")
+        self.stdin, self.buf = proc.stdin, bytearray()
+        threading.Thread(target=self._drain, args=(proc.stdout, self.buf), daemon=True).start()
+        return proc
 
     def close(self) -> None:
         """Kill the shell. Never raises."""
-        if self.proc and self.proc.poll() is None:
+        if self.proc.poll() is None:
             self.proc.kill()
             try:
                 self.proc.wait(timeout=5)
@@ -2562,9 +2668,9 @@ class Shell:
                 pass                             # killed already; reaping can wait
 
     @staticmethod
-    def _drain(proc: subprocess.Popen, buf: bytearray) -> None:
+    def _drain(out: IO[bytes], buf: bytearray) -> None:
         """Read until the shell dies, so run() can bound its own wait."""
-        while chunk := proc.stdout.read(65536):
+        while chunk := out.read(65536):
             buf += chunk
 
     def run(self, command: str, timeout: int) -> str:
@@ -2580,8 +2686,8 @@ class Shell:
                   f'eval "$__mtr" </dev/null 2>&1\n'
                   f"printf '\\001{self.END}%s\\001' \"$?\"\n")
         try:
-            self.proc.stdin.write(script.encode("utf-8", "replace"))
-            self.proc.stdin.flush()
+            self.stdin.write(script.encode("utf-8", "replace"))
+            self.stdin.flush()
         except OSError:
             self.restart()
             return "[shell died and was restarted]"
@@ -4105,17 +4211,25 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
     }
 
 
-def drift(agent: str, index: int, now: dict) -> list[str]:
+def drift(agent: str, index: int, now: dict, forked_from: dict | None = None) -> list[str]:
     """Which provenance fields differ from the previous episode of this agent.
 
     Reported, never enforced: episodes either side of a change are separate arms.
+    A fork's first episode follows the one it was forked at, whose trace is the
+    parent's, and is held against that. An episode with no trace to be held
+    against reports nothing.
     """
-    f = trace_path(agent, index - 1)
-    if index < 2 or not f.exists():
+    if index < 2:
+        return []
+    owner = agent
+    if forked_from and forked_from.get("episode") == index - 1:
+        owner = forked_from["agent"]
+    f = trace_path(owner, index - 1)
+    if not f.exists():
         return []
     previous = json.loads(f.read_text(encoding="utf-8"))
     if previous.get("trace_version") != TRACE_VERSION:
-        raise SystemExit(f"agent {agent} has incompatible version-{previous.get('trace_version')} "
+        raise SystemExit(f"agent {owner} has incompatible version-{previous.get('trace_version')} "
                          "traces; start a fresh agent id")
     was = previous.get("provenance") or {}
     # system_sha256 names a changed prompt in one line; the text would arrive as
@@ -4144,11 +4258,12 @@ def bounded_read(p: Path) -> tuple[int, str, bool] | None:
     return size, text, b"\x00" in data
 
 
-def channel_files(inst: Instance) -> list[tuple[str, str, Path]]:
+def channel_files(inst: Instance, keep: AbstractSet[Path] = frozenset()) -> list[tuple[str, str, Path]]:
     """Every file of one instance, as (path in /work, path within it, host file).
 
     A directory is walked in a stable order, leaving out what belongs to a nested
-    file; a file is one entry named by its own path. An absent instance holds nothing.
+    file and a receipt, save the host files in `keep`; a file is one entry named by
+    its own path. An absent instance holds nothing.
     """
     if inst.is_file:
         return [(inst.path, "", inst.host)] if inst.host.is_file() else []
@@ -4157,7 +4272,7 @@ def channel_files(inst: Instance) -> list[tuple[str, str, Path]]:
     out = []
     for p in sorted(inst.host.rglob("*")):
         inner = p.relative_to(inst.host).as_posix()
-        if p.is_file() and inner not in inst.exclude:
+        if p.is_file() and (inner not in inst.exclude or p in keep):
             out.append((f"{inst.path}/{inner}", inner, p))
     return out
 
@@ -4172,12 +4287,15 @@ def author_of(inst: Instance, starter: bool) -> str:
 
 
 def snapshot(instances: list[Instance], series: list[int],
-             starter: set[str] = frozenset(), labels: tuple[str, ...] = ()) -> dict:
+             starter: AbstractSet[str] = frozenset(), labels: tuple[str, ...] = (),
+             receipts: Mapping[str, str] | None = None) -> dict:
     """What every file the episode could see holds, and what the agent wrote.
 
     Per-episode copies are the only record of a file the agent later deletes;
     `text` is None for binaries. Every record names its author; `ours` is
-    everything the agent did not invent.
+    everything the agent did not invent. A receipt is in no record, but a file
+    at a receipt path holding anything other than what `receipts` says was
+    planted there is the agent's, and recorded as its own.
     """
     files = []
     mentions = {"number": False, "balance_path": False, "cost": False}
@@ -4185,10 +4303,11 @@ def snapshot(instances: list[Instance], series: list[int],
     numbers = {str(v) for v in series}
     patterns = balance_patterns(HARNESS_FILES["balance"], labels or tuple(
         dict.fromkeys(i.label for i in instances if i.label)))
+    written = {p for _, p, receipt in receipt_files(instances, receipts or {}) if not receipt}
     for inst in instances:
         ch = inst.channel
         store = inst.role == "own" and ch.is_private_store
-        for rel, inner, p in channel_files(inst):
+        for rel, inner, p in channel_files(inst, written):
             got = bounded_read(p)
             if got is None:
                 continue
@@ -4248,8 +4367,8 @@ class Episode:
     records: Path
     before: dict[str, Any]               # what each obligated channel held at episode start
     started: float = 0.0
-    container: Any = None
-    shell: Any = None
+    container: Box | None = None         # None until build_episode has started one
+    shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
     saved: bool = False
@@ -4258,11 +4377,19 @@ class Episode:
     # lands on disk between the receiver's episodes.
     credited: int = 0
 
+    @property
+    def built(self) -> tuple[Box, Shell]:
+        """The environment and its shell. Every Episode build_episode returns has both;
+        asked of one without them, this raises."""
+        if self.container is None or self.shell is None:
+            raise RuntimeError(f"{self.agent} episode {self.index} has no environment built")
+        return self.container, self.shell
+
     def abandon(self) -> None:
         """Close an environment no episode will run in. Nothing is mirrored back."""
-        if self.shell:
+        if self.shell is not None:
             self.shell.close()
-        if self.container:
+        if self.container is not None:
             self.container.close()
 
 
@@ -4302,6 +4429,8 @@ def build_episode(agent: str) -> Episode:
     seating = seating_of(agent, account)
     reach = reachable(seating)
     instances = environment(agent, account)
+    # First, so a tree a failed swap left aside is back before anything reads it.
+    ensure_mirrors(instances)
     # Before the board, the outbox and the declaration go in, so what comes back
     # can be compared against them. Before the starter files too, so what was
     # planted is not read as something this episode wrote.
@@ -4310,8 +4439,8 @@ def build_episode(agent: str) -> Episode:
         # An account without pinned starter terms takes the tunables.
         account["starter_files"], account["starter_files_below"] = STARTER_FILES, STARTER_FILES_BELOW
         save_account(agent, account)
-    ensure_mirrors(instances)
-    scrub_receipts(instances)
+    last = account["episodes"][-1] if account["episodes"] else {}
+    scrub_receipts(instances, last.get("receipts") or {})
     guard_sources(agent, account, index, instances)
     # Invariant 1: before load_state, so the starter files are in the container's
     # private store by the time the listing names it.
@@ -4328,7 +4457,7 @@ def build_episode(agent: str) -> Episode:
 
     prov = provenance(account["provider"], account["model"], seating, starter_terms(account),
                       account.get("experiment"), system_of(account))
-    drifted = drift(agent, index, prov)
+    drifted = drift(agent, index, prov, account.get("forked_from"))
     for line in drifted:
         print(f"  provenance drift, {agent} episode {index}: {line}", file=sys.stderr)
 
@@ -4350,24 +4479,24 @@ def build_episode(agent: str) -> Episode:
                  shown_now=shown_now, ledger_shown=ledger(agent, account),
                  canonical=render_balance(account["series"]), prov=prov, drifted=drifted,
                  records=records_dir(agent), before=before, started=time.time())
-    built = False
+    loaded = False
     try:
         # Inside the try, so there is no window in which a container exists and
         # nothing is bound to reap it.
-        ep.container = BOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
-        ep.container.load(instances, shown)
-        built = True
-        ep.shell = ep.container.shell()
-        clear_episode_actions(ep.shell, instances)
-        assert_writable(ep.shell, instances)
+        box = ep.container = BOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
+        box.load(instances, shown)
+        loaded = True
+        shell = ep.shell = box.shell()
+        clear_episode_actions(shell, instances)
+        assert_writable(shell, instances)
     except BaseException:
         # No episode ran. An environment that was loaded is mirrored back all the
         # same, and whatever was started is reaped.
-        if ep.shell:
+        if ep.shell is not None:
             ep.shell.close()
-        if built:
-            ep.container.save(instances)
-        if ep.container:
+        if ep.container is not None:
+            if loaded:
+                ep.container.save(instances)
             ep.container.close()
         raise
     return ep
@@ -4394,21 +4523,22 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     one that ended on an API error it swallowed - the container is saved and
     closed on the way out.
     """
+    box, shell = ep.built
     WATCH_AGENT.set(f"{ep.agent}| ")
     out: dict = {}
     try:
-        out = run_turns(router, ep.shell, ep.account, ep.agent, ep.index, ep.seating.label,
+        out = run_turns(router, shell, ep.account, ep.agent, ep.index, ep.seating.label,
                         raw_path(ep.agent, ep.index), ep.bound)
     finally:
         # While the container is still up, and after the last billed turn: this
         # asks the image a question, never the model.
-        ep.missing = probe_missing(ep.shell, out.get("commands") or [])
-        ep.misplaced = rescue_misplaced(ep.shell, ep.instances)
-        ep.shell.close()
+        ep.missing = probe_missing(shell, out.get("commands") or [])
+        ep.misplaced = rescue_misplaced(shell, ep.instances)
+        shell.close()
         # Before the reap: the container holds the only copy of whatever the
         # agent wrote.
-        ep.saved = ep.container.save(ep.instances)
-        ep.container.close()
+        ep.saved = box.save(ep.instances)
+        box.close()
     return out
 
 
@@ -4450,11 +4580,13 @@ def settle_episode(ep: Episode, out: dict, credit: Callable[[str, int], None] | 
 
 
 def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
-    """Floor, record the episode in the account, write the trace, print the line.
+    """Floor, write the trace, record the episode in the account, print the line.
 
     Last of the phases, after every credit that reaches this agent's account has
     landed: the floor is what decides whether an agent that crossed zero is out,
-    and a transfer that arrived in the same round counts toward the answer.
+    and a transfer that arrived in the same round counts toward the answer. The
+    trace is whole on disk before the account lists its episode, so no account
+    names an episode whose trace is missing or cut short.
     """
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
@@ -4467,17 +4599,6 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     if ep.shown_now is not None:
         account["shown_before"] = ep.shown_now
 
-    account["episodes"].append({"episode": index, "stop": out["stop"], "spent": out["spent"],
-                                "turns": len(out["turns"]),
-                                "balance_at_start": ep.series_before[-1],
-                                # Where this episode's elements sit in the series: its
-                                # turns, then a transfer, each penalty and a floor.
-                                "series_from": len(ep.series_before) - 1,
-                                "series_to": len(account["series"]) - 1,
-                                "transfer": settled["transfer"], "forgiven": forgiven,
-                                "received": ep.credited, "channels": settled["channels"]})
-    save_account(agent, account)
-
     # Whether the agent can still see its whole history in one read. Past this
     # point every read of the balance file comes back clipped, which is a
     # different environment from the one earlier episodes had.
@@ -4489,7 +4610,21 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
               f"either side of this are not the same environment", file=sys.stderr)
 
     trace = trace_of(ep, out, settled, forgiven, balance_bytes, balance_fits)
-    trace_path(agent, index).write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
+    save_trace(agent, index, trace)
+
+    account["episodes"].append({"episode": index, "stop": out["stop"], "spent": out["spent"],
+                                "turns": len(out["turns"]),
+                                "balance_at_start": ep.series_before[-1],
+                                # Where this episode's elements sit in the series: its
+                                # turns, then a transfer, each penalty and a floor.
+                                "series_from": len(ep.series_before) - 1,
+                                "series_to": len(account["series"]) - 1,
+                                "transfer": settled["transfer"], "forgiven": forgiven,
+                                "received": ep.credited, "channels": settled["channels"],
+                                # What was planted at each receipt path, by digest: how
+                                # the next build tells a receipt from the agent's file.
+                                "receipts": receipts_planted(ep.shown)})
+    save_account(agent, account)
 
     print(console_line(ep, trace, settled))
     transfer = settled["transfer"]
@@ -4552,7 +4687,8 @@ def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int,
             "forgiven": forgiven, "received": ep.credited,
             "remaining": account["remaining"], "duration_s": round(time.time() - ep.started, 3),
             **out, **snapshot(ep.instances, account["series"] if LIVE_BALANCE else ep.series_before,
-                              starter_paths(account), tuple(ep.seating.labels.values()))}
+                              starter_paths(account), tuple(ep.seating.labels.values()),
+                              receipts_planted(ep.shown))}
 
 
 def console_line(ep: Episode, trace: dict, settled: dict) -> str:
@@ -4593,7 +4729,7 @@ def run_once(agent: str, router: ProviderRouter) -> dict:
     return commit_episode(ep, run_episode(ep, router))
 
 
-def ready(agent: str, prepare: Callable | None = None) -> Episode | None:
+def ready(agent: str, prepare: Callable[[dict[str, Any]], None] | None = None) -> Episode | None:
     """Build `agent`'s environment if its account admits an episode. The Episode, or None.
 
     `prepare(account)` runs before the environment is built and may add to the
@@ -4610,7 +4746,8 @@ def ready(agent: str, prepare: Callable | None = None) -> Episode | None:
     return build_episode(agent)
 
 
-def drive(agent: str, router: ProviderRouter, prepare: Callable | None = None) -> dict | None:
+def drive(agent: str, router: ProviderRouter,
+          prepare: Callable[[dict[str, Any]], None] | None = None) -> dict | None:
     """One episode for `agent`, if its account admits one. The trace, or None."""
     ep = ready(agent, prepare)
     return None if ep is None else commit_episode(ep, run_episode(ep, router))
@@ -4747,18 +4884,20 @@ def fork(parent: str, index: int, new: str) -> int:
     at_head = index == len(parent_account["episodes"])
     seat = parent_account.get("seat") or "1"
     label = (trace.get("provenance", {}).get("labels") or {}).get(seat) or parent_account.get("label") or seat
-    if parent_account.get("account_version") != 2 or trace.get("trace_version") != TRACE_VERSION:
+    if (parent_account.get("account_version") != ACCOUNT_VERSION
+            or trace.get("trace_version") != TRACE_VERSION):
         raise SystemExit(f"{parent} cannot be forked from an incompatible account or trace; "
                          "start a fresh agent id")
-    account = {"account_version": 2, "agent": new, "provider": parent_account["provider"],
-               "model": parent_account["model"], "initial": parent_account["initial"],
-               "created_at": parent_account["created_at"], "remaining": series[-1],
-               "seat": seat, "label": label,
-               "series": series, "episodes": parent_account["episodes"][:index],
-               # Modes live beside each tree and describe its latest revision only,
-               # so a fork behind the parent's head cannot restore them.
-               "forked_from": {"agent": parent, "episode": index,
-                               "modes": "restored" if at_head else "defaulted"}}
+    account: dict[str, Any] = {
+        "account_version": ACCOUNT_VERSION, "agent": new, "provider": parent_account["provider"],
+        "model": parent_account["model"], "initial": parent_account["initial"],
+        "created_at": parent_account["created_at"], "remaining": series[-1],
+        "seat": seat, "label": label,
+        "series": series, "episodes": parent_account["episodes"][:index],
+        # Modes live beside each tree and describe its latest revision only,
+        # so a fork behind the parent's head cannot restore them.
+        "forked_from": {"agent": parent, "episode": index,
+                        "modes": "restored" if at_head else "defaulted"}}
     # A fork and its parent differ only in what happens next, so the fork is told
     # what the parent was told.
     if "system_prompt" in parent_account:
@@ -4827,21 +4966,24 @@ def restore_files(new: str, written: list[Channel], label: str, records: list[di
     that sits in no written channel, or None where every record found its tree.
 
     Each record's path is where the file sat in /work; the tree it belongs to is
-    the written channel whose path encloses it, under this agent's label.
+    the written channel whose path encloses it, under this agent's label. Every
+    record is placed before any is written, so a stray leaves the new id nothing.
     """
     prefixes = {c.name: (c.path_for(label) if c.shape == "directory" else c.outbox) for c in written}
-    for c in written:
-        mirror(new, c.name).mkdir(parents=True, exist_ok=True)
-    (records_dir(new) / "traces").mkdir(parents=True, exist_ok=True)
+    placed: list[tuple[Path, str]] = []
     for rec in records:
         tree = max((name for name, p in prefixes.items()
                     if rec["path"] == p or rec["path"].startswith(p + "/")),
                    key=lambda name: len(prefixes[name]), default=None)
         if tree is None:
             return rec["path"]
-        dest = mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1:]
+        placed.append((mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1:], rec["text"]))
+    for c in written:
+        mirror(new, c.name).mkdir(parents=True, exist_ok=True)
+    (records_dir(new) / "traces").mkdir(parents=True, exist_ok=True)
+    for dest, text in placed:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(rec["text"], encoding="utf-8", newline="\n")
+        dest.write_text(text, encoding="utf-8", newline="\n")
     return None
 
 
@@ -5122,7 +5264,7 @@ def main(argv: list[str] | None = None) -> int:
                    labels=tuple(m["labels"].values()), tool_tables=m["tools"])
     catch_signals()
     if not a.resume:
-        displace_agents([a.agent])
+        displace_agents([a.agent], FRESH_START)
     account = load_account(a.agent, **experiment.terms_of(entry))
     experiment.inherit_memory(entry, account)
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])

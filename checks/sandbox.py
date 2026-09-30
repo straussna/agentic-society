@@ -591,6 +591,96 @@ def check_save_state_keeps_the_previous_tree_when_the_swap_fails():
         assert not harness.modes_file(mirror).exists(), "no modes are written for a tree that did not land"
 
 
+def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over():
+    """A swap whose rollback fails too leaves the tree in its .previous sidecar, and no
+    empty mirror is made in its place.
+
+    The next build, or the next save of that tree, puts it back before anything
+    else, so a False still loses nothing the agent wrote.
+    """
+    with rooted(HostBox):
+        with quiet():
+            account = harness.load_account("t")
+        instances = harness.environment("t", account)
+        mirror = harness.mirror("t", "notes")
+        previous = mirror.with_name("notes.previous")
+        (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")
+
+        def fetch(dest):
+            (dest / "new.txt").write_text("new\n", encoding="utf-8")
+            return True
+
+        real = harness.replace_file
+
+        def refusing_the_swap_and_its_rollback(src, dest):
+            if src.name in ("notes.incoming", "notes.previous"):
+                raise OSError("the rename failed")
+            real(src, dest)
+
+        for route in ("build", "save"):
+            harness.replace_file = refusing_the_swap_and_its_rollback
+            assert harness.save_state(mirror, fetch, lambda: None) is False
+            assert not mirror.exists(), f"an empty mirror was made over the tree put aside ({route})"
+            assert (previous / "keep.txt").read_text(encoding="utf-8") == "kept\n", route
+            harness.replace_file = real
+            if route == "build":
+                harness.ensure_mirrors(instances)
+            else:
+                assert harness.save_state(mirror, lambda dest: False, lambda: None) is False
+            assert sorted(p.name for p in mirror.iterdir()) == ["keep.txt"], (route, sorted(mirror.iterdir()))
+            assert not previous.exists(), f"the {route} put the tree back where it was"
+
+
+def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
+    """A receipt sits in a directory the agent writes, so the agent can take it away and
+    write there itself; what it writes is recorded as its own and left where it is.
+
+    Only a file holding what the harness planted is scrubbed before the next receipt,
+    which is planted over whatever the agent left. Invariant 7: nothing the agent
+    wrote goes unrecorded.
+    """
+    with temp_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        first = episode_once(run("echo early > out/receipt", "echo '2 100' > out/transfer"), say())
+        second = episode_once(run("cat out/receipt"),
+                              run("rm -f out/receipt && echo mine > out/receipt"), say())
+        receipt = harness.mirror("t", "mail") / "receipt"
+        with quiet():
+            account = harness.load_account("t")
+        instances = harness.environment("t", account)
+        harness.scrub_receipts(instances, account["episodes"][-1]["receipts"])
+        left = receipt.read_text(encoding="utf-8")
+        third = episode_once(run("cat out/receipt"), say())
+        harness.scrub_receipts(instances, ground_truth()["episodes"][-1]["receipts"])
+        scrubbed = not receipt.exists()
+
+    for t, text in ((first, "early\n"), (second, "mine\n")):
+        rec = files_by_path(t).get("out/receipt")
+        assert rec and rec["text"] == text and rec["author"] == "self" and not rec["ours"], \
+            (t["episode"], rec)
+        assert rec["channel"] == "mail" and rec["role"] == "own", rec
+    assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), \
+        "the receipt is planted over what the agent left there"
+    assert left == "mine\n", f"the agent's file was scrubbed as a receipt: {left!r}"
+    assert third["turns"][0]["tools"][0]["result"].startswith("round: 2\n"), third["turns"][0]
+    assert "out/receipt" not in files_by_path(third), "a receipt the agent left alone is in no record"
+    assert scrubbed, "and it is what the next build scrubs"
+
+
+def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wrote():
+    """Root's and read-only, a receipt in the agent's outbox still goes with rm, which asks
+    the directory. What the agent writes in its place comes back as its own."""
+    with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        episode_once(run("echo '2 100' > out/transfer"), say())
+        t = episode_once(run("rm -f out/receipt && echo mine > out/receipt && echo REPLACED"), say())
+        kept = (harness.mirror("t", "mail") / "receipt").read_text(encoding="utf-8")
+    assert "REPLACED" in t["turns"][0]["tools"][0]["result"], t["turns"][0]["tools"][0]
+    rec = files_by_path(t).get("out/receipt")
+    assert rec and rec["text"] == "mine\n" and rec["author"] == "self" and not rec["ours"], rec
+    assert kept == "mine\n", kept
+
+
 def check_the_modes_sidecar_is_read_back():
     """The modes sidecar reads as path -> mode, skipping a line with no path."""
     with rooted(HostBox) as root:

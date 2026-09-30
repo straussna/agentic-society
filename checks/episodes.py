@@ -130,6 +130,34 @@ def check_interrupt_still_traces_and_commits():
         assert t["series_after"] == account["series"], "the trace carries what was committed"
 
 
+def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
+    """The trace is written whole before the account records its episode.
+
+    A trace that fails to land leaves the account as it stood, naming no episode it
+    has no record of, and leaves nothing cut short where a reader looks for traces.
+    """
+    with temp_root():
+        real = harness.replace_file
+
+        def no_room_for_the_trace(src, dest):
+            if dest.parent.name == "traces":
+                raise OSError("no space left on device")
+            real(src, dest)
+
+        harness.replace_file = no_room_for_the_trace
+        try:
+            episode_once(run("echo one"), say())
+        except OSError:
+            pass
+        else:
+            raise AssertionError("an episode whose trace did not land was committed")
+        harness.replace_file = real
+        assert ground_truth()["episodes"] == [], "the account names an episode with no trace"
+        assert harness.trace_paths("t") == [], harness.trace_paths("t")
+        t = episode_once(say())
+    assert t["episode"] == 1, "the next episode takes the index the lost one never claimed"
+
+
 def check_a_stop_ends_the_episode_at_the_turn_boundary():
     """A stop lands between turns: the turn in flight is whole and is billed.
 

@@ -601,7 +601,8 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
         print(f"branch {experiment_id} was not made; moving aside what it had made",
               file=sys.stderr)
         output.unlink(missing_ok=True)
-        product.displace(harness.ROOT, experiment_id, harness.displace_agents(created))
+        product.displace(harness.ROOT, experiment_id,
+                         harness.displace_agents(created, "moved {names} aside to {bundle}"))
         raise
     return output
 
@@ -1155,7 +1156,7 @@ def main(argv: list[str] | None = None) -> int:
     vote = next((tool for tool in manifest["tools"] or [] if tool["kind"] == "vote"), None)
     a_round = simultaneous_round if manifest["schedule"] == "simultaneous" else sequential_round
     if not a.resume:
-        bundle = harness.displace_agents(agents)
+        bundle = harness.displace_agents(agents, harness.FRESH_START)
         product.displace(harness.ROOT, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
