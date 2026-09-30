@@ -57,7 +57,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 refuse every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 329 of 355.
+down. `--no-docker` runs 336 of 362.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -73,11 +73,14 @@ A plain run does not collect what a run killed outright leaves behind; `--sweep-
 does, and is the only mode that reaches a container this process did not make.
 
 Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
-flood against a deadline) and anything setting `command_timeout`.
-`a_simultaneous_round_runs_its_episodes_at_once` and
-`an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight` use a 10
-second thread barrier and also fail under contention. `-j` must not exceed the
-core count; the default is sized for this machine.
+flood against a deadline) and anything setting `command_timeout`. Every check that
+races threads on a 10 second barrier also fails under contention:
+`a_simultaneous_round_runs_its_episodes_at_once`,
+`an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
+`a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
+`two_clients_racing_one_request_leave_one_winner_and_one_conflict` and
+`one_submission_sent_twice_at_once_returns_the_winner_to_both`. `-j` must not
+exceed the core count; the default is sized for this machine.
 
 # Stopping an agent early
 

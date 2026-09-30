@@ -58,6 +58,16 @@ def check_episodes_are_a_ceiling_not_a_floor():
         assert account["remaining"] <= 0 and "nothing left to spend" in buf.getvalue(), buf.getvalue()
 
 
+def check_a_turn_that_leaves_exactly_nothing_is_the_last():
+    """The floor is zero, and a balance at it has nothing left to spend: the turn that
+    brings it there exactly ends the episode, and the next request is never sent."""
+    with temp_root(budget=turn_cost()):
+        t = episode_once(run("echo one"), run("echo two"), say())
+
+    assert t["remaining"] == 0, t["remaining"]
+    assert (t["stop"], len(t["turns"])) == ("budget_exhausted", 1), (t["stop"], len(t["turns"]))
+
+
 def check_a_fault_ends_the_loop():
     """An interrupted or failed episode stops the loop, and is not retried.
 

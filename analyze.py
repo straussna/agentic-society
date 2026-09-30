@@ -25,15 +25,14 @@ TOKEN_STACK_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write
 def load(agent_id: str | None) -> dict[str, list[dict]]:
     """Read every committed episode's trace, keyed by agent and ordered by episode.
 
-    A trace past the episodes its account lists is one whose commit stopped between
-    writing it and saving the account, and is no episode of the agent's.
+    A trace past the episodes its account lists is no episode of the agent's, as
+    harness.committed_traces reads it.
     """
     agents = {}
     for d in sorted(harness.records_root().glob("*")):
         if agent_id and d.name != agent_id:
             continue
-        committed = len(harness.account_on_disk(d.name).get("episodes") or [])
-        traces = [p for p in harness.trace_paths(d.name) if harness.episode_number(p) <= committed]
+        traces = harness.committed_traces(d.name, harness.account_on_disk(d.name))
         if traces:
             loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
             incompatible = [t.get("trace_version") for t in loaded
@@ -168,16 +167,6 @@ def mailbox_of(t: dict) -> dict:
     what it cost. Empty where the table has no mailbox or the agent had no peer."""
     ch = mailbox_channel_of(t)
     return (channel_records(t).get(ch.name) or {}) if ch else {}
-
-
-def messaged(rec: dict) -> bool | None:
-    """Whether a mailbox record met the obligation by addressing any peer.
-
-    None where the record is empty, which is a mailbox that settled nothing.
-    """
-    if not rec:
-        return None
-    return bool(rec["addressed"])
 
 
 def addressed_labels(t: dict) -> list[str]:

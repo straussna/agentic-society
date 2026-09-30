@@ -253,6 +253,11 @@ class ModelProvider(Protocol):
     `interactive` says a person, not a model, answers its turns. `provenance_facts`
     is the adapter's part of a trace's provider record, in the order the trace keeps
     it; providers.provenance() puts the name before it and the model spec after.
+    Those two and `models` are read off the class, before any adapter is built, so
+    each adapter holds them as class data: read off the class, a property is the
+    property and not its value, and a check holds every registered adapter to that.
+    `models` and `provenance_facts` are declared read-only here because that is what
+    an adapter's plain class attribute satisfies.
     """
 
     name: str

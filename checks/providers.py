@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import inspect
 import json
 import os
 import sys
@@ -390,6 +391,9 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
 
     The facts are declared once, on the adapter class, and pinned here as a reader of
     earlier traces knows them: a change to an adapter's is a change to every trace.
+    The facts, the catalog and whether a person answers are all read off the class,
+    so each is class data there: a property read off a class is the property, not
+    its value.
     """
     declared = {
         "anthropic": {"adapter": "anthropic-messages-v1", "endpoint": "first-party"},
@@ -399,6 +403,9 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
     }
     assert list(providers.FACTORIES) == list(declared), list(providers.FACTORIES)
     for name, factory in providers.FACTORIES.items():
+        for attr in ("interactive", "models", "provenance_facts"):
+            assert not hasattr(inspect.getattr_static(factory, attr), "__get__"), \
+                f"{name}.{attr} is read off the class, where a property is not its value"
         assert providers.CATALOGS[name] is factory.models, f"{name}: the catalog is the adapter's"
         for model, spec in factory.models.items():
             record = providers.provenance(name, model)

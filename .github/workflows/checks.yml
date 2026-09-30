@@ -48,5 +48,6 @@ jobs:
       # Without the image the container checks skip and the run still passes
       # with only the host lane proved.
       - run: docker image inspect metered-agent:latest > /dev/null
-      # -j 2: the two wall-clock-sensitive checks are in this lane.
+      # -j 2: the wall-clock-sensitive checks CLAUDE.md names fail under
+      # contention, and this lane adds containers to it.
       - run: python check.py -j 2

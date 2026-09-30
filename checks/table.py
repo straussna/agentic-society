@@ -8,6 +8,7 @@ import harness
 
 from checks.fake import fake, run, say
 from checks.lanes import (
+    ALL_OWED,
     HALF,
     HostBox,
     PERSONA,
@@ -300,6 +301,33 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     updated = third["turns"][0]["tools"][0]["result"]
     assert updated != text and updated.startswith("round: 2\n"), updated
     assert f"=== out/receipt ===\n{updated}" in third["observation"], third["observation"]
+
+
+def check_a_receipt_says_what_each_obligation_came_to():
+    """Each obligated channel a receipt names is met or not, and says what that was in
+    its settlement rule's own words: a post, a message and to whom, a transfer."""
+    def said(records: dict) -> list[str]:
+        account = {"agent": "t", "series": [1000, 900], "remaining": 900,
+                   "episodes": [{"episode": 1, "balance_at_start": 1000, "spent": 100,
+                                 "series_to": 1, "channels": records}]}
+        text = harness.receipt_text(account, harness.channel("transfer"))
+        return [line for line in text.splitlines() if " obligation: " in line]
+
+    with temp_root(channels=ALL_OWED):
+        met = said({"blackboard": {"posted": True, "penalty": 0},
+                    "mail": {"broken": [], "addressed": ["2", "3"], "penalty": 0},
+                    "transfer": {**harness.EMPTY_TRANSFER, "declared": "2 5", "seat": "2",
+                                 "label": "2", "amount": 5}})
+        unmet = said({"blackboard": {"posted": False, "penalty": 50},
+                      "mail": {"broken": [], "addressed": [], "penalty": 45},
+                      "transfer": {**harness.EMPTY_TRANSFER, "penalty": 40}})
+
+    assert met == ["blackboard obligation: met (public post published)",
+                   "mail obligation: met (message sent to 2, 3)",
+                   "transfer obligation: met (transfer moved money)"], met
+    assert unmet == ["blackboard obligation: not met (no public post)",
+                     "mail obligation: not met (no message sent)",
+                     "transfer obligation: not met (no transfer moved money)"], unmet
 
 
 def check_a_receipt_is_roots_in_the_container():

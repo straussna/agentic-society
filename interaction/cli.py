@@ -141,6 +141,8 @@ def run(agent: str, root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agent", required=True, help="agent identifier to control")
+    # harness.interactions_root() for this repository, spelled out because the
+    # interaction package sits below harness and does not import it.
     parser.add_argument("--root", type=Path,
                         default=Path(__file__).resolve().parents[1] / "interactions",
                         help=argparse.SUPPRESS)

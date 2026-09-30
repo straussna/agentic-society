@@ -13,6 +13,7 @@ import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
+import experiment
 import harness
 import view
 from interaction import InteractionStore
@@ -31,6 +32,7 @@ from checks.lanes import (
     got,
     ground_truth,
     ledger_name,
+    manifest_file,
     quiet,
     refused,
     rooted,
@@ -61,6 +63,28 @@ def check_the_view_reads_a_live_episode_from_raw():
             "no command's output is on disk until the trace is"
         # The agent's environment at episode start is recorded in the trace and nowhere else.
         assert v["observation"]["result"] is None, v["observation"]
+
+
+def check_a_live_episode_under_a_manifest_that_declares_no_tool_opens_without_the_shell():
+    """A manifest that declares no [[tool]] declares no bash, so an episode in flight under
+    the one stamped on its account is shown opening without the shell and still reads."""
+    with temp_root() as root:
+        episode_once(*DEFAULT)
+        unfinished()
+        path = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "t"\n', "silent.toml")
+        manifest = experiment.load_manifest(path)
+        account = ground_truth()
+        account["experiment"] = {"manifest_sha256": manifest["sha256"]}
+        harness.save_account("t", account)
+        real = view.manifests
+        view.manifests = lambda: {manifest["sha256"]: (manifest, path)}
+        try:
+            v = view.episode_view("t", 1)
+        finally:
+            view.manifests = real
+
+    assert manifest["tools"] is None, manifest["tools"]
+    assert v is not None and (v["source"], v["observation"]["shell"]) == ("raw", False), v
 
 
 def check_the_view_prefers_the_trace_once_it_lands():
@@ -189,6 +213,63 @@ def check_the_view_serves_its_api():
             assert (log["events"], log["tip"], log["seats"], log["committed"]) == ([], [], 1, 0), log
 
 
+def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
+    """An account a poll cannot read - save_account's rename caught mid-poll, or a file
+    that does not parse - says nothing of what committed, so that poll counts the traces
+    on disk. A committed episode is served from its trace with nothing in flight, one in
+    flight from its raw log, and the experiment, the agent and the episode all answer."""
+    def answer(base: str, path: str) -> tuple[int, dict]:
+        try:
+            return got(base, path)
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode("utf-8"))
+
+    def seen(answers: dict[str, tuple[int, dict]]) -> dict[str, tuple]:
+        out = {}
+        for path, (status, body) in answers.items():
+            if path.endswith("/episode/1"):
+                out[path] = (status, body.get("source"))
+            elif path.startswith("/api/agent/"):
+                out[path] = (status, body.get("live"), [e["episode"] for e in body.get("episodes", [])])
+            else:
+                out[path] = (status, [s["live"] for s in body.get("seats", [])])
+        return out
+
+    with temp_root() as root:
+        seated(root, u={})
+        episode_once(*DEFAULT)
+        name = view.experiment_of("t")["name"]
+        routes = (f"/api/experiment/{name}", "/api/agent/t", "/api/agent/t/episode/1")
+        account = harness.account_path("t")
+        real = view.read_json
+        with serving() as base:
+            def lost() -> dict[str, tuple]:
+                view.read_json = lambda path: None if path == account else real(path)
+                try:
+                    return seen({path: answer(base, path) for path in routes})
+                finally:
+                    view.read_json = real
+
+            def unparsed() -> dict[str, tuple]:
+                held = account.read_bytes()
+                account.write_text("{not json", encoding="utf-8")
+                try:
+                    return seen({path: answer(base, path) for path in routes[1:]})
+                finally:
+                    account.write_bytes(held)
+
+            committed = lost(), unparsed()
+            unfinished()
+            in_flight = lost(), unparsed()
+
+    assert committed == ({routes[0]: (200, [None, None]), routes[1]: (200, None, [1]),
+                          routes[2]: (200, "trace")},
+                         {routes[1]: (200, None, [1]), routes[2]: (200, "trace")}), committed
+    assert in_flight == ({routes[0]: (200, [1, None]), routes[1]: (200, 1, [1]),
+                          routes[2]: (200, "raw")},
+                         {routes[1]: (200, 1, [1]), routes[2]: (200, "raw")}), in_flight
+
+
 def check_a_name_off_the_url_cannot_leave_records():
     """A name off the URL reaches the filesystem only after matching a listing,
     so nothing can be walked out of records/ or environments/ by asking, and
@@ -295,7 +376,9 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
     it is read from moves: a poll finding everything where it was reads no account.
 
     An account rewritten, an agent added and a trace landing each move something the
-    grouping is read from, and each is in the next poll's answer.
+    grouping is read from. The first two are in the next poll's answer; a trace is read
+    the poll it lands, before its account is saved, and is an episode once the account
+    lists it.
     """
     tools = [{"name": "post", "kind": "post_public", "channel": "blackboard"}]
     reads: list[Path] = []
@@ -321,6 +404,9 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
             trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
             trace["episode"], trace["provenance"]["tools"] = 2, tools
             harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
+            reads.clear()
+            uncommitted = view.experiment_named("g")
+            read_on_landing = list(reads)
             account["episodes"].append({"episode": 2, "stop": "end_turn", "spent": 1})
             harness.account_path("g01").write_text(json.dumps(account), encoding="utf-8")
             landed = view.experiment_named("g")
@@ -330,6 +416,9 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
     assert again == first and not polled, f"a poll with nothing moved read {polled}"
     assert renamed is not None and renamed["experiment_id"] == "renamed", renamed
     assert joined == ["g", "h"], joined
+    assert read_on_landing, "a trace landing moved nothing the grouping is read from"
+    assert uncommitted is not None and uncommitted["tools"] == [], \
+        f"a trace its account does not list is no episode: {uncommitted}"
     assert landed is not None and landed["tools"] == tools, landed
 
 
@@ -348,10 +437,11 @@ def check_a_record_holding_no_object_reads_as_no_record():
 
 
 def check_a_trace_that_predates_the_harness_file_names_still_groups():
-    """A trace whose provenance names no harness files is read under the names in
-    force, as one naming no channel table is read under the default table, so its
-    experiment still groups and its header still opens instead of failing every poll."""
-    with rooted(HostBox):
+    """A trace whose provenance names no harness files is read under the code's default
+    names, as one naming no channel table is read under the default table, so its
+    experiment still groups and its header still opens instead of failing every poll.
+    The names in force are another experiment's, and not the ones it ran under."""
+    with rooted(HostBox, harness_files={"balance": "purse"}):
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
@@ -362,7 +452,7 @@ def check_a_trace_that_predates_the_harness_file_names_still_groups():
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
-    assert head.get("balance") == harness.SETTINGS.harness_files["balance"], head
+    assert head.get("balance") == harness.DEFAULT_HARNESS_FILES["balance"] != "purse", head
 
 
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():
@@ -481,41 +571,51 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
 
 
+# What a human seat is offered in the player history checks: a post and a message.
+PLAYER_POST = {"name": "post", "kind": "post_public", "channel": "blackboard"}
+PLAYER_SEND = {"name": "send", "kind": "send_message_to", "channel": "mail"}
+PLAYER_OFFERED = tuple(ToolSpec(tool["name"], "", {"type": "object"})
+                       for tool in (PLAYER_POST, PLAYER_SEND))
+
+
+def answered(store: InteractionStore, episode: int, turn: int, *calls: tuple[str, dict]) -> None:
+    """g01's request for one turn of `episode`, published and answered with `calls`."""
+    request = store.publish("g01", "1", episode, turn, "", "observation", PLAYER_OFFERED)
+    store.submit("g01", request.request_id, {
+        "submission_id": f"s{episode}{turn}", "action": "tool_calls",
+        "tool_calls": [{"id": f"c{i}", "name": name, "input": value}
+                       for i, (name, value) in enumerate(calls)]})
+
+
+def offering_the_player_tools(agents: tuple[str, ...]) -> None:
+    """Stamp the post and the message into every trace these agents have."""
+    for agent in agents:
+        for path in harness.trace_paths(agent):
+            trace = json.loads(path.read_text(encoding="utf-8"))
+            trace["provenance"]["tools"] = [PLAYER_POST, PLAYER_SEND]
+            path.write_text(json.dumps(trace), encoding="utf-8")
+
+
 def check_the_player_history_adds_each_accepted_human_call_once():
     """A human seat sees what it said as soon as its submission is accepted, once each:
     the committed trace and the accepted call are one post, and a message sent again
     in the same episode is one message. A submission that does not read is left out
     and the rest is served."""
-    post = {"name": "post", "kind": "post_public", "channel": "blackboard"}
-    send = {"name": "send", "kind": "send_message_to", "channel": "mail"}
-    offered = tuple(ToolSpec(tool["name"], "", {"type": "object"}) for tool in (post, send))
-
-    def answered(store, episode, turn, *calls):
-        request = store.publish("g01", "1", episode, turn, "", "observation", offered)
-        store.submit("g01", request.request_id, {
-            "submission_id": f"s{episode}{turn}", "action": "tool_calls",
-            "tool_calls": [{"id": f"c{i}", "name": name, "input": value}
-                           for i, (name, value) in enumerate(calls)]})
-
     committed = [{"path": "1/post.md", "channel": "blackboard", "writer": "self", "readers": "all",
                   "role": "own", "size": 10, "starter": False, "text": "hello all\n"}]
     with rooted(HostBox):
         fake_experiment([("g01", "00:01", {"files": committed}), ("g02", "00:02")],
                         agents=("g01", "g02"))
-        for agent in ("g01", "g02"):
-            for path in harness.trace_paths(agent):
-                trace = json.loads(path.read_text(encoding="utf-8"))
-                trace["provenance"]["tools"] = [post, send]
-                path.write_text(json.dumps(trace), encoding="utf-8")
+        offering_the_player_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
         answered(store, 1, 1, ("post", {"body": "hello all\n"}))
         answered(store, 2, 1, ("post", {"body": "second post"}), ("send", {"to": "2", "body": "psst"}))
         answered(store, 2, 2, ("send", {"to": "2", "body": "psst"}))
-        cut = store.publish("g01", "1", 2, 3, "", "observation", offered)
+        cut = store.publish("g01", "1", 2, 3, "", "observation", PLAYER_OFFERED)
         (harness.interactions_root() / "submissions" / "g01" / f"{cut.request_id}.json").write_text(
             '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na',
             encoding="utf-8")
-        store.publish("g01", "1", 2, 4, "", "observation", offered)
+        store.publish("g01", "1", 2, 4, "", "observation", PLAYER_OFFERED)
         c = view.experiment_named("g")
         history = view.player_history(c, "g01")
         with serving() as base:
@@ -535,6 +635,39 @@ def check_the_player_history_adds_each_accepted_human_call_once():
     assert status == 200, "a submission that does not read took the seat's history down"
     assert served == json.loads(json.dumps(history)), "the route serves what player_history says"
     assert outsider == 404, "an agent outside the experiment has no history in it"
+
+
+def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
+    """A request carries the seat's own episode and a round is not one: a forked seat
+    plays the branch's first round in an episode past the ones it inherited. What its
+    submission posted and sent in that episode is what the committed trace holds, so
+    each is shown once, in that round, and a call accepted in the episode still in
+    flight is shown in the round after."""
+    said = [{"path": "1/post.md", "channel": "blackboard", "writer": "self", "readers": "all",
+             "role": "own", "size": 10, "starter": False, "text": "hello all\n"},
+            {"path": "out/2", "channel": "mail", "writer": "self", "readers": "addressee",
+             "role": "own", "size": 4, "starter": False, "text": "psst"}]
+    acted = [("g01", "00:01"), ("g02", "00:02"), ("g01", "00:03"), ("g02", "00:04"),
+             ("g01", "00:05", {"files": said}), ("g02", "00:06")]
+    with rooted(HostBox):
+        fake_experiment(acted, agents=("g01", "g02"))
+        # Both seats forked at episode 2: the accounts list the two they inherited,
+        # and the traces are the branch's own.
+        for agent in ("g01", "g02"):
+            for index in (1, 2):
+                harness.trace_path(agent, index).unlink()
+        offering_the_player_tools(("g01", "g02"))
+        store = InteractionStore(harness.interactions_root())
+        answered(store, 3, 1, ("post", {"body": "hello all\n"}), ("send", {"to": "2", "body": "psst"}))
+        answered(store, 4, 1, ("post", {"body": "next round"}), ("send", {"to": "2", "body": "later"}))
+        c = view.experiment_named("g")
+        history = view.player_history(c, "g01") if c else {}
+
+    assert [(e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]] == \
+        [(1, "hello all\n", False), (2, "next round", True)], history["public"]
+    assert [(e["round"], e["episode"], e["text"], e.get("accepted", False))
+            for e in history["private"]] == \
+        [(1, 3, "psst", False), (2, 4, "later", True)], history["private"]
 
 
 def check_the_view_shows_every_balance_from_its_own_account():

@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import harness
 import product
 import view
 from interaction import (InteractionCancelled, InteractionConflict, InteractionError,
@@ -800,6 +801,22 @@ def check_the_view_handler_answers_only_for_the_server_serve_builds():
     handler.server = object.__new__(http.server.ThreadingHTTPServer)
     raised(TypeError, lambda: handler.view_server,
            "a handler read its token and origin off a server that has neither")
+
+
+def check_the_human_cli_answers_the_store_the_harness_publishes_to():
+    """With no --root the terminal reads the repository's interactions/, the one the
+    harness publishes to under its own root. The interaction package does not import
+    harness, so it spells that path itself, and the two are held alike here."""
+    ran = []
+    original = cli.run
+    cli.run = lambda agent, root: ran.append((agent, root)) or 0
+    try:
+        assert cli.main(["--agent", "a"]) == 0
+    finally:
+        cli.run = original
+    with harness.using(harness.Settings()):
+        expected = harness.interactions_root()
+    assert ran == [("a", expected)], (ran, expected)
 
 
 def check_human_py_starts_in_a_fresh_interpreter():

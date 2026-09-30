@@ -344,7 +344,7 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
                                                "echo posted > 1/RESULT"), say()))
         account = ground_truth()
     assert t["channels"]["mail"] == {"broken": [], "addressed": ["2", "3"], "penalty": 0}
-    assert analyze.messaged(t["channels"]["mail"]) is True
+    assert analyze.met_of(harness.channel("mail", harness.table_of(t)), t["channels"]["mail"]) is True
     assert "mail" not in account.get("penalised", {}), account
     assert "not one message" not in buf.getvalue(), buf.getvalue()
 

@@ -63,7 +63,7 @@ PAGE = Path(__file__).with_name("view.html").read_text(encoding="utf-8")
 
 # manifest digest -> (manifest, path). The account carries the digest rather than
 # a path, so shipped manifests can describe a first episode before its trace lands.
-_MANIFESTS: dict[str, tuple[dict, Path]] | None = None
+_MANIFESTS: dict[str, tuple[experiment.Manifest, Path]] | None = None
 _MANIFEST_STATE: tuple[tuple[str, int, int], ...] | None = None
 
 # (the state of disk it was read from, the grouping). Guarded because the server is
@@ -145,32 +145,33 @@ def account_of(agent: str) -> Mapping[str, Any]:
     return read_json(harness.account_path(agent)) or {}
 
 
-def manifests() -> dict[str, tuple[dict, Path]]:
+def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
     """Shipped manifests by digest, reparsed when one changes on disk."""
     global _MANIFESTS, _MANIFEST_STATE
     root = Path(__file__).with_name("experiments")
     paths = sorted(root.rglob("*.toml"))
     state = tuple((str(path), stat.st_mtime_ns, stat.st_size)
                   for path in paths if (stat := path.stat()))
-    if _MANIFESTS is None or state != _MANIFEST_STATE:
-        found = {}
-        for path in paths:
-            try:
-                manifest = experiment.load_manifest(path)
-            except SystemExit:
-                continue
-            found[manifest["sha256"]] = (manifest, path)
-        _MANIFESTS, _MANIFEST_STATE = found, state
-    return _MANIFESTS
+    if _MANIFESTS is not None and state == _MANIFEST_STATE:
+        return _MANIFESTS
+    found: dict[str, tuple[experiment.Manifest, Path]] = {}
+    for path in paths:
+        try:
+            manifest = experiment.load_manifest(path)
+        except SystemExit:
+            continue
+        found[manifest["sha256"]] = (manifest, path)
+    _MANIFESTS, _MANIFEST_STATE = found, state
+    return found
 
 
-def manifest_of(agent: str) -> tuple[dict, Path] | None:
+def manifest_of(agent: str) -> tuple[experiment.Manifest, Path] | None:
     """The shipped manifest stamped on an agent's account, where it is available."""
     digest = (account_of(agent).get("experiment") or {}).get("manifest_sha256")
     return manifests().get(digest) if digest else None
 
 
-def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None:
+def manifest_ahead_of(last: dict | None, agent: str) -> tuple[experiment.Manifest, Path] | None:
     """The stamped manifest when it is newer than the agent's last trace."""
     found = manifest_of(agent)
     if found is None:
@@ -180,21 +181,30 @@ def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None
 
 
 def committed(agent: str, account: Mapping[str, Any] | None = None) -> int:
-    """How many episodes the agent's account lists: those whose commit finished.
+    """How many episodes the agent has committed: those its account lists.
 
     close_episode writes the trace before the account, so a trace past this count is
     one whose commit stopped between the two, and no episode of the agent's. `account`
     is the account a caller has already read this poll, so that one poll reads one
     state of it; without it the account is read here.
+
+    An account this poll could not read - save_account's rename caught mid-poll -
+    reads as empty, which says nothing of what committed. For that poll the traces
+    answer alone: every one on disk is committed, and a raw log past the last of them
+    is the episode in flight.
     """
-    return len((account_of(agent) if account is None else account).get("episodes") or [])
+    account = account_of(agent) if account is None else account
+    if account:
+        return len(account.get("episodes") or [])
+    paths = harness.trace_paths(agent)
+    return harness.episode_number(paths[-1]) if paths else 0
 
 
 def traces_of(agent: str, account: Mapping[str, Any] | None = None) -> list[dict]:
-    """Every committed episode of an agent, in order."""
-    count = committed(agent, account)
-    return [t for t in (load_trace(p) for p in harness.trace_paths(agent)
-                        if harness.episode_number(p) <= count) if t is not None]
+    """Every committed episode of an agent, in order, counted as committed() counts."""
+    account = account_of(agent) if account is None else account
+    paths = harness.committed_traces(agent, account) if account else harness.trace_paths(agent)
+    return [t for t in (load_trace(p) for p in paths) if t is not None]
 
 
 def latest_trace(agent: str, account: Mapping[str, Any] | None = None) -> dict | None:
@@ -206,7 +216,7 @@ def latest_trace(agent: str, account: Mapping[str, Any] | None = None) -> dict |
 def live_index(agent: str, account: Mapping[str, Any] | None = None) -> int | None:
     """The episode not yet committed, or None if the agent is between starts.
 
-    Unfinished is exactly a raw log past the episodes the account lists, which is
+    Unfinished is exactly a raw log past the episodes committed() counts, which is
     not the same as running: how long since the log grew is what live_age reports.
     """
     raws = harness.raw_paths(agent)
@@ -374,9 +384,10 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
 
     Billed by the rule harness.bill_once applies, restated over the logged dict: a
     response id's charges count once and a replay of it is zeroed, so each balance
-    is the one the account commits. Command results are None until the trace lands.
+    is the one the account commits, counted down from zero where this poll could not
+    read the account. Command results are None until the trace lands.
     """
-    remaining = account["remaining"]
+    remaining = account.get("remaining", 0)
     centi, seen, out = 0, set(), []
     for line in lines:
         if line.get("kind") != "normalized_response":
@@ -463,7 +474,7 @@ def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | Non
     return tuple(s.seen.values())
 
 
-def manifest_environment(manifest: dict,
+def manifest_environment(manifest: experiment.Manifest,
                          path: Path) -> tuple[list[harness.Channel], dict[str, str]]:
     """A shipped manifest's channel table and harness file names, validated together."""
     return harness.validate_channels(manifest["channels"], manifest["harness_files"],
@@ -503,7 +514,7 @@ def named_group(members: list[str]) -> str:
 
 
 def anchored_groups(accounts: Mapping[str, Mapping[str, Any]],
-                    catalog: dict[str, tuple[dict, Path]] | None = None
+                    catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None
                     ) -> tuple[list[dict], set[str]]:
     """Experiments identified by a manifest stamp already written to one account.
 
@@ -681,8 +692,8 @@ def experiment_episodes(exp: dict) -> list[dict]:
 def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     """The episodes in flight, each in the round it belongs to.
 
-    An agent with a raw log past the episodes its account lists is taking its turn
-    now, which is the round after the last one it acted in.
+    An agent with a raw log past its committed episodes is taking its turn now,
+    which is the round after the last one it acted in.
     """
     out = []
     for seat, agent in places_of(exp):
@@ -1084,7 +1095,15 @@ def messages(exp: dict, since: int = 0) -> dict:
 
 
 def player_history(exp: dict, agent: str) -> dict:
-    """Public posts and the player's private conversations, including accepted sends."""
+    """Public posts and the player's private conversations, including accepted sends.
+
+    A call the player's submission made is shown from the moment it is accepted, and
+    once its episode commits it the trace's record of it is the one shown. The two
+    are matched on the player's own episode number, which a request carries and a
+    round is not: a forked seat plays its first round in an episode past the ones it
+    inherited. An accepted call is shown in the round its episode was taken in, or,
+    before that episode commits, in the round after the player's last.
+    """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
     post_tool = next((tool for tool in exp.get("tools") or []
@@ -1119,12 +1138,15 @@ def player_history(exp: dict, agent: str) -> dict:
 
     player_seat = next((seat for seat, member in places_of(exp) if member == agent), None)
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
-    public_keys = {(event["episode"], event["from_agent"], event["text"])
+    rounds = {row["episode"]: row["round"] for row in rows if row["agent"] == agent}
+    ahead = max(rounds.values(), default=0) + 1
+    public_keys = {(event["agent_episode"], event["from_agent"], event["text"])
                    for event in public}
-    private_keys = {(event["round"], event["from_agent"], event["to_label"], event["text"])
+    private_keys = {(event["episode"], event["from_agent"], event["to_label"], event["text"])
                     for event in private}
     for request, submission in InteractionStore(harness.interactions_root()).history(agent):
         episode = request.episode
+        rnd = rounds.get(episode, ahead)
         for call in submission.tool_calls:
             text = call.input.get("body")
             if not isinstance(text, str) or not text:
@@ -1133,7 +1155,7 @@ def player_history(exp: dict, agent: str) -> dict:
             if kind == "post_public":
                 key = (episode, agent, text)
                 if key not in public_keys:
-                    public.append({"episode": episode, "agent_episode": episode,
+                    public.append({"episode": rnd, "agent_episode": episode,
                                    "from_agent": agent, "from_label": request.label,
                                    "text": text, "accepted": True})
                     public_keys.add(key)
@@ -1142,7 +1164,7 @@ def player_history(exp: dict, agent: str) -> dict:
                 seat = seat_of_label(exp, label)
                 key = (episode, agent, label, text)
                 if isinstance(label, str) and key not in private_keys:
-                    private.append({"round": episode, "episode": episode,
+                    private.append({"round": rnd, "episode": episode,
                                     "from_seat": player_seat,
                                     "from_label": request.label,
                                     "from_agent": agent, "to_seat": seat, "to_label": label,
@@ -1482,7 +1504,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     found = manifest_ahead_of(last, agent)
     delivery = (found[0]["overrides"].get("delivery", harness.SETTINGS.delivery) if found else
                 (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery))
-    shell = (any(t.get("kind") == "bash" for t in found[0]["tools"]) if found else
+    shell = (any(t.get("kind") == "bash" for t in found[0]["tools"] or []) if found else
              (last["provenance"].get("shell_tool", True) if last else harness.SETTINGS.shell_tool))
     mail = harness.mailbox_channel(table)
     out = {

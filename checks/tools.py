@@ -38,24 +38,30 @@ LOOK = {"name": "look", "kind": "read_path", "channel": "blackboard"}
 BASH = {"name": "bash", "kind": "bash"}
 
 
+class Proc:
+    """A shell process still running."""
+
+    @staticmethod
+    def poll():
+        return None
+
+
+class BrokenShell:
+    """A shell that finds nothing at any path and refuses every write."""
+
+    restarts = 0
+    proc = Proc()
+
+    @staticmethod
+    def run(command, timeout):
+        return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+
+
 def check_semantic_summaries_and_failures_expose_no_storage_details():
     """Tool-only labels and failures describe actions rather than their backing paths."""
     summary = harness.named("unchanged", ["Private memory", "Letter to 2"])
     assert summary == "=== unchanged ===\n- Private memory\n- Letter to 2\n", summary
     assert harness.NAMED.match(summary.splitlines()[0])
-
-    class Proc:
-        @staticmethod
-        def poll():
-            return None
-
-    class BrokenShell:
-        restarts = 0
-        proc = Proc()
-
-        @staticmethod
-        def run(command, timeout):
-            return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
 
     declared = offers("write_memory:notes", "send_message_to:mail",
                       "post_public:blackboard", "transfer:transfer")
@@ -515,6 +521,51 @@ def check_a_tool_result_says_what_actually_happened():
     assert "state/secret is not in the 'blackboard' channel" in outside, outside
 
 
+def check_an_action_naming_no_path_answers_in_its_own_words():
+    """A message, a public post and private memory name no path, so each answers in
+    sentences of its own: done, already so where the body is what is held, refused where
+    the body is not text, and not done where the write did not land. What is already so
+    is said as such, and not as a second success."""
+    declared = offers("send_message_to:mail", "post_public:blackboard", "write_memory:notes")
+    with temp_root(tools=declared) as root:
+        seated(root, "t", other={})
+        with quiet():
+            harness.run_once("t", fake(
+                use("send_message_to", to="2", body="psst"),
+                use("send_message_to", to="2", body="psst"),
+                use("send_message_to", to="2", body=7),
+                use("post_public", body="hello all"),
+                use("post_public", body="hello all"),
+                use("post_public", body=["hello"]),
+                use("write_memory", body="remember"),
+                use("write_memory", body="remember"),
+                use("write_memory", body=None),
+                say()))
+        said = [c["result"] for turn in trace_on_disk("t", 1)["turns"] for c in turn["tools"]]
+        actions = {item.tool.kind: item for item in harness.bind_tools(
+            harness.tools(), harness.channels(), harness.environment("t", ground_truth("t")), ["2"])}
+        not_landed = [actions["send_message_to"].call(BrokenShell(), {"to": "2", "body": "psst"}),
+                   actions["post_public"].call(BrokenShell(), {"body": "hello all"}),
+                   actions["write_memory"].call(BrokenShell(), {"body": "remember"})]
+
+    assert said == [
+        "Your message to 2 was set for their next episode.",
+        "Your message to 2 is already set exactly as written for this episode.",
+        "The letter must be text. Nothing was sent.",
+        "Your public post was published.",
+        "Your public post is already saved exactly as written.",
+        "The public post must be text. Nothing was published.",
+        "Your private memory was saved.",
+        "Your private memory is already saved exactly as written.",
+        "Your private memory must be text. Nothing was saved.",
+    ], said
+    assert not_landed == [
+        "Your message to 2 could not be sent. Nothing changed.",
+        "Your public post could not be published. Nothing changed.",
+        "Your private memory could not be saved. Nothing changed.",
+    ], not_landed
+
+
 def check_the_tools_offered_reach_provenance():
     """The tool table is stamped whole and by digest, and a change starts a new arm.
 
@@ -669,6 +720,31 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
             "an omitted ballot does not carry into the next episode"
 
 
+def check_a_ballots_episode_runs_no_command_it_did_not_offer():
+    """A ballot's episode withholds the shell, so a bash call there is answered as a tool
+    that is not there and runs nothing, whatever the table offers on other episodes."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}
+    remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
+    with temp_root(channels=tables(ballot), tools=[BASH, remember, vote]) as root:
+        seated(root, "t", o={})
+        account = harness.load_account("t")
+        account["episodes"] = [{"episode": 1, "stop": "no_tool_call"}]
+        harness.save_account("t", account)
+        seen = []
+        with quiet():
+            t = harness.run_once("t", fake(run("echo ran > state/ran"), use("vote", to="2"),
+                                           say(), seen=seen))
+        offered = next(item["tools"] for item in seen if item.get("kind") == "session")
+        ran = (harness.mirror("t", "notes") / "ran").exists()
+
+    assert [tool["name"] for tool in offered] == ["remember", "vote"], offered
+    said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
+    assert said[0] == "there is no tool named 'bash'. Nothing was done.", said
+    assert not ran and "echo ran > state/ran" not in t["commands"], t["commands"]
+
+
 def check_the_audit_prints_the_tools_each_episode_is_sent():
     """--print-context shows the tool set run_turns sends, a ballot's episode included.
 
@@ -709,6 +785,33 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
     assert [[t["name"] for t in specs] for specs in sent] == \
         [["bash", "remember", "send", "look"], ["remember", "vote"]], sent
     assert audited == sent, (audited, sent)
+
+
+def check_the_audit_opens_on_the_memory_an_agent_inherits():
+    """--print-context composes under a root of its own, so the trace memory_from names
+    is carried there from the root its agent ran under, and the audit shows the memory
+    the new agent opens on."""
+    remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
+    notes = tables(notes={"pushed": True})
+    body = "kept from the last experiment\n"
+    with temp_root(channels=notes, tools=[BASH, remember]) as root:
+        source = harness.trace_path("old", 7)
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({
+            "trace_version": harness.TRACE_VERSION, "agent": "old", "episode": 7,
+            "state_saved": True,
+            "provenance": {"channels": [c.as_table() for c in harness.channels()],
+                           "tools": [t.as_table() for t in harness.tools()]},
+            "files": [{"path": "state/memory.md", "channel": "notes", "writer": "self",
+                       "readers": "self", "role": "own", "size": len(body.encode("utf-8")),
+                       "text": body}]}), encoding="utf-8")
+        path = manifest_file(root, 'system_prompt = ""\n' + channel_toml(notes) + "\n"
+                             + tool_toml(BASH, remember)
+                             + '[[agent]]\nid = "new"\nmemory_from = { agent = "old", episode = 7 }\n')
+        with quiet() as buf:
+            assert harness.print_context(None, path, "new") == 0, buf.getvalue()
+
+    assert body in buf.getvalue(), buf.getvalue()
 
 
 def check_building_an_episode_clears_what_one_episode_submits():

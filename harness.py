@@ -1054,7 +1054,9 @@ class Settings:
     # Episodes at the start of an agent that answer for no obligation.
     grace_episodes: int = 0
     floor_at_zero: bool = False        # put a balance below zero back to zero
-    starter_files: str = ""            # a directory under files/; "" is an empty environment
+    # A file or directory under files/, or a path beside the manifest; "" is an empty
+    # environment.
+    starter_files: str = ""
     # The starter files land at the first episode at or below this balance.
     starter_files_below: int = 0
     # Whether what has been said to an agent is quoted to it at episode start ("push")
@@ -1284,9 +1286,14 @@ def account_path(agent: str) -> Path:
     return records_dir(agent) / "account.json"
 
 
+def traces_dir(agent: str) -> Path:
+    """Where one agent's traces are kept, an episode-NNNN.json each."""
+    return records_dir(agent) / "traces"
+
+
 def trace_path(agent: str, index: int) -> Path:
     """One episode's trace."""
-    return records_dir(agent) / "traces" / f"episode-{index:04d}.json"
+    return traces_dir(agent) / f"episode-{index:04d}.json"
 
 
 def raw_path(agent: str, index: int) -> Path:
@@ -1296,7 +1303,7 @@ def raw_path(agent: str, index: int) -> Path:
 
 def trace_paths(agent: str) -> list[Path]:
     """Every trace an agent has, in episode order."""
-    return sorted((records_dir(agent) / "traces").glob("episode-*.json"))
+    return sorted(traces_dir(agent).glob("episode-*.json"))
 
 
 def raw_paths(agent: str) -> list[Path]:
@@ -1307,6 +1314,17 @@ def raw_paths(agent: str) -> list[Path]:
 def episode_number(path: Path) -> int:
     """The index in an episode-NNNN file name."""
     return int(path.stem.rsplit("-", 1)[1])
+
+
+def committed_traces(agent: str, account: Mapping[str, Any]) -> list[Path]:
+    """The traces of the episodes `account` lists, in episode order.
+
+    close_episode writes the trace before the account, so a trace past the episodes
+    the account lists is one whose commit stopped between the two, and no episode of
+    the agent's. An account that lists none, or is not there, has no trace.
+    """
+    count = len(account.get("episodes") or [])
+    return [p for p in trace_paths(agent) if episode_number(p) <= count]
 
 
 def environment_dir(agent: str) -> Path:
@@ -1476,7 +1494,6 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
     s = SETTINGS
     given = {"provider": provider, "model": model, "budget": budget, "starter_files": starter_files,
              "starter_files_below": starter_files_below, "system_prompt": system_prompt}
-    records = records_dir(agent)
     f = account_path(agent)
     if not f.exists():
         if provider is None or model is None:
@@ -1487,7 +1504,7 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
         prompt = s.system_prompt if system_prompt is None else system_prompt
         validate_terms("account", provider=provider, model=model, budget=initial,
                        starter_files=name, starter_files_below=below, who=agent)
-        for d in (records / "traces", *(mirror(agent, c.name) for c in s.channels if c.mirrored)):
+        for d in (traces_dir(agent), *(mirror(agent, c.name) for c in s.channels if c.mirrored)):
             d.mkdir(parents=True, exist_ok=True)
         # Element 0 of the series is the initial balance; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
@@ -1700,10 +1717,10 @@ def penalise(account: Account, ch: Channel) -> int:
 
 # --- 7. Starter files and experimenter sources -----------------------------------
 
-# Starter files are a tree copied into the private store before an episode, so the
-# agent meets them in the listing the opening command prints and not in anything
-# the harness says. Their names and contents are prompt surface, recorded by
-# digest in every episode (invariant 9).
+# Starter files are a file or tree copied into the private store before an episode,
+# so the agent meets them in the listing the opening command prints and not in
+# anything the harness says. Their names and contents are prompt surface, recorded
+# by digest in every episode (invariant 9).
 def files_dir(name: str) -> Path:
     """Where starter files or an experimenter channel's source lives.
     Committed, unlike environments/ and records/."""
@@ -2063,16 +2080,10 @@ def receipt_text(account: Account, ch: Channel) -> str:
         if not channel.obligated or channel.name not in records:
             continue
         record = records[channel.name]
-        kind = channel.settles_as
-        met = SETTLEMENTS[kind].met(record)
-        if kind == "transfer":
-            detail = "transfer moved money" if met else "no transfer moved money"
-        elif kind == "mailbox":
-            detail = ("message sent to " + ", ".join(record["addressed"]) if met
-                      else "no message sent")
-        else:
-            detail = "public post published" if met else "no public post"
-        lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} ({detail})")
+        settlement = SETTLEMENTS[channel.settles_as]
+        met = settlement.met(record)
+        lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} "
+                     f"({settlement.detail(record, met)})")
         lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")
     lines += [f"total penalties: {penalties}",
               f"received from peers: {received}",
@@ -3952,10 +3963,14 @@ def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
     A bash call carrying no command is the {"restart": true} form: the shell is
     restarted for real and the result says nothing. A declared tool acts through
     the same shell and answers with what happened to the environment, and adds
-    nothing to `commands`: those are the commands the agent wrote. Results are
+    nothing to `commands`: those are the commands the agent wrote. A call naming
+    anything the request did not carry - the shell on a ballot's episode as much as
+    a name never declared - is answered as no tool and does nothing. Results are
     stored unclipped in the record, which is the text the agent received.
     """
+    bound = tuple(bound)
     offered = {b.tool.name: b for b in bound}
+    shell_offered = SHELL_SPEC in episode_specs(bound)
     results = []
     for b in calls:
         name = b.name or SHELL_SPEC.name
@@ -3963,7 +3978,7 @@ def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
         if action := offered.get(name):
             text = clip(action.call(shell, args), SETTINGS.tool_result_limit)
             rec["tools"].append({"tool": name, "command": None, "input": args, "result": text})
-        elif name == SHELL_SPEC.name and SETTINGS.shell_tool:
+        elif name == SHELL_SPEC.name and shell_offered:
             cmd = args.get("command")
             if cmd is None:
                 shell.restart()
@@ -4397,7 +4412,7 @@ def transfer_met(rec: Mapping[str, Any]) -> bool:
 @dataclasses.dataclass(frozen=True)
 class Settlement:
     """One rule an obligated channel is settled by: what settling it does, what met
-    means, and what an unmet one is called.
+    means, what an unmet one is called, and what a receipt says either way.
 
     `resolve` settles one episode against the agent's own instance and returns the
     record the account and the trace keep. It is handed what any rule settles with -
@@ -4405,23 +4420,32 @@ class Settlement:
     credit reaches its receiver - and reads what its own rule needs. `met` reads a
     record back, just settled or out of a trace, as whether the obligation was met.
     `why` names what an unmet one left undone, in the words the console line and
-    the viewer share.
+    the viewer share. `detail` says what a record came to, handed whether it met the
+    obligation, in the words receipt_text itemizes it in.
     """
     resolve: Callable[[Episode, Instance, int, bool, Callable[[str, int], None]],
                       Mapping[str, Any]]
     met: Callable[[Mapping[str, Any]], bool]
     why: Callable[[Mapping[str, Any], Channel], str]
+    detail: Callable[[Mapping[str, Any], bool], str]
 
 
 # One entry a rule, keyed by Channel.settles_as. settle_episode resolves by it, the
-# console line and view.unmet say what went undone by it, and analyze.met_of judges
-# by it, so no two of them can take one channel for different kinds.
+# console line and view.unmet say what went undone by it, a receipt itemizes by it,
+# and analyze.met_of judges by it, so no two of them can take one channel for
+# different kinds.
 SETTLEMENTS: dict[SettlesAs, Settlement] = {
     "transfer": Settlement(resolve_transfer, transfer_met,
-                           lambda rec, ch: "no transfer of its own"),
-    "mailbox": Settlement(resolve_mailbox, lambda rec: bool(rec["addressed"]), outbox_why),
+                           lambda rec, ch: "no transfer of its own",
+                           lambda rec, met: "transfer moved money" if met
+                           else "no transfer moved money"),
+    "mailbox": Settlement(resolve_mailbox, lambda rec: bool(rec["addressed"]), outbox_why,
+                          lambda rec, met: "message sent to " + ", ".join(rec["addressed"])
+                          if met else "no message sent"),
     "directory": Settlement(resolve_directory, lambda rec: bool(rec["posted"]),
-                            lambda rec, ch: "no post"),
+                            lambda rec, ch: "no post",
+                            lambda rec, met: "public post published" if met
+                            else "no public post"),
 }
 
 
@@ -5371,7 +5395,7 @@ def restore_files(new: str, written: list[Channel], label: str, records: list[di
         placed.append((mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1:], rec["text"]))
     for c in written:
         mirror(new, c.name).mkdir(parents=True, exist_ok=True)
-    (records_dir(new) / "traces").mkdir(parents=True, exist_ok=True)
+    traces_dir(new).mkdir(parents=True, exist_ok=True)
     for dest, text in placed:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8", newline="\n")
@@ -5470,9 +5494,10 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
             stage_source(name, audit_root)
         for entry in agents:
             if inherited := entry.get("memory_from"):
-                source = source_root / "records" / inherited["agent"] / "traces" / \
-                    f"episode-{inherited['episode']:04d}.json"
-                destination = audit_root / "records" / inherited["agent"] / "traces" / source.name
+                # Where inherit_memory reads it under this root, from the same place
+                # under the root the source agent ran in.
+                destination = trace_path(inherited["agent"], inherited["episode"])
+                source = source_root / destination.relative_to(audit_root)
                 if source.is_file():
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, destination)

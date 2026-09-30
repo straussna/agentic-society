@@ -81,8 +81,7 @@ def check_every_harness_global_a_check_moves_is_restored():
     next one. `temp_root` refuses an override outside it, and an assignment
     straight onto the module is held to the same set here: read off the syntax
     tree, so one target of several and a setattr naming it are found too. A
-    setting is a field of harness.SETTINGS, moved by amend(), and no module
-    global of its own is left for an assignment to land on and configure nothing.
+    setting is a field of harness.SETTINGS, moved by amend().
     """
     probe = ast.parse("harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\n"
                       "setattr(harness, 'd', 4)\nharness.e == 5\n")
@@ -99,9 +98,6 @@ def check_every_harness_global_a_check_moves_is_restored():
     assert moved, "no check assigns a harness global; the scan found nothing to hold"
     loose = {name: sorted(ls) for name, ls in moved.items() if name not in SEAMS}
     assert not loose, f"assigned by a check and not in SEAMS: {loose}"
-    legacy = harness.TUNABLES | {"ROOT", "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL"}
-    stale = sorted(name for name in legacy if hasattr(harness, name))
-    assert not stale, f"a module global beside harness.SETTINGS configures nothing: {stale}"
 
 
 def assigned_on(tree: ast.AST, module: str) -> list[str]:
@@ -134,8 +130,10 @@ def check_no_setting_is_given_in_two_places():
     Each file refuses the other's keys by name; this asserts the two halves cover
     every tunable exactly once, and that the files the repo ships keep to them. In a
     process every tunable is a field of the one frozen Settings, spelled as the files
-    spell it and stated in every episode's provenance, and nothing imports SETTINGS
-    by name, which would hold on to the settings in force at the import.
+    spell it and stated in every episode's provenance. No module global spells a
+    setting in capitals beside it, where an assignment would configure nothing, and
+    nothing imports SETTINGS by name, which would hold on to the settings in force at
+    the import.
     """
     assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, "every tunable is owned"
     assert not harness.PROCESS & harness.TREATMENT, sorted(harness.PROCESS & harness.TREATMENT)
@@ -144,6 +142,10 @@ def check_no_setting_is_given_in_two_places():
     fields = {f.name for f in dataclasses.fields(harness.Settings)}
     assert tunables == fields - {"root", "channels", "harness_files", "tools"}, \
         f"a tunable is the field of its lowercased name: {sorted(tunables ^ fields)}"
+    held = fields | {name for name, value in vars(harness.Settings).items()
+                     if isinstance(value, property)}
+    shadowing = sorted(name.upper() for name in held if hasattr(harness, name.upper()))
+    assert not shadowing, f"a module global beside harness.SETTINGS configures nothing: {shadowing}"
     try:
         setattr(harness.Settings(), "budget", 1)
     except dataclasses.FrozenInstanceError:
