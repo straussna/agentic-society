@@ -674,21 +674,25 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
 
     The audit exists to show exactly what an agent is sent, so the shell it
     withholds on a ballot's episode and the tools it offers there are the ones the
-    request carries.
+    request carries, and a description stating a setting states config.toml's.
     """
     ballot = {"name": "ballot", "writer": "self", "readers": "self",
               "shape": "directory", "path": "ballot", "pushed": False}
     declared = [BASH, {"name": "remember", "kind": "write_memory", "channel": "notes"},
                 {"name": "send", "kind": "send_message_to", "channel": "mail"},
-                {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}]
+                {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}, LOOK]
     seats = '[[agent]]\nid = "t"\n\n[[agent]]\nid = "o"\n'
     with temp_root(channels=tables(ballot), tools=declared) as root:
+        (root / "config.toml").write_text("tool_result_limit = 1500\n", encoding="utf-8")
         path = manifest_file(root, 'system_prompt = ""\n' + channel_toml(tables(ballot)) + "\n"
                              + tool_toml(*declared) + seats)
         with quiet() as buf:
             assert harness.print_context(None, path, "t") == 0
         printed = buf.getvalue()
+        assert "clipped at 1500 characters" in printed, printed
 
+        # An experiment's episodes run under its config.toml, which start() installs.
+        harness.load_config()
         seated(root, "t", t={}, o={})
         sent = []
         for _ in range(2):
@@ -703,7 +707,7 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
         at = printed.index("tool specs:\n", opening) + len("tool specs:\n")
         audited.append(json.JSONDecoder().raw_decode(printed, at)[0])
     assert [[t["name"] for t in specs] for specs in sent] == \
-        [["bash", "remember", "send"], ["remember", "vote"]], sent
+        [["bash", "remember", "send", "look"], ["remember", "vote"]], sent
     assert audited == sent, (audited, sent)
 
 

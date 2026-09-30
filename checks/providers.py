@@ -19,7 +19,7 @@ from providers import SessionContext, ToolResult, ToolSpec
 from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
-from checks.fake import DEFAULT, per_agent, say
+from checks.fake import DEFAULT, fake, per_agent, say
 from checks.lanes import PERSONA, amend, episode_once, pinned, quiet, temp_root
 
 
@@ -317,11 +317,15 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
     missing key itself, in words that say nothing of the shell. A start that refuses
     installs none of the settings it read: the tool table it was given included.
     That table reaches the preflight held to the manifest's own channel table, one
-    the settings in force do not have.
+    the settings in force do not have. A start that passes installs every one of
+    them, each built on the one before: config.toml, the manifest's defaults, its
+    channel table and its tool table.
     """
     unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL",
                            "OPENAI_BASE_URL"))
     sdks = {name: unbuildable(name) for name in ("anthropic", "openai")}
+    declared = [{"name": "bash", "kind": "bash"},
+                {"name": "jot", "kind": "write_file", "channel": "journal"}]
     for provider, model in (("anthropic", "claude-sonnet-5"), ("openai", "gpt-5.6-terra")):
         variable = f"{provider.upper()}_API_KEY"
         with swapped(os.environ, **unset), swapped(sys.modules, **sdks), pinned(), \
@@ -330,9 +334,7 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
             before = harness.SETTINGS
             try:
                 harness.start(requirements=[(provider, model)], channel_tables=PERSONA,
-                              tool_tables=[{"name": "bash", "kind": "bash"},
-                                           {"name": "jot", "kind": "write_file",
-                                            "channel": "journal"}])
+                              tool_tables=declared)
             except SystemExit as error:
                 assert error.code == 2, error.code
             else:
@@ -341,6 +343,21 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
         refusal = out.getvalue().strip().splitlines()[-1]
         assert refusal == (f"{provider} preflight failed: {variable} is not set. Set {variable} "
                            "in the shell this experiment is launched from."), refusal
+
+    made = fake()
+    with swapped(vars(providers), DirectProviderRouter=lambda requirements: made), pinned(), \
+            tempfile.TemporaryDirectory() as folder, quiet():
+        amend(root=Path(folder))
+        (Path(folder) / "config.toml").write_text("max_turns = 300\n", encoding="utf-8")
+        router = harness.start(overrides={"system_prompt": "said", "grace_episodes": 1},
+                               requirements=[("anthropic", "claude-sonnet-5")],
+                               channel_tables=PERSONA, tool_tables=declared)
+        s = harness.SETTINGS
+        assert router is made, "start returns the router it preflighted"
+        assert (s.max_turns, s.grace_episodes, s.system_prompt) == (300, 1, "said"), \
+            "config.toml and the manifest's defaults are both in force after a start"
+        assert [c.name for c in s.channels] == [t["name"] for t in PERSONA], s.channels
+        assert [t.name for t in s.tools] == ["bash", "jot"], s.tools
 
 
 def check_custom_provider_endpoints_are_refused():
