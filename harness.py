@@ -1150,8 +1150,9 @@ WATCH_AGENT: contextvars.ContextVar[str] = contextvars.ContextVar("WATCH_AGENT",
 # where it reads the account floor, so an interrupt ends the episode the way the
 # floor does: after a whole turn, with the trace written and the spend
 # committed. Nothing raises on the first signal; a second is the default again.
-# A flag and not a field of SETTINGS: a signal handler and a round's episode
-# threads set it, and neither may replace the settings.
+# A flag and not a field of SETTINGS: the signal handler sets it, and so does a
+# check's fake router on a round's episode thread, and neither may replace the
+# settings.
 STOPPING = False
 
 # Child processes get a process group of their own, so a console Ctrl+C reaches

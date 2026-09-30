@@ -92,12 +92,17 @@ def check_print_system_and_print_files_audit_without_starting():
     """The static audits and --fork-from run and stop before start() is reached.
 
     None calls start(), opens a provider or builds a real environment. A fork without
-    an episode to fork at is refused by the parser.
+    an episode to fork at is refused by the parser. --print-system reads config.toml
+    and installs none of it.
     """
     with temp_root() as root:
         harness.start = never_start
+        (root / "config.toml").write_text("max_turns = 300\n", encoding="utf-8")
+        before = harness.SETTINGS
         with quiet() as buf:
             assert harness.main(["--print-system"]) == 0
+        assert f"config: {root / 'config.toml'}" in buf.getvalue(), buf.getvalue()
+        assert harness.SETTINGS is before, "an audit leaves the settings as it found them"
         for name, _, digest in harness.PINNED:
             assert name in buf.getvalue() and digest in buf.getvalue(), (name, buf.getvalue())
         plant(root)

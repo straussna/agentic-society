@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shlex
 
@@ -839,6 +840,8 @@ def check_withholding_the_shell_needs_something_to_act_with():
     Both are experiments that would end every episode on its first turn: one with
     an empty tool set, which is not a request the API takes, and one whose first
     user turn would be empty because the listing is gone and no digest replaces it.
+    The second is held to the settings the table is declared under, and not to the
+    ones in force: start() builds the whole before it replaces any of them.
     """
     chans = list(harness.DEFAULT_CHANNELS)
     with temp_root():
@@ -846,10 +849,22 @@ def check_withholding_the_shell_needs_something_to_act_with():
                 "manifest:", "no [[tool]] is declared", "nothing to act with")
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "manifest:", "no [[tool]] is declared")
+        pull = dataclasses.replace(harness.SETTINGS, delivery="pull")
+        refused(lambda: harness.with_tools(pull, [POST], chans, "manifest"),
+                "manifest:", "opens on the digest", "'pull'")
+        undigested = dataclasses.replace(
+            harness.SETTINGS, harness_files={**harness.SETTINGS.harness_files, "digest": ""})
+        refused(lambda: harness.with_tools(undigested, [POST], chans, "manifest"),
+                "manifest:", "opens on the digest")
 
     with temp_root(delivery="pull"):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest", "'pull'")
+        before = harness.SETTINGS
+        push = dataclasses.replace(before, delivery="push")
+        built = harness.with_tools(push, [POST], chans, "manifest")
+        assert [t.name for t in built.tools] == ["post"], built.tools
+        assert harness.SETTINGS is before, "with_tools builds settings and installs none"
 
     with temp_root(harness_files={"digest": ""}):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),

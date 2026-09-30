@@ -20,7 +20,7 @@ from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
 from checks.fake import DEFAULT, per_agent, say
-from checks.lanes import amend, episode_once, pinned, quiet, temp_root
+from checks.lanes import PERSONA, amend, episode_once, pinned, quiet, temp_root
 
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
@@ -316,6 +316,8 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
     The refusal comes before either SDK builds a client, since one may refuse a
     missing key itself, in words that say nothing of the shell. A start that refuses
     installs none of the settings it read: the tool table it was given included.
+    That table reaches the preflight held to the manifest's own channel table, one
+    the settings in force do not have.
     """
     unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL",
                            "OPENAI_BASE_URL"))
@@ -327,8 +329,10 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
             amend(root=Path(folder))
             before = harness.SETTINGS
             try:
-                harness.start(requirements=[(provider, model)],
-                              tool_tables=[{"name": "bash", "kind": "bash"}])
+                harness.start(requirements=[(provider, model)], channel_tables=PERSONA,
+                              tool_tables=[{"name": "bash", "kind": "bash"},
+                                           {"name": "jot", "kind": "write_file",
+                                            "channel": "journal"}])
             except SystemExit as error:
                 assert error.code == 2, error.code
             else:
