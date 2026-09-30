@@ -126,7 +126,7 @@ runs one.
 | `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
 | `-r N` | Up to N rounds, default 1, stopping early as budgets end; under `--resume` a round the last run left unfinished is finished first, and is one of the N |
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
-| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind the furthest round any seat has played sits out. Without it, previous state moves under `displaced/` and a fresh run starts |
+| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind the furthest round any seat has played sits out, and is no longer in the competition. Without it, previous state moves under `displaced/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
 | `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
@@ -139,9 +139,12 @@ one line per phase each round reaches as it reaches it; `progress.json`, the lat
 those; `outcome.json`; and, for a branch, `lineage.json`. The outcome's
 `termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`,
 `final_tie`, `all_eliminated`, `none_can_act` or `interrupted`. Every stop is judged on
-the seats still in the competition, whose accounts admit an episode, whether or not the
-run has them at its table: a seat whose episode ended on a fault of its own, or whose
-environment would not build, leaves the table for the rest of that run and stays in.
+the seats still in the competition, whose accounts admit an episode and which are at most
+one round behind the furthest round any seat has played, whether or not the run has them
+at its table: a seat whose episode ended on a fault of its own, or whose environment would
+not build, leaves the table for the rest of that run and stays in until it falls further
+behind. One further behind sits out every round of every run, and is no longer in: it
+counts toward no stop, survives nothing and stands in no election.
 `all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
 able to take an episode in this run. The outcome's `survivors` are the seats still in as
 the run ends. Human seats are answered as [docs/human.md](human.md) describes.

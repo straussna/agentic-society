@@ -673,16 +673,29 @@ def drop_those_out(agents: list[str], live: set[str]) -> None:
             drop_out(agent, live)
 
 
+def behind(account: dict, played: int) -> bool:
+    """Whether an agent is more than a round behind the table's round, the furthest
+    round `played` by any agent: the round an agent is told it is in is its own episode
+    count plus one, so it cannot sit at the table's round, and the rounds it missed are
+    over. Played rounds only grow, so an agent behind stays behind."""
+    return len(account["episodes"]) < played - 1
+
+
 def remaining(agents: list[str]) -> list[str]:
     """The agents still in the competition, in seat order: every one whose account admits
-    an episode, at this run's table or not.
+    an episode and that is not behind the table's round, at this run's table or not.
 
-    An agent that left the table for the rest of a run - a fault of its own, an
-    environment that would not build, or a round it can no longer sit at - keeps its
-    balance and its place in the competition, and is counted here like any other, so
-    every stop is judged the same whichever run judges it.
+    An agent that left the table for the rest of a run - a fault of its own, or an
+    environment that would not build - keeps its balance and its place in the
+    competition while it is at most a round behind, since a run that seats it again has
+    it finish that round first. One further behind sits out every round of every run, so
+    it is in the competition no longer: it counts toward no stop, survives nothing and
+    stands in no election. Every stop is judged the same whichever run judges it.
     """
-    return [agent for agent in agents if harness.why_out(harness.load_account(agent)) is None]
+    accounts = {agent: harness.load_account(agent) for agent in agents}
+    played = max((len(account["episodes"]) for account in accounts.values()), default=0)
+    return [agent for agent in agents if harness.why_out(accounts[agent]) is None
+            and not behind(accounts[agent], played)]
 
 
 def drops(stop: str) -> bool:
@@ -697,18 +710,16 @@ def take_seats(agents: list[str], live: set[str]) -> None:
 
     An agent whose account admits no episode drops out. The table's round is the
     furthest any agent has played, whether or not it is still in, and one more than a
-    round behind that sits out every round: the round an agent is told it is in is its
-    own episode count plus one, so it cannot sit at the table's round, and the rounds
-    it missed are over. One that missed only the last round stays, and finishes that
-    round first.
+    round behind that sits out every round, and is in the competition no longer. One
+    that missed only the last round stays, and finishes that round first.
     """
     drop_those_out(agents, live)
     accounts = {agent: harness.load_account(agent) for agent in agents}
     played = max((len(accounts[agent]["episodes"]) for agent in agents), default=0)
     for agent in agents:
-        if agent in live and (taken := len(accounts[agent]["episodes"])) < played - 1:
-            print(f"{agent:<6} sits out: it took {taken} episodes and the table has played "
-                  f"{played} rounds")
+        if agent in live and behind(accounts[agent], played):
+            print(f"{agent:<6} sits out: it took {len(accounts[agent]['episodes'])} episodes "
+                  f"and the table has played {played} rounds")
             live.discard(agent)
 
 
@@ -1027,7 +1038,7 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
         if not finished:
             return None
         electorate = [agent for agent in agents if elector(accounts[agent], round_number)]
-        candidates = [agent for agent in agents if harness.why_out(accounts[agent]) is None]
+        candidates = remaining(agents)
     else:
         named = held.get("electors", held["tally"])
         electorate = [agent for agent in agents if label_by_agent[agent] in named]
@@ -1112,8 +1123,8 @@ def concluded(election: int | None, agents: list[str], live: set[str], labels: d
     after one remains, and "final_tie" when it stops at a tied vote and exactly two
     remain, both of whom were electors in it. An agent the round left spent out, or
     otherwise with no further episode, does not remain, and one that left the table for
-    the rest of this run does, so an election is judged the same whether the rounds go
-    on in this run or in one that resumes it.
+    the rest of this run does while it is at most a round behind, so an election is
+    judged the same whether the rounds go on in this run or in one that resumes it.
     """
     if election is None:
         return None
