@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shlex
+
 import analyze
 import experiment
 import harness
@@ -328,7 +331,9 @@ def check_a_tool_table_is_validated():
 
 def tool_toml(*declared: dict) -> str:
     """Render tool tables as the TOML a manifest holds."""
-    return "".join("[[tool]]\n" + "".join(f'{k} = "{v}"\n' for k, v in t.items()) + "\n"
+    def value(v) -> str:
+        return str(v) if isinstance(v, int) else f'"{v}"'
+    return "".join("[[tool]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in t.items()) + "\n"
                    for t in declared)
 
 
@@ -631,6 +636,120 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
             harness.run_once("t", fake(say()))
         assert not (harness.mirror("t", "ballot") / "vote").exists(), \
             "an omitted ballot does not carry into the next episode"
+
+
+def check_the_audit_prints_the_tools_each_episode_is_sent():
+    """--print-context shows the tool set run_turns sends, a ballot's episode included.
+
+    The audit exists to show exactly what an agent is sent, so the shell it
+    withholds on a ballot's episode and the tools it offers there are the ones the
+    request carries.
+    """
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    declared = [BASH, {"name": "remember", "kind": "write_memory", "channel": "notes"},
+                {"name": "send", "kind": "send_message_to", "channel": "mail"},
+                {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}]
+    seats = '[[agent]]\nid = "t"\n\n[[agent]]\nid = "o"\n'
+    with temp_root(channels=tables(ballot), tools=declared) as root:
+        path = manifest_file(root, 'system_prompt = ""\n' + channel_toml(tables(ballot)) + "\n"
+                             + tool_toml(*declared) + seats)
+        with quiet() as buf:
+            assert harness.print_context(None, path, "t") == 0
+        printed = buf.getvalue()
+
+        seated(root, "t", t={}, o={})
+        sent = []
+        for _ in range(2):
+            seen = []
+            with quiet():
+                harness.run_once("t", fake(say(), seen=seen))
+            sent.append(next(item["tools"] for item in seen if item["kind"] == "session"))
+
+    audited = []
+    for episode in (1, 2):
+        opening = printed.index(f"--- episode {episode} opening ---")
+        at = printed.index("tool specs:\n", opening) + len("tool specs:\n")
+        audited.append(json.JSONDecoder().raw_decode(printed, at)[0])
+    assert [[t["name"] for t in specs] for specs in sent] == \
+        [["bash", "remember", "send"], ["remember", "vote"]], sent
+    assert audited == sent, (audited, sent)
+
+
+def check_building_an_episode_clears_what_one_episode_submits():
+    """Messages, transfers, a post and a ballot are one episode's; private memory is not.
+
+    A mailbox's slots are cleared whether the mailbox carries messages or
+    currency, a transfer file is cleared whole, and a tool's own file is cleared
+    where its kind keeps it for one episode only.
+    """
+    class Recorder:
+        def __init__(self):
+            self.commands = []
+
+        def run(self, command, timeout):
+            self.commands.append(command)
+            return "cleared"
+
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    currency = tables(ballot)
+    transfer = next(ch for ch in currency if ch["name"] == "transfer")
+    transfer.pop("path")
+    transfer.update(readers="addressee", shape="mailbox", outbox="currency/outbox",
+                    inbox="currency/inbox", funded_by="giver", rebate_percent=0)
+    declared = offers("write_memory:notes", "post_public:blackboard", "transfer:transfer",
+                      {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5})
+    cleared = {}
+    for arm, channels in (("file", tables(ballot)), ("mailbox", currency)):
+        with temp_root(channels=channels, tools=declared) as root:
+            seated(root, "t", t={}, o={}, d={})
+            shell = Recorder()
+            harness.clear_episode_actions(shell, harness.environment("t", ground_truth("t")))
+            assert len(shell.commands) == 1, shell.commands
+            cleared[arm] = shlex.split(shell.commands[0])[3:-3]
+
+    assert cleared["file"] == ["1/post.md", "out/2", "out/3", "out/transfer", "ballot/vote"], \
+        cleared["file"]
+    assert cleared["mailbox"] == ["1/post.md", "out/2", "out/3", "currency/outbox/2",
+                                  "currency/outbox/3", "ballot/vote"], cleared["mailbox"]
+    memory = harness.TOOL_KINDS["write_memory"].file
+    assert not any(path.endswith(memory) for paths in cleared.values() for path in paths), \
+        "private memory carries into the next episode"
+
+
+def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
+    """A kind that writes is bound to the agent's own instance or not bound at all.
+
+    bind_tools leaves such a tool out where the channel planted nothing the agent
+    writes, and a Bound made anywhere else without one is refused as it is made,
+    not inside a billed turn. read_path writes nothing and reads what was planted.
+    """
+    with temp_root(tools=[POST, LOOK]) as root:
+        seated(root, "t", t={}, o={})
+        instances = harness.environment("t", ground_truth("t"))
+        post, look = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
+        assert post.own.path == "1" and post.own.writable, post.own
+
+        theirs = tuple(i for i in instances if i.name == "blackboard" and not i.writable)
+        try:
+            harness.Bound(post.tool, post.channel, theirs, None)
+        except ValueError as e:
+            assert "planted no instance the agent writes" in str(e), e
+        else:
+            raise AssertionError("a write_file tool was built with nowhere to write")
+        reader = harness.Bound(look.tool, look.channel, theirs, None)
+        assert "which holds 2/." in reader.spec().description, reader.spec().description
+        try:
+            reader.own
+        except ValueError as e:
+            assert "writes nothing" in str(e), e
+        else:
+            raise AssertionError("read_path answered with an instance it does not write")
+
+        only_theirs = [i for i in instances if not (i.name == "blackboard" and i.writable)]
+        offered = harness.bind_tools(harness.tools(), harness.channels(), only_theirs, ["2"])
+        assert [b.tool.name for b in offered] == ["look"], offered
 
 
 def check_the_shell_can_be_withheld_and_the_tools_still_act():

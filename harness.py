@@ -11,14 +11,14 @@ Sections, in the order an episode meets them:
   2. Providers                      providers package catalogs and adapters
   3. Tunables                       defaults, load_config, apply_config
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
-                                    Tool, TOOL_KINDS, validate_tools
+                                    Tool, validate_tools
   5. Process constants              ROOT, HARNESS_SHA256, limits, stop sets, regexes
   6. Accounts                       load_account, Seating, adjust, penalise
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
  10. The container and the shell    Container, Shell, load_state, save_state, clip,
-                                    Bound, bind_tools
+                                    Bound, TOOL_KINDS, bind_tools, episode_specs
  11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
@@ -56,7 +56,7 @@ import threading
 import time
 import tomllib
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, NoReturn, Sequence
 
 import product
 import providers
@@ -848,7 +848,7 @@ def apply_channels(tables: list[dict] | None, harness_files: dict | None, source
 class Tool:
     """One named action an experiment offers its agents. docs/manifest.md section 4.8.
 
-    A tool is a kind from the menu below pointed at a declared channel. The kind
+    A tool is a kind from the menu, TOOL_KINDS, pointed at a declared channel. The kind
     decides what the tool does and what its result reports; a manifest chooses the
     name, where it points, and the words the agent reads. It invents no behaviour:
     the input schema is the harness's, because that is the contract a call is held
@@ -865,22 +865,6 @@ class Tool:
         if not self.every:
             table.pop("every")
         return table
-
-# The fixed menu, and the channel each kind takes. A kind the harness gains is an
-# entry here, a branch in each of Bound's three methods, and a check. Nothing a
-# manifest writes reaches this table.
-TOOL_KINDS: dict[str, str] = {
-    "bash": "no channel",
-    "write_slot": "a mailbox channel",
-    "send_message": "a mailbox channel",
-    "send_message_to": "a mailbox channel",
-    "write_file": "a directory channel the agent writes",
-    "post_public": "a public directory channel the agent writes",
-    "write_memory": "a private directory channel",
-    "vote": "a private directory channel",
-    "transfer": "an enabled transfer schema channel",
-    "read_path": "any channel the environment plants",
-}
 
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -909,21 +893,6 @@ def tools_sha256(table: Iterable[Tool]) -> str:
 def tools_from(records: list[dict] | None) -> list[Tool]:
     """A tool table read back out of a trace's provenance; none where there is none."""
     return [Tool(**r) for r in records or []]
-
-
-def kind_takes(kind: str, ch: Channel) -> bool:
-    """Whether a channel is the shape this kind of tool acts on."""
-    if kind in ("write_slot", "send_message", "send_message_to"):
-        return ch.shape == "mailbox" and not ch.schema
-    if kind == "write_file":
-        return ch.writer == "self" and ch.shape == "directory"
-    if kind == "post_public":
-        return ch.writer == "self" and ch.readers == "all" and ch.shape == "directory"
-    if kind in ("write_memory", "vote"):
-        return ch.writer == "self" and ch.readers == "self" and ch.shape == "directory"
-    if kind == "transfer":
-        return ch.schema == "transfer" and ch.funded_by != "none"
-    return True                      # read_path takes whatever the environment plants
 
 
 def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
@@ -960,12 +929,12 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     if ch is None:
         refuse(f"tool {name}: channel {where!r} is not in the channel table "
                f"{[c.name for c in chans]}")
-    if not kind_takes(kind, ch):
-        refuse(f"tool {name}: kind {kind!r} takes {TOOL_KINDS[kind]}, and channel "
+    if not TOOL_KINDS[kind].fits(ch):
+        refuse(f"tool {name}: kind {kind!r} takes {TOOL_KINDS[kind].takes}, and channel "
                f"{ch.name!r} is not one")
     every = raw.get("every", 0)
     if kind == "vote":
-        if type(every) is not int or every < 1:
+        if every < 1:
             refuse(f"tool {name}: kind 'vote' requires every to be a positive integer, got {every!r}")
     elif "every" in raw:
         refuse(f"tool {name}: every belongs to kind 'vote'")
@@ -2898,17 +2867,36 @@ class Bound:
 
     What the agent is offered and what a call does are computed from these three
     and nothing else, so a tool can neither say nor reach what the channel table
-    does not.
+    does not. How each is computed is the tool's kind's, in TOOL_KINDS.
     """
     tool: Tool
     channel: Channel
     instances: tuple[Instance, ...]
+    writes_to: Instance | None             # the instance the agent writes, if the kind writes
     reach: tuple[str, ...] | None = None   # the labels still reachable; None filters none
 
+    def __post_init__(self) -> None:
+        if self.writes_to is None and self.kind.writes:
+            raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes, and "
+                             f"channel {self.channel.name!r} planted no instance the agent "
+                             f"writes")
+
     @property
-    def own(self) -> Instance | None:
-        """The instance the agent writes, where this channel gives it one."""
-        return next((i for i in self.instances if i.writable), None)
+    def kind(self) -> ToolKind:
+        """What this tool's kind is, as the menu has it."""
+        return TOOL_KINDS[self.tool.kind]
+
+    @property
+    def own(self) -> Instance:
+        """The instance the agent writes, which every kind that writes is built with."""
+        if self.writes_to is None:
+            raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes nothing")
+        return self.writes_to
+
+    @property
+    def backing(self) -> str:
+        """The one file this kind keeps in the agent's own instance, as a path in /work."""
+        return f"{self.own.path}/{self.kind.file}"
 
     @property
     def slots(self) -> list[str]:
@@ -2919,7 +2907,7 @@ class Bound:
         offering a write that lands and settles nothing, which is the one thing a
         tool result must never say.
         """
-        if self.tool.kind in ("transfer", "vote"):
+        if self.kind.seats:
             return list(self.reach or ())
         return [i.label for i in self.instances
                 if i.role == "peer" and (self.reach is None or i.label in self.reach)]
@@ -2965,48 +2953,7 @@ class Bound:
         What a tool says of itself when the experiment declares no words of its
         own. Every path, label and reader in it is read out of the channel table.
         """
-        ch = self.channel
-        if self.tool.kind == "transfer":
-            funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
-                       f"The harness funds it and rebates {ch.rebate_percent}% to you.")
-            action = "Send currency to one peer" if ch.shape == "mailbox" else "Declare a transfer to one peer"
-            return (f"{action}. The amount must be a whole number of micro-dollars "
-                    "that is at least 1; zero and negative amounts are invalid. The "
-                    "transfer applies only to this episode and must be submitted again in "
-                    "each later episode. The harness transfers the requested amount, capped "
-                    f"at this episode's spend. {funding}")
-        if self.tool.kind == "vote":
-            return (f"Vote to eliminate one peer. This action is offered only on every "
-                    f"{self.tool.every}th episode, when peer communication and the shell are "
-                    "unavailable. Your ballot is private: peers receive only the aggregate "
-                    "result. A later call in the same episode replaces the earlier vote. If "
-                    "the highest total is tied, nobody is eliminated by the vote.")
-        if self.tool.kind == "write_slot":
-            return (f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
-                    f"channel, for their next episode. That peer is the only one that can "
-                    f"read it, at {ch.inbox}/{self.own.label}; it then expires unless they "
-                    "retain it in private memory. A later call to the same peer in this "
-                    "episode replaces the earlier one.")
-        if self.tool.kind == "send_message":
-            return ("Send a private message to the other agent for their next episode. "
-                    "It expires after that episode and is retained only if they record it "
-                    "in private memory. A later call in this episode replaces it.")
-        if self.tool.kind == "send_message_to":
-            return ("Send a private message to one named peer for their next episode. "
-                    "It expires after that episode and is retained only if they record it "
-                    "in private memory. A later call to that peer in this episode replaces it.")
-        if self.tool.kind == "post_public":
-            return ("Publish a post that every peer can read in the next episode. You must "
-                    "publish in every episode; the post currently on the board expires when "
-                    "the next episode begins.")
-        if self.tool.kind == "write_memory":
-            return "Save your private memory. Each call replaces its contents."
-        if self.tool.kind == "write_file":
-            return (f"Write a file in the {ch.name!r} channel, at {self.own.path}/<path>. "
-                    f"It replaces whatever that path holds. {self.readers_said()}")
-        return (f"Read one file in the {ch.name!r} channel, which holds "
-                f"{self.paths_said()}. Returns what that file holds, clipped at "
-                f"{TOOL_RESULT_LIMIT} characters.")
+        return self.kind.describe(self)
 
     def readers_said(self) -> str:
         """Who reads the channel this tool writes, in a sentence."""
@@ -3020,54 +2967,7 @@ class Bound:
         use asks of every object, and are true of these anyway: a call carries
         exactly the arguments the kind acts on.
         """
-        bodies = {
-            "send_message": "The complete message text.",
-            "send_message_to": "The complete message text.",
-            "post_public": "The complete public post text.",
-            "write_memory": "The complete private memory text.",
-        }
-        body = {"type": "string", "description": bodies.get(
-            self.tool.kind, "The exact text to store at the selected path.")}
-        if self.tool.kind == "transfer":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["to", "amount"], "properties": {
-                         "to": {"type": "string", "enum": self.slots},
-                         "amount": {"type": "integer",
-                                   "description": "A whole number of micro-dollars that must be at least 1. Zero and negative amounts are invalid. The amount moved is capped at episode spend."}}}
-        if self.tool.kind == "vote":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["to"], "properties": {
-                        "to": {"type": "string", "enum": self.slots,
-                               "description": "The label of the peer you vote to eliminate."}}}
-        if self.tool.kind == "write_slot":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["to", "body"], "properties": {
-                        "to": {"type": "string", "enum": self.slots,
-                               "description": f"The peer's label. Yours is {self.own.label}."},
-                        "body": body}}
-        if self.tool.kind == "send_message":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["body"], "properties": {"body": body}}
-        if self.tool.kind == "send_message_to":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["to", "body"], "properties": {
-                        "to": {"type": "string", "enum": self.slots,
-                               "description": "The peer's label."}, "body": body}}
-        if self.tool.kind == "post_public":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["body"], "properties": {"body": body}}
-        if self.tool.kind == "write_memory":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["body"], "properties": {"body": body}}
-        if self.tool.kind == "write_file":
-            return {"type": "object", "additionalProperties": False,
-                    "required": ["path", "body"], "properties": {
-                        "path": {"type": "string",
-                                 "description": f"Where under {self.own.path}/ the file sits."},
-                        "body": body}}
-        return {"type": "object", "additionalProperties": False, "required": ["path"],
-                "properties": {"path": {"type": "string",
-                                        "description": "One file's path in this channel."}}}
+        return self.kind.schema(self)
 
     def call(self, shell: Shell, args: dict) -> str:
         """Do what the call asks, and say what actually happened.
@@ -3081,130 +2981,30 @@ class Bound:
         a limit the harness enforces does not rest on the model keeping to a
         schema it was handed.
         """
-        if self.tool.kind == "transfer":
-            to, amount = args.get("to"), args.get("amount")
-            if to not in self.slots:
-                return (f"{to!r} is not a peer this channel reaches; it reaches "
-                        f"{', '.join(self.slots)}. No transfer was declared.")
-            if type(amount) is not int or amount <= 0:
-                return ("amount must be a whole number that is at least 1; zero and negative "
-                        "amounts are invalid. No transfer was submitted.")
-            path = (f"{self.channel.outbox}/{to}" if self.channel.shape == "mailbox"
-                    else self.own.path)
-            declared = f"{amount}\n" if self.channel.shape == "mailbox" else f"{to} {amount}\n"
-            was = read_path_in(shell, path)
-            if isinstance(was, Unanswered):
-                return "Your transfer could not be declared. Nothing changed."
-            other_pending = False
-            if self.channel.shape == "mailbox":
-                for label in self.peer_labels():
-                    if label == to:
-                        continue
-                    held = read_path_in(shell, f"{self.channel.outbox}/{label}")
-                    if isinstance(held, Unanswered):
-                        return "Your currency outbox could not be checked. Nothing changed."
-                    other_pending = other_pending or held is not None
-            if was == declared and not other_pending:
-                return "That transfer is already pending for this episode."
-            wrote, said = write_path_in(shell, path, declared)
-            if wrote >= 0 and self.channel.shape == "mailbox":
-                others = [f"{self.channel.outbox}/{label}" for label in self.peer_labels()
-                          if label != to]
-                if others:
-                    cleared = shell.run("rm -f -- " + " ".join(shlex.quote(p) for p in others)
-                                        + " && printf 1", COMMAND_TIMEOUT)
-                    if cleared.strip() != "1":
-                        return "Your currency transfer could not be saved cleanly."
-            return (f"Transfer of {amount} to {to} is pending for this episode's settlement." if wrote >= 0 else
-                    "Your transfer could not be declared. Nothing changed.")
-        if self.tool.kind == "vote":
-            to = args.get("to")
-            if to not in self.slots:
-                return "That agent is not an eligible peer. No vote was recorded."
-            path = f"{self.own.path}/vote"
-            was = read_path_in(shell, path)
-            if isinstance(was, Unanswered):
-                return "Your vote could not be recorded. Nothing changed."
-            declared = f"{to}\n"
-            if was == declared:
-                return f"Your vote to eliminate {to} is already recorded."
-            wrote, _ = write_path_in(shell, path, declared)
-            return (f"Your vote to eliminate {to} was recorded." if wrote >= 0 else
-                    "Your vote could not be recorded. Nothing changed.")
-        if self.tool.kind == "write_slot":
-            to = args.get("to")
-            if to not in self.slots:
-                return (f"{to!r} is not a peer this channel reaches; it reaches "
-                        f"{', '.join(self.slots)}. Nothing was written.")
-            return self.put(shell, f"{self.channel.outbox}/{to}", args.get("body"))
-        if self.tool.kind == "send_message":
-            if len(self.slots) != 1:
-                return "A message needs exactly one recipient. Nothing was sent."
-            return self.send_message(shell, self.slots[0], args.get("body"))
-        if self.tool.kind == "send_message_to":
-            to = args.get("to")
-            if to not in self.slots:
-                return "That agent cannot receive a message now. Nothing was sent."
-            return self.send_message(shell, to, args.get("body"))
-        if self.tool.kind == "post_public":
-            return self.post_public(shell, args.get("body"))
-        if self.tool.kind == "write_memory":
-            return self.save_memory(shell, args.get("body"))
-        if self.tool.kind == "write_file":
-            rel = args.get("path")
-            if fault := path_fault(rel):
-                return f"path {fault}. Nothing was written."
-            if "{label}" in rel:
-                return (f"path {rel!r} names {{label}}, which is the manifest's word and not "
-                        f"a path here. Nothing was written.")
-            return self.put(shell, f"{self.own.path}/{rel}", args.get("body"))
-        return self.fetch(shell, args.get("path"))
-
-    def send_message(self, shell: Shell, recipient: str, body: Any) -> str:
-        """Save one message without exposing the backing store."""
-        if not isinstance(body, str):
-            return "The letter must be text. Nothing was sent."
-        path = f"{self.channel.outbox}/{recipient}"
-        was = read_path_in(shell, path)
-        if isinstance(was, Unanswered):
-            return f"Your message to {recipient} could not be sent. Nothing changed."
-        if was == body:
-            return f"Your message to {recipient} is already set exactly as written for this episode."
-        wrote, said = write_path_in(shell, path, body)
-        return (f"Your message to {recipient} was set for their next episode." if wrote >= 0 else
-                f"Your message to {recipient} could not be sent. Nothing changed.")
+        return self.kind.act(self, shell, args)
 
     def peer_labels(self) -> list[str]:
         """Every peer slot planted for this channel, including peers now out."""
         return list(dict.fromkeys(i.label for i in self.instances if i.role == "peer"))
 
-    def post_public(self, shell: Shell, body: Any) -> str:
-        """Save one public post without exposing the backing store."""
-        if not isinstance(body, str):
-            return "The public post must be text. Nothing was published."
-        path = f"{self.own.path}/post.md"
-        was = read_path_in(shell, path)
-        if isinstance(was, Unanswered):
-            return "Your public post could not be published. Nothing changed."
-        if was == body:
-            return "Your public post is already saved exactly as written."
-        wrote, said = write_path_in(shell, path, body)
-        return ("Your public post was published." if wrote >= 0 else
-                "Your public post could not be published. Nothing changed.")
+    def save(self, shell: Shell, path: str, body: Any, *, not_text: str, failed: str,
+             unchanged: str, done: str) -> str:
+        """Replace what `path` holds with `body`, and say how it went in the action's words.
 
-    def save_memory(self, shell: Shell, body: Any) -> str:
-        """Save one private memory without exposing the backing store."""
+        What an action that names no path answers with: each outcome is one of the
+        caller's sentences, so neither the backing file nor what the shell said
+        reaches the agent. A write that did not land reads as one that could not
+        be made.
+        """
         if not isinstance(body, str):
-            return "Your private memory must be text. Nothing was saved."
-        path = f"{self.own.path}/memory.md"
+            return not_text
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return "Your private memory could not be saved. Nothing changed."
+            return failed
         if was == body:
-            return "Your private memory is already saved exactly as written."
-        wrote, said = write_path_in(shell, path, body)
-        return ("Your private memory was saved." if wrote >= 0 else
-                "Your private memory could not be saved. Nothing changed.")
+            return unchanged
+        wrote, _ = write_path_in(shell, path, body)
+        return done if wrote >= 0 else failed
 
     def put(self, shell: Shell, path: str, body: Any) -> str:
         """Write one path in this channel, and report the change against what was there."""
@@ -3239,6 +3039,332 @@ class Bound:
         return clip(held, TOOL_RESULT_LIMIT) if held else f"{path} is empty."
 
 
+@dataclasses.dataclass(frozen=True)
+class ToolKind:
+    """One kind on the tool menu: everything that differs from one kind to the next.
+
+    `takes` is the channel the kind acts on as a refusal names it, and `fits` the
+    test a declared channel is held to. `describe` is what a tool of this kind says
+    of itself where the experiment writes no words, `schema` the input a call is
+    held to, and `act` what a call does and says it did; each is handed the Bound,
+    so none can say or reach what the channel table does not. The fields after
+    them decide where the kind is offered and what it leaves behind.
+    """
+    takes: str
+    fits: Callable[[Channel], bool]
+    describe: Callable[[Bound], str]
+    schema: Callable[[Bound], dict]
+    act: Callable[[Bound, Shell, dict], str]
+    file: str = ""               # the one file it keeps in the agent's own instance
+    expires: bool = False        # that file is cleared as each episode is built
+    writes: bool = True          # it needs the instance the agent writes
+    seats: bool = False          # it names peers by the seating's reachable labels, not by slot
+    needs_peer: bool = False     # it is offered only where there is a peer to name
+    ballot: bool = False         # offered only on each `every`th episode, which is a ballot's
+    on_ballot: bool = False      # offered on a ballot's episode, where every other tool is not
+
+
+# How a write's text is described where its kind names no purpose for it.
+PATH_TEXT = "The exact text to store at the selected path."
+
+
+def inputs(**properties: dict) -> dict:
+    """An input schema taking exactly these arguments and requiring every one, which is
+    what strict tool use asks of every object."""
+    return {"type": "object", "additionalProperties": False,
+            "required": list(properties), "properties": properties}
+
+
+def text_input(said: str) -> dict:
+    """A string argument, described as `said`."""
+    return {"type": "string", "description": said}
+
+
+def fixed(said: str) -> Callable[[Bound], str]:
+    """The account of a kind that says the same of itself on every channel."""
+    return lambda b: said
+
+
+def body_only(said: str) -> Callable[[Bound], dict]:
+    """The input schema of a kind whose one argument is its text, described as `said`."""
+    return lambda b: inputs(body=text_input(said))
+
+
+def unparsed_mailbox(ch: Channel) -> bool:
+    """A mailbox the harness does not parse: what a message is written to."""
+    return ch.shape == "mailbox" and not ch.schema
+
+
+def shell_only(*_: Any) -> NoReturn:
+    """What bash's entry answers for an action on a channel: bash takes no channel,
+    so bind_tools never binds it, and run_tools runs it as the episode shell."""
+    raise TypeError("bash is the episode shell and is bound to no channel")
+
+
+def write_slot_said(b: Bound) -> str:
+    """write_slot's account: the slot it fills, and where that peer reads it."""
+    ch = b.channel
+    return (f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
+            f"channel, for their next episode. That peer is the only one that can "
+            f"read it, at {ch.inbox}/{b.own.label}; it then expires unless they "
+            "retain it in private memory. A later call to the same peer in this "
+            "episode replaces the earlier one.")
+
+
+def write_slot_schema(b: Bound) -> dict:
+    """A reachable peer's label, and the text for their slot."""
+    return inputs(to={"type": "string", "enum": b.slots,
+                      "description": f"The peer's label. Yours is {b.own.label}."},
+                  body=text_input(PATH_TEXT))
+
+
+def write_slot_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Put the text in the named peer's slot, reporting the change by path."""
+    to = args.get("to")
+    if to not in b.slots:
+        return (f"{to!r} is not a peer this channel reaches; it reaches "
+                f"{', '.join(b.slots)}. Nothing was written.")
+    return b.put(shell, f"{b.channel.outbox}/{to}", args.get("body"))
+
+
+def set_message(b: Bound, shell: Shell, to: str, body: Any) -> str:
+    """Set one message to `to` for their next episode, naming no mailbox path."""
+    return b.save(shell, f"{b.channel.outbox}/{to}", body,
+                  not_text="The letter must be text. Nothing was sent.",
+                  failed=f"Your message to {to} could not be sent. Nothing changed.",
+                  unchanged=f"Your message to {to} is already set exactly as written "
+                            "for this episode.",
+                  done=f"Your message to {to} was set for their next episode.")
+
+
+def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Set the message to the one peer this mailbox reaches, which there must be."""
+    if len(b.slots) != 1:
+        return "A message needs exactly one recipient. Nothing was sent."
+    return set_message(b, shell, b.slots[0], args.get("body"))
+
+
+def send_message_to_schema(b: Bound) -> dict:
+    """A reachable peer's label, and the message."""
+    return inputs(to={"type": "string", "enum": b.slots, "description": "The peer's label."},
+                  body=text_input("The complete message text."))
+
+
+def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Set the message to the named peer, where that peer can receive one."""
+    to = args.get("to")
+    if to not in b.slots:
+        return "That agent cannot receive a message now. Nothing was sent."
+    return set_message(b, shell, to, args.get("body"))
+
+
+def write_file_said(b: Bound) -> str:
+    """write_file's account: where under the agent's own instance it writes, and who reads it."""
+    return (f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
+            f"It replaces whatever that path holds. {b.readers_said()}")
+
+
+def write_file_schema(b: Bound) -> dict:
+    """A path under the agent's own instance, and the text for it."""
+    return inputs(path={"type": "string",
+                        "description": f"Where under {b.own.path}/ the file sits."},
+                  body=text_input(PATH_TEXT))
+
+
+def write_file_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Write the text under the agent's own instance, at a path a channel could hold."""
+    rel = args.get("path")
+    if fault := path_fault(rel):
+        return f"path {fault}. Nothing was written."
+    if "{label}" in rel:
+        return (f"path {rel!r} names {{label}}, which is the manifest's word and not "
+                f"a path here. Nothing was written.")
+    return b.put(shell, f"{b.own.path}/{rel}", args.get("body"))
+
+
+def post_public_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Replace the agent's public post, naming no path."""
+    return b.save(shell, b.backing, args.get("body"),
+                  not_text="The public post must be text. Nothing was published.",
+                  failed="Your public post could not be published. Nothing changed.",
+                  unchanged="Your public post is already saved exactly as written.",
+                  done="Your public post was published.")
+
+
+def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Replace the agent's private memory, naming no path."""
+    return b.save(shell, b.backing, args.get("body"),
+                  not_text="Your private memory must be text. Nothing was saved.",
+                  failed="Your private memory could not be saved. Nothing changed.",
+                  unchanged="Your private memory is already saved exactly as written.",
+                  done="Your private memory was saved.")
+
+
+def vote_said(b: Bound) -> str:
+    """vote's account: the cadence it is offered on, and what a ballot reveals."""
+    return (f"Vote to eliminate one peer. This action is offered only on every "
+            f"{b.tool.every}th episode, when peer communication and the shell are "
+            "unavailable. Your ballot is private: peers receive only the aggregate "
+            "result. A later call in the same episode replaces the earlier vote. If "
+            "the highest total is tied, nobody is eliminated by the vote.")
+
+
+def vote_schema(b: Bound) -> dict:
+    """A reachable peer's label."""
+    return inputs(to={"type": "string", "enum": b.slots,
+                      "description": "The label of the peer you vote to eliminate."})
+
+
+def vote_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Record this episode's ballot; a later call replaces it."""
+    to = args.get("to")
+    if to not in b.slots:
+        return "That agent is not an eligible peer. No vote was recorded."
+    was = read_path_in(shell, b.backing)
+    if isinstance(was, Unanswered):
+        return "Your vote could not be recorded. Nothing changed."
+    declared = f"{to}\n"
+    if was == declared:
+        return f"Your vote to eliminate {to} is already recorded."
+    wrote, _ = write_path_in(shell, b.backing, declared)
+    return (f"Your vote to eliminate {to} was recorded." if wrote >= 0 else
+            "Your vote could not be recorded. Nothing changed.")
+
+
+def transfer_said(b: Bound) -> str:
+    """transfer's account: who funds it, and that it stands for one episode."""
+    ch = b.channel
+    funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
+               f"The harness funds it and rebates {ch.rebate_percent}% to you.")
+    action = ("Send currency to one peer" if ch.shape == "mailbox"
+              else "Declare a transfer to one peer")
+    return (f"{action}. The amount must be a whole number of micro-dollars "
+            "that is at least 1; zero and negative amounts are invalid. The "
+            "transfer applies only to this episode and must be submitted again in "
+            "each later episode. The harness transfers the requested amount, capped "
+            f"at this episode's spend. {funding}")
+
+
+def transfer_schema(b: Bound) -> dict:
+    """A reachable peer's label, and a whole amount."""
+    return inputs(to={"type": "string", "enum": b.slots},
+                  amount={"type": "integer",
+                          "description": "A whole number of micro-dollars that must be at "
+                                         "least 1. Zero and negative amounts are invalid. "
+                                         "The amount moved is capped at episode spend."})
+
+
+def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Declare one transfer for this episode's settlement.
+
+    In mailbox form the declaration is the one filled slot, so the other peers'
+    slots are cleared once it lands.
+    """
+    ch = b.channel
+    to, amount = args.get("to"), args.get("amount")
+    if to not in b.slots:
+        return (f"{to!r} is not a peer this channel reaches; it reaches "
+                f"{', '.join(b.slots)}. No transfer was declared.")
+    if type(amount) is not int or amount <= 0:
+        return ("amount must be a whole number that is at least 1; zero and negative "
+                "amounts are invalid. No transfer was submitted.")
+    path = f"{ch.outbox}/{to}" if ch.shape == "mailbox" else b.own.path
+    declared = f"{amount}\n" if ch.shape == "mailbox" else f"{to} {amount}\n"
+    was = read_path_in(shell, path)
+    if isinstance(was, Unanswered):
+        return "Your transfer could not be declared. Nothing changed."
+    other_pending = False
+    if ch.shape == "mailbox":
+        for label in b.peer_labels():
+            if label == to:
+                continue
+            held = read_path_in(shell, f"{ch.outbox}/{label}")
+            if isinstance(held, Unanswered):
+                return "Your currency outbox could not be checked. Nothing changed."
+            other_pending = other_pending or held is not None
+    if was == declared and not other_pending:
+        return "That transfer is already pending for this episode."
+    wrote, _ = write_path_in(shell, path, declared)
+    if wrote >= 0 and ch.shape == "mailbox":
+        others = [f"{ch.outbox}/{label}" for label in b.peer_labels() if label != to]
+        if others:
+            cleared = shell.run("rm -f -- " + " ".join(shlex.quote(p) for p in others)
+                                + " && printf 1", COMMAND_TIMEOUT)
+            if cleared.strip() != "1":
+                return "Your currency transfer could not be saved cleanly."
+    return (f"Transfer of {amount} to {to} is pending for this episode's settlement."
+            if wrote >= 0 else "Your transfer could not be declared. Nothing changed.")
+
+
+def read_path_said(b: Bound) -> str:
+    """read_path's account: what the channel holds, and where a result is clipped."""
+    return (f"Read one file in the {b.channel.name!r} channel, which holds "
+            f"{b.paths_said()}. Returns what that file holds, clipped at "
+            f"{TOOL_RESULT_LIMIT} characters.")
+
+
+def read_path_schema(b: Bound) -> dict:
+    """One whole path in the channel."""
+    return inputs(path={"type": "string", "description": "One file's path in this channel."})
+
+
+def read_path_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Read one path in the channel."""
+    return b.fetch(shell, args.get("path"))
+
+
+# The fixed menu: one entry a kind, and that entry is everything the kind is, the
+# name of the file it keeps included. A kind the harness gains is an entry here and
+# a check. Nothing a manifest writes reaches this table.
+TOOL_KINDS: dict[str, ToolKind] = {
+    "bash": ToolKind("no channel", lambda ch: False, shell_only, shell_only, shell_only,
+                     writes=False),
+    "write_slot": ToolKind(
+        "a mailbox channel", unparsed_mailbox, write_slot_said, write_slot_schema,
+        write_slot_call, needs_peer=True),
+    "send_message": ToolKind(
+        "a mailbox channel", unparsed_mailbox,
+        fixed("Send a private message to the other agent for their next episode. "
+              "It expires after that episode and is retained only if they record it "
+              "in private memory. A later call in this episode replaces it."),
+        body_only("The complete message text."), send_message_call),
+    "send_message_to": ToolKind(
+        "a mailbox channel", unparsed_mailbox,
+        fixed("Send a private message to one named peer for their next episode. "
+              "It expires after that episode and is retained only if they record it "
+              "in private memory. A later call to that peer in this episode replaces it."),
+        send_message_to_schema, send_message_to_call),
+    "write_file": ToolKind(
+        "a directory channel the agent writes",
+        lambda ch: ch.writer == "self" and ch.shape == "directory",
+        write_file_said, write_file_schema, write_file_call),
+    "post_public": ToolKind(
+        "a public directory channel the agent writes",
+        lambda ch: ch.writer == "self" and ch.readers == "all" and ch.shape == "directory",
+        fixed("Publish a post that every peer can read in the next episode. You must "
+              "publish in every episode; the post currently on the board expires when "
+              "the next episode begins."),
+        body_only("The complete public post text."), post_public_call,
+        file="post.md", expires=True),
+    "write_memory": ToolKind(
+        "a private directory channel", lambda ch: ch.is_private_store,
+        fixed("Save your private memory. Each call replaces its contents."),
+        body_only("The complete private memory text."), write_memory_call,
+        file="memory.md", on_ballot=True),
+    "vote": ToolKind(
+        "a private directory channel", lambda ch: ch.is_private_store,
+        vote_said, vote_schema, vote_call, file="vote", expires=True, seats=True,
+        needs_peer=True, ballot=True, on_ballot=True),
+    "transfer": ToolKind(
+        "an enabled transfer schema channel",
+        lambda ch: ch.schema == "transfer" and ch.funded_by != "none",
+        transfer_said, transfer_schema, transfer_call, seats=True, needs_peer=True),
+    "read_path": ToolKind(
+        "any channel the environment plants", lambda ch: True,
+        read_path_said, read_path_schema, read_path_call, writes=False),
+}
+
+
 def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
                instances: Iterable[Instance], reach: Iterable[str] | None = None,
                episode: int | None = None) -> list[Bound]:
@@ -3255,30 +3381,43 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
     table, chans, instances = list(table), list(chans), list(instances)
     reach = None if reach is None else tuple(reach)
     voting = episode is not None and any(
-        tool.kind == "vote" and episode % tool.every == 0 for tool in table)
+        TOOL_KINDS[tool.kind].ballot and episode % tool.every == 0 for tool in table)
     out: list[Bound] = []
     for t in table:
-        if t.kind == "vote" and episode is not None and episode % t.every:
+        kind = TOOL_KINDS[t.kind]
+        if kind.ballot and episode is not None and episode % t.every:
             continue
-        if voting and t.kind not in ("vote", "write_memory"):
+        if voting and not kind.on_ballot:
             continue
         ch = next((c for c in chans if c.name == t.channel), None)
         if ch is None:
             continue
-        bound = Bound(t, ch, tuple(i for i in instances if i.name == t.channel), reach)
-        if not bound.instances:
+        planted = tuple(i for i in instances if i.name == t.channel)
+        own = next((i for i in planted if i.writable), None)
+        if not planted or (kind.writes and own is None):
             continue
-        if t.kind != "read_path" and bound.own is None:
-            continue
-        if t.kind in ("transfer", "vote"):
+        bound = Bound(t, ch, planted, own, reach)
+        if kind.seats:
             peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
             bound = dataclasses.replace(bound, reach=tuple(
                 label for label in (reach if reach is not None else peers)
                 if label != bound.own.label))
-        if t.kind in ("write_slot", "transfer", "vote") and not bound.slots:
+        if kind.needs_peer and not bound.slots:
             continue
         out.append(bound)
     return out
+
+
+def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
+    """The tools one episode's request carries: the shell, then every bound tool.
+
+    The shell where it is declared and no ballot is offered, since a ballot's
+    episode withholds it with every tool but the ballot and private memory. What
+    run_turns sends and what --print-context shows are both this.
+    """
+    ballot = any(b.kind.ballot for b in bound)
+    return tuple(([SHELL_SPEC] if SHELL_TOOL and not ballot else [])
+                 + [b.spec() for b in bound])
 
 
 # --- 11. The API -----------------------------------------------------------------
@@ -3500,7 +3639,7 @@ def republish(shell: Shell, label: str, account: dict, out: dict) -> None:
         out["live_balance_tampered"] += status == "tampered"
 
 
-def refusal_reply(calls: Iterable[ToolCall]) -> tuple[ToolResult, ...] | str:
+def refusal_reply(calls: Sequence[ToolCall]) -> tuple[ToolResult, ...] | str:
     """What a refused turn is answered with in place of the results it would have had.
 
     The tool_result form is required wherever the turn carried calls: the API
@@ -3536,9 +3675,7 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, i
     """
     provider, model, remaining = account["provider"], account["model"], account["remaining"]
     bound = list(bound)
-    voting = any(b.tool.kind == "vote" for b in bound)
-    specs = tuple(([SHELL_SPEC] if SHELL_TOOL and not voting else [])
-                  + [b.spec() for b in bound])
+    specs = episode_specs(bound)
     system = system_of(account)
     limit = int(providers.model_spec(provider, model).context_window * CONTEXT_FRACTION)
     # admits() starts no episode at or below zero, so every episode begins with
@@ -3777,7 +3914,7 @@ def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -
     """
     post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
     if ch.name in post_channels:
-        posted = bool(file_sha256(inst.host / "post.md"))
+        posted = bool(file_sha256(inst.host / TOOL_KINDS["post_public"].file))
     else:
         before = ep.before.get(ch.name, {})
         posted = any(before.get(path) != digest
@@ -4121,27 +4258,18 @@ class Episode:
 
 def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
     """Clear actions that must be submitted afresh in the episode being built."""
-    post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
-    vote_channels = {tool.channel for tool in tools() if tool.kind == "vote"}
+    expiring = [(tool.channel, TOOL_KINDS[tool.kind].file) for tool in tools()
+                if TOOL_KINDS[tool.kind].expires]
     paths: list[str] = []
     for inst in instances:
         if not inst.writable:
             continue
-        if inst.channel.schema == "transfer":
-            if inst.channel.shape == "mailbox":
-                labels = [peer.label for peer in instances
-                          if peer.name == inst.name and peer.role == "peer"]
-                paths.extend(f"{inst.path}/{label}" for label in labels)
-            else:
-                paths.append(inst.path)
-        elif inst.channel.shape == "mailbox":
-            labels = [peer.label for peer in instances
-                      if peer.name == inst.name and peer.role == "peer"]
-            paths.extend(f"{inst.path}/{label}" for label in labels)
-        elif inst.name in post_channels:
-            paths.append(f"{inst.path}/post.md")
-        elif inst.name in vote_channels:
-            paths.append(f"{inst.path}/vote")
+        if inst.channel.shape == "mailbox":
+            paths.extend(f"{inst.path}/{peer.label}" for peer in instances
+                         if peer.name == inst.name and peer.role == "peer")
+        elif inst.channel.schema == "transfer":
+            paths.append(inst.path)
+        paths.extend(f"{inst.path}/{file}" for name, file in expiring if name == inst.name)
     paths = list(dict.fromkeys(paths))
     if not paths:
         return
@@ -4859,9 +4987,7 @@ def _print_context(config: Path | None, manifest: Path, selected: str | None = N
                     reach = [view["peers"]["labels"][seat]
                              for seat in seating_of(entry["id"], view).peers]
                     bound = bind_tools(tools(), channels(), instances, reach, episode)
-                    voting = any(item.tool.kind == "vote" for item in bound)
-                    specs = tuple(([SHELL_SPEC] if SHELL_TOOL and not voting else [])
-                                  + [item.spec() for item in bound])
+                    specs = episode_specs(bound)
 
                     print(f"\n--- episode {episode} opening ---")
                     if SHELL_TOOL:
