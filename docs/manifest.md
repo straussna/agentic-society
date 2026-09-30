@@ -908,7 +908,7 @@ Every refusal is a `SystemExit` naming the file and the key.
 - `[harness_files]` with a key other than `balance`, `digest` and `round`, a value that
   is not a string, or a multi-segment file name. Any may be `""`: no balance file is
   planted for any seat, no digest is written, or no round announcement is written.
-- Settings' own ranges are checked once, by `apply_config`, wherever they came from.
+- Settings' own ranges are checked once, by `overlay`, wherever they came from.
 
 ## 11. What reaches the trace
 

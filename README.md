@@ -113,8 +113,12 @@ lives in each file's docstrings.
 ## Reading the code
 
 `harness.py` is one file on purpose: it hashes itself at import and records the digest
-in every trace, and its tunables are module globals that `check.py` moves and restores
-by name. Its module docstring is a table of contents, and the file is in the order an
+in every trace. What a run is configured with — every tunable, the channel and tool
+tables, the harness files' names and the root every path resolves against — is one
+frozen `Settings` held in `harness.SETTINGS` and replaced whole, never edited:
+`start()` builds it from `config.toml` and the manifest and installs it once nothing
+has refused, and a check moves it with `amend()` inside `pinned()`, which puts it back.
+Its module docstring is a table of contents, and the file is in the order an
 episode meets things: what the harness says, the rates, the tunables, the channel and
 tool tables, the process constants, accounts, starter files, the environment, what the agent's
 channels held at episode start, the container and the shell, the API, the turn loop,
