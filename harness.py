@@ -58,6 +58,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import product
 import providers
 from providers import (NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult,
                        SessionContext, ToolSpec)
@@ -1021,10 +1022,6 @@ RETRY_JITTER = 0.25
 # Characters of one turn's text and thinking kept in the trace.
 TURN_TEXT_LIMIT = 20_000
 
-# replace_file's retry policy for a rename that finds the target open.
-RENAME_ATTEMPTS = 5
-RENAME_WAIT_S = 0.05
-
 # Seconds the harness gives its own first command in a new episode. Not COMMAND_TIMEOUT:
 # that bounds the agent's commands and an agent may tune it to seconds, while this
 # waits on a container that has just started and may be one of several.
@@ -1102,6 +1099,12 @@ TRANSFER_LINE = re.compile(r"^(?P<label>\S+) (?P<amount>\d+)$")
 def records_root() -> Path:
     """Where every agent's ground truth lives. Invariant 4: never reaches the container."""
     return ROOT / "records"
+
+
+def interactions_root() -> Path:
+    """Where an interactive seat's requests wait on a human: the human provider publishes
+    them there, and view.py and human.py submit the answers."""
+    return ROOT / "interactions"
 
 
 def records_dir(agent: str) -> Path:
@@ -1192,16 +1195,8 @@ def save_account(agent: str, account: dict) -> None:
 
 
 def replace_file(src: Path, dest: Path) -> None:
-    """os.replace, retried a few times on Windows, where a reader holding `dest` open
-    makes the rename fail with PermissionError for as long as the read takes."""
-    for attempt in range(RENAME_ATTEMPTS):
-        try:
-            os.replace(src, dest)
-            return
-        except PermissionError:
-            if attempt == RENAME_ATTEMPTS - 1:
-                raise
-            time.sleep(RENAME_WAIT_S)
+    """os.replace, retried while a Windows reader holds `dest` open: product.replace."""
+    product.replace(src, dest)
 
 # The pinned settings, as load_account's keyword -> the account key that holds each.
 CREATION_TERMS = {"system_prompt": "system_prompt", "provider": "provider", "model": "model",
@@ -3524,7 +3519,7 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, i
     refused = 0                              # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
     out, next_input = open_episode(shell, index, provider, model, remaining, floor)
-    context = SessionContext(agent, label, index, ROOT / "interactions", lambda: STOPPING)
+    context = SessionContext(agent, label, index, interactions_root(), lambda: STOPPING)
     session = router.open_session(provider, model, system, specs, MAX_TOKENS, context)
 
     try:

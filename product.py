@@ -21,6 +21,10 @@ PHASES = ("preparing_round", "waiting_autonomous", "waiting_player", "resolving_
           "settling_round", "round_completed", "completed", "interrupted", "cost_ceiling")
 _LOCK = threading.Lock()
 
+# replace's retry policy for a rename that finds the target open.
+RENAME_ATTEMPTS = 5
+RENAME_WAIT_S = 0.05
+
 
 def now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
@@ -49,14 +53,37 @@ def displace(runtime_root: Path, experiment_id: str, bundle: Path | None = None)
     return destination
 
 
+def replace(source: Path, destination: Path) -> None:
+    """os.replace, retried a few times on Windows, where a reader holding `destination`
+    open makes the rename fail with PermissionError for as long as the read takes."""
+    for attempt in range(RENAME_ATTEMPTS):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt == RENAME_ATTEMPTS - 1:
+                raise
+            time.sleep(RENAME_WAIT_S)
+
+
 def atomic(path: Path, value: dict[str, Any]) -> None:
+    """Write `value` as compact JSON: a synced temporary file beside `path`, renamed over it.
+
+    A reader sees the old file or the new one whole, and a write that fails leaves
+    neither a partial file nor its temporary behind.
+    """
+    data = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    with temporary.open("x", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, ensure_ascii=False, separators=(",", ":"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def read(path: Path) -> dict[str, Any] | None:
