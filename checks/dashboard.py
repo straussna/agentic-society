@@ -15,6 +15,8 @@ import urllib.request
 from pathlib import Path
 import harness
 import view
+from interaction import InteractionStore
+from providers import ToolSpec
 
 from checks.fake import DEFAULT, fake, run, say, usage
 from checks.lanes import (
@@ -389,6 +391,56 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     assert ballot["history"] == {"kind": "vote", "every": 2,
                                  "rounds": [2], "selected": 2}
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
+
+
+def check_the_player_history_adds_each_accepted_human_call_once():
+    """A human seat sees what it said as soon as its submission is accepted, once each:
+    the committed trace and the accepted call are one post, and a message sent again
+    in the same episode is one message."""
+    post = {"name": "post", "kind": "post_public", "channel": "blackboard"}
+    send = {"name": "send", "kind": "send_message_to", "channel": "mail"}
+    offered = tuple(ToolSpec(tool["name"], "", {"type": "object"}) for tool in (post, send))
+
+    def answered(store, episode, turn, *calls):
+        request = store.publish("g01", "1", episode, turn, "", "observation", offered)
+        store.submit("g01", request.request_id, {
+            "submission_id": f"s{episode}{turn}", "action": "tool_calls",
+            "tool_calls": [{"id": f"c{i}", "name": name, "input": value}
+                           for i, (name, value) in enumerate(calls)]})
+
+    committed = [{"path": "1/post.md", "channel": "blackboard", "writer": "self", "readers": "all",
+                  "role": "own", "size": 10, "starter": False, "text": "hello all\n"}]
+    with rooted(HostBox) as root:
+        fake_experiment(root, [("g01", "00:01", {"files": committed}), ("g02", "00:02")],
+                        agents=("g01", "g02"))
+        for agent in ("g01", "g02"):
+            for path in harness.trace_paths(agent):
+                trace = json.loads(path.read_text(encoding="utf-8"))
+                trace["provenance"]["tools"] = [post, send]
+                path.write_text(json.dumps(trace), encoding="utf-8")
+        store = InteractionStore(harness.interactions_root())
+        answered(store, 1, 1, ("post", {"body": "hello all\n"}))
+        answered(store, 2, 1, ("post", {"body": "second post"}), ("send", {"to": "2", "body": "psst"}))
+        answered(store, 2, 2, ("send", {"to": "2", "body": "psst"}))
+        store.publish("g01", "1", 2, 3, "", "observation", offered)
+        c = view.experiment_named("g")
+        history = view.player_history(c, "g01")
+        with serving() as base:
+            served = got(base, "/api/experiment/g/player-history?agent=g01")[1]
+            try:
+                got(base, "/api/experiment/g/player-history?agent=nobody")
+            except urllib.error.HTTPError as e:
+                outsider = e.code
+            else:
+                outsider = 200
+
+    assert [(e["text"], e.get("accepted", False)) for e in history["public"]] == \
+        [("hello all\n", False), ("second post", True)], history["public"]
+    private = [(e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted"))
+               for e in history["private"]]
+    assert private == [("psst", "2", "g02", "1", True)], history["private"]
+    assert served == json.loads(json.dumps(history)), "the route serves what player_history says"
+    assert outsider == 404, "an agent outside the experiment has no history in it"
 
 
 def check_the_view_shows_every_balance_from_its_own_account():

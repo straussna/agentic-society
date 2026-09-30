@@ -26,7 +26,7 @@ import harness
 import product
 import providers
 from interaction import (InteractionConflict, InteractionError, InteractionStore,
-                         InvalidSubmission, StaleRequest)
+                         InvalidSubmission, StaleRequest, UnreadableRecord)
 
 PORT = 8765
 MAX_INTERACTION_BODY = 64 * 1024
@@ -723,7 +723,12 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     episodes = account.get("episodes") or []
     latest = episodes[-1] if episodes else {}
     live = live_index(agent)
-    interaction = InteractionStore(harness.ROOT / "interactions").current(agent)
+    try:
+        interaction = InteractionStore(harness.interactions_root()).current(agent)
+    except InteractionError:
+        # Left out, as /api/interaction leaves it out: the human provider meets the same
+        # file and ends its episode naming it.
+        interaction = None
     going = live_state(agent, live, account)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
@@ -1071,48 +1076,38 @@ def player_history(exp: dict, agent: str) -> dict:
                and agent in (event["from_agent"], event["to_agent"])
                and isinstance(event.get("text"), str) and event["text"]]
 
-    request_dir = harness.ROOT / "interactions" / "requests" / agent
-    submission_dir = harness.ROOT / "interactions" / "submissions" / agent
     player_seat = next((seat for seat, member in places_of(exp) if member == agent), None)
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
     public_keys = {(event["episode"], event["from_agent"], event["text"])
                    for event in public}
     private_keys = {(event["round"], event["from_agent"], event["to_label"], event["text"])
                     for event in private}
-    if request_dir.is_dir() and submission_dir.is_dir():
-        for request_path in sorted(request_dir.glob("*.json")):
-            try:
-                request = json.loads(request_path.read_text(encoding="utf-8"))
-                submission = json.loads((submission_dir / request_path.name).read_text(
-                    encoding="utf-8"))
-                episode = int(request["episode"])
-            except (FileNotFoundError, OSError, ValueError, KeyError, json.JSONDecodeError):
+    for request, submission in InteractionStore(harness.interactions_root()).history(agent):
+        episode = request.episode
+        for call in submission.tool_calls:
+            text = call.input.get("body")
+            if not isinstance(text, str) or not text:
                 continue
-            for call in submission.get("tool_calls") or []:
-                inputs = call.get("input") or {}
-                text = inputs.get("body")
-                if not isinstance(text, str) or not text:
-                    continue
-                kind = tool_kinds.get(call.get("name"))
-                if kind == "post_public":
-                    key = (episode, agent, text)
-                    if key not in public_keys:
-                        public.append({"episode": episode, "agent_episode": episode,
-                                       "from_agent": agent, "from_label": request.get("label", agent),
-                                       "text": text, "accepted": True})
-                        public_keys.add(key)
-                elif kind == "send_message_to":
-                    label = inputs.get("to")
-                    seat = seat_of_label(exp, label)
-                    key = (episode, agent, label, text)
-                    if isinstance(label, str) and key not in private_keys:
-                        private.append({"round": episode, "episode": episode,
-                                        "from_seat": player_seat,
-                                        "from_label": request.get("label", agent),
-                                        "from_agent": agent, "to_seat": seat, "to_label": label,
-                                        "to_agent": exp["seats"].get(seat) if seat else None,
-                                        "text": text, "accepted": True})
-                        private_keys.add(key)
+            kind = tool_kinds.get(call.name)
+            if kind == "post_public":
+                key = (episode, agent, text)
+                if key not in public_keys:
+                    public.append({"episode": episode, "agent_episode": episode,
+                                   "from_agent": agent, "from_label": request.label,
+                                   "text": text, "accepted": True})
+                    public_keys.add(key)
+            elif kind == "send_message_to":
+                label = call.input.get("to")
+                seat = seat_of_label(exp, label)
+                key = (episode, agent, label, text)
+                if isinstance(label, str) and key not in private_keys:
+                    private.append({"round": episode, "episode": episode,
+                                    "from_seat": player_seat,
+                                    "from_label": request.label,
+                                    "from_agent": agent, "to_seat": seat, "to_label": label,
+                                    "to_agent": exp["seats"].get(seat) if seat else None,
+                                    "text": text, "accepted": True})
+                    private_keys.add(key)
     public.sort(key=lambda event: (event["episode"], event.get("agent_episode", 0),
                                    event["from_agent"], event["text"]))
     private.sort(key=lambda event: (event["round"], event["episode"],
@@ -1528,9 +1523,12 @@ class View(http.server.BaseHTTPRequestHandler):
             return self.send_json({"error": "no such route"}, status=404)
         if parts[2] not in agent_names():
             return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
-        if self.headers.get("Origin") != getattr(self.server, "origin", None):
+        server = self.view_server
+        origin = self.headers.get("Origin")
+        if origin is None or origin != server.origin:
             return self.send_json({"error": "origin refused"}, status=403)
-        if self.headers.get("X-Interaction-Token") != getattr(self.server, "control_token", None):
+        token = self.headers.get("X-Interaction-Token")
+        if token is None or token != server.control_token:
             return self.send_json({"error": "control token required"}, status=403)
         if self.headers.get_content_type() != "application/json":
             return self.send_json({"error": "Content-Type must be application/json"}, status=415)
@@ -1544,14 +1542,15 @@ class View(http.server.BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("body is not an object")
-            result = InteractionStore(harness.ROOT / "interactions").submit(
-                parts[2], parts[3], payload)
+            result = self.interactions().submit(parts[2], parts[3], payload)
         except (InvalidSubmission, ValueError, json.JSONDecodeError) as error:
             return self.send_json({"error": str(error)}, status=400)
         except StaleRequest as error:
             return self.send_json({"error": str(error)}, status=409)
         except InteractionConflict as error:
             return self.send_json({"error": str(error)}, status=409)
+        except UnreadableRecord as error:
+            return self.send_json({"error": str(error)}, status=500)
         except InteractionError as error:
             return self.send_json({"error": str(error)}, status=404)
         return self.send_json({"submission": result.as_dict()}, status=201)
@@ -1565,15 +1564,15 @@ class View(http.server.BaseHTTPRequestHandler):
         if not parts:
             return self.send_page()
         if parts == ["api", "experiments"]:
-            return self.send_json({"experiments": experiments(), "focus": getattr(self.server, "focus", None),
+            return self.send_json({"experiments": experiments(), "focus": self.view_server.focus,
                                    "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT)})
         if parts == ["api", "interaction"]:
-            pending = InteractionStore(harness.ROOT / "interactions").pending()
+            pending = self.interactions().pending()
             return self.send_json({"requests": [request.as_dict() for request in pending]})
         if len(parts) == 3 and parts[:2] == ["api", "interaction"]:
             if parts[2] not in agent_names():
                 return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
-            request = InteractionStore(harness.ROOT / "interactions").current(parts[2])
+            request = self.interactions().current(parts[2])
             if request is None:
                 return self.send_json({"request": None})
             return self.send_json({"request": request.as_dict()})
@@ -1628,8 +1627,8 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.send_json({"error": "no such route"}, status=404)
 
     def send_page(self) -> None:
-        token = getattr(self.server, "control_token", "")
-        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__", token).encode("utf-8")
+        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__",
+                            self.view_server.control_token).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1649,22 +1648,42 @@ class View(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, fmt: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         """Quiet. A line per poll is a line every second and a half, forever."""
 
+    @property
+    def view_server(self) -> ViewServer:
+        """The server answering, with the focus, token and origin serve() gave it."""
+        if not isinstance(self.server, ViewServer):
+            raise TypeError(f"View is served by a ViewServer, not {type(self.server).__name__}")
+        return self.server
 
-def serve(port: int = PORT, focus: str | None = None) -> http.server.ThreadingHTTPServer:
+    def interactions(self) -> InteractionStore:
+        """The store the human provider publishes to, under the ROOT this request reads."""
+        return InteractionStore(harness.interactions_root())
+
+
+class ViewServer(http.server.ThreadingHTTPServer):
+    """Loopback only. An interactive POST must carry `control_token`, which the served page
+    embeds, and come from `origin`, this server's own."""
+
+    focus: str | None
+    control_token: str
+    origin: str
+
+    def __init__(self, port: int, focus: str | None):
+        super().__init__(("127.0.0.1", port), View)
+        self.focus = focus
+        self.control_token = secrets.token_urlsafe(32)
+        self.origin = f"http://127.0.0.1:{self.server_address[1]}"
+
+
+def serve(port: int = PORT, focus: str | None = None) -> ViewServer:
     """A server bound and ready, which the caller starts.
 
-    Bound to loopback and nothing else. Interactive POSTs require the random token
-    embedded in the served page and an exact same-origin request.
     Returned, not started, so a check can drive the real handler in-process.
     """
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), View)
-    httpd.focus = focus
-    httpd.control_token = secrets.token_urlsafe(32)
-    httpd.origin = f"http://127.0.0.1:{httpd.server_address[1]}"
-    return httpd
+    return ViewServer(port, focus)
 
 
 # --- cli --------------------------------------------------------------------

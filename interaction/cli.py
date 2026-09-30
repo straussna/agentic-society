@@ -7,12 +7,13 @@ import json
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
-from .contracts import VERSION
-from .store import InteractionConflict, InteractionError, InteractionStore
+from .contracts import VERSION, InteractionRequest
+from .store import InteractionConflict, InteractionError, InteractionStore, UnreadableRecord
 
 
-def describe(request, draft: list[dict]) -> None:
+def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
     print(f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}")
     supplied = request.input
     if supplied["kind"] == "initial_observation":
@@ -110,6 +111,8 @@ def run(agent: str, root: Path) -> int:
             print(f"invalid value: {error}")
         except InteractionConflict as error:
             print(f"not submitted: {error}")
+        except UnreadableRecord as error:
+            print(f"unreadable: {error}")
         except InteractionError as error:
             print(f"request changed: {error}")
             request = store.current(agent)

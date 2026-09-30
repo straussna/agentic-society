@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
-import datetime as dt
 from typing import Any
 
+from product import now
 from providers.base import ToolCall, ToolSpec
 
 
 VERSION = 1
-
-
-def timestamp() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,3 +62,46 @@ class Submission:
                    tuple(ToolCall(str(call["id"]), str(call["name"]), dict(call["input"]))
                          for call in value.get("tool_calls", [])),
                    str(value["submitted_at"]))
+
+    @classmethod
+    def parse(cls, value: dict[str, Any], request: InteractionRequest) -> "Submission":
+        """A client's envelope as its submission to `request`, stamped now.
+
+        Refused with a ValueError naming the first fault: a version other than VERSION,
+        another request's id, no submission_id, an action other than tool_calls or
+        end_turn, calls that do not fit the action, or a call to a tool not offered.
+        """
+        try:
+            version = int(value.get("version", VERSION))
+        except (TypeError, ValueError) as error:
+            raise ValueError("malformed submission envelope") from error
+        if version != VERSION:
+            raise ValueError("unsupported submission version")
+        if value.get("request_id", request.request_id) != request.request_id:
+            raise ValueError("submission request_id does not match the URL")
+        submission_id = value.get("submission_id")
+        action = value.get("action")
+        raw_calls = value.get("tool_calls", [])
+        if not isinstance(submission_id, str) or not submission_id:
+            raise ValueError("submission_id must be a non-empty string")
+        if action not in ("tool_calls", "end_turn") or not isinstance(raw_calls, list):
+            raise ValueError("action must be tool_calls or end_turn")
+        calls = []
+        for call in raw_calls:
+            if not isinstance(call, dict) or not isinstance(call.get("id"), str) or \
+                    not isinstance(call.get("name"), str) or not isinstance(call.get("input"), dict):
+                raise ValueError("tool calls require string id/name and object input")
+            calls.append(ToolCall(call["id"], call["name"], call["input"]))
+        if action == "end_turn" and calls:
+            raise ValueError("end_turn cannot contain tool calls")
+        if action == "tool_calls" and not calls:
+            raise ValueError("tool_calls requires at least one call")
+        names = {tool.name for tool in request.available_tools}
+        if any(not call.id or not call.name or call.name not in names for call in calls):
+            raise ValueError("each call needs an id and a declared tool name")
+        return cls(VERSION, request.request_id, submission_id, action, tuple(calls), now())
+
+    def same_as(self, other: "Submission") -> bool:
+        """Whether `other` is this submission sent again: the same id, action and calls."""
+        return (self.submission_id, self.action, self.tool_calls) == \
+            (other.submission_id, other.action, other.tool_calls)

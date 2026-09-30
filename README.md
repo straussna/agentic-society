@@ -68,7 +68,7 @@ pip install -r requirements.txt
 docker build -t metered-agent:latest .        # once, before the first episode
 ```
 
-Verify the harness without spending anything — 273 checks against a fake API, no
+Verify the harness without spending anything — 283 checks against a fake API, no
 key needed:
 
 ```bash
@@ -95,7 +95,7 @@ See [docs/operating.md](docs/operating.md) before an episode that bills.
 | `py -3 experiment.py competition -r 20` | The default experiment, declared: five seats on one set of starter files, the shipped channel table written out, sequential. |
 | `py -3 experiment.py personas -r 20` | Two named agents with a private journal and one letter each to the other, nothing scored, a shared starter orientation, and optional correspondence through three declared tools: with no declared Bash tool, they reach their environment through those actions, and the episode opens on the digest rather than a listing, so neither ever reads a filesystem. |
 | `py -3 experiment.py sandbox -r 20` | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. Copy it to start an experiment of your own. |
-| `py -3 check.py` | 273 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
+| `py -3 check.py` | 283 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
 | `py -3 view.py` | Read-only dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. |
 | `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
 | `py -3 harness.py --print-system` | Print the exact bytes and digest of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told and every tool description it declares. Audits invariant 2 without starting an episode. |
