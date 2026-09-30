@@ -142,12 +142,16 @@ class AnthropicSession:
 class AnthropicProvider:
     name = "anthropic"
     interactive = False
+    key_variable = "ANTHROPIC_API_KEY"
     models = MODELS
     provenance_facts = {"adapter": "anthropic-messages-v1", "endpoint": "first-party"}
 
     def __init__(self, client: Any | None = None):
         refuse_custom_endpoint("ANTHROPIC_BASE_URL", self.name)
         if client is None:
+            # Before the SDK builds a client, which may refuse a missing key in
+            # words of its own that do not say where the key goes.
+            require_key(self.key_variable, self.name)
             try:
                 import anthropic
                 client = anthropic.Anthropic(max_retries=0)
@@ -156,7 +160,7 @@ class AnthropicProvider:
         self.client = client
 
     def preflight(self, models: Iterable[str]) -> None:
-        require_key("ANTHROPIC_API_KEY", self.name)
+        require_key(self.key_variable, self.name)
         for model in sorted(set(models)):
             try:
                 self.client.models.retrieve(model_id=model)

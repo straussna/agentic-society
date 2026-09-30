@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import os
+import sys
 import tempfile
+import types
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -17,7 +20,7 @@ from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
 from checks.fake import DEFAULT, per_agent, say
-from checks.lanes import episode_once, quiet, temp_root
+from checks.lanes import episode_once, pinned, quiet, temp_root
 
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
@@ -75,6 +78,34 @@ class APIStatusError(APIError):
 class AuthenticationError(APIStatusError):
     def __init__(self):
         super().__init__(401)
+
+
+@contextlib.contextmanager
+def swapped(table, **values):
+    """Set each key of `table` to its value, or remove it for None; put every one back on exit."""
+    def put(key, value):
+        if value is None:
+            table.pop(key, None)
+        else:
+            table[key] = value
+    old = {key: table.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            put(key, value)
+        yield
+    finally:
+        for key, value in old.items():
+            put(key, value)
+
+
+def unbuildable(name):
+    """An SDK module whose client constructors fail the check that reaches them."""
+    module = types.ModuleType(name)
+
+    def build(*args, **kwargs):
+        raise AssertionError(f"the {name} SDK built a client")
+    module.Anthropic = module.OpenAI = build
+    return module
 
 
 def check_anthropic_messages_wire_shape_and_state():
@@ -226,10 +257,7 @@ def check_provider_preflight_requires_only_its_own_key():
     class Models:
         def retrieve(self, *args, **kwargs):
             return NS(id=args[0] if args else kwargs.get("model_id"))
-    old = {name: os.environ.get(name) for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")}
-    try:
-        os.environ.pop("ANTHROPIC_API_KEY", None)
-        os.environ["OPENAI_API_KEY"] = "test"
+    with swapped(os.environ, ANTHROPIC_API_KEY=None, OPENAI_API_KEY="test"):
         OpenAIProvider(NS(models=Models())).preflight(["gpt-5.6-terra"])
         try:
             AnthropicProvider(NS(models=Models())).preflight(["claude-sonnet-5"])
@@ -246,31 +274,44 @@ def check_provider_preflight_requires_only_its_own_key():
             assert "Set OPENAI_API_KEY in the shell" in str(error), str(error)
         else:
             raise AssertionError("OpenAI started without its key")
-    finally:
-        for name, value in old.items():
-            if value is None:
-                os.environ.pop(name, None)
+
+
+def check_start_refuses_a_missing_key_before_any_client_is_built():
+    """An experiment launched without a seat's key is told which key and where it goes.
+
+    The refusal comes before either SDK builds a client, since one may refuse a
+    missing key itself, in words that say nothing of the shell.
+    """
+    unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL",
+                           "OPENAI_BASE_URL"))
+    sdks = {name: unbuildable(name) for name in ("anthropic", "openai")}
+    for provider, model in (("anthropic", "claude-sonnet-5"), ("openai", "gpt-5.6-terra")):
+        variable = f"{provider.upper()}_API_KEY"
+        with swapped(os.environ, **unset), swapped(sys.modules, **sdks), pinned(), \
+                tempfile.TemporaryDirectory() as folder, quiet() as out:
+            harness.ROOT = Path(folder)
+            try:
+                harness.start(requirements=[(provider, model)],
+                              tool_tables=[{"name": "bash", "kind": "bash"}])
+            except SystemExit as error:
+                assert error.code == 2, error.code
             else:
-                os.environ[name] = value
+                raise AssertionError(f"{provider} started without {variable}")
+        refusal = out.getvalue().strip().splitlines()[-1]
+        assert refusal == (f"{provider} preflight failed: {variable} is not set. Set {variable} "
+                           "in the shell this experiment is launched from."), refusal
 
 
 def check_custom_provider_endpoints_are_refused():
     for variable, build in (("ANTHROPIC_BASE_URL", lambda: AnthropicProvider(NS())),
                             ("OPENAI_BASE_URL", lambda: OpenAIProvider(NS()))):
-        old = os.environ.get(variable)
-        os.environ[variable] = "https://proxy.invalid"
-        try:
+        with swapped(os.environ, **{variable: "https://proxy.invalid"}):
             try:
                 build()
             except providers.ProviderConfigurationError:
                 pass
             else:
                 raise AssertionError(f"accepted {variable}")
-        finally:
-            if old is None:
-                os.environ.pop(variable, None)
-            else:
-                os.environ[variable] = old
 
 
 def check_version_three_accounts_are_refused():

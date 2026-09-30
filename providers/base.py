@@ -172,11 +172,12 @@ class ProviderConfigurationError(ProviderError):
 
 
 def classify_error(error: Exception, provider: str) -> ProviderError:
-    """Classify an SDK exception by its status code, or by its class where it has none.
+    """Classify an SDK exception by its status code and the names of its classes.
 
-    401 and 403 are authentication; 408, 409, 429 and 5xx are worth retrying, and
-    any other status is permanent. With no status, a class named in RETRYABLE is a
-    request that got no answer, and is retried; anything else is the adapter's.
+    401 and 403, or a class named for authentication or a denied permission, are
+    authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
+    is permanent. With no status, a class named in RETRYABLE is a request that got
+    no answer, and is retried; anything else is the adapter's.
     """
     status = getattr(error, "status_code", None)
     name = type(error).__name__

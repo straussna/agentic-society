@@ -158,6 +158,7 @@ class OpenAISession:
 class OpenAIProvider:
     name = "openai"
     interactive = False
+    key_variable = "OPENAI_API_KEY"
     models = MODELS
     provenance_facts = {"adapter": "openai-responses-v1", "endpoint": "first-party",
                         "store": False, "reasoning_state": "encrypted"}
@@ -165,6 +166,9 @@ class OpenAIProvider:
     def __init__(self, client: Any | None = None):
         refuse_custom_endpoint("OPENAI_BASE_URL", self.name)
         if client is None:
+            # Before the SDK builds a client, which may refuse a missing key in
+            # words of its own that do not say where the key goes.
+            require_key(self.key_variable, self.name)
             try:
                 import openai
                 client = openai.OpenAI(max_retries=0)
@@ -173,7 +177,7 @@ class OpenAIProvider:
         self.client = client
 
     def preflight(self, models: Iterable[str]) -> None:
-        require_key("OPENAI_API_KEY", self.name)
+        require_key(self.key_variable, self.name)
         for model in sorted(set(models)):
             try:
                 self.client.models.retrieve(model)
