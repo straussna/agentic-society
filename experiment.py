@@ -1159,8 +1159,9 @@ def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, rout
     `finishing` names the agents that missed a round an earlier run left unfinished:
     only they act in it, in seat order or together as the schedule has it, and the
     agents that played it wait, and are back at the table for its election where that
-    is still to be held. No stop is judged before a round being finished is played,
-    and every stop is judged once it has been.
+    is still to be held. No stop is judged before a round being finished is played.
+    Once it has been, a voting round's election stands and its stops are judged at
+    once; after any other round they are judged before the next, as for any round.
 
     The reason is the outcome's termination_reason, judged on the agents still in the
     competition: "all_eliminated" when none is, "one_remains" when the manifest stops

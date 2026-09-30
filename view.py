@@ -179,29 +179,31 @@ def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None
     return found if digest != found[0]["sha256"] else None
 
 
-def committed(agent: str) -> int:
+def committed(agent: str, account: dict | None = None) -> int:
     """How many episodes the agent's account lists: those whose commit finished.
 
     close_episode writes the trace before the account, so a trace past this count is
-    one whose commit stopped between the two, and no episode of the agent's.
+    one whose commit stopped between the two, and no episode of the agent's. `account`
+    is the account a caller has already read this poll, so that one poll reads one
+    state of it; without it the account is read here.
     """
-    return len(account_of(agent).get("episodes") or [])
+    return len((account_of(agent) if account is None else account).get("episodes") or [])
 
 
-def traces_of(agent: str) -> list[dict]:
+def traces_of(agent: str, account: dict | None = None) -> list[dict]:
     """Every committed episode of an agent, in order."""
-    count = committed(agent)
+    count = committed(agent, account)
     return [t for t in (load_trace(p) for p in harness.trace_paths(agent)
                         if harness.episode_number(p) <= count) if t is not None]
 
 
-def latest_trace(agent: str) -> dict | None:
+def latest_trace(agent: str, account: dict | None = None) -> dict | None:
     """The agent's last committed episode, or None before it has one."""
-    count = committed(agent)
+    count = committed(agent, account)
     return load_trace(harness.trace_path(agent, count)) if count else None
 
 
-def live_index(agent: str) -> int | None:
+def live_index(agent: str, account: dict | None = None) -> int | None:
     """The episode not yet committed, or None if the agent is between starts.
 
     Unfinished is exactly a raw log past the episodes the account lists, which is
@@ -211,7 +213,7 @@ def live_index(agent: str) -> int | None:
     if not raws:
         return None
     index = harness.episode_number(raws[-1])
-    return None if index <= committed(agent) else index
+    return None if index <= committed(agent, account) else index
 
 
 def live_age(agent: str, index: int | None) -> float | None:
@@ -679,8 +681,8 @@ def experiment_episodes(exp: dict) -> list[dict]:
 def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     """The episodes in flight, each in the round it belongs to.
 
-    An agent with a raw log and no trace is taking its turn now, which is the round
-    after the last one it acted in.
+    An agent with a raw log past the episodes its account lists is taking its turn
+    now, which is the round after the last one it acted in.
     """
     out = []
     for seat, agent in places_of(exp):
@@ -755,11 +757,11 @@ def unmet(t: dict | None) -> list[dict]:
 def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     """One seat's tile: what it holds, what it is doing, and what it has moved."""
     account = account_of(agent)
-    ts = traces_of(agent)
+    ts = traces_of(agent, account)
     last = ts[-1] if ts else None
     episodes = account.get("episodes") or []
     latest = episodes[-1] if episodes else {}
-    live = live_index(agent)
+    live = live_index(agent, account)
     try:
         interaction = InteractionStore(harness.interactions_root()).current(agent)
     except InteractionError:
@@ -1302,7 +1304,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
     columns = []
     for seat, agent in places_of(exp):
         account = account_of(agent)
-        live = live_index(agent)
+        live = live_index(agent, account)
         columns.append({
             "seat": seat, "agent": agent, "label": account.get("label") or seat,
             "committed": len(account.get("episodes") or []),
@@ -1370,8 +1372,8 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     account = account_of(agent)
     rows = experiment_episodes(exp) if exp else []
     rnd = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
-    ts = traces_of(agent)
-    live = live_index(agent)
+    ts = traces_of(agent, account)
+    live = live_index(agent, account)
     episodes = [{
         "episode": t["episode"], "round": rnd.get(t["episode"]),
         "stop": t["stop"], "spent": t["spent"], "turns": len(t["turns"]),
@@ -1473,7 +1475,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     """
     account = account_of(agent)
     going = live_state(agent, index, account)
-    last = latest_trace(agent)
+    last = latest_trace(agent, account)
     table, hf = agent_environment(last, agent)
     found = manifest_ahead_of(last, agent)
     delivery = (found[0]["overrides"].get("delivery", harness.DELIVERY) if found else
