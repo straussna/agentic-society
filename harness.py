@@ -248,7 +248,9 @@ def overlay(base: Settings, values: dict[str, Any], source: str, allowed: Iterab
     saying so, so no setting can be given in two places. A manifest's experiment-level
     defaults come through here after config.toml, so both are held to the same types
     and ranges. The safety stops are held to their ranges where `values` gives them,
-    and not where a check has amended them directly. Pure: nothing is installed.
+    and not where a check has amended them directly. Pure: nothing is installed. The
+    starter files are found under the root in force, so `base` holds that root (see
+    Settings).
     """
     f = source
     allowed = set(allowed)
@@ -844,7 +846,11 @@ def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...
 
 def with_channels(base: Settings, tables: list[dict] | None, harness_files: dict | None,
                   source: str, labels: Iterable[str] = ("1",)) -> Settings:
-    """`base` with a channel table and harness file names validated into it. Pure."""
+    """`base` with a channel table and harness file names validated into it. Pure.
+
+    An experimenter channel's source is found under the root in force, so `base`
+    holds that root (see Settings).
+    """
     table, hf = validate_channels(tables, harness_files, source, labels, base=base)
     return dataclasses.replace(base, channels=tuple(table), harness_files=MappingProxyType(hf))
 
@@ -1013,6 +1019,12 @@ class Settings:
     Frozen, and replaced whole: config.toml, a manifest and a check each make a new one
     of the one before. A tunable's field is its lowercased name, so a config key, a
     manifest key and the field holding it are spelled alike.
+
+    No builder moves root, and each is handed settings whose root is the one in force:
+    read_config finds config.toml under the root it is handed, while overlay and
+    with_channels find starter files and an experimenter channel's source under the
+    root in force, through files_dir. Composing under another root builds first and
+    moves root after, as print_context does.
     """
     # Where records/, environments/, interactions/, displaced/, files/ and config.toml
     # are: this file's directory, until a check points it at a throwaway one.
