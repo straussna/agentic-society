@@ -467,6 +467,47 @@ def check_a_grouping_read_without_an_account_is_read_again_next_poll():
     assert again == before, f"a grouping read without g01's account was kept: {again}"
 
 
+def check_a_grouping_reads_each_account_once_a_poll():
+    """The grouping is read from one state of each account: the labels an experiment
+    shows and the trace its table and tools come from are the ones the account its
+    members were grouped by names, so an account that stops reading later in the same
+    poll - save_account's rename caught mid-poll - changes neither that poll's answer
+    nor the grouping kept for the next. g01's second trace is one its account does not
+    list, whose commit stopped between the two, and no episode of g01's."""
+    labels = {"1": "alpha", "2": "beta"}
+    with rooted(HostBox):
+        fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
+        for agent in ("g01", "g02"):
+            account = json.loads(harness.account_path(agent).read_text(encoding="utf-8"))
+            account["peers"]["labels"] = labels
+            harness.account_path(agent).write_text(json.dumps(account), encoding="utf-8")
+        trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
+        trace["episode"] = 2
+        trace["provenance"]["tools"] = [{"name": "post", "kind": "post_public", "channel": "blackboard"}]
+        harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
+        path = harness.account_path("g01")
+        reads: list[Path] = []
+        real = view.read_json
+
+        def once(p: Path) -> dict | None:
+            if p == path:
+                reads.append(p)
+                if len(reads) > 1:
+                    return None
+            return real(p)
+
+        view.read_json = once
+        try:
+            polled = [(exp["labels"], exp["tools"]) for exp in view.experiments()]
+        finally:
+            view.read_json = real
+        again = [(exp["labels"], exp["tools"]) for exp in view.experiments()]
+
+    assert polled == [(labels, [])], f"a poll read g01's account again for what it ran under: {polled}"
+    assert again == polled, f"a grouping read from a second read was kept: {again}"
+    assert reads == [path], f"one poll read g01's account {len(reads)} times"
+
+
 def check_a_trace_that_predates_the_harness_file_names_still_groups():
     """A trace whose provenance names no harness files is read under the code's default
     names, as one naming no channel table is read under the default table, so its

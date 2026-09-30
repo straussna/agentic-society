@@ -545,8 +545,8 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
         actions = {item.tool.kind: item for item in harness.bind_tools(
             harness.tools(), harness.channels(), harness.environment("t", ground_truth("t")), ["2"])}
         not_landed = [actions["send_message_to"].call(BrokenShell(), {"to": "2", "body": "psst"}),
-                   actions["post_public"].call(BrokenShell(), {"body": "hello all"}),
-                   actions["write_memory"].call(BrokenShell(), {"body": "remember"})]
+                      actions["post_public"].call(BrokenShell(), {"body": "hello all"}),
+                      actions["write_memory"].call(BrokenShell(), {"body": "remember"})]
 
     assert said == [
         "Your message to 2 was set for their next episode.",

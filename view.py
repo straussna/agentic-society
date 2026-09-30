@@ -165,15 +165,23 @@ def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
     return found
 
 
-def manifest_of(agent: str) -> tuple[experiment.Manifest, Path] | None:
-    """The shipped manifest stamped on an agent's account, where it is available."""
-    digest = (account_of(agent).get("experiment") or {}).get("manifest_sha256")
+def manifest_of(agent: str,
+                account: Mapping[str, Any] | None = None) -> tuple[experiment.Manifest, Path] | None:
+    """The shipped manifest stamped on an agent's account, where it is available.
+
+    `account` is the account a caller has already read this poll; without it the
+    account is read here.
+    """
+    account = account_of(agent) if account is None else account
+    digest = (account.get("experiment") or {}).get("manifest_sha256")
     return manifests().get(digest) if digest else None
 
 
-def manifest_ahead_of(last: dict | None, agent: str) -> tuple[experiment.Manifest, Path] | None:
+def manifest_ahead_of(last: dict | None, agent: str,
+                      account: Mapping[str, Any] | None = None
+                      ) -> tuple[experiment.Manifest, Path] | None:
     """The stamped manifest when it is newer than the agent's last trace."""
-    found = manifest_of(agent)
+    found = manifest_of(agent, account)
     if found is None:
         return None
     digest = last["provenance"].get("manifest_sha256") if last else None
@@ -482,15 +490,16 @@ def manifest_environment(manifest: experiment.Manifest,
                                      str(path), tuple(manifest["labels"].values()))
 
 
-def agent_environment(last: dict | None,
-                      agent: str) -> tuple[list[harness.Channel], dict[str, str]]:
+def agent_environment(last: dict | None, agent: str,
+                      account: Mapping[str, Any] | None = None
+                      ) -> tuple[list[harness.Channel], dict[str, str]]:
     """The channel table and harness file names an agent runs under.
 
-    `last` is its latest trace. The stamped manifest's where the manifest is newer
-    than `last` or there is no trace yet, `last`'s otherwise, and the process's
-    where there is neither.
+    `last` is its latest trace and `account` its account, where a caller has read it
+    this poll. The stamped manifest's where the manifest is newer than `last` or there
+    is no trace yet, `last`'s otherwise, and the process's where there is neither.
     """
-    found = manifest_ahead_of(last, agent)
+    found = manifest_ahead_of(last, agent, account)
     if found:
         return manifest_environment(*found)
     if last:
@@ -595,7 +604,8 @@ def read_experiments() -> tuple[list[dict], bool]:
     every account agent_names() lists was read into it.
 
     Agents sharing a seating are one experiment, named by group_of. One whose mapping
-    does not seat it is grouped by its id's letters and marked unseated.
+    does not seat it is grouped by its id's letters and marked unseated. Each account
+    is read once: what an experiment shows of its members comes from that read.
     """
     listed = agent_names()
     accounts = {agent: account for agent in listed
@@ -635,15 +645,15 @@ def read_experiments() -> tuple[list[dict], bool]:
         # same ones.
         if "channels" not in exp:
             first = next((a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0])
-            last = latest_trace(first)
-            table, _ = agent_environment(last, first)
-            account = account_of(first)
+            account = accounts[first]
+            last = latest_trace(first, account)
+            table, _ = agent_environment(last, first, account)
             exp["channels"] = [ch.as_table() for ch in table]
             exp["labels"] = dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
             mail = harness.mailbox_channel(table)
             schema = harness.schema_channel(table)
             exp["posts"] = bool(mail or schema)
-            found = manifest_of(first)
+            found = manifest_of(first, account)
             exp["tools"] = ((found[0]["tools"] or []) if found else
                             (last["provenance"].get("tools") if last else []) or [])
     return out, len(accounts) == len(listed)
@@ -789,7 +799,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # file, and the seat's next request is written over it.
         interaction = None
     going = live_state(agent, live, account)
-    table, _ = agent_environment(last, agent)
+    table, _ = agent_environment(last, agent, account)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
@@ -859,7 +869,7 @@ def header(exp: dict) -> dict:
     first = exp["members"][0]
     account = account_of(first)
     last = rows[-1]["trace"] if rows else None
-    table, hf = agent_environment(last, first)
+    table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
     seats = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
@@ -1515,8 +1525,8 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     account = account_of(agent)
     going = live_state(agent, index, account)
     last = latest_trace(agent, account)
-    table, hf = agent_environment(last, agent)
-    found = manifest_ahead_of(last, agent)
+    table, hf = agent_environment(last, agent, account)
+    found = manifest_ahead_of(last, agent, account)
     delivery = (found[0]["overrides"].get("delivery", harness.SETTINGS.delivery) if found else
                 (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery))
     shell = (any(t.get("kind") == "bash" for t in found[0]["tools"] or []) if found else
