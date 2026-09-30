@@ -329,6 +329,36 @@ def check_a_tool_table_is_validated():
         assert harness.validate_tools(None, [], "manifest") == []
 
 
+def check_every_belongs_to_whichever_kind_holds_a_ballot():
+    """`every` is a ballot's cadence, read off the menu and not off a kind's name.
+
+    A second kind that holds a ballot takes `every` and is held to it as a vote
+    is, is named wherever a refusal says who takes it, and counts against the one
+    ballot an experiment declares.
+    """
+    chans = list(harness.DEFAULT_CHANNELS)
+
+    def poll(**fields):
+        return {"name": "p", "kind": "poll", "channel": "notes"} | fields
+
+    harness.TOOL_KINDS["poll"] = harness.TOOL_KINDS["vote"]
+    try:
+        table = harness.validate_tools([poll(every=3)], chans, "check")
+        assert [(t.kind, t.every) for t in table] == [("poll", 3)], table
+        refused(lambda: harness.validate_tools([poll()], chans, "check"),
+                "check:", "kind 'poll' requires every")
+        refused(lambda: harness.validate_tools(
+                    [{"name": "x", "kind": "read_path", "channel": "notes", "every": 5}],
+                    chans, "check"),
+                "check:", "every belongs to kind 'vote' or 'poll'")
+        refused(lambda: harness.validate_tools(
+                    [{"name": "v", "kind": "vote", "channel": "notes", "every": 5},
+                     poll(every=3)], chans, "check"),
+                "check:", "at most one vote tool")
+    finally:
+        del harness.TOOL_KINDS["poll"]
+
+
 def tool_toml(*declared: dict) -> str:
     """Render tool tables as the TOML a manifest holds."""
     def value(v) -> str:
@@ -723,13 +753,21 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
 
     bind_tools leaves such a tool out where the channel planted nothing the agent
     writes, and a Bound made anywhere else without one is refused as it is made,
-    not inside a billed turn. read_path writes nothing and reads what was planted.
+    not inside a billed turn. read_path writes nothing, is built with nothing to
+    write even on a channel the agent writes, and reads what was planted.
     """
     with temp_root(tools=[POST, LOOK]) as root:
         seated(root, "t", t={}, o={})
         instances = harness.environment("t", ground_truth("t"))
         post, look = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
         assert post.own.path == "1" and post.own.writable, post.own
+        assert look.writes_to is None, look.writes_to
+        try:
+            harness.Bound(look.tool, look.channel, look.instances, post.own)
+        except ValueError as e:
+            assert "writes nothing" in str(e), e
+        else:
+            raise AssertionError("a read_path tool was built with an instance to write")
 
         theirs = tuple(i for i in instances if i.name == "blackboard" and not i.writable)
         try:

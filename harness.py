@@ -858,7 +858,7 @@ class Tool:
     kind: str                        # a key of TOOL_KINDS
     channel: str = ""                # empty for bash
     description: str = ""            # the experimenter's words; "" takes the harness's
-    every: int = 0                   # vote: offered on each Nth episode
+    every: int = 0                   # a ballot: offered on each Nth episode
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
@@ -929,15 +929,18 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     if ch is None:
         refuse(f"tool {name}: channel {where!r} is not in the channel table "
                f"{[c.name for c in chans]}")
-    if not TOOL_KINDS[kind].fits(ch):
-        refuse(f"tool {name}: kind {kind!r} takes {TOOL_KINDS[kind].takes}, and channel "
+    spec = TOOL_KINDS[kind]
+    if not spec.fits(ch):
+        refuse(f"tool {name}: kind {kind!r} takes {spec.takes}, and channel "
                f"{ch.name!r} is not one")
     every = raw.get("every", 0)
-    if kind == "vote":
+    if spec.ballot:
         if every < 1:
-            refuse(f"tool {name}: kind 'vote' requires every to be a positive integer, got {every!r}")
+            refuse(f"tool {name}: kind {kind!r} requires every to be a positive integer, "
+                   f"got {every!r}")
     elif "every" in raw:
-        refuse(f"tool {name}: every belongs to kind 'vote'")
+        refuse(f"tool {name}: every belongs to kind "
+               + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot))
     return Tool(name, kind, ch.name, raw.get("description", ""), every)
 
 
@@ -956,7 +959,7 @@ def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str)
     out: list[Tool] = []
     for raw in tables:
         out.append(parse_tool(raw, out, chans, refuse))
-    if len([tool for tool in out if tool.kind == "vote"]) > 1:
+    if len([tool for tool in out if TOOL_KINDS[tool.kind].ballot]) > 1:
         refuse("an experiment declares at most one vote tool")
     return out
 
@@ -2872,7 +2875,7 @@ class Bound:
     tool: Tool
     channel: Channel
     instances: tuple[Instance, ...]
-    writes_to: Instance | None             # the instance the agent writes, if the kind writes
+    writes_to: Instance | None             # the instance it writes; None if its kind writes nothing
     reach: tuple[str, ...] | None = None   # the labels still reachable; None filters none
 
     def __post_init__(self) -> None:
@@ -2880,6 +2883,9 @@ class Bound:
             raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes, and "
                              f"channel {self.channel.name!r} planted no instance the agent "
                              f"writes")
+        if self.writes_to is not None and not self.kind.writes:
+            raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes nothing, "
+                             f"and was given {self.writes_to.path} to write")
 
     @property
     def kind(self) -> ToolKind:
@@ -3041,7 +3047,8 @@ class Bound:
 
 @dataclasses.dataclass(frozen=True)
 class ToolKind:
-    """One kind on the tool menu: everything that differs from one kind to the next.
+    """One kind on the tool menu: the channel it takes, what it says, its input schema,
+    what a call does, the file it keeps and where it is offered.
 
     `takes` is the channel the kind acts on as a refusal names it, and `fits` the
     test a declared channel is held to. `describe` is what a tool of this kind says
@@ -3060,7 +3067,7 @@ class ToolKind:
     writes: bool = True          # it needs the instance the agent writes
     seats: bool = False          # it names peers by the seating's reachable labels, not by slot
     needs_peer: bool = False     # it is offered only where there is a peer to name
-    ballot: bool = False         # offered only on each `every`th episode, which is a ballot's
+    ballot: bool = False         # it takes `every`, and is offered only on each `every`th episode
     on_ballot: bool = False      # offered on a ballot's episode, where every other tool is not
 
 
@@ -3313,9 +3320,12 @@ def read_path_call(b: Bound, shell: Shell, args: dict) -> str:
     return b.fetch(shell, args.get("path"))
 
 
-# The fixed menu: one entry a kind, and that entry is everything the kind is, the
-# name of the file it keeps included. A kind the harness gains is an entry here and
-# a check. Nothing a manifest writes reaches this table.
+# The fixed menu: one entry a kind, holding the channel it takes, what it says, its
+# schema, what a call does, the file it keeps and where it is offered. What a kind
+# means past its own calls - the election a vote decides, the post a board is
+# settled on, the memory an agent inherits - is read where it is used, by the kind's
+# name. A kind the harness gains is an entry here and a check. Nothing a manifest
+# writes reaches this table.
 TOOL_KINDS: dict[str, ToolKind] = {
     "bash": ToolKind("no channel", lambda ch: False, shell_only, shell_only, shell_only,
                      writes=False),
@@ -3396,7 +3406,7 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
         own = next((i for i in planted if i.writable), None)
         if not planted or (kind.writes and own is None):
             continue
-        bound = Bound(t, ch, planted, own, reach)
+        bound = Bound(t, ch, planted, own if kind.writes else None, reach)
         if kind.seats:
             peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
             bound = dataclasses.replace(bound, reach=tuple(
