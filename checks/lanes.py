@@ -6,7 +6,7 @@ helpers that read the record back."""
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterable
 from pathlib import Path
 import contextlib
 import difflib
@@ -562,7 +562,7 @@ def plant(root: Path, name: str = "s", **files: str) -> Path:
     return d
 
 
-def lay_out(root: Path, **agents: dict[str, str]) -> list[str]:
+def lay_out(**agents: dict[str, str]) -> list[str]:
     """Lay out an experiment's directories under the ROOT in force, for the experiment checks to use.
 
     "group/" goes on that agent's blackboard, "out/" in its outbox where only the seat
@@ -603,7 +603,7 @@ def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None,
     # added if the caller left it out - at the front, since the seat a check does
     # not name is the one it does not care about. A caller that does name it
     # keeps it where it put it, which is how a check reaches a seat other than 1.
-    ids = lay_out(root, **(agents if agent in agents else {agent: {}} | agents))
+    ids = lay_out(**(agents if agent in agents else {agent: {}} | agents))
     seats = experiment.seats_of(ids)
     for seat, other in seats.items():
         with quiet():
@@ -655,7 +655,7 @@ def two_seats():
         yield view.experiment_of("g01"), experiment.seats_of(ids)
 
 
-def fake_experiment(root: Path, acted: list[tuple], series: tuple[int, ...] = (1000,),
+def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
                     agents: tuple[str, ...] = ("g01", "g02", "g03"), **trace_fields) -> dict:
     """An experiment written straight to disk: one trace per episode taken, one account per seat.
 
@@ -672,11 +672,12 @@ def fake_experiment(root: Path, acted: list[tuple], series: tuple[int, ...] = (1
         p.write_text(json.dumps({
             "agent": agent, "episode": taken[agent], "stop": "end_turn", "spent": 1,
             "turns": [], "remaining": 0, "files": [], "state_saved": True,
-            "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats},
+            "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats,
+                           "harness_files": dict(harness.HARNESS_FILES)},
             **trace_fields, **(more[0] if more else {})}), encoding="utf-8")
     for seat, agent in seats.items():
         harness.records_dir(agent).mkdir(parents=True, exist_ok=True)
-        (harness.records_dir(agent) / "account.json").write_text(json.dumps({
+        harness.account_path(agent).write_text(json.dumps({
             "agent": agent, "seat": seat, "peers": {"seen": seats},
             "series": list(series), "remaining": series[-1], "initial": 1000, "episodes": [],
         }), encoding="utf-8")

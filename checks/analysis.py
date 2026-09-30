@@ -60,7 +60,7 @@ def check_the_identity_delta_counts_changed_lines():
     path = "state/IDENTITY.md"
     assert analyze.identity_delta(None, one, path) == 2, "at first sight the whole file is new"
     assert analyze.identity_delta(one, two, path) == 3, "one line gone, two arrived"
-    assert analyze.identity_delta(two, three, path) == "", "absent is blank, not zero"
+    assert analyze.identity_delta(two, three, path) is None, "absent is no figure, not zero"
     assert analyze.identity_delta(two, same, path) == 0, "and unchanged is zero"
     assert [analyze.text_chars(t) for t in (one, two, three, same)] == [5, 2, 0, 0]
     lines = analyze.identity_lines([one, two, three, same], path)
@@ -76,6 +76,8 @@ def check_the_identity_delta_counts_changed_lines():
         ts = analyze.load("t")["t"]
         assert analyze.row(ts[1], ts[0], path)["identity_delta"] == 3
         assert analyze.row(ts[1])["identity_delta"] == "", "blank without a path"
+        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", \
+            "and blank where the file is absent"
         with quiet() as buf:
             assert analyze.main(["--agent", "t", "--identity", path]) == 0
         csv_text = (harness.records_dir("t") / "analysis" / "episodes.csv").read_text(encoding="utf-8")
@@ -211,3 +213,32 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
                                 "mail": False, "transfer": False}, v["obligations"]
     assert ("gallery", "no post") in [(u["channel"], u["why"]) for u in v["unmet"]], v["unmet"]
     assert mine["unmet"] == v["unmet"], (mine["unmet"], v["unmet"])
+
+
+def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
+    """The shell's call is the command it ran, or "(restart)" for the bare form, and a
+    declared tool's is the call itself.
+
+    One rule, analyze's, which the transcript and the page's two sources of a turn
+    all read, so a call cannot read one way in the transcript and another on the page.
+    """
+    shell = harness.SHELL_SPEC.name
+    records = [{"tool": shell, "command": "ls", "input": None, "result": "x"},
+               {"tool": shell, "command": None, "input": None, "result": " "},
+               {"tool": "post", "command": None, "input": {"body": "hi"}, "result": "posted"}]
+    calls = [{"id": "1", "name": shell, "input": {"command": "ls"}},
+             {"id": "2", "name": shell, "input": {"command": None}},
+             {"id": "3", "name": "post", "input": {"body": "hi"}}]
+    logged = [{"kind": "normalized_response", "turn": 1,
+               "response": {"id": "r", "tool_calls": calls, "charges": []}}]
+    traced = view.from_trace({"turns": [{"turn": 1, "tools": records}]})[0]["tools"]
+    live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
+
+    shown = ["ls", "(restart)", "post(body='hi')"]
+    assert [analyze.tool_call(rec) for rec in records] == shown
+    assert [c["call"] for c in traced] == shown and [c["call"] for c in live] == shown, \
+        (traced, live)
+    assert [c["shell"] for c in traced] == [c["shell"] for c in live] == [True, True, False], \
+        (traced, live)
+    assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, \
+        "and only the declared tool's is a tool call"

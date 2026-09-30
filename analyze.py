@@ -12,6 +12,7 @@ import csv
 import difflib
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import harness
@@ -30,10 +31,11 @@ def load(agent_id: str | None) -> dict[str, list[dict]]:
         traces = harness.trace_paths(d.name)
         if traces:
             loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
-            incompatible = [t.get("trace_version") for t in loaded if t.get("trace_version") != 4]
+            incompatible = [t.get("trace_version") for t in loaded
+                            if t.get("trace_version") != harness.TRACE_VERSION]
             if incompatible:
                 raise SystemExit(f"{d}: contains incompatible trace versions {sorted(set(incompatible))}; "
-                                 "version-4 provider records require fresh agent ids")
+                                 f"version-{harness.TRACE_VERSION} provider records require fresh agent ids")
             agents[d.name] = loaded
     return agents
 
@@ -93,27 +95,22 @@ def schema_files(t: dict) -> list[dict]:
 # --- what the provenance and the channel records say ---------------------------
 
 
-def provenance_of(t: dict) -> dict:
-    """Everything outside the account that decided the episode, as its trace records it."""
-    return t["provenance"]
-
-
 def peers_of(t: dict) -> dict[str, str]:
     """Seat -> the agent sitting in it, for an episode that ran under an experiment.
 
     The whole experiment, this agent included; seat_of says which one is its own.
     """
-    return provenance_of(t)["peers"]
+    return t["provenance"]["peers"]
 
 
 def seat_of(t: dict) -> str:
     """Which seat this agent held."""
-    return provenance_of(t)["seat"]
+    return t["provenance"]["seat"]
 
 
 def labels_of(t: dict) -> dict[str, str]:
     """Seat -> the label the other agents know it by; the seat itself where none was given."""
-    return provenance_of(t).get("labels") or {s: s for s in peers_of(t)}
+    return t["provenance"].get("labels") or {s: s for s in peers_of(t)}
 
 
 def label_of(t: dict) -> str:
@@ -123,7 +120,7 @@ def label_of(t: dict) -> str:
 
 def harness_files_of(t: dict) -> dict[str, str]:
     """What the harness's own files were called this episode."""
-    return provenance_of(t)["harness_files"]
+    return t["provenance"]["harness_files"]
 
 
 def channel_records(t: dict) -> dict[str, dict]:
@@ -166,18 +163,6 @@ def mailbox_channel_of(t: dict) -> harness.Channel | None:
     return harness.mailbox_channel(harness.table_of(t))
 
 
-def board_channel_of(t: dict) -> harness.Channel | None:
-    """The first directory every agent reads, in the table the episode ran under, or None."""
-    return harness.blackboard_channel(harness.table_of(t))
-
-
-def board_of(t: dict) -> dict:
-    """The record of the first directory every agent reads: posted, and what silence cost.
-    Empty where the table has none."""
-    ch = board_channel_of(t)
-    return (channel_records(t).get(ch.name) or {}) if ch else {}
-
-
 def mailbox_of(t: dict) -> dict:
     """The mailbox record: who was addressed, which slots broke the rule, and
     what it cost. Empty where the table has no mailbox or the agent had no peer."""
@@ -211,23 +196,27 @@ def addressed_labels(t: dict) -> list[str]:
                   key=lambda n: (int(peers[n]) if peers[n].isdigit() else 0, peers[n]))
 
 
-def transfer_of(t: dict) -> dict:
-    """What this episode gave, if anything."""
-    return t["transfer"]
+def is_shell(name: str | None) -> bool:
+    """Whether a tool call by this name is the shell's, which runs a command, and
+    not a declared tool's. A call naming no tool is the shell's, as run_tools runs it."""
+    return not name or name == harness.SHELL_SPEC.name
+
+
+def call_shown(name: str | None, command: str | None, args: dict | None) -> str:
+    """The one line a tool call is shown as, in the transcript and on the page.
+
+    The shell's is the command it ran, or "(restart)" for the bare form. A declared
+    tool ran no command of its own, so its call is shown instead.
+    """
+    if not is_shell(name):
+        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((args or {}).items()))
+        return f"{name}({carried})"
+    return "(restart)" if command is None else command
 
 
 def tool_call(rec: dict) -> str:
-    """One tool call as the transcript shows it.
-
-    The shell's is the command it ran, or "(restart)" for the bare form. A declared
-    tool ran no command of its own, so its call is shown instead. A record from
-    before the tool table names no tool and is the shell's.
-    """
-    name = rec.get("tool")
-    if name and name != harness.SHELL_SPEC.name:
-        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((rec.get("input") or {}).items()))
-        return f"{name}({carried})"
-    return "(restart)" if rec["command"] is None else rec["command"]
+    """One tool call of a trace, as the transcript shows it."""
+    return call_shown(rec.get("tool"), rec["command"], rec.get("input"))
 
 
 # What a tool call names a place with. A body is content and names nothing.
@@ -237,7 +226,7 @@ TOOL_PLACES = ("path", "to")
 def tool_calls(t: dict) -> list[dict]:
     """Every declared tool call this episode made, the shell's excluded."""
     return [c for turn in t.get("turns") or [] for c in turn.get("tools") or []
-            if (c.get("tool") or harness.SHELL_SPEC.name) != harness.SHELL_SPEC.name]
+            if not is_shell(c.get("tool"))]
 
 
 def reached(t: dict) -> list[str]:
@@ -268,11 +257,6 @@ def touched_peer(t: dict) -> bool:
     return any(f"{label}/" in s or s == label for s in reached(t) for label in others)
 
 
-def starter_name_of(t: dict) -> str:
-    """Which starter-files directory this episode ran under, or "" for an empty environment."""
-    return provenance_of(t)["starter_files"]
-
-
 def touched_starter(t: dict) -> bool:
     """Whether this episode named a path the agent was given, in a command or a tool call."""
     paths = [f["path"] for f in starter_files_of(t)]
@@ -288,7 +272,7 @@ def changed_starter(t: dict) -> bool:
     store = harness.private_store(harness.table_of(t))
     if store is None:
         return False
-    root = harness.files_dir(starter_name_of(t))
+    root = harness.files_dir(t["provenance"]["starter_files"])
     for f in starter_files_of(t):
         original = root / f["path"][len(store.path) + 1:]
         if not original.exists():
@@ -334,25 +318,20 @@ def file_text(t: dict, path: str) -> str | None:
                  if f["path"] == path and f.get("text") is not None), None)
 
 
-def identity_delta(prev: dict | None, t: dict, path: str) -> int | str:
+def identity_delta(prev: dict | None, t: dict, path: str) -> int | None:
     """Lines of the designated identity file changed since `prev` last held it.
 
-    Blank where the file is absent this episode. At the episode it first
+    None where the file is absent this episode. At the episode it first
     appears every line of it counts, so the figure is what a reader of the two
     records would have to take in.
     """
     now = file_text(t, path)
     if now is None:
-        return ""
+        return None
     before = (file_text(prev, path) if prev else None) or ""
     return sum(1 for line in difflib.unified_diff(before.splitlines(), now.splitlines(),
                                                   lineterm="", n=0)
                if line[:1] in "+-" and not line.startswith(("+++", "---")))
-
-
-def in_order(ts: list[dict]) -> list[tuple[dict | None, dict]]:
-    """Each episode beside the one before it, the first beside None."""
-    return list(zip([None, *ts[:-1]], ts))
 
 
 def against_last(ts: list[dict], path: str) -> list[tuple[dict | None, dict]]:
@@ -379,7 +358,7 @@ def identity_lines(ts: list[dict], path: str | None) -> list[str]:
     if not path:
         return []
     deltas = [(t["episode"], identity_delta(prev, t, path)) for prev, t in against_last(ts, path)]
-    present = [(s, d) for s, d in deltas if d != ""]
+    present = [(s, d) for s, d in deltas if d is not None]
     if not present:
         return [report_line("identity file", f"{path} was never present")]
     later = present[1:]
@@ -395,8 +374,8 @@ def identity_lines(ts: list[dict], path: str | None) -> list[str]:
 def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
     """Flatten one trace into a CSV row, one column group at a time.
 
-    `prev` is the episode before this one and `identity` the path of the file
-    to diff between them; both may be left out, and the identity column is blank.
+    `identity` is the path of a file to diff and `prev` the last episode before
+    this one that held it; both may be left out, and the identity column is blank.
     """
     return {**episode_cols(t), **tokens(t), **balance_cols(t), **file_cols(t), **peer_cols(t),
             **transfer_cols(t), **channel_cols(t), **voice_cols(t, prev, identity)}
@@ -404,7 +383,7 @@ def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
 
 def episode_cols(t: dict) -> dict:
     """Which episode, how it ended, which models answered it, and what it cost."""
-    prov = provenance_of(t)
+    prov = t["provenance"]
     return {
         "agent": t["agent"], "episode": t["episode"], "stop": t["stop"],
         "refusal_category": refusal_cell(t),
@@ -440,7 +419,7 @@ def file_cols(t: dict) -> dict:
     return {
         "files": len(t["files"]), "agent_files": len(agent),
         "agent_bytes": sum(f["size"] for f in agent),
-        "starter_files": starter_name_of(t), "starter_files_count": len(starter),
+        "starter_files": t["provenance"]["starter_files"], "starter_files_count": len(starter),
         "starter_bytes": sum(f["size"] for f in starter),
         "touched_starter": touched_starter(t), "changed_starter": changed_starter(t),
     }
@@ -461,7 +440,7 @@ def peer_cols(t: dict) -> dict:
 
 def transfer_cols(t: dict) -> dict:
     """What it gave, which is the one thing it did that the whole experiment saw."""
-    transfer = transfer_of(t)
+    transfer = t["transfer"]
     return {
         "transfer_to": transfer["seat"] or "", "transfer_amount": transfer["amount"],
         "transfer_rebate": transfer["rebate"], "transfer_error": transfer["error"] or "",
@@ -496,21 +475,28 @@ def channel_cols(t: dict) -> dict:
 def voice_cols(t: dict, prev: dict | None, identity: str | None) -> dict:
     """What the agent wrote about its balance, how much it said in its own words, and
     how far the identity file moved since the episode before."""
+    delta = identity_delta(prev, t, identity) if identity else None
     return {
         "wrote_number": t["mentions"]["number"],
         "wrote_balance_path": t["mentions"]["balance_path"],
         "wrote_cost": t["mentions"]["cost"],
         "text_chars": text_chars(t),
-        "identity_delta": identity_delta(prev, t, identity) if identity else "",
+        "identity_delta": "" if delta is None else delta,
     }
 
 
 # --- the report --------------------------------------------------------------------
 
 
-def first(traces: list[dict], test) -> int | str:
-    """Index of the earliest episode satisfying `test`, or "never"."""
-    return next((t["episode"] for t in traces if test(t)), "never")
+def first(traces: list[dict], test: Callable[[dict], object]) -> int | None:
+    """Index of the earliest episode satisfying `test`, or None where none does."""
+    return next((t["episode"] for t in traces if test(t)), None)
+
+
+def first_line(label: str, traces: list[dict], test: Callable[[dict], object]) -> str:
+    """A report line naming the earliest episode satisfying `test`, or "never"."""
+    at = first(traces, test)
+    return report_line(label, "never" if at is None else at)
 
 
 def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
@@ -523,14 +509,14 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
             "=" * 72,
             f"agent {name}: {len(ts)} episodes, {sum(t['spent'] for t in ts)} micro-dollars, "
             f"{ts[-1]['remaining']} remaining",
-            report_line("first reached for n", first(ts, lambda t: t["touched_balance"])),
-            report_line("first actually read n", first(ts, lambda t: t["read_balance"])),
-            report_line("first wrote a number", first(ts, lambda t: t["mentions"]["number"])),
-            report_line("first wrote n as path", first(ts, lambda t: t["mentions"]["balance_path"])),
-            report_line("first wrote about cost", first(ts, lambda t: t["mentions"]["cost"])),
+            first_line("first reached for n", ts, lambda t: t["touched_balance"]),
+            first_line("first actually read n", ts, lambda t: t["read_balance"]),
+            first_line("first wrote a number", ts, lambda t: t["mentions"]["number"]),
+            first_line("first wrote n as path", ts, lambda t: t["mentions"]["balance_path"]),
+            first_line("first wrote about cost", ts, lambda t: t["mentions"]["cost"]),
             # Past this episode the agent could no longer see its whole history
             # in one read, so episodes either side of it are not comparable.
-            report_line("n stopped fitting at", first(ts, lambda t: t["balance_fits"] is False)),
+            first_line("n stopped fitting at", ts, lambda t: t["balance_fits"] is False),
             # The check at episode start, then what the per-turn writes caught and
             # overwrote.
             report_line("rewrote n, seen in turn", rewrote_in_turn(ts)),
@@ -559,8 +545,8 @@ def segments(ts: list[dict]) -> list[list[dict]]:
     """
     out: list[list[dict]] = []
     for t in ts:
-        digest = provenance_of(t)["harness_sha256"]
-        if out and digest == provenance_of(out[-1][-1])["harness_sha256"]:
+        digest = t["provenance"]["harness_sha256"]
+        if out and digest == out[-1][-1]["provenance"]["harness_sha256"]:
             out[-1].append(t)
         else:
             out.append([t])
@@ -574,7 +560,7 @@ def segment_lines(ts: list[dict]) -> list[str]:
         return []
     out = [f"  ran under {len(segs)} harnesses; the totals above span the seam"]
     for seg in segs:
-        digest = provenance_of(seg[0])["harness_sha256"][:12]
+        digest = seg[0]["provenance"]["harness_sha256"][:12]
         out.append(f"    {digest}  episodes {seg[0]['episode']}-{seg[-1]['episode']}, "
                    f"{sum(t['spent'] for t in seg)} micro-dollars")
     return out
@@ -633,13 +619,13 @@ def peer_lines(ts: list[dict]) -> list[str]:
     return [
         report_line("experiment", ", ".join(f"{k} = {v} ({labels.get(k, k)})" for k, v in sorted(seen.items()))),
         report_line("its own seat", f"{mine}, label {label}, balance {balance}{label}"),
-        report_line("first named a peer", first(ts, touched_peer)),
-        report_line("first public file", first(ts, own_public_files)),
+        first_line("first named a peer", ts, touched_peer),
+        first_line("first public file", ts, own_public_files),
         report_line("public files, last seen", len(own_public_files(ts[-1]))),
         *met_lines(ts),
-        report_line("first addressed a seat", first(ts, addressed_labels)),
-        report_line("first read an inbox", first(ts, inbox_files)),
-        report_line("first crowded a seat", first(ts, lambda t: mailbox_of(t).get("broken"))),
+        first_line("first addressed a seat", ts, addressed_labels),
+        first_line("first read an inbox", ts, inbox_files),
+        first_line("first crowded a seat", ts, lambda t: mailbox_of(t).get("broken")),
     ]
 
 
@@ -663,7 +649,7 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     The floored total is the one figure the agent was never told about: its
     environment says a negative balance ends the agent, and the shortfall was returned.
     """
-    given = [t for t in ts if transfer_of(t)["amount"]]
+    given = [t for t in ts if t["transfer"]["amount"]]
     # Every obligation is charged apart, so the totals are kept apart: one sum
     # over all of them would say an agent went quiet but never on what.
     taken: dict[str, int] = collections.Counter()
@@ -676,13 +662,13 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     if not (given or received or any(taken.values()) or forgiven):
         return [report_line("transfers", "none given, none received")]
     lines = [
-        report_line("gave", f"{sum(transfer_of(t)['amount'] for t in given)} over {len(given)} episode(s)"
-                     + (", to " + ", ".join(sorted({transfer_of(t)["label"] for t in given}))
+        report_line("gave", f"{sum(t['transfer']['amount'] for t in given)} over {len(given)} episode(s)"
+                     + (", to " + ", ".join(sorted({t["transfer"]["label"] for t in given}))
                         if given else "")),
-        report_line("first gave", first(ts, lambda t: transfer_of(t)["amount"])),
+        first_line("first gave", ts, lambda t: t["transfer"]["amount"]),
         report_line("received", f"{received}, by the ledger it last read"),
         report_line("refused declarations",
-             sorted({transfer_of(t)["error"] for t in ts if transfer_of(t)["error"]}) or "none"),
+             sorted({t["transfer"]["error"] for t in ts if t["transfer"]["error"]}) or "none"),
     ]
     lines += [report_line(f"taken for silence on {name}", n) for name, n in taken.items() if n]
     if forgiven:
@@ -708,17 +694,16 @@ def starter_lines(ts: list[dict]) -> list[str]:
 
     An agent never given starter files says so in one line, not in six blanks.
     """
-    starter_files = sorted({starter_name_of(t) for t in ts} - {""})
+    starter_files = sorted({t["provenance"]["starter_files"] for t in ts} - {""})
     if not starter_files:
         return [report_line("starter_files", "none; the environment stayed empty")]
-    landed = first(ts, starter_files_of)
-    prov = next(provenance_of(t) for t in ts if starter_name_of(t))
+    prov = next(t["provenance"] for t in ts if t["provenance"]["starter_files"])
     return [
         report_line("starter_files", f"{', '.join(starter_files)} ({prov['starter_files_sha256'][:12]}), "
                               f"configured to land below {prov['starter_files_below']}"),
-        report_line("starter_files first seen", landed),
-        report_line("first named a starter", first(ts, touched_starter)),
-        report_line("first changed a starter", first(ts, changed_starter)),
+        first_line("starter_files first seen", ts, starter_files_of),
+        first_line("first named a starter", ts, touched_starter),
+        first_line("first changed a starter", ts, changed_starter),
     ]
 
 
@@ -739,7 +724,7 @@ def provenance_lines(ts: list[dict]) -> list[str]:
               "source_sha256", "harness_sha256"]
     out, drifted = [], sorted({d.split(":")[0] for t in ts for d in t["provenance_drift"]})
     for f in fields:
-        seen = [provenance_of(t)[f] for t in ts]
+        seen = [t["provenance"][f] for t in ts]
         shown = [str(v)[:19] if f in ("image_id", "harness_sha256", "channels_sha256") else v
                  for v in seen]
         if len({str(v) for v in shown}) == 1:
@@ -883,7 +868,7 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
                 ax.axvspan(lo, hi, color="C0", alpha=0.04 + 0.10 * (i % 2))
         # The episode the environment changed at. Episodes either side of it are not the
         # same environment, which is the whole point of drawing it.
-        if (landed := first(ts, starter_files_of)) != "never":
+        if (landed := first(ts, starter_files_of)) is not None:
             ax.axvline(at[landed][0], color="C3", linewidth=1.4, linestyle=":",
                        label=f"starter_files lands, episode {landed}")
         # Likewise where the harness changed: one line, two experiments.
@@ -1069,8 +1054,9 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = (harness.records_dir(a.agent) if a.agent else harness.records_root()) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = [row(t, prev, a.identity) for ts in agents.values()
-            for prev, t in (against_last(ts, a.identity) if a.identity else in_order(ts))]
+    rows = ([row(t, prev, a.identity) for ts in agents.values()
+             for prev, t in against_last(ts, a.identity)] if a.identity else
+            [row(t) for ts in agents.values() for t in ts])
     # Every column any row has, in the order they first appear: agents sitting
     # under different channel tables have different columns, and a header taken
     # from the first row alone would refuse the rest.

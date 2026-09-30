@@ -290,6 +290,61 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
     assert claimed == set(accounts)
 
 
+def check_the_experiment_grouping_is_kept_until_the_records_move():
+    """Every open page asks for the grouping on every poll, so it is kept while nothing
+    it is read from moves: a poll finding everything where it was reads no account.
+
+    An account rewritten, an agent added and a trace landing each move something the
+    grouping is read from, and each is in the next poll's answer.
+    """
+    tools = [{"name": "post", "kind": "post_public", "channel": "blackboard"}]
+    reads: list[Path] = []
+    real = view.read_json
+
+    def counted(path: Path) -> dict | None:
+        reads.append(path)
+        return real(path)
+
+    with rooted(HostBox):
+        first = fake_experiment([("g01", "00:01")])
+        view.read_json = counted
+        try:
+            again = view.experiment_named("g")
+            polled = list(reads)
+            account = json.loads(harness.account_path("g01").read_text(encoding="utf-8"))
+            account["experiment"] = {"experiment_id": "renamed"}
+            harness.account_path("g01").write_text(json.dumps(account), encoding="utf-8")
+            renamed = view.experiment_named("g")
+            harness.records_dir("h01").mkdir(parents=True)
+            harness.account_path("h01").write_text(json.dumps({"agent": "h01"}), encoding="utf-8")
+            joined = [exp["name"] for exp in view.experiments()]
+            trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
+            trace["episode"], trace["provenance"]["tools"] = 2, tools
+            harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
+            landed = view.experiment_named("g")
+        finally:
+            view.read_json = real
+
+    assert again == first and not polled, f"a poll with nothing moved read {polled}"
+    assert renamed is not None and renamed["experiment_id"] == "renamed", renamed
+    assert joined == ["g", "h"], joined
+    assert landed is not None and landed["tools"] == tools, landed
+
+
+def check_a_record_holding_no_object_reads_as_no_record():
+    """A JSON file holding a list or a number is read as no record at all, so an
+    account like that is left out of the grouping instead of failing every poll."""
+    with rooted(HostBox):
+        fake_experiment([("g01", "00:01")])
+        harness.records_dir("k01").mkdir(parents=True)
+        harness.account_path("k01").write_text("[1, 2]", encoding="utf-8")
+        read = view.read_json(harness.account_path("k01"))
+        names = [exp["name"] for exp in view.experiments()]
+
+    assert read is None, read
+    assert names == ["g"], names
+
+
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():
     """Election state comes from accounts without exposing individual ballots."""
     result = {"round": 5, "tally": {"1": 1, "2": 0}, "abstainers": ["2"],
@@ -357,8 +412,8 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         ("g01", "00:03", {"files": files("1", 2)}),
         ("g02", "00:04", {"files": files("2", 2)}),
     ]
-    with rooted(HostBox) as root:
-        fake_experiment(root, acted, agents=("g01", "g02"))
+    with rooted(HostBox):
+        fake_experiment(acted, agents=("g01", "g02"))
         tools = [
             {"name": "post", "kind": "post_public", "channel": "blackboard"},
             {"name": "vote", "kind": "vote", "channel": "notes", "every": 2},
@@ -411,8 +466,8 @@ def check_the_player_history_adds_each_accepted_human_call_once():
 
     committed = [{"path": "1/post.md", "channel": "blackboard", "writer": "self", "readers": "all",
                   "role": "own", "size": 10, "starter": False, "text": "hello all\n"}]
-    with rooted(HostBox) as root:
-        fake_experiment(root, [("g01", "00:01", {"files": committed}), ("g02", "00:02")],
+    with rooted(HostBox):
+        fake_experiment([("g01", "00:01", {"files": committed}), ("g02", "00:02")],
                         agents=("g01", "g02"))
         for agent in ("g01", "g02"):
             for path in harness.trace_paths(agent):
@@ -479,8 +534,8 @@ def check_the_view_cuts_a_round_where_an_agent_repeats():
              ("g02", "00:04"), ("g03", "00:05"), ("g01", "00:06"),
              ("g03", "00:07"), ("g01", "00:08"),
              ("g01", "00:09"), ("g02", "00:10"), ("g03", "00:10")]
-    with rooted(HostBox) as root:
-        c = fake_experiment(root, acted)
+    with rooted(HostBox):
+        c = fake_experiment(acted)
         rows = view.experiment_episodes(c)
         now = view.round_now(c, rows)
         seen = view.agent_view("g02", c)["episodes"]
@@ -505,8 +560,8 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     def tiles(acted):
         # Nothing left on any account, which is the whole point: a seat still to
         # come reads that way on the balance that would stop it starting.
-        with rooted(HostBox) as root:
-            c = fake_experiment(root, acted, series=(0,))
+        with rooted(HostBox):
+            c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
             rnd = view.round_now(c, rows)
             return rnd, {agent: view.seat_row(seat, agent, rows, rnd)
@@ -626,9 +681,9 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
                 "files": [{"path": path, "channel": "mail", "writer": "self", "readers": "addressee",
                            "role": role, "text": "hello\n", "size": 6, "ours": ours, "starter": False}]}
 
-    with rooted(HostBox) as root:
-        c = fake_experiment(root, [("g01", "00:01", held("out/2", "own", False)),
-                                   ("g02", "00:02", held("in/1", "peer", True))],
+    with rooted(HostBox):
+        c = fake_experiment([("g01", "00:01", held("out/2", "own", False)),
+                             ("g02", "00:02", held("in/1", "peer", True))],
                             agents=("g01", "g02"))
         m = view.messages(c)
         ev = next(e for e in m["events"] if e["path"] == "out/2")
@@ -776,7 +831,7 @@ def check_the_view_shows_an_experimenter_channel_once():
     """An experimenter channel is one shared source, not one writable tree per seat."""
     with temp_root() as root:
         shared(root, name="brief", path="briefing", RULES="same words for every seat\n")
-        c = fake_experiment(root, [])
+        c = fake_experiment([])
         h = view.header(c)
         tree = view.tree_view(c, "briefing")
         opened = view.file_view(c, "experimenter", "briefing", "RULES")

@@ -433,8 +433,8 @@ def check_a_ledger_resists_every_route():
     Every transfer being public is only true while the file saying so cannot be
     edited by the agents it is about.
     """
-    with docker_root() as root:
-        ids = lay_out(root, t={}, other={})
+    with docker_root():
+        ids = lay_out(t={}, other={})
         with quiet():
             account = harness.load_account("t")
         account["seat"], account["peers"] = "1", {"seen": experiment.seats_of(ids)}

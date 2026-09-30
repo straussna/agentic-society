@@ -53,9 +53,8 @@ def check_a_private_store_never_leaves_its_agent():
     The whole point of two writable trees: one is addressed to the experiment and
     one is not, and the harness never copies the second anywhere.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root,
-                      g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
                       g02={"secret.md": "theirs alone\n", "group/msg": "hello 1\n"})
         instances = environment_of("g01", ids)
         snap = harness.snapshot(instances, [9])
@@ -83,9 +82,8 @@ def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
     mentions is what the agent wrote. A neighbour's blackboard full of balances and
     the word "budget" would otherwise answer for it at round one.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root,
-                      g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
                       g02={"group/out": "the budget is 90 and ./n1 holds it\n"})
         snap = harness.snapshot(environment_of("g01", ids), [100, 90])
 
@@ -109,8 +107,8 @@ def check_starter_files_and_a_peer_are_told_apart():
     starter files, so one flag covering both cannot answer what the starter files
     put there.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root, g01={"NOTES.md": "mine\n", "m1": "alpha\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"NOTES.md": "mine\n", "m1": "alpha\n"},
                       g02={"group/out": "theirs\n"})
         seats = experiment.seats_of(ids)
         snap = harness.snapshot(environment_of("g01", ids), [9],
@@ -248,9 +246,8 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
     The asymmetry the ruleset turns on: a blackboard is read by everyone and an
     outbox by exactly one, so what an agent says can be aimed.
     """
-    with rooted(HostBox) as root:
-        lay_out(root, g01={"out/3": "for three alone\n",
-                           "group/RESULT": "for everyone\n"},
+    with rooted(HostBox):
+        lay_out(g01={"out/3": "for three alone\n", "group/RESULT": "for everyone\n"},
                 g02={}, g03={})
         ids = ["g01", "g02", "g03"]
         seen = {p: files_by_path(harness.snapshot(environment_of(p, ids), [9])) for p in ids}
@@ -532,8 +529,8 @@ def check_the_channels_answer_differently():
     The whole arrangement in one episode: what the agent may not write it cannot
     reach by writing, by chmod, or by replacing the directory the file sits in.
     """
-    with docker_root() as root:
-        ids = lay_out(root, t={"NOTES.md": "private\n", "group/out": "mine\n"},
+    with docker_root():
+        ids = lay_out(t={"NOTES.md": "private\n", "group/out": "mine\n"},
                       other={"NOTES.md": "unseen\n", "group/out": "theirs\n",
                              "out/1": "just for you\n"})
         with quiet():
@@ -602,8 +599,8 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
     In a container the agent cannot write there at all, but the record does not
     lean on that: what makes a file the agent's is the channel it is in.
     """
-    with temp_root() as root:
-        ids = lay_out(root, t={"NOTES.md": "mine\n"}, other={"group/out": "theirs\n"})
+    with temp_root():
+        ids = lay_out(t={"NOTES.md": "mine\n"}, other={"group/out": "theirs\n"})
         (harness.mirror("other", "blackboard") / "added").write_text("put here somehow\n")
         snap = harness.snapshot(environment_of("t", ids), [9])
 

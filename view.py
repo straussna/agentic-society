@@ -10,6 +10,7 @@ else."""
 from __future__ import annotations
 
 import argparse
+import copy
 import http.server
 import json
 import re
@@ -65,19 +66,25 @@ PAGE = Path(__file__).with_name("view.html").read_text(encoding="utf-8")
 _MANIFESTS: dict[str, tuple[dict, Path]] | None = None
 _MANIFEST_STATE: tuple[tuple[str, int, int], ...] | None = None
 
+# (the state of disk it was read from, the grouping). Guarded because the server is
+# threaded and every open page asks for it on every poll.
+_EXPERIMENTS: tuple[tuple, list[dict]] | None = None
+_EXPERIMENTS_LOCK = threading.Lock()
+
 
 # --- reading what is on disk ------------------------------------------------
 
 
 def read_json(path: Path) -> dict | None:
-    """One JSON file, or None if it is not readable.
+    """One JSON object, or None if the file is not readable or holds something else.
 
     save_account commits with os.replace, which on Windows surfaces to a reader as
     a PermissionError, so a poll landing on a commit is retried once.
     """
     for attempt in (1, 2):
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else None
         except FileNotFoundError:
             return None
         except (PermissionError, OSError, ValueError):
@@ -85,6 +92,15 @@ def read_json(path: Path) -> dict | None:
                 return None
             time.sleep(0.05)
     return None
+
+
+def stat_key(path: Path) -> tuple[int, int] | None:
+    """A file's mtime and size, which is what a cache here keys on; None where it is gone."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
 
 
 # path -> ((mtime, size), parsed). Guarded because the server is threaded and
@@ -99,11 +115,9 @@ def load_trace(path: Path) -> dict | None:
     A trace is written whole when its episode ends and never touched again, so
     it is cached against the mtime and size that identify it.
     """
-    try:
-        st = path.stat()
-    except OSError:
+    key = stat_key(path)
+    if key is None:
         return None
-    key = (st.st_mtime_ns, st.st_size)
     with _TRACE_LOCK:
         hit = _TRACES.get(path)
         if hit is not None and hit[0] == key:
@@ -123,12 +137,12 @@ def agent_names() -> list[str]:
     analyze.py writes when it was given no agent id, and it has none.
     """
     return [d.name for d in sorted(harness.records_root().glob("*"))
-            if (d / "account.json").exists()]
+            if harness.account_path(d.name).exists()]
 
 
 def account_of(agent: str) -> dict:
     """One agent's account, empty where it has none this poll."""
-    return read_json(harness.records_dir(agent) / "account.json") or {}
+    return read_json(harness.account_path(agent)) or {}
 
 
 def manifests() -> dict[str, tuple[dict, Path]]:
@@ -161,7 +175,7 @@ def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None
     found = manifest_of(agent)
     if found is None:
         return None
-    digest = analyze.provenance_of(last).get("manifest_sha256") if last else None
+    digest = last["provenance"].get("manifest_sha256") if last else None
     return found if digest != found[0]["sha256"] else None
 
 
@@ -182,7 +196,7 @@ def live_index(agent: str) -> int | None:
     Unfinished is exactly a raw log with no trace beside it, which is not the
     same as running: how long since the log grew is what live_age reports.
     """
-    raws = sorted((harness.records_dir(agent) / "raw").glob("episode-*.jsonl"))
+    raws = harness.raw_paths(agent)
     if not raws:
         return None
     index = harness.episode_number(raws[-1])
@@ -285,7 +299,7 @@ def observation_clipped(t: dict) -> bool:
     its own limit is one that lost a middle. The limit is the agent's, read off the
     episode's provenance and not this process's config.
     """
-    limit = analyze.provenance_of(t).get("observation_limit")
+    limit = t["provenance"].get("observation_limit")
     return bool(limit) and len(t.get("observation") or "") > limit
 
 
@@ -297,19 +311,16 @@ def message_paths(t: dict) -> set[str] | None:
 
 def digest_name(agent: str, t: dict, path: str) -> str:
     """An internal path as the episode's channel presents it to that agent."""
-    name = getattr(harness, "digest_name", None)
-    if name is None:
-        return path
     account = account_of(agent)
     instances = harness.environment(agent, account, harness.table_of(t))
-    return name(path, instances, harness.experimenter_digest_paths(account, instances))
+    return harness.digest_name(path, instances, harness.experimenter_digest_paths(account, instances))
 
 
 def inbox_prefix(mail: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the opening digest."""
     if mail is None:
         return None
-    return "Letter from " if getattr(mail, "agent_view", "paths") == "letters" else f"{mail.inbox}/"
+    return "Letter from " if mail.agent_view == "letters" else f"{mail.inbox}/"
 
 
 def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
@@ -337,8 +348,9 @@ def from_trace(t: dict) -> list[dict]:
         "text": turn.get("text") or "",
         "thinking": turn.get("thinking") or "",
         "tools": [{"result": tool.get("result"),
-                   "shell": not tool.get("tool") or tool.get("tool") == harness.SHELL_SPEC.name,
-                   "call": call_shown(tool.get("tool"), tool.get("command"), tool.get("input"))}
+                   "shell": analyze.is_shell(tool.get("tool")),
+                   "call": analyze.call_shown(tool.get("tool"), tool.get("command"),
+                                              tool.get("input"))}
                   for tool in turn.get("tools") or []],
         "tokens": turn.get("usage") or {},
     } for turn in t.get("turns") or []]
@@ -347,8 +359,9 @@ def from_trace(t: dict) -> list[dict]:
 def from_raw(lines: list[dict], account: dict) -> list[dict]:
     """A running episode's turns from canonical events written after native responses.
 
-    Each response goes back through harness.bill_once, so an id is billed once
-    and a replay is zeroed. Command results are None until the trace lands.
+    Billed by the rule harness.bill_once applies, restated over the logged dict: a
+    response id's charges count once and a replay of it is zeroed, so each balance
+    is the one the account commits. Command results are None until the trace lands.
     """
     remaining = account["remaining"]
     centi, seen, out = 0, set(), []
@@ -378,27 +391,14 @@ def from_raw(lines: list[dict], account: dict) -> list[dict]:
             "text": "\n".join(data.get("text") or []),
             "thinking": "\n".join(data.get("reasoning") or []),
             "tools": [{"result": None,
-                       "shell": call.get("name") == harness.SHELL_SPEC.name,
-                       "call": call_shown(call.get("name"),
-                                          (call.get("input") or {}).get("command"),
-                                          call.get("input") or {})}
+                       "shell": analyze.is_shell(call.get("name")),
+                       "call": analyze.call_shown(call.get("name"),
+                                                  (call.get("input") or {}).get("command"),
+                                                  call.get("input"))}
                       for call in calls],
             "tokens": u,
         })
     return out
-
-
-def call_shown(name: str | None, command: str | None, args: Any) -> str:
-    """The one line a tool call is shown as.
-
-    The shell's is the command it ran, or "(restart)" for the bare form. A
-    declared tool's is the call itself, since it ran no command of its own.
-    Traces older than the tool table name no tool and are all the shell's.
-    """
-    if name and name != harness.SHELL_SPEC.name:
-        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((args or {}).items()))
-        return f"{name}({carried})"
-    return "(restart)" if command is None else command
 
 
 def live_turns(agent: str, index: int, account: dict) -> list[dict]:
@@ -450,29 +450,27 @@ def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
     return tuple(s.seen.values())
 
 
-def agent_table(last: dict | None, agent: str | None = None) -> list[harness.Channel]:
-    """The channel table an agent last ran under, from its latest trace; the
-    stamped manifest before it has one, and the process table as a fallback."""
-    found = manifest_ahead_of(last, agent) if agent else None
-    if found:
-        manifest, path = found
-        return harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                         str(path), tuple(manifest["labels"].values()))[0]
-    if last:
-        return harness.table_of(last)
-    return harness.channels()
+def manifest_environment(manifest: dict,
+                         path: Path) -> tuple[list[harness.Channel], dict[str, str]]:
+    """A shipped manifest's channel table and harness file names, validated together."""
+    return harness.validate_channels(manifest["channels"], manifest["harness_files"],
+                                     str(path), tuple(manifest["labels"].values()))
 
 
-def agent_harness_files(last: dict | None, agent: str) -> dict[str, str]:
-    """Harness file names from the trace, stamped manifest, or process defaults."""
+def agent_environment(last: dict | None,
+                      agent: str) -> tuple[list[harness.Channel], dict[str, str]]:
+    """The channel table and harness file names an agent runs under.
+
+    `last` is its latest trace. The stamped manifest's where the manifest is newer
+    than `last` or there is no trace yet, `last`'s otherwise, and the process's
+    where there is neither.
+    """
     found = manifest_ahead_of(last, agent)
     if found:
-        manifest, path = found
-        return harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                         str(path), tuple(manifest["labels"].values()))[1]
+        return manifest_environment(*found)
     if last:
-        return analyze.harness_files_of(last)
-    return dict(harness.HARNESS_FILES)
+        return harness.table_of(last), analyze.harness_files_of(last)
+    return harness.channels(), dict(harness.HARNESS_FILES)
 
 
 def experiment_table(exp: dict) -> list[harness.Channel]:
@@ -516,14 +514,12 @@ def anchored_groups(accounts: dict[str, dict],
         seats = {seat: agent for seat, agent in experiment.seats_of(declared).items()
                  if agent in members}
         labels = {seat: manifest["labels"][seat] for seat in seats}
-        table = harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                          str(path), tuple(manifest["labels"].values()))[0]
+        table, _ = manifest_environment(manifest, path)
         out.append({
             "name": named_group(declared), "seated": True, "seats": seats,
             "experiment_id": manifest.get("experiment_id", path.stem),
             "members": members, "posts": bool(harness.mailbox_channel(table)
                                                 or harness.schema_channel(table)),
-            "running": sum(acting(agent, live_index(agent)) for agent in members),
             "channels": [ch.as_table() for ch in table], "labels": labels,
             "tools": manifest["tools"] or [],
         })
@@ -531,14 +527,46 @@ def anchored_groups(accounts: dict[str, dict],
     return out, claimed
 
 
+def grouping_state() -> tuple:
+    """What the experiment grouping is read from, as it stands: every account, each
+    agent's latest trace, which is the one the grouping reads, and the shipped
+    manifests. Equal states group alike."""
+    # Rereads the manifests where they moved, which _MANIFEST_STATE then records.
+    manifests()
+    agents = []
+    for agent in agent_names():
+        paths = harness.trace_paths(agent)
+        latest = (paths[-1].name, stat_key(paths[-1])) if paths else None
+        agents.append((agent, stat_key(harness.account_path(agent)), latest))
+    return str(harness.records_root()), _MANIFEST_STATE, tuple(agents)
+
+
 def experiments() -> list[dict]:
-    """Every set of agents on disk, the seated ones first.
+    """Every set of agents on disk, the seated ones first, each with how many of its
+    members are acting.
+
+    The grouping is read again only when what it is read from has moved. Acting is
+    a question of the clock as well, so it is asked on every call.
+    """
+    global _EXPERIMENTS
+    state = grouping_state()
+    with _EXPERIMENTS_LOCK:
+        if _EXPERIMENTS is None or _EXPERIMENTS[0] != state:
+            _EXPERIMENTS = (state, read_experiments())
+        out = copy.deepcopy(_EXPERIMENTS[1])
+    for exp in out:
+        exp["running"] = sum(acting(agent, live_index(agent)) for agent in exp["members"])
+    return out
+
+
+def read_experiments() -> list[dict]:
+    """Every set of agents on disk, the seated ones first, read afresh.
 
     Agents sharing a seating are one experiment, named by group_of. One whose mapping
     does not seat it is grouped by its id's letters and marked unseated.
     """
     accounts = {agent: account for agent in agent_names()
-                if (account := read_json(harness.records_dir(agent) / "account.json")) is not None}
+                if (account := read_json(harness.account_path(agent))) is not None}
     anchored, claimed = anchored_groups(accounts)
     groups: dict[tuple, dict] = {}
     for agent, account in accounts.items():
@@ -547,17 +575,16 @@ def experiments() -> list[dict]:
         key = seating_key(agent, account)
         seen = harness.seating_of(agent, account).seen
         ident = key or ("unseated", group_of(agent, account))
-        exp = groups.get(ident)
+        exp: dict[str, Any] | None = groups.get(ident)
         if exp is None:
             exp = groups[ident] = {
                 "name": group_of(agent, account), "seated": key is not None,
                 "experiment_id": (account.get("experiment") or {}).get("experiment_id")
                                  or group_of(agent, account),
                 "seats": dict(seen) if key else {}, "members": [],
-                "posts": False, "running": 0,
+                "posts": False,
             }
         exp["members"].append(agent)
-        exp["running"] += acting(agent, live_index(agent))
 
     out = sorted([*anchored, *groups.values()],
                  key=lambda exp: (not exp["seated"], exp["name"]))
@@ -576,7 +603,7 @@ def experiments() -> list[dict]:
         if "channels" not in exp:
             first = next((a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0])
             last = latest_trace(first)
-            table = agent_table(last, first)
+            table, _ = agent_environment(last, first)
             account = account_of(first)
             exp["channels"] = [ch.as_table() for ch in table]
             exp["labels"] = dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
@@ -585,11 +612,12 @@ def experiments() -> list[dict]:
             exp["posts"] = bool(mail or schema)
             found = manifest_of(first)
             exp["tools"] = ((found[0]["tools"] or []) if found else
-                            (analyze.provenance_of(last).get("tools") if last else []) or [])
+                            (last["provenance"].get("tools") if last else []) or [])
     return out
 
 
 def experiment_named(name: str) -> dict | None:
+    """The experiment by this name, or None."""
     return next((exp for exp in experiments() if exp["name"] == name), None)
 
 
@@ -614,7 +642,7 @@ def places_of(exp: dict) -> list[tuple[str | None, str]]:
 
 def started_at(t: dict) -> str:
     """When the episode started, from its provenance."""
-    return analyze.provenance_of(t)["started_at"]
+    return t["provenance"]["started_at"]
 
 
 def experiment_episodes(exp: dict) -> list[dict]:
@@ -662,11 +690,9 @@ def round_now(exp: dict, rows: list[dict]) -> int:
 # --- what every seat is holding ---------------------------------------------
 
 
-def latest_transfer(agent: str, account: dict, latest: dict,
-                    table: list[harness.Channel]) -> dict | None:
+def latest_transfer(latest: dict, table: list[harness.Channel]) -> dict | None:
     """The transfer submitted by the latest episode and what settlement made of it."""
-    schema = harness.schema_channel(table)
-    if schema is None:
+    if harness.schema_channel(table) is None:
         return None
     resolved = latest.get("transfer") or {}
     if not resolved.get("declared"):
@@ -732,6 +758,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # file, and the seat's next request is written over it.
         interaction = None
     going = live_state(agent, live, account)
+    table, _ = agent_environment(last, agent)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
@@ -783,7 +810,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # What each channel's silence has cost, by channel name.
         "penalised": account.get("penalised") or {},
         "forgiven": account.get("forgiven", 0),
-        "transfer": latest_transfer(agent, account, latest, agent_table(last, agent)),
+        "transfer": latest_transfer(latest, table),
     }
 
 
@@ -799,8 +826,7 @@ def header(exp: dict) -> dict:
     first = exp["members"][0]
     account = account_of(first)
     last = rows[-1]["trace"] if rows else None
-    hf = agent_harness_files(last, first)
-    table = agent_table(last, first)
+    table, hf = agent_environment(last, first)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
     seats = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
@@ -825,7 +851,7 @@ def header(exp: dict) -> dict:
         "seats": seats,
         "ledger": [list(g) for g in harness.ledger(first, account)] if exp["seated"] else [],
         "round": rnd,
-        "schedule": (analyze.provenance_of(last).get("schedule") if last else None)
+        "schedule": (last["provenance"].get("schedule") if last else None)
                     or stamp.get("schedule") or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
         "active": sum(seat["out_reason"] is None for seat in seats),
@@ -927,6 +953,14 @@ def change_of(before: Any, after: Any) -> str:
     return "edited" if before != after else "standing"
 
 
+def transfer_path(room: Mailroom, path: str) -> bool:
+    """Whether a path is the current episode's transfer declaration."""
+    return bool(room.schema and
+                (path == room.schema.path or
+                 (room.schema.shape == "mailbox" and
+                  path.startswith(room.schema.outbox + "/"))))
+
+
 def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
                   tip: bool = False) -> dict:
     """One movement of one path in one outbox."""
@@ -940,10 +974,7 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         "from_seat": from_seat, "from_label": exp["labels"].get(from_seat or "", from_seat),
         "from_agent": row["agent"],
         "to_seat": seat, "to_label": label, "to_agent": exp["seats"].get(seat) if seat else None,
-        "path": path, "kind": ("transfer" if room.schema and
-                                  (path == room.schema.path or
-                                   (room.schema.shape == "mailbox" and
-                                    path.startswith(room.schema.outbox + "/"))) else "message"),
+        "path": path, "kind": "transfer" if transfer_path(room, path) else "message",
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text, "binary": after is not ABSENT and after is None,
@@ -961,14 +992,6 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         ev["to_seat"] = resolved.get("seat") or seat_of_label(exp, ev["to_label"])
         ev["to_agent"] = resolved.get("agent") or exp["seats"].get(ev["to_seat"] or "")
     return ev
-
-
-def transfer_path(room: Mailroom, path: str) -> bool:
-    """Whether a path is the current episode's transfer declaration."""
-    return bool(room.schema and
-                (path == room.schema.path or
-                 (room.schema.shape == "mailbox" and
-                  path.startswith(room.schema.outbox + "/"))))
 
 
 def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None],
@@ -1000,7 +1023,11 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
 
 
 def messages(exp: dict, since: int = 0) -> dict:
-    """Every mailbox and schema-channel event, in round order."""
+    """Every mailbox and schema-channel event, in round order.
+
+    A message lasts one episode, so what a committed outbox holds was sent afresh
+    by that episode and is not diffed against the one before it.
+    """
     rows = experiment_episodes(exp)
     room = mailroom(exp)
     events, tips = [], []
@@ -1013,16 +1040,8 @@ def messages(exp: dict, since: int = 0) -> dict:
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
-            episodic = analyze.provenance_of(row["trace"]).get("message_delivery") == "episode"
-            for path in sorted(now if episodic else set(prev) | set(now)):
-                if transfer_path(room, path):
-                    if path in now:
-                        events.append(message_event(room, row, path, ABSENT, now[path]))
-                elif episodic:
-                    events.append(message_event(room, row, path, ABSENT, now[path]))
-                else:
-                    events.append(message_event(room, row, path,
-                                                prev.get(path, ABSENT), now.get(path, ABSENT)))
+            for path in sorted(now):
+                events.append(message_event(room, row, path, ABSENT, now[path]))
             prev, last = now, row
         head = last or {"round": None, "at": None, "episode": None, "seat": seat,
                         "agent": agent, "trace": None}
@@ -1342,7 +1361,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "refused": len(analyze.refused_turns_of(t)),
         "transfer": t.get("transfer") or {}, "channels": analyze.channel_records(t),
         "forgiven": t.get("forgiven") or 0,
-        "provenance": analyze.provenance_of(t),
+        "provenance": t["provenance"],
         "drift": t.get("provenance_drift") or [],
         "halted": t["stop"] in harness.STOPS_THE_AGENT,
         "live": False,
@@ -1412,7 +1431,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         listing, sections = observation_split(trace.get("observation") or "")
         out["observation"] = {
             "command": trace["commands"][0],
-            "shell": analyze.provenance_of(trace).get("shell_tool", True),
+            "shell": trace["provenance"].get("shell_tool", True),
             "result": trace.get("observation") or "",
             # `listing` and `shown_before` are `result` split where the digest's
             # record begins; `name` is the digest file the record came from.
@@ -1437,13 +1456,12 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     account = account_of(agent)
     going = live_state(agent, index, account)
     last = latest_trace(agent)
-    table = agent_table(last, agent)
-    hf = agent_harness_files(last, agent)
+    table, hf = agent_environment(last, agent)
     found = manifest_ahead_of(last, agent)
     delivery = (found[0]["overrides"].get("delivery", harness.DELIVERY) if found else
-                (analyze.provenance_of(last)["delivery"] if last else harness.DELIVERY))
+                (last["provenance"]["delivery"] if last else harness.DELIVERY))
     shell = (any(t.get("kind") == "bash" for t in found[0]["tools"]) if found else
-             (analyze.provenance_of(last).get("shell_tool", True) if last else harness.SHELL_TOOL))
+             (last["provenance"].get("shell_tool", True) if last else harness.SHELL_TOOL))
     mail = harness.mailbox_channel(table)
     out = {
         "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,

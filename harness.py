@@ -476,11 +476,6 @@ def mailbox_channel(table: Iterable[Channel]) -> Channel | None:
     return next((c for c in table if c.shape == "mailbox" and not c.schema), None)
 
 
-def blackboard_channel(table: Iterable[Channel]) -> Channel | None:
-    """The first directory every agent reads, or None."""
-    return next((c for c in table if c.shape == "directory" and c.readers == "all"), None)
-
-
 def table_of(trace: dict) -> list[Channel]:
     """The channel table an episode ran under, from its trace's provenance; the
     default where the trace predates the table."""
@@ -1135,11 +1130,10 @@ def records_dir(agent: str) -> Path:
 def displace_agents(agents: Iterable[str]) -> Path | None:
     """Move existing records and environment mirrors into one preserved run bundle."""
     agents = tuple(agents)
-    sources = [(kind, root / agent)
-               for kind, root in (("records", records_root()),
-                                  ("environments", ROOT / "environments"))
+    sources = [(kind, place(agent))
+               for kind, place in (("records", records_dir), ("environments", environment_dir))
                for agent in agents
-               if (root / agent).exists()]
+               if place(agent).exists()]
     if not sources:
         return None
 
@@ -1176,6 +1170,11 @@ def displace_agents(agents: Iterable[str]) -> Path | None:
     return bundle
 
 
+def account_path(agent: str) -> Path:
+    """One agent's account, which is what makes its records directory an agent's."""
+    return records_dir(agent) / "account.json"
+
+
 def trace_path(agent: str, index: int) -> Path:
     """One episode's trace."""
     return records_dir(agent) / "traces" / f"episode-{index:04d}.json"
@@ -1191,9 +1190,19 @@ def trace_paths(agent: str) -> list[Path]:
     return sorted((records_dir(agent) / "traces").glob("episode-*.json"))
 
 
+def raw_paths(agent: str) -> list[Path]:
+    """Every raw log an agent has, in episode order."""
+    return sorted((records_dir(agent) / "raw").glob("episode-*.jsonl"))
+
+
 def episode_number(path: Path) -> int:
     """The index in an episode-NNNN file name."""
     return int(path.stem.rsplit("-", 1)[1])
+
+
+def environment_dir(agent: str) -> Path:
+    """Where the host mirrors of every channel one agent writes are kept."""
+    return ROOT / "environments" / agent
 
 
 def mirror(agent: str, name: str) -> Path:
@@ -1202,12 +1211,12 @@ def mirror(agent: str, name: str) -> Path:
     Copied in at the channel's path each episode and out again at its end. The
     name never reaches the agent; the path does.
     """
-    return ROOT / "environments" / agent / name
+    return environment_dir(agent) / name
 
 
 def save_account(agent: str, account: dict) -> None:
     """Write ground truth atomically: a temporary file, then a rename over the old one."""
-    f = records_dir(agent) / "account.json"
+    f = account_path(agent)
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(account, indent=2), encoding="utf-8")
@@ -1248,7 +1257,7 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
                 "starter_files_below": STARTER_FILES_BELOW, "system_prompt": SYSTEM_PROMPT}
     terms = {k: (defaults[k] if v is None and k in defaults else v) for k, v in given.items()}
     records = records_dir(agent)
-    f = records / "account.json"
+    f = account_path(agent)
     if not f.exists():
         if provider is None or model is None:
             raise SystemExit(f"agent {agent} needs an explicit provider and model before it can be created")
@@ -1302,7 +1311,7 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
 def account_on_disk(agent: str) -> dict:
     """Another agent's account as it stands on disk. Empty where the agent has not
     been created yet, which is what the first round of an experiment sees."""
-    f = records_dir(agent) / "account.json"
+    f = account_path(agent)
     if not f.exists():
         return {}
     return json.loads(f.read_text(encoding="utf-8"))
@@ -4576,19 +4585,19 @@ def fork(parent: str, index: int, new: str) -> int:
     contained, and the provenance holds the channel table the files sat in.
     Refuses wherever it cannot reproduce the recorded environment exactly.
     """
-    records, trace_file = records_dir(parent), trace_path(parent, index)
-    if not (records / "account.json").exists():
+    trace_file = trace_path(parent, index)
+    if not account_path(parent).exists():
         print(f"no agent {parent!r} under {records_root()}", file=sys.stderr)
         return 2
     if not trace_file.exists():
         print(f"{parent} has no episode {index}: {trace_file} is not there", file=sys.stderr)
         return 2
 
-    parent_account = json.loads((records / "account.json").read_text(encoding="utf-8"))
+    parent_account = json.loads(account_path(parent).read_text(encoding="utf-8"))
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
     table = table_of(trace)
     written = [c for c in table if c.mirrored]
-    if ((records_dir(new) / "account.json").exists()
+    if (account_path(new).exists()
             or any(any(mirror(new, c.name).glob("*")) for c in written)):
         print(f"agent {new!r} already exists; forking would overwrite it", file=sys.stderr)
         return 2
