@@ -1178,7 +1178,7 @@ def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, rout
             print(f"every agent is out after {rnd} rounds")
             return "all_eliminated"
         if stop_when_one_remains and len(left) == 1:
-            print(f"{left[0]} is the only agent left with anything to spend; the competition ends")
+            print(f"{left[0]} is the only agent left; the competition ends")
             return "one_remains"
         if not live:
             print(f"{' '.join(left)} can take no episode in this run; the rounds end here")

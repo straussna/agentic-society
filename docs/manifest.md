@@ -143,11 +143,14 @@ the seats still in the competition, whose accounts admit an episode and which ar
 one round behind the furthest round any seat has played, whether or not the run has them
 at its table: a seat whose episode ended on a fault of its own, or whose environment would
 not build, leaves the table for the rest of that run and stays in until it falls further
-behind. One further behind sits out every round of every run, and is no longer in: it
-counts toward no stop, survives nothing and stands in no election.
+behind, which is once the table has played two rounds past the last it played. One further
+behind sits out every round of every run, and is no longer in: it counts toward no stop,
+survives nothing and stands in no election.
 `all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
 able to take an episode in this run. The outcome's `survivors` are the seats still in as
-the run ends. Human seats are answered as [docs/human.md](human.md) describes.
+the run ends, and its `elimination_order` the seats an election put out, so a seat out of
+the competition for its balance or for sitting out is in neither, and what it holds is in
+`scores`. Human seats are answered as [docs/human.md](human.md) describes.
 
 ## 2. Top level
 
@@ -155,8 +158,8 @@ the run ends. Human seats are answered as [docs/human.md](human.md) describes.
 |---|---|---|
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
-| `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
-| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain, both of them electors in it |
+| `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is still in the competition (section 1) |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are still in the competition (section 1), both of them electors in it |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |

@@ -4734,9 +4734,9 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     settle_episode held are paid on disk only once save_account has returned, so a
     receiver is never paid by an episode that was not committed. Whatever raises
     after save_account raises with the episode committed: a failure paying a receiver
-    leaves that receiver unpaid, and one printing the line leaves every receiver
-    paid. A caller that must know whether the episode was committed reads it from
-    the account on disk.
+    leaves it and every receiver after it unpaid, and one printing the line leaves
+    every receiver paid. A caller that must know whether the episode was committed
+    reads it from the account on disk.
     """
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is

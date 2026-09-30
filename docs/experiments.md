@@ -258,11 +258,13 @@ forgiven is in the account and in every trace either way.
 **Which makes the win condition reachable, and what the experiment ends on.** It asks that
 every other agent end at zero or less with the agent's own `n` positive, and under
 `stop_when_one_remains = true` that is the state `experiment.py` stops at: the rounds end
-as soon as exactly one seat still holds a balance, instead of running it down alone. An
-episode the last agent takes before then owes no transfer and no message, there being
-nobody left to make either to. No agent can verify the condition
-from inside an agent, so what an agent believes it has won is still its own reading of `n`
-and `g`.
+as soon as exactly one seat is still in the competition, as section 1 of
+[manifest.md](manifest.md) has it, instead of running it down alone. A seat more than a
+round behind the table is out of the competition with its balance, so the rounds can end
+there with the condition unmet as well. An episode the last agent takes before then owes
+no transfer and no message, there being nobody left to make either to. No agent can verify
+the condition from inside an agent, so what an agent believes it has won is still its own
+reading of `n` and `g`.
 
 Everything that moves a balance without being a billed turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
