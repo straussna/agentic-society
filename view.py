@@ -1,9 +1,11 @@
 """Watch an experiment and answer interactive seats: py -3 view.py [--experiment h | --agent h02]
 
-Serves a read-only page on 127.0.0.1 showing one experiment's activity, every
-directory channel, and one transcript at a time, above every seat's balance,
-what it has spent, and any transfer ledger. Player actions enter only through the
-interactive provider's coordination store."""
+Serves a page on 127.0.0.1 showing one experiment's activity, every directory
+channel, and one transcript at a time, above every seat's balance, what it has
+spent, and any transfer ledger. Every GET route only reads. The one POST route,
+held to the page's origin and token, writes an interactive seat's submission into
+the interactive provider's coordination store under interactions/, and nothing
+else."""
 
 from __future__ import annotations
 

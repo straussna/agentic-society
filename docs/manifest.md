@@ -6,8 +6,8 @@ What an experimenter can declare, and the words the harness is described in.
 
 ---
 
-This is a specification of what the code does. The code speaks this vocabulary; section
-13 records the words it replaced. Every part of it is implemented and checked.
+This is a specification of what the code does. The code speaks this vocabulary. Every
+part of it is implemented and checked.
 
 ## Vocabulary
 
@@ -664,7 +664,7 @@ post, ballot, trace or provider session is inherited. The source trace must have
 its state and must contain every copied memory as complete UTF-8 text. The account and
 each later trace record the source episode and the copied files' digests.
 
-This is a creation term rather than a fork: it preserves only behaviorally visible
+This is set at creation rather than by a fork: it preserves only behaviorally visible
 private memory while every other part of the agent starts fresh. It is refused if the
 source is another seat in the new experiment, because starting fresh would displace
 that source before it could be read.
@@ -950,44 +950,3 @@ requires version-4 traces, and an agent with traces of any other version is refu
    a second copy.
 9. Every episode is stamped with everything it ran under, and any difference from the
    previous episode starts a new arm.
-
-## 13. Today's names
-
-The words the code used before the vocabulary was settled, kept so older notes and
-conversations can be read. None survives in the code or the docs. Default paths inside
-the environment did not change, except `out/gift`, which is `out/transfer`.
-
-| Before | After | Concept | Why |
-|---|---|---|---|
-| system, harness | harness | The code that runs everything | The agent-engineering papers' word; "system" collides with the system prompt |
-| operator | experimenter | The person configuring a run of the tool | The research-design word; "operator" is a product name and an ops role |
-| run | agent | One participant and its lineage | Standard everywhere; with agent and experiment both standard, run named nothing extra |
-| session | episode | One container lifetime, ending on a termination condition | RL's word for exactly that; "session" in observability means a longer grouping |
-| cohort | experiment | Several agents under one manifest | MLflow's unit of comparison; cohort is a statistics word with no MAS meaning |
-| world | environment | Everything the agent can see and touch | RL and MAS standard |
-| ordered, barrier | sequential, simultaneous | Order of moves within a round | Sequential and simultaneous play; simultaneous rounds are BSP supersteps |
-| seed, seed_below | starter_files, starter_files_below | Files placed once in an agent's private directory | "Seed" means RNG to every reader; starter says what the files are for |
-| `seeds/` | `files/` | Where given files live | It holds starter files and experimenter channels alike |
-| shared | shared_files, an experimenter channel | Files identical and read-only in every seat | Names the writer; the channel object makes it one case, not a special one |
-| group message, board | blackboard | Each agent's public directory, read by all | The classical MAS term, revived for LLM agents |
-| private message, outbox, inbox | mailbox, outbox, inbox | One file per peer, delivered to that peer alone | The messaging pattern; outbox and inbox were already right |
-| gift | transfer | Moving budget to a peer | Finance's word; game theory's side payment. "Gift" implied a motive |
-| gift_mode minted / transfer / off | funded_by harness / giver / none | Who pays for a transfer | Says where the money comes from instead of naming an accounting effect |
-| refund_percent | rebate_percent | Share of a transfer returned to the giver | A rebate is a partial return on money spent; a refund implies the whole |
-| group / private / gift penalty percent | silence_penalty_percent, one per channel | Share taken for adding nothing | Says what it punishes; one rule instead of three keys |
-| grammar | schema | The fixed format the harness parses | The structured-output word; a grammar is how a schema is checked, not what it is |
-| clamp_negative | floor_at_zero | Below zero becomes zero | Says what happens to the number |
-| grace_sessions | grace_episodes | Free episodes at the start | Follows the episode rename; grace period is standard |
-| turn_cap, timeout, live_n | max_turns, command_timeout, live_balance | Episode limits | Each says what it bounds; `n` was the unlabelled treatment's file name leaking into config |
-| message_limit, opening_limit | digest_file_limit, observation_limit | Clips on what an episode is shown | Named for the thing clipped |
-| `m`, the record | digest | What is new since the agent last looked | An email digest is exactly this |
-| the opening | initial observation | The first thing an episode sees | RL standard |
-| meter | account | An agent's money record | Balance, history, transactions: what an account holds |
-| creation terms | pinned settings | Settings fixed when an agent is created | Pinned is the word the docs already use for the prompt |
-| region | channel | One permissioned part of the environment | MARL's word for a communication path; region described a place, not a permission |
-| `cohorts/` | `experiments/` | Where manifests live | Follows the experiment rename |
-| `--run-id`, `--print-seed` | `--agent`, `--print-files` | CLI flags | Follow the renames |
-| wake | episode start | The moment an episode begins | A verb dressed as a noun; no term needed |
-| `notes`, `shared`, `blackboard`, `peer_blackboard`, `outbox`, `inbox` (record kinds) | the channel's declared name, and `role` | How a file record says where a file sat | The record names the channel the manifest declared; the role says whose instance it was |
-| `posted`, `blackboard_penalised`, `mailbox` (flat trace keys) | `channels[<name>]` | What each channel settled for | One record per channel, under its declared name |
-| `blackboard_penalised`, `mailbox_penalised`, `transfer_penalised` (account) | `penalised[<name>]` | The running penalty total | Same rule |

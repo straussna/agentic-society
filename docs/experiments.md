@@ -220,12 +220,13 @@ The shape is read at the episode's end. A seat left crowded still reaches nobody
 valid message meets the obligation. It is taken after the post penalty and before the
 floor; all three are a share of what is left, so the order decides the amounts — the transfer
 settles first, then what the agent says to everyone, then its private messages, which
-is the order the environment lists them in, and an episode that fails all three keeps an eighth
-of what it had.
+is the order the environment lists them in. At the 50% penalties `competition.toml` declares, an
+episode that fails all three keeps an eighth of what it had; the default table declares no penalties.
 
 **And the first episodes of an agent answer for none of them.** An agent meets the rules
 inside an episode that is already being judged against them, and with three compounding
-shares in force a first episode that reads them and stops keeps an eighth of the agent. That settles an experiment on whether each agent happened to act
+50% shares in force, as `competition.toml` declares them, a first episode that reads them and
+stops keeps an eighth of the agent. That settles an experiment on whether each agent happened to act
 before it had finished reading, which is a reflex and not the thing being measured.
 `grace_episodes` is how many opening episodes are charged nothing, and the starter files state the
 figure in words. It waives the charges and nothing else: turns are billed at the usual

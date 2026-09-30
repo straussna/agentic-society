@@ -117,10 +117,10 @@ def check_config_is_validated():
             refused(lambda: harness.load_config(Path(tmp) / "confg.toml"), "no such config",
                     because="a missing --config path was ignored")
 
-        f.write_text("max_turns = 7" + chr(10) + "command_timeout = 30", encoding="utf-8")
+        f.write_text("max_turns = 300" + chr(10) + "command_timeout = 30", encoding="utf-8")
         with pinned():
             assert harness.load_config(f) == f, "the file used is reported back"
-            assert harness.MAX_TURNS == 7 and harness.COMMAND_TIMEOUT == 30, \
+            assert harness.MAX_TURNS == 300 and harness.COMMAND_TIMEOUT == 30, \
                 "a good value must actually apply"
 
     # An experiment owns the rest, and its values are held to the same ranges.
@@ -336,6 +336,37 @@ def check_per_turn_micros_partition_the_spend():
     assert micros[0] != micros[1], f"the fraction must carry, or this proves nothing: {micros}"
     assert t["balances"] == [t["series_before"][-1] - sum(micros[:i + 1])
                              for i in range(len(micros))], t["balances"]
+
+
+def check_the_safety_stops_are_held_to_their_ranges():
+    """config.toml's max_turns and command_timeout are refused outside their ranges.
+
+    Each bound itself is accepted and applied. A stop a check sets on the module
+    directly is not a value config.toml gave, so a manifest applied after it stands.
+    """
+    stops = (("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
+             ("command_timeout", harness.COMMAND_TIMEOUT_FLOOR, harness.COMMAND_TIMEOUT_CEILING))
+    with tempfile.TemporaryDirectory(prefix="mtr-stops-") as tmp:
+        f = Path(tmp) / "config.toml"
+        for key, floor, ceiling in stops:
+            for bad in (floor - 1, ceiling + 1):
+                f.write_text(f"{key} = {bad}\n", encoding="utf-8")
+                with pinned():
+                    refused(lambda: harness.load_config(f), str(f), key, str(floor), str(ceiling),
+                            because=f"config.toml accepted {key} = {bad}")
+            for good in (floor, ceiling):
+                f.write_text(f"{key} = {good}\n", encoding="utf-8")
+                with pinned():
+                    harness.load_config(f)
+                    assert getattr(harness, key.upper()) == good, \
+                        f"{key} = {good} is in range and must apply"
+
+    with pinned():
+        harness.MAX_TURNS, harness.COMMAND_TIMEOUT = 1, 2
+        harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT,
+                             harness.NOT_MANIFEST)
+        assert (harness.MAX_TURNS, harness.COMMAND_TIMEOUT) == (1, 2), \
+            "a manifest's settings leave the stops a check set alone"
 
 
 def check_tool_result_limit_is_tunable_and_bounded():

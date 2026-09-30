@@ -201,6 +201,15 @@ RETIRED = {
 # request much above this hits the SDK's HTTP timeout.
 MAX_TOKENS_CEILING = 16_000
 
+# What config.toml may set the two safety stops to. A stop is true of every run and
+# no part of an agent's situation: lower, it can end an episode the agent had not
+# finished or kill a command that would have, which makes it a treatment config.toml
+# cannot declare; higher, it no longer stops a runaway.
+MAX_TURNS_FLOOR = 100
+MAX_TURNS_CEILING = 500
+COMMAND_TIMEOUT_FLOOR = 30
+COMMAND_TIMEOUT_CEILING = 120
+
 # Below this a clipped read of n cannot keep a usable head, and clip()'s marker
 # would crowd out the content it is marking.
 TOOL_RESULT_FLOOR = 1_000
@@ -262,7 +271,8 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
     of TUNABLES this file owns, and a key belonging to the other half is refused
     saying so, so no setting can be given in two places. A manifest's experiment-level
     defaults come through here after config.toml, so both are held to the same types
-    and ranges.
+    and ranges. The safety stops are held to their ranges where `values` gives them,
+    and not where a check has set the module global directly.
     """
     f = source
     allowed = set(allowed)
@@ -287,6 +297,16 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
         refuse(f"context_fraction must be in (0, 1], got {CONTEXT_FRACTION}")
     if min(MAX_TOKENS, MAX_TURNS, COMMAND_TIMEOUT) <= 0:
         refuse("max_tokens, max_turns, and command_timeout must all be positive")
+    if "max_turns" in values and not MAX_TURNS_FLOOR <= MAX_TURNS <= MAX_TURNS_CEILING:
+        refuse(f"max_turns must be from {MAX_TURNS_FLOOR} to {MAX_TURNS_CEILING}, got "
+               f"{MAX_TURNS}; it is a safety stop, true of every run: lower, it can end an "
+               f"episode the agent had not finished, and higher, it no longer stops a runaway")
+    if "command_timeout" in values and \
+            not COMMAND_TIMEOUT_FLOOR <= COMMAND_TIMEOUT <= COMMAND_TIMEOUT_CEILING:
+        refuse(f"command_timeout must be from {COMMAND_TIMEOUT_FLOOR} to "
+               f"{COMMAND_TIMEOUT_CEILING} seconds, got {COMMAND_TIMEOUT}; it is a safety "
+               f"stop, true of every run: lower, it can kill a command that would have "
+               f"finished, and higher, it no longer stops a hung one")
     if GRACE_EPISODES < 0:
         refuse(f"grace_episodes must be zero or positive, got {GRACE_EPISODES}")
     if DELIVERY not in DELIVERIES:

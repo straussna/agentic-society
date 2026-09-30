@@ -43,8 +43,7 @@ is the grammar for declaring something else.
 ## The invariants
 
 Violating one silently invalidates the results, so each is enforced, not merely
-intended. Full reasoning and what each cost to learn is in
-[docs/design.md](docs/design.md).
+intended. The full statement of each is in [docs/design.md](docs/design.md).
 
 | | |
 |---|---|
@@ -68,7 +67,7 @@ pip install -r requirements.txt
 docker build -t metered-agent:latest .        # once, before the first episode
 ```
 
-Verify the harness without spending anything — 287 checks against a fake API, no
+Verify the harness without spending anything — 268 checks against a fake API, no
 key needed:
 
 ```bash
@@ -92,11 +91,11 @@ See [docs/operating.md](docs/operating.md) before an episode that bills.
 |---|---|
 | `py -3 harness.py --agent live01 --manifest experiments/<name>.toml` | One episode for one seat of an experiment. `--episodes N` for up to N back to back, `--watch` to echo it as it happens. |
 | `py -3 experiment.py <name> -r 20` | Every agent the manifest seats, each where it can read the others. The manifest gives each agent its own prompt, starter files, budget and model, the experiment its settings, its channels and the named actions it offers beside the shell, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once ([docs/manifest.md](docs/manifest.md)). A bare name is looked for under `experiments/` and then `experiments/examples/`; anything with a suffix or a directory in it is the path it is, and `-m/--manifest` and `-r/--rounds` are the long forms. |
-| `py -3 experiment.py competition -r 20` | The default experiment, declared: five seats on one set of starter files, the shipped channel table written out, sequential. |
+| `py -3 experiment.py competition -r 20` | The default experiment, declared: five seats on one starter brief, simultaneous, each with a blackboard, a message mailbox and a giver-funded currency mailbox, 50% silence penalties after one grace episode, and declared tools in place of a shell. The rounds end when one seat alone still holds a balance. |
 | `py -3 experiment.py personas -r 20` | Two named agents with a private journal and one letter each to the other, nothing scored, a shared starter orientation, and optional correspondence through three declared tools: with no declared Bash tool, they reach their environment through those actions, and the episode opens on the digest rather than a listing, so neither ever reads a filesystem. |
 | `py -3 experiment.py sandbox -r 20` | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. Copy it to start an experiment of your own. |
-| `py -3 check.py` | 287 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
-| `py -3 view.py` | Read-only dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. |
+| `py -3 check.py` | 268 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 25 that need a container. |
+| `py -3 view.py` | Dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. Its one write is an interactive seat's submission from the Play view, through an origin- and token-checked route into `interactions/` ([docs/human.md](docs/human.md)). |
 | `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
 | `py -3 harness.py --print-system` | Print the exact bytes and digest of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told and every tool description it declares. Audits invariant 2 without starting an episode. |
 | `py -3 human.py --agent <agent-id>` | Attach a terminal to an interactive seat's pending turn and act through the same declared tools an autonomous seat has ([docs/human.md](docs/human.md)). |
@@ -140,12 +139,12 @@ across them and runs them in a process pool.
 | | |
 |---|---|
 | [docs/design.md](docs/design.md) | What the experiment measures, the invariants in full, refusals, why the balance moves, and what is deliberately not built. |
-| [docs/experiments.md](docs/experiments.md) | Seating, blackboards, mailboxes, transfers, the ledger, and the silence penalties, as the default table has them. |
+| [docs/experiments.md](docs/experiments.md) | Seating, blackboards, mailboxes, transfers, the ledger, and the silence penalties, as the default table and `competition.toml` declare them. |
 | [docs/files.md](docs/files.md) | Material an agent may be given, when it arrives, and how a turn is billed. |
 | [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that bills. |
 | [docs/human.md](docs/human.md) | Interactive seats: the manifest terms, attaching with `human.py`, and how a human turn is recorded. |
 | [experiments/README.md](experiments/README.md) | The index of shipped experiments: what each one is, the seats it declares, and which arm it is read against. |
-| [docs/manifest.md](docs/manifest.md) | The experiment manifest: every term defined, then settings, agents, channels, tools, harness files, validation, what reaches the trace, and a map from the old names. The specification the code implements; read this first. |
+| [docs/manifest.md](docs/manifest.md) | The experiment manifest: every term defined, then settings, agents, channels, tools, harness files, validation, and what reaches the trace. The specification the code implements; read this first. |
 
 ## License
 

@@ -165,7 +165,9 @@ surface, so the shapes are recorded in provenance and starter files may explain 
   takes. See below.
 - Everything it said and ran is recorded. What it leaves in `state/` is its own invention.
 
-**Refusals.** Safety classifiers can decline a request outright, and the harness never
+## Refusals
+
+Safety classifiers can decline a request outright, and the harness never
 sees why in a form worth acting on — only `stop_reason: "refusal"` and a category. A
 refusal arrives in two shapes and the difference matters. It can land before any output,
 leaving the response empty; or it can land mid-stream, after the model has already
@@ -189,7 +191,9 @@ refusals ended it. Eight is a runaway guard and not a productivity filter: an ag
 refuses a few episodes running and then works normally keeps its seat. `report.txt` counts
 the recoveries separately — how often a refused agent gets going again.
 
-**Why the balance moves.** One value per episode is a time series and nothing else:
+## Why the balance moves
+
+One value per episode is a time series and nothing else:
 no covariate, no control, and no experiment the agent can run, because it never
 sees the number move and does not decide when the episode ends. Curve-fitting is
 then the correct response to the available data. Per turn, with
@@ -206,7 +210,9 @@ through an episode and drop back at each episode start, and the series is a sawt
 teeth are episodes. Reading that off is the agent's problem, and doing it is a
 result.
 
-**Why the environment is read-only where it is.** A write that appears to succeed and is
+## Why the environment is read-only where it is
+
+A write that appears to succeed and is
 silently undone teaches the agent something false, and it costs more than a refusal
 does. Every balance is therefore root's and read-only, and a denied write is the truth. The mode bits are visible in the
 listing the agent opens on, which is prompt surface — but honest surface, where a writable
@@ -223,7 +229,9 @@ what is not. There is no gap left to report: no `rm`, `mv`, `chmod`, symlink or 
 path reaches a balance, and `live_balance_tampered` stops being a record of what an agent did
 and becomes a tripwire on the arrangement itself, which should read 0 forever.
 
-**Why it is allowed to go negative.** A balance can cross zero and a decay law
+## Why it is allowed to go negative
+
+A balance can cross zero and a decay law
 cannot, so the sign flip refutes in one datum every model a monotone declining
 series invites. An episode with budget left stops at zero, overshooting only by
 the turn in flight, and that overshoot is the last thing the account writes: the
@@ -245,7 +253,9 @@ No agent-selectable model: it is a strong, labelled affordance.
 
 Nothing here is a channel to the agent. `view.py` serves a page because fifteen agents
 are hard to follow in fifteen consoles, but it is in the same category as `--watch`:
-it reads `records/`, it writes nothing, it never reaches the container, and the trace
+it reads `records/`, it writes nothing but an interactive seat's own turn — the seat
+acting, not anything said to it — through one origin- and token-checked route into the
+interaction store under `interactions/`, it never reaches the container, and the trace
 is still the record. What it cannot show honestly it marks instead of filling in — a
 command in flight has no output on disk, and `state/` is stamped with the episode it
 is current as of.
