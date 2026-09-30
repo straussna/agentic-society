@@ -134,11 +134,12 @@ runs one.
 | `harness.py --fork-from AGENT --at N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
 | `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
 
-Each experiment writes `experiment_records/<experiment_id>/progress.json`,
-`outcome.json` and, for a branch, `lineage.json`. The outcome's `termination_reason` is
-one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`, `all_eliminated`,
-`completed` or `interrupted`. Human seats are answered as [docs/human.md](human.md)
-describes.
+Each experiment writes under `experiment_records/<experiment_id>/`: `progress.jsonl`,
+one line per phase each round reaches as it reaches it; `progress.json`, the latest of
+those; `outcome.json`; and, for a branch, `lineage.json`. The outcome's
+`termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`,
+`final_tie`, `all_eliminated` or `interrupted`. Human seats are answered as
+[docs/human.md](human.md) describes.
 
 ## 2. Top level
 

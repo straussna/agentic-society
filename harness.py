@@ -4815,7 +4815,7 @@ def _print_context(config: Path | None, manifest: Path, selected: str | None = N
             with contextlib.redirect_stdout(io.StringIO()):
                 for entry in agents:
                     account = load_account(entry["id"], **experiment.terms_of(entry))
-                    experiment.inherit_memory(entry, account, runtime=sys.modules[__name__])
+                    experiment.inherit_memory(entry, account)
                     experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
                     save_account(entry["id"], account)
 
@@ -4979,10 +4979,13 @@ def main(argv: list[str] | None = None) -> int:
     if not a.resume:
         displace_agents([a.agent])
     account = load_account(a.agent, **experiment.terms_of(entry))
-    experiment.inherit_memory(entry, account, runtime=sys.modules[__name__])
+    experiment.inherit_memory(entry, account)
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
     return run_episodes(a.agent, router, a.episodes, seat(a.agent))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # experiment.py imports this file as `harness`, so the CLI runs in that module and
+    # every global it configures is the one experiment.py reads.
+    import harness
+    sys.exit(harness.main())

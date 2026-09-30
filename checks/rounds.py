@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 import experiment
 import harness
+import product
 
 from checks.fake import DEFAULT, Err, fake, per_agent, run, say, stopping_at
 from checks.lanes import (
@@ -18,6 +19,7 @@ from checks.lanes import (
     PERSONA_LABELS,
     RecordingBox,
     agent_of,
+    channel_toml,
     digest_name,
     elements_of,
     episodes_taken,
@@ -39,10 +41,24 @@ from checks.lanes import (
 
 
 def check_the_experiment_uses_fixed_order_and_validates():
-    """Order stays fixed, and an experiment with no manifest or no rounds is refused."""
-    ids = ["g01", "g02", "g03"]
-    assert [experiment.order(ids, r) for r in range(4)] == [
-        ids, ids, ids, ids]
+    """Every round runs its agents in seat order, and an experiment with no manifest or
+    no rounds is refused."""
+    with temp_root() as root:
+        ids = seated(root, "g02", g03={}, g01={})
+        built = []
+        real = harness.ready
+
+        def noted(agent, prepare=None):
+            built.append(agent)
+            return real(agent, prepare)
+
+        harness.ready = noted
+        live = set(ids)
+        with quiet():
+            for rnd in range(3):
+                experiment.sequential_round(ids, live, rnd, fake())
+    assert ids == ["g02", "g03", "g01"], ids
+    assert built == ids * 3, f"the seats' order, the same every round: {built}"
     for bad in ([],                                        # every run names its experiment
                 ["--rounds", "5"],                         # including this one
                 ["--manifest", "c.toml", "--rounds", "0"]):
@@ -248,13 +264,60 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
         live = set(ids)
         completed = lambda *_args: True
         with quiet() as output:
-            continues = experiment.play_round(completed, ids, live, 4, None, {}, labels,
-                                              True, vote, True)
+            ended = experiment.play_round(completed, ids, live, 4, None, {}, labels,
+                                          True, vote, True)
         result = harness.load_account("g01")["last_election"]
 
-    assert not continues and live == set(ids)
+    assert ended == "final_tie" and live == set(ids), ended
     assert "both survive and the competition ends" in output.getvalue()
     assert result["top_tied"]
+
+
+def check_an_experiment_ends_on_the_reason_its_last_round_gives():
+    """outcome.json names the stop the round made, whatever an earlier election left.
+
+    Seat 1 went out at the first election, which did not tie, and still holds that
+    result. The two left tie at the second, and that tie is why the experiment ends.
+    """
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5}
+    with temp_root(channels=tables(ballot), tools=[vote]) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        first = {"round": 5, "tally": {"1": 2, "2": 0, "3": 0}, "abstainers": ["1"],
+                 "voted_out": "1", "top_votes": 2, "top_tied": False, "remaining": ["2", "3"]}
+        for agent, target in zip(ids, (None, "3", "2")):
+            account = harness.load_account(agent)
+            account["episodes"] = [{"episode": i, "stop": "no_tool_call"}
+                                   for i in range(1, 6 if target is None else 11)]
+            account["last_election"] = first
+            if target is None:
+                account["eliminated"] = {"round": 5, "reason": "did not vote in round 5",
+                                         "votes": 0}
+            else:
+                path = harness.mirror(agent, "ballot") / "vote"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(target + "\n", encoding="utf-8")
+            harness.save_account(agent, account)
+        manifest = seats_manifest(root, ids)
+        manifest.write_text("stop_when_two_remain_after_tie = true\n"
+                            + manifest.read_text(encoding="utf-8") + "\n"
+                            + channel_toml(tables(ballot)) + "\n[[tool]]\nname = \"vote\"\n"
+                            'kind = "vote"\nchannel = "ballot"\nevery = 5\n',
+                            encoding="utf-8", newline="\n")
+        harness.start = lambda config=None, **kw: fake()
+        driven = experiment.sequential_round
+        experiment.sequential_round = lambda *_args: True
+        try:
+            with quiet() as output:
+                code = experiment.main(["--manifest", str(manifest), "--resume"])
+        finally:
+            experiment.sequential_round = driven
+        outcome = product.records(root, "seats")["outcome"]
+    assert code == 0, (code, output.getvalue())
+    assert "both survive and the competition ends" in output.getvalue(), output.getvalue()
+    assert outcome["termination_reason"] == "final_tie" and outcome["draw"], outcome
+    assert outcome["winners"] == outcome["survivors"] == ["2", "3"], outcome
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
@@ -401,12 +464,14 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
                                     "--resume"])
         took = episodes_taken(ids)
         rested = {r: harness.load_account(r)["remaining"] for r in ids}
+        outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 1, "g02": 1, "g03": 1}, \
         f"one episode each, then nothing left to ask for: {took}"
     assert set(rested.values()) == {0}, rested
     assert buf.getvalue().count("drops out: nothing left to spend") == 3, buf.getvalue()
     assert "every agent is out after 1 rounds" in buf.getvalue(), buf.getvalue()
+    assert outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == [], outcome
 
 
 def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winner():
@@ -421,8 +486,10 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
                                     "--resume"])
         took = episodes_taken(ids)
         alone = harness.load_account("g01")["episodes"][-1]
+        outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 5, "g02": 0, "g03": 0}, took
+    assert outcome["termination_reason"] == "round_limit" and not outcome["winners"], outcome
     assert "competition ends" not in buf.getvalue(), buf.getvalue()
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
     assert alone["channels"]["mail"]["penalty"] == 0, alone["channels"]["mail"]
@@ -439,8 +506,10 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         with quiet() as buf:
             code = experiment.main(["--manifest", str(manifest), "--rounds", "5", "--resume"])
         took = episodes_taken(ids)
+        outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
+    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == ["1"], outcome
     assert "g01 is the only agent left with anything to spend; the competition ends" in buf.getvalue(), buf.getvalue()
 
 def check_a_manifest_is_validated():
@@ -478,6 +547,10 @@ def check_a_manifest_is_validated():
             refused(lambda: experiment.load_manifest(p), str(p), because=f"accepted bad manifest: {bad!r}")
         refused(lambda: experiment.load_manifest(root / "experiments" / "missing.toml"),
                 because="a missing manifest was ignored")
+        for key, value, kind in (("stop_when_one_remains", "1", "int"),
+                                 ("stop_when_two_remain_after_tie", '"yes"', "str")):
+            p = manifest_file(root, f'{key} = {value}\nsystem_prompt = ""\n' + two, f"{key}.toml")
+            refused(lambda: experiment.load_manifest(p), str(p), f"{key} must be bool, got {kind}")
 
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
@@ -496,6 +569,8 @@ def check_a_manifest_is_validated():
     assert experiment.terms_of(m["agents"][1]) == {"provider": "anthropic", "model": other_model, "budget": 7, "starter_files": None,
                                                    "starter_files_below": None, "system_prompt": None}
     short = experiment.shorthand(["a", "b"])
+    assert set(m) == set(short) == experiment.Manifest.__required_keys__, \
+        "a manifest, read or meant by a list of ids, holds the keys Manifest declares"
     assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
     assert experiment.stamp_of(m) == {"schedule": "simultaneous",

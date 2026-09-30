@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import runpy
+import sys
 
 import experiment
 import harness
-from checks.lanes import HostBox, manifest_file, offers, rooted
+from checks.lanes import HostBox, manifest_file, offers, plant, quiet, rooted
 
 
 def source_trace(agent: str, episode: int, body: str) -> None:
@@ -66,6 +68,30 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
 
         experiment.inherit_memory(entry, inherited)
         assert copied.read_bytes() == body.encode("utf-8"), "resuming recopied the memory"
+
+
+def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
+    """inherit_memory reads the globals of the harness experiment.py imports, so
+    `harness.py` run as a file runs its CLI in that module and not in a copy of it.
+
+    The ROOT set here is the imported module's; a copy would read its own and find
+    no starter files by that name.
+    """
+    argv = sys.argv
+    with rooted(HostBox) as root:
+        plant(root, "only-here", m1="alpha\n")
+        sys.argv = [harness.__file__, "--print-files", "only-here"]
+        try:
+            with quiet() as output:
+                runpy.run_path(harness.__file__, run_name="__main__")
+        except SystemExit as e:
+            code = e.code
+        else:
+            raise AssertionError("harness.py run as a file did not exit through its CLI")
+        finally:
+            sys.argv = argv
+    assert code == 0, (code, output.getvalue())
+    assert "1 files, 6 bytes" in output.getvalue(), output.getvalue()
 
 
 def check_memory_from_is_strict_agent_grammar():

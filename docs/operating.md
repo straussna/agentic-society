@@ -37,7 +37,8 @@ LICENSE                  the licence
 .editorconfig            file formatting
 .gitattributes           Git line endings
 .gitignore               what stays out of the repository
-experiment_records/<experiment-id>/  progress.json, outcome.json, and branch lineage
+experiment_records/<experiment-id>/  progress.jsonl (every phase reached) and progress.json
+                                     (the latest), outcome.json, and branch lineage
 
 environments/<agent>/<channel>/       one mirror per channel the agent writes, named by the
                                       channel (notes/, blackboard/, mail/ under the default

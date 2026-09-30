@@ -9,6 +9,7 @@ config.toml holds only what is true of every run whatever the experiment."""
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import re
@@ -16,12 +17,13 @@ import sys
 import threading
 import tomllib
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypedDict, TypeVar
 
 import harness
 import product
 import providers
 from harness import check_keys
+from providers import ProviderRouter
 
 T = TypeVar("T")
 
@@ -66,6 +68,41 @@ OUTCOME_FIELDS = {"winners", "survivors", "draw", "elimination_order", "scores",
                   "termination_reason", "evidence"}
 
 
+class Manifest(TypedDict):
+    """An experiment manifest as load_manifest reads it.
+
+    `overrides` holds every top-level key that is not the experiment's own: the
+    defaults for every seat, applied by start(). `agents` holds one [[agent]] table
+    per seat, in seat order, and `labels` maps each seat to what its agent is called.
+    `channels`, `harness_files` and `tools` are the tables as declared, None where
+    the manifest declares none. `sha256` is the digest of the file's bytes.
+    """
+    schedule: str
+    stop_when_one_remains: bool
+    stop_when_two_remain_after_tie: bool
+    experiment_id: str
+    cost: dict[str, Any]
+    reveal: dict[str, list[str]]
+    overrides: dict[str, Any]
+    agents: list[dict[str, Any]]
+    labels: dict[str, str]
+    channels: list[dict[str, Any]] | None
+    harness_files: dict[str, Any] | None
+    tools: list[dict[str, Any]] | None
+    sha256: str
+
+
+# What a round tells the experiment's progress record: the phase it has reached, the
+# round's number, and the detail of the event. product.progress bound to one record.
+Progress = Callable[[str, int, dict[str, Any] | None], object]
+
+# How a round is driven, sequential_round or simultaneous_round. Called with the agents
+# in seat order, those still at the table, the round's index, the router, the stamp,
+# the labels and the progress record; returns whether any agent took an episode.
+Round = Callable[[list[str], set[str], int, ProviderRouter, dict[str, Any] | None,
+                  dict[str, str] | None, Progress], bool]
+
+
 def seats_of(agents: list[str]) -> dict[str, str]:
     """Seat -> agent, for the whole experiment.
 
@@ -75,15 +112,10 @@ def seats_of(agents: list[str]) -> dict[str, str]:
     return {str(i): agent for i, agent in enumerate(agents, 1)}
 
 
-def order(agents: list[str], _rnd: int) -> list[str]:
-    """The agents in their fixed seat order."""
-    return list(agents)
-
-
 # --- the manifest -------------------------------------------------------------
 
 
-def shorthand(ids: list[str], schedule: str = "sequential") -> dict:
+def shorthand(ids: list[str], schedule: str = "sequential") -> Manifest:
     """A bare manifest for these agents, which is what a round stamps when driven directly."""
     return {"schedule": schedule, "stop_when_one_remains": False,
             "stop_when_two_remain_after_tie": False,
@@ -179,11 +211,10 @@ def manifest_path(named: str) -> Path:
     return next((c for c in candidates if c.exists()), candidates[0])
 
 
-def load_manifest(path: Path) -> dict:
+def load_manifest(path: Path) -> Manifest:
     """Read an experiment manifest: the schedule, the experiment's defaults, and each agent's terms.
 
-    Returns {"schedule", "overrides", "agents", "labels", "channels", "harness_files",
-    "tools", "sha256"}. Unknown keys, wrong types, and terms that do not go together
+    Returns a Manifest. Unknown keys, wrong types, and terms that do not go together
     exit with a message naming the file, the way load_config does. The overrides' own
     types and ranges are checked when start() applies them, so one set of rules
     holds for both.
@@ -202,20 +233,15 @@ def load_manifest(path: Path) -> dict:
 
     allowed = EXPERIMENT_KEYS | {t.lower() for t in harness.TREATMENT}
 
-    check_keys(refuser(path), "", top, allowed, retired=harness.RETIRED,
+    check_keys(refuser(path), "", top, allowed,
+               (("stop_when_one_remains", bool), ("stop_when_two_remain_after_tie", bool)),
+               retired=harness.RETIRED,
                elsewhere={t.lower(): harness.NOT_MANIFEST for t in harness.PROCESS},
                expected="schedule, [[agent]] tables, [[channel]] tables, [[tool]] tables, "
                         "[harness_files], and any experiment setting")
     schedule = top.get("schedule", "sequential")
     if schedule not in SCHEDULES:
         raise SystemExit(f"{path}: schedule must be one of {list(SCHEDULES)}, got {schedule!r}")
-    stop_when_one_remains = top.get("stop_when_one_remains", False)
-    if type(stop_when_one_remains) is not bool:
-        raise SystemExit(f"{path}: stop_when_one_remains must be bool, got {type(stop_when_one_remains).__name__}")
-    stop_when_two_remain_after_tie = top.get("stop_when_two_remain_after_tie", False)
-    if type(stop_when_two_remain_after_tie) is not bool:
-        raise SystemExit(f"{path}: stop_when_two_remain_after_tie must be bool, got "
-                         f"{type(stop_when_two_remain_after_tie).__name__}")
     experiment_id = top.get("experiment_id", path.stem)
     if not isinstance(experiment_id, str) or not product.IDENTIFIER.fullmatch(experiment_id) or \
             experiment_id in (".", ".."):
@@ -301,8 +327,9 @@ def load_manifest(path: Path) -> dict:
 
     overrides = {k: v for k, v in top.items()
                  if k not in EXPERIMENT_KEYS}
-    return {"schedule": schedule, "stop_when_one_remains": stop_when_one_remains,
-            "stop_when_two_remain_after_tie": stop_when_two_remain_after_tie,
+    return {"schedule": schedule,
+            "stop_when_one_remains": top.get("stop_when_one_remains", False),
+            "stop_when_two_remain_after_tie": top.get("stop_when_two_remain_after_tie", False),
             "experiment_id": experiment_id, "cost": cost, "reveal": reveal,
             "overrides": overrides, "agents": agents, "labels": labels,
             "channels": tables, "harness_files": harness_files, "tools": tool_tables,
@@ -315,7 +342,7 @@ def terms_of(entry: dict) -> dict[str, Any]:
                                       "system_prompt")}
 
 
-def stamp_of(manifest: dict) -> dict[str, Any]:
+def stamp_of(manifest: Manifest) -> dict[str, Any]:
     """What every episode records about how the experiment was driven."""
     return {"schedule": manifest["schedule"],
             "experiment_id": manifest["experiment_id"], "cost": manifest["cost"],
@@ -324,13 +351,12 @@ def stamp_of(manifest: dict) -> dict[str, Any]:
             "manifest_sha256": manifest["sha256"]}
 
 
-def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
+def inherit_memory(entry: dict, account: dict) -> None:
     """Give a fresh agent the exact private memories recorded by another agent's episode.
 
     Only files owned by write_memory tools cross the boundary. The new agent keeps its
     own account, model, budget, peers and every episode-scoped channel.
     """
-    runtime = runtime or harness
     agent = entry["id"]
     declared = entry.get("memory_from")
     recorded = account.get("memory_from")
@@ -339,36 +365,36 @@ def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
             raise SystemExit(f"agent {agent} was created with memory_from={recorded!r}, and is "
                              f"now asked to run with {declared!r}; start a fresh agent")
         account["memory_from"] = dict(declared) if declared else None
-        runtime.save_account(agent, account)
+        harness.save_account(agent, account)
     if not declared or account.get("memory_inherited"):
         return
 
     source, episode = declared["agent"], declared["episode"]
-    source_path = runtime.trace_path(source, episode)
+    source_path = harness.trace_path(source, episode)
     if not source_path.exists():
         raise SystemExit(f"agent {agent}: memory_from names {source!r} episode {episode}, but "
                          f"{source_path} does not exist")
     trace = json.loads(source_path.read_text(encoding="utf-8"))
-    if trace.get("trace_version") != runtime.TRACE_VERSION:
+    if trace.get("trace_version") != harness.TRACE_VERSION:
         raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} has "
-                         f"trace version {trace.get('trace_version')!r}, expected {runtime.TRACE_VERSION}")
+                         f"trace version {trace.get('trace_version')!r}, expected {harness.TRACE_VERSION}")
     if not trace.get("state_saved"):
         raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} did not "
                          "save its state")
 
-    source_tools = {tool.name: tool for tool in runtime.tools_from(
+    source_tools = {tool.name: tool for tool in harness.tools_from(
         (trace.get("provenance") or {}).get("tools")) if tool.kind == "write_memory"}
-    target_tools = {tool.name: tool for tool in runtime.tools() if tool.kind == "write_memory"}
+    target_tools = {tool.name: tool for tool in harness.tools() if tool.kind == "write_memory"}
     if not source_tools or source_tools.keys() != target_tools.keys():
         raise SystemExit(f"agent {agent}: memory_from requires matching write_memory tools; "
                          f"source has {sorted(source_tools)}, target has {sorted(target_tools)}")
 
-    source_channels = runtime.table_of(trace)
+    source_channels = harness.table_of(trace)
     inherited = []
     destinations: set[Path] = set()
     for name, target_tool in target_tools.items():
         source_tool = source_tools[name]
-        source_channel = runtime.channel(source_tool.channel, source_channels)
+        source_channel = harness.channel(source_tool.channel, source_channels)
         matches = [record for record in trace.get("files", [])
                    if record.get("role", "own") == "own"
                    and record.get("channel") == source_channel.name
@@ -376,7 +402,7 @@ def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
         if len(matches) > 1:
             raise SystemExit(f"agent {agent}: memory_from source {source!r} episode {episode} "
                              f"contains several memories for tool {name!r}")
-        destination = runtime.mirror(agent, target_tool.channel) / "memory.md"
+        destination = harness.mirror(agent, target_tool.channel) / "memory.md"
         if destination in destinations:
             continue
         destinations.add(destination)
@@ -399,7 +425,7 @@ def inherit_memory(entry: dict, account: dict, runtime: Any = None) -> None:
 
     account["memory_inherited"] = {"agent": source, "episode": episode,
                                    "memories": inherited}
-    runtime.save_account(agent, account)
+    harness.save_account(agent, account)
     total = sum(item.get("bytes", 0) for item in inherited)
     print(f"{agent}: inherited {total} bytes of private memory from "
           f"{source} episode {episode}")
@@ -415,7 +441,7 @@ def toml_value(value: Any) -> str:
     return str(value)
 
 
-def branch_manifest(manifest: dict, entries: list[dict], experiment_id: str) -> str:
+def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str) -> str:
     """Serialize the concrete branch manifest accepted by load_manifest()."""
     lines = [f"experiment_id = {toml_value(experiment_id)}",
              f"schedule = {toml_value(manifest['schedule'])}",
@@ -545,7 +571,7 @@ def branch_experiment(source: Path, at_round: int, experiment_id: str, takeover_
 # --- rounds -------------------------------------------------------------------
 
 
-def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
+def preparer(agent: str, seats: dict[str, str], stamp: dict[str, Any],
              labels: dict[str, str] | None = None) -> Callable[[dict], None]:
     """What an agent's account is told before each episode: where it sits, what it and
     every other agent is called, and how the experiment is being driven. Nothing is
@@ -562,7 +588,7 @@ def preparer(agent: str, seats: dict[str, str], stamp: dict[str, str],
     return prepare
 
 
-def preparers(agents: list[str], stamp: dict[str, str] | None, labels: dict[str, str] | None,
+def preparers(agents: list[str], stamp: dict[str, Any] | None, labels: dict[str, str] | None,
               schedule: str = "sequential") -> Callable[[str], Callable[[dict], None]]:
     """How each agent's account is stamped this round: its seat, every label, and the schedule.
 
@@ -601,15 +627,36 @@ def drop_out(agent: str, live: set[str]) -> None:
     live.discard(agent)
 
 
-def sequential_round(agents: list[str], live: set[str], rnd: int, create: Callable,
-                     stamp: dict[str, str] | None = None, labels: dict[str, str] | None = None) -> bool:
+def unrecorded(phase: str, round_number: int, detail: dict[str, Any] | None) -> None:
+    """The progress of a round driven straight from a list of ids, which has no
+    experiment record to write to."""
+
+
+def tell(progress: Progress, held: list[Exception], phase: str, round_number: int,
+         agents: list[str]) -> None:
+    """Write a phase reached between billed episodes and their commit.
+
+    A raise there would leave billed spend uncommitted, so a write that fails is kept
+    in `held`, for the round to raise once its episodes are committed.
+    """
+    try:
+        progress(phase, round_number, {"agents": agents})
+    except Exception as e:
+        held.append(e)
+
+
+def sequential_round(agents: list[str], live: set[str], rnd: int, router: ProviderRouter,
+                     stamp: dict[str, Any] | None = None, labels: dict[str, str] | None = None,
+                     progress: Progress = unrecorded) -> bool:
     """One episode for each agent still in the experiment, in seat order.
 
-    Returns whether any of them took one; a round where none did moved nothing.
+    Each agent's phases go to `progress` as it reaches them: the round waits on its
+    episode, resolves its actions, and settles it. Returns whether any of them took
+    one; a round where none did moved nothing.
     """
     prepare = preparers(agents, stamp, labels)
     acted = False
-    for agent in order(agents, rnd):
+    for agent in agents:
         if harness.STOPPING:
             # A stop that landed while no episode was in flight ends the rounds the
             # way one that landed inside an episode does: main() answers it, and
@@ -617,13 +664,22 @@ def sequential_round(agents: list[str], live: set[str], rnd: int, create: Callab
             raise KeyboardInterrupt
         if agent not in live:
             continue
+        player = providers.is_interactive(harness.account_on_disk(agent).get("provider"))
+        progress("waiting_player" if player else "waiting_autonomous", rnd + 1, {"agents": [agent]})
         ep = attempted(agent, live, lambda: harness.ready(agent, prepare(agent)))
         if agent not in live:
             continue
         if ep is None:
             drop_out(agent, live)
             continue
-        trace = harness.commit_episode(ep, harness.run_episode(ep, create))
+        out = harness.run_episode(ep, router)
+        held: list[Exception] = []
+        tell(progress, held, "resolving_actions", rnd + 1, [agent])
+        settled = harness.settle_episode(ep, out)
+        tell(progress, held, "settling_round", rnd + 1, [agent])
+        trace = harness.close_episode(ep, out, settled)
+        if held:
+            raise held[0]
         acted = True
         if trace["stop"] in harness.STOPS_THE_EXPERIMENT:
             # Ctrl+C is the experimenter: the episode it landed in is committed and
@@ -664,16 +720,18 @@ def build_all(agents: list[str], live: set[str],
     return built
 
 
-def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Callable,
-                       stamp: dict[str, str] | None = None, labels: dict[str, str] | None = None) -> bool:
+def simultaneous_round(agents: list[str], live: set[str], rnd: int, router: ProviderRouter,
+                       stamp: dict[str, Any] | None = None, labels: dict[str, str] | None = None,
+                       progress: Progress = unrecorded) -> bool:
     """One episode for each agent still in the experiment, all at once.
 
     Every environment is built first, so no episode reads this round's writes. The
     episodes run in threads. Then each settles in seat order, the transfers they
     made are credited, and each closes in seat order: a credit lands after the
     receiver's own turns and before its floor, so an agent is out on the round's
-    net and never lifted back by a transfer that had already arrived. Returns
-    whether any agent took an episode.
+    net and never lifted back by a transfer that had already arrived. Each phase
+    goes to `progress` as the round reaches it, and so does each autonomous episode
+    as it ends. Returns whether any agent took an episode.
     """
     built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
     if harness.STOPPING:
@@ -683,24 +741,30 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
     if not built:
         return False
 
+    interactive = {agent: providers.is_interactive(ep.account.get("provider"))
+                   for agent, ep in built.items()}
     outs: dict[str, dict] = {}
     errors: dict[str, BaseException] = {}
     def go(agent: str, ep: harness.Episode) -> None:
         try:
-            outs[agent] = harness.run_episode(ep, create)
-            if (not providers.is_interactive(ep.account.get("provider"))
-                    and stamp and stamp.get("experiment_id")):
-                human_waiting = any(providers.is_interactive(other.account.get("provider"))
-                                    and name not in outs for name, other in built.items())
-                product.progress(harness.ROOT, stamp["experiment_id"],
-                                 "waiting_player" if human_waiting else "resolving_actions",
-                                 rnd + 1, {"completed_autonomous": agent})
+            outs[agent] = harness.run_episode(ep, router)
+            if not interactive[agent]:
+                running = [name for name in built if name not in outs and name not in errors]
+                phase = ("waiting_player" if any(interactive[name] for name in running) else
+                         "waiting_autonomous" if running else "resolving_actions")
+                progress(phase, rnd + 1, {"completed_autonomous": agent})
         except BaseException as e:      # run_episode has saved and reaped on its way out
             errors[agent] = e
 
     threads = [threading.Thread(target=go, args=(agent, ep), name=agent, daemon=True)
                for agent, ep in built.items()]
+    autonomous = [agent for agent in built if not interactive[agent]]
+    players = [agent for agent in built if interactive[agent]]
     try:
+        if autonomous:
+            progress("waiting_autonomous", rnd + 1, {"agents": autonomous})
+        if players:
+            progress("waiting_player", rnd + 1, {"agents": players})
         for t in threads:
             t.start()
     except BaseException:
@@ -721,6 +785,8 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
     def defer(receiver: str, amount: int) -> None:
         pending.append((receiver, amount))
 
+    held: list[Exception] = []
+    tell(progress, held, "resolving_actions", rnd + 1, [agent for agent in built if agent in outs])
     settled: dict[str, dict] = {}
     for agent, ep in built.items():
         if agent not in outs:
@@ -734,6 +800,7 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
             harness.credit_episode(built[receiver], amount)
         else:
             harness.credit_on_disk(receiver, amount)
+    tell(progress, held, "settling_round", rnd + 1, list(settled))
     traces: dict[str, dict] = {}
     for agent, ep in built.items():
         if agent not in settled:
@@ -744,6 +811,8 @@ def simultaneous_round(agents: list[str], live: set[str], rnd: int, create: Call
             errors.setdefault(agent, e)
     if errors:
         raise next(iter(errors.values()))
+    if held:
+        raise held[0]
 
     for agent, trace in traces.items():
         if trace["stop"] in harness.STOPS_THE_AGENT and trace["stop"] not in harness.STOPS_THE_EXPERIMENT:
@@ -830,53 +899,56 @@ def resolve_vote(agents: list[str], live: set[str], labels: dict[str, str],
     return round_number
 
 
-def play_round(a_round: Callable, agents: list[str], live: set[str], rnd: int, create: Callable,
+def play_round(a_round: Round, agents: list[str], live: set[str], rnd: int, router: ProviderRouter,
                stamp: dict[str, Any], labels: dict[str, str], stop_when_one_remains: bool,
-               vote: dict | None = None, stop_when_two_remain_after_tie: bool = False) -> bool:
+               vote: dict | None = None, stop_when_two_remain_after_tie: bool = False,
+               progress: Progress = unrecorded) -> str | None:
     """One round: drop the agents that cannot act, name the round, run it, and say
-    whether the rounds go on.
+    why the rounds end, or None while they go on.
 
-    The rounds end when every agent is out, when the manifest stops after one
-    agent remains, or when nobody seated could be given an environment to start.
+    The reason is the outcome's termination_reason: "all_eliminated" when every agent
+    is out, "one_remains" when the manifest stops after one agent remains, and
+    "final_tie" when it stops at a tied vote between the last two.
     """
     # Asked before the round, so the header names who will act. Between here and
     # an agent's own turn its balance can only move up, a peer's transfer being
     # the only thing that reaches it, so this is the answer its episode would give.
-    for agent in order(agents, rnd):
+    for agent in agents:
         if agent in live and harness.why_out(harness.load_account(agent)):
             drop_out(agent, live)
     if not live:
         print(f"every agent is out after {rnd} rounds")
-        return False
+        return "all_eliminated"
     if stop_when_one_remains and len(live) == 1:
         print(f"{next(iter(live))} is the only agent left with anything to spend; the competition ends")
-        return False
-    # The order decides who acts on this round's information and who on last
+        return "one_remains"
+    # The seat order decides who acts on this round's information and who on last
     # round's, so it is on screen beside the round number. Under a simultaneous
-    # round nobody acts on this round's, and the seats are named in their own order.
-    ordered = agents if a_round is simultaneous_round else order(agents, rnd)
-    acting = [agent for agent in ordered if agent in live]
+    # round nobody acts on this round's.
+    acting = [agent for agent in agents if agent in live]
     print(f"--- round {rnd + 1} ({' '.join(acting)}) ---")
 
-    if not a_round(agents, live, rnd, create, stamp, labels):
+    if not a_round(agents, live, rnd, router, stamp, labels, progress):
+        # Every agent at the table either takes an episode or leaves it, so a round
+        # nobody took one in has put every agent out.
         print(f"no agent could take an episode in round {rnd + 1}; "
               f"the rounds end here with {len(live)} agents at the table")
-        return False
+        return "all_eliminated"
     election = resolve_vote(agents, live, labels, vote)
     if election is not None and not live:
         print(f"every agent is out after {election} rounds")
-        return False
+        return "all_eliminated"
     if election is not None and stop_when_one_remains and len(live) == 1:
         print(f"{next(iter(live))} is the only agent left; the competition ends")
-        return False
+        return "one_remains"
     if election is not None and stop_when_two_remain_after_tie and len(live) == 2:
         result = harness.load_account(next(iter(live))).get("last_election", {})
         if result.get("top_tied"):
             survivors = [agent for agent in agents if agent in live]
             print(f"the final vote tied between {' and '.join(survivors)}; "
                   "both survive and the competition ends")
-            return False
-    return True
+            return "final_tie"
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -958,6 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
         inherit_memory(entry, account)
     print(f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, "
           f"{manifest['schedule']})")
+    progress = functools.partial(product.progress, harness.ROOT, experiment_id)
     reason = "round_limit"
     code = 0
     try:
@@ -967,36 +1040,18 @@ def main(argv: list[str] | None = None) -> int:
             rnd = round_number - 1
             cost = product.cost(agents, harness.load_account, manifest["cost"],
                                 providers.is_interactive)
-            product.progress(harness.ROOT, experiment_id, "preparing_round", round_number,
-                             {"cost": cost, "agents": agents,
-                              "schedule": manifest["schedule"]})
+            progress("preparing_round", round_number,
+                     {"cost": cost, "agents": agents, "schedule": manifest["schedule"]})
             if cost["ceiling_reached"]:
                 reason = "cost_ceiling"
                 break
-            autonomous = [entry["id"] for entry in manifest["agents"]
-                          if entry["id"] in live and not providers.is_interactive(entry["provider"])]
-            players = [entry["id"] for entry in manifest["agents"]
-                       if entry["id"] in live and providers.is_interactive(entry["provider"])]
-            if autonomous:
-                product.progress(harness.ROOT, experiment_id, "waiting_autonomous", round_number,
-                                 {"agents": autonomous})
-            if players:
-                product.progress(harness.ROOT, experiment_id, "waiting_player", round_number,
-                                 {"agents": players})
-            continued = play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
-                                   manifest["stop_when_one_remains"], vote,
-                                   manifest["stop_when_two_remain_after_tie"])
-            product.progress(harness.ROOT, experiment_id, "resolving_actions", round_number)
-            product.progress(harness.ROOT, experiment_id, "settling_round", round_number)
-            product.progress(harness.ROOT, experiment_id, "round_completed", round_number,
-                             {"active": [agent for agent in agents if agent in live]})
-            if not continued:
-                last_election = next((harness.load_account(agent).get("last_election")
-                                      for agent in agents if harness.load_account(agent).get("last_election")), {})
-                reason = ("final_tie" if manifest["stop_when_two_remain_after_tie"] and
-                          len(live) == 2 and last_election.get("top_tied")
-                          else "one_remains" if len(live) == 1 and manifest["stop_when_one_remains"]
-                          else "all_eliminated" if not live else "completed")
+            ended = play_round(a_round, agents, live, rnd, router, stamp, manifest["labels"],
+                               manifest["stop_when_one_remains"], vote,
+                               manifest["stop_when_two_remain_after_tie"], progress)
+            progress("round_completed", round_number,
+                     {"active": [agent for agent in agents if agent in live]})
+            if ended is not None:
+                reason = ended
                 break
     except KeyboardInterrupt:
         # Every agent still at the table keeps its account, its traces and its seat,
@@ -1005,13 +1060,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"interrupted; the rounds end here with {len(live)} agents at the table",
               file=sys.stderr)
         reason, code = "interrupted", 130
-    product.progress(harness.ROOT, experiment_id,
-                     "interrupted" if reason == "interrupted" else
-                     "cost_ceiling" if reason == "cost_ceiling" else "completed",
-                     max((len(harness.load_account(agent).get("episodes", [])) for agent in agents),
-                         default=0), {"termination_reason": reason})
+    progress(reason if reason in ("interrupted", "cost_ceiling") else "completed",
+             max((len(harness.load_account(agent).get("episodes", [])) for agent in agents),
+                 default=0), {"termination_reason": reason})
     product.outcome(harness.ROOT, experiment_id, agents, manifest["labels"], live, reason,
-                    harness.load_account, manifest["reveal"])
+                    harness.load_account, harness.trace_path, manifest["reveal"])
     return code
 
 
