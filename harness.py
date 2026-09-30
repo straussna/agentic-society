@@ -22,7 +22,7 @@ Sections, in the order an episode meets them:
  11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
-                                    resolve_mailbox
+                                    resolve_mailbox, SETTLEMENTS
  14. Provenance and the trace       provenance, drift, snapshot
  15. The phases of one episode      Episode, build_episode, run_episode, settle_episode,
                                     close_episode, run_once, ready, drive
@@ -57,7 +57,8 @@ import time
 import tomllib
 from collections.abc import Set as AbstractSet
 from pathlib import Path
-from typing import IO, Any, Callable, Iterable, Mapping, NoReturn, Protocol, Sequence
+from typing import (IO, Any, Callable, Iterable, Literal, Mapping, NoReturn, Protocol, Sequence,
+                    TypedDict, get_args)
 
 import product
 import providers
@@ -185,10 +186,10 @@ TUNABLES = PROCESS | TREATMENT
 NOT_CONFIG = "an experiment's to declare; config.toml holds what is true of every run"
 NOT_MANIFEST = "config.toml's, and true of every run whatever the experiment declares"
 
-# Keys config.toml once held that are now fields of a channel. Refused by name, so
-# the message says where each went.
+# Keys refused by name in config.toml and a manifest, each mapped to where that
+# setting is declared, so the refusal names the place. docs/manifest.md lists them.
 RETIRED = {
-    "fallbacks": "removed; every turn requests the provider and model pinned to its seat",
+    "fallbacks": "nothing: every turn requests the provider and model pinned to its seat",
     "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": "rebate_percent on the channel with schema = \"transfer\"",
@@ -240,7 +241,12 @@ def load_config(path: Path | None = None) -> Path | None:
     return f
 
 
-def check_keys(refuse: Callable[[str], None], where: str, raw: dict, allowed: Iterable[str],
+# How a validator refuses: it raises SystemExit carrying the message and never
+# returns, so every rule after a refusal may take the one before it as holding.
+Refuse = Callable[[str], NoReturn]
+
+
+def check_keys(refuse: Refuse, where: str, raw: dict, allowed: Iterable[str],
                types: Iterable[tuple[str, type]] = (), retired: dict[str, str] | None = None,
                expected: str = "", elsewhere: dict[str, str] | None = None) -> None:
     """Refuse an unknown key or a wrong type, naming the table and the key.
@@ -278,7 +284,7 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
     f = source
     allowed = set(allowed)
 
-    def refuse(why: str) -> None:
+    def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{f}: {why}")
 
     check_keys(refuse, "", values, [t.lower() for t in allowed], retired=RETIRED,
@@ -363,6 +369,20 @@ def validate_terms(source: str, *, provider: str | None, model: str | None, budg
 
 # --- 4. The channel and tool tables -----------------------------------------------
 
+# What each enumerated field of a channel may hold. WRITERS, SHAPE_PATHS,
+# TRANSFER_FUNDERS and AGENT_VIEWS, which a declaration is checked against, are
+# read out of these, so each value is written once.
+Writer = Literal["self", "experimenter"]
+Readers = Literal["self", "all", "addressee", "harness"]
+Shape = Literal["directory", "mailbox", "file"]
+Schema = Literal["", "transfer"]
+Funder = Literal["harness", "giver", "none"]
+AgentView = Literal["paths", "memory", "letters", "board", "transfer"]
+
+# The rule an episode is settled against a channel by. Channel.settles_as picks it
+# and SETTLEMENTS holds it.
+SettlesAs = Literal["transfer", "mailbox", "directory"]
+
 
 @dataclasses.dataclass(frozen=True)
 class Channel:
@@ -372,9 +392,9 @@ class Channel:
     the declaration true with ownership and modes and records it in provenance.
     """
     name: str
-    writer: str                      # "self" | "experimenter"
-    readers: str                     # "self" | "all" | "addressee" | "harness"
-    shape: str = "directory"         # "directory" | "mailbox" | "file"
+    writer: Writer
+    readers: Readers
+    shape: Shape = "directory"
     path: str = ""                   # directory and file shapes; may hold {label}
     outbox: str = ""                 # mailbox: the writer's side
     inbox: str = ""                  # mailbox: each reader's side
@@ -383,13 +403,13 @@ class Channel:
     restated: bool = False           # quoted every episode, never named as unchanged
     measured: bool = False           # the episode records what this channel gained
     silence_penalty_percent: int = 0
-    schema: str = ""                 # "" | "transfer"
-    funded_by: str = "harness"       # transfer: "harness" | "giver" | "none"
+    schema: Schema = ""
+    funded_by: Funder = "harness"    # transfer: who pays for one
     rebate_percent: int = 100        # transfer, harness-funded
     ledger: str = ""                 # transfer: the harness file holding every transfer
     receipt: str = ""                # transfer: where the parse result is written back
     source: str = ""                 # experimenter channels: a directory under files/
-    agent_view: str = "paths"         # "paths" | "memory" | "letters" | "board" | "transfer"
+    agent_view: AgentView = "paths"  # how the digest names what the channel holds
 
     def path_for(self, label: str) -> str:
         """The path one agent's instance sits at."""
@@ -418,6 +438,15 @@ class Channel:
         """
         return bool(self.schema) or self.measured or self.silence_penalty_percent > 0
 
+    @property
+    def settles_as(self) -> SettlesAs:
+        """The rule an obligated channel is settled by: its schema's where it has one,
+        a mailbox's where it is one, and otherwise a directory's, which asks what the
+        channel gained."""
+        if self.schema:
+            return "transfer"
+        return "mailbox" if self.shape == "mailbox" else "directory"
+
     def as_table(self) -> dict:
         return dataclasses.asdict(self)
 
@@ -439,10 +468,14 @@ DEFAULT_CHANNELS: tuple[Channel, ...] = (
 
 # The files the harness writes into every environment, by role: <balance><label>
 # holds each seat's balance history, and the digest is what has been said to this
-# agent. docs/manifest.md section 5.
-HARNESS_FILES: dict[str, str] = {"balance": "n", "digest": "m"}
+# agent. docs/manifest.md section 5. The code's default names, as DEFAULT_CHANNELS
+# is its default table: what a trace that records none is read under.
+DEFAULT_HARNESS_FILES: dict[str, str] = {"balance": "n", "digest": "m"}
 
-# The table in force: the default until config.toml or a manifest declares one.
+# The names in force: the default until a manifest declares its own.
+HARNESS_FILES: dict[str, str] = dict(DEFAULT_HARNESS_FILES)
+
+# The table in force: the default until a manifest declares one.
 CHANNELS: list[Channel] = list(DEFAULT_CHANNELS)
 
 
@@ -491,7 +524,7 @@ def channel(name: str, table: Iterable[Channel] | None = None) -> Channel:
     return found
 
 # What a channel declaration may say. docs/manifest.md section 10 is the prose.
-WRITERS = ("self", "experimenter")
+WRITERS: tuple[Writer, ...] = get_args(Writer)
 
 PAIRS = {("self", "self"), ("self", "all"), ("self", "addressee"), ("self", "harness"),
          ("experimenter", "all")}
@@ -500,13 +533,17 @@ PAIRS = {("self", "self"), ("self", "all"), ("self", "addressee"), ("self", "har
 # rebated the channel's rebate_percent of the amount, so the experiment's total grows.
 # "giver": the amount leaves the giver and reaches the receiver, and nothing is
 # rebated. "none": a declaration moves nothing, and no share is taken for making none.
-TRANSFER_FUNDERS = ("harness", "giver", "none")
+TRANSFER_FUNDERS: tuple[Funder, ...] = get_args(Funder)
 
 SCHEMAS = {"transfer": ("funded_by", "rebate_percent", "ledger", "receipt")}
 
 CHANNEL_KEYS = {"name", "writer", "readers", "shape", "path", "outbox", "inbox", "source", "pushed",
                 "restated", "measured", "silence_penalty_percent", "schema", "agent_view",
                 *SCHEMAS["transfer"]}
+
+# How the digest may present a channel. Which of them fits which channel is
+# validate_agent_view's to decide.
+AGENT_VIEWS: tuple[AgentView, ...] = get_args(AgentView)
 
 CHANNEL_TYPES = (("shape", str), ("path", str), ("outbox", str), ("inbox", str), ("source", str),
                  ("schema", str), ("funded_by", str), ("ledger", str), ("receipt", str),
@@ -532,7 +569,7 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
     checked against every other and against every harness file, with `labels`
     standing in for {label}. Pure: nothing is set.
     """
-    def refuse(why: str) -> None:
+    def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{source}: {why}")
 
     hf = dict(HARNESS_FILES)
@@ -542,12 +579,9 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
         check_keys(refuse, "harness_files: ", harness_files, HARNESS_FILE_KEYS,
                    [(key, str) for key in HARNESS_FILE_KEYS])
         hf.update(harness_files)
-        if hf["balance"] and not NAME.match(hf["balance"]):
-            refuse('harness_files: balance must be one path segment, or "" for none')
-        if hf["digest"] and not NAME.match(hf["digest"]):
-            refuse('harness_files: digest must be one path segment, or "" for none')
-        if hf.get("round") and not NAME.match(hf["round"]):
-            refuse('harness_files: round must be one path segment, or "" for none')
+        for key in HARNESS_FILE_KEYS:
+            if hf.get(key) and not NAME.match(hf[key]):
+                refuse(f'harness_files: {key} must be one path segment, or "" for none')
 
     if tables is None:
         table = channels()
@@ -584,7 +618,7 @@ def path_fault(path: Any) -> str | None:
     return None
 
 
-def check_path(refuse: Callable[[str], None], name: str, key: str, path: Any,
+def check_path(refuse: Refuse, name: str, key: str, path: Any,
                placeholder: bool) -> None:
     """Refuse a path no channel can stand at, naming the channel and the key.
 
@@ -601,9 +635,12 @@ def check_path(refuse: Callable[[str], None], name: str, key: str, path: Any,
                f"so its path must name {{label}}")
 
 
-def validate_agent_view(channel: Channel, refuse: Callable[[str], None]) -> None:
-    """Require each semantic view to describe the channel shape it names."""
+def validate_agent_view(channel: Channel, refuse: Refuse) -> None:
+    """Require a view from AGENT_VIEWS, and one that describes the channel shape it names."""
     view = channel.agent_view
+    if view not in AGENT_VIEWS:
+        refuse(f"channel {channel.name}: agent_view must be one of {list(AGENT_VIEWS)}, "
+               f"got {view!r}")
     valid = (
         view == "paths"
         or (view == "memory" and channel.shape == "directory"
@@ -620,7 +657,7 @@ def validate_agent_view(channel: Channel, refuse: Callable[[str], None]) -> None
                f"{channel.writer}/{channel.readers}/{channel.shape} channel")
 
 
-def experimenter_channel(name: str, raw: dict, refuse: Callable[[str], None]) -> Channel:
+def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
     """A channel the experimenter writes and every agent reads: a source and a path.
 
     It chooses no shape and nothing is owed to it, so the fields that go with those
@@ -637,22 +674,18 @@ def experimenter_channel(name: str, raw: dict, refuse: Callable[[str], None]) ->
     check_path(refuse, name, "path", raw.get("path"), False)
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
-    agent_view = raw.get("agent_view", "paths")
-    if agent_view not in ("paths", "memory", "letters", "board", "transfer"):
-        refuse(f"channel {name}: agent_view must be one of "
-               "['paths', 'memory', 'letters', 'board', 'transfer'], "
-               f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
                f"episode, and pushed is false, so the digest carries none of it")
     channel = Channel(name, "experimenter", "all", "directory", path=raw["path"],
-                      pushed=pushed, restated=restated, source=src, agent_view=agent_view)
+                      pushed=pushed, restated=restated, source=src,
+                      agent_view=raw.get("agent_view", "paths"))
     validate_agent_view(channel, refuse)
     return channel
 
 
-def mailbox_paths(name: str, raw: dict, readers: str, shape: str,
-                  refuse: Callable[[str], None]) -> dict:
+def mailbox_paths(name: str, raw: dict, readers: Readers, shape: Shape,
+                  refuse: Refuse) -> dict:
     """A mailbox's two sides: the writer's outbox and each reader's inbox."""
     if readers != "addressee":
         refuse(f"channel {name}: a mailbox is read by its addressee")
@@ -666,8 +699,8 @@ def mailbox_paths(name: str, raw: dict, readers: str, shape: str,
     return {"outbox": outbox, "inbox": inbox}
 
 
-def one_path(name: str, raw: dict, readers: str, shape: str,
-             refuse: Callable[[str], None]) -> dict:
+def one_path(name: str, raw: dict, readers: Readers, shape: Shape,
+             refuse: Refuse) -> dict:
     """A directory's or a file's single path.
 
     A directory every agent reads is one instance per seat, so its path names
@@ -681,13 +714,14 @@ def one_path(name: str, raw: dict, readers: str, shape: str,
     check_path(refuse, name, "path", path, shape == "directory" and readers == "all")
     return {"path": path}
 
-# One entry a shape: where that shape declares its paths and what they must be.
-# The shapes a channel may take are this table's keys, so a shape the harness
-# gains is a row here and nothing else.
-SHAPE_PATHS = {"directory": one_path, "mailbox": mailbox_paths, "file": one_path}
+# One entry a shape: where that shape declares its paths and what they must be. The
+# keys are Shape's, in its order: a mailbox declares its two sides and every other
+# shape its one path.
+SHAPE_PATHS: dict[Shape, Callable[[str, dict, Readers, Shape, Refuse], dict]] = {
+    shape: mailbox_paths if shape == "mailbox" else one_path for shape in get_args(Shape)}
 
 
-def transfer_terms(name: str, raw: dict, penalty: int, refuse: Callable[[str], None]) -> dict:
+def transfer_terms(name: str, raw: dict, penalty: int, refuse: Refuse) -> dict:
     """The transfer schema's own fields: who funds a transfer, what comes back to the
     giver, where every transfer is recorded, and where the parse result is written."""
     funded_by = raw.get("funded_by", "harness")
@@ -716,7 +750,7 @@ def transfer_terms(name: str, raw: dict, penalty: int, refuse: Callable[[str], N
             "ledger": ledger_name, "receipt": receipt}
 
 
-def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]) -> Channel:
+def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
     """One [[channel]] table as a Channel, or a refusal naming the channel and the key.
 
     `table` is what has been parsed before it, for the duplicate-name rule. What
@@ -759,19 +793,12 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
                            and shape == "mailbox"):
             refuse(f"channel {name}: a schema is either one file read by the harness or "
                    f"a transfer mailbox read by its addressee")
-        if schema and schema not in SCHEMAS:
-            refuse(f"channel {name}: schema must be one of {sorted(SCHEMAS)}, got {schema!r}")
         for key in SCHEMAS["transfer"]:
             if not schema and key in raw:
                 refuse(f"channel {name}: {key} is a field of the transfer schema, and this "
                        f"channel has none")
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
-    agent_view = raw.get("agent_view", "paths")
-    if agent_view not in ("paths", "memory", "letters", "board", "transfer"):
-        refuse(f"channel {name}: agent_view must be one of "
-               "['paths', 'memory', 'letters', 'board', 'transfer'], "
-               f"got {agent_view!r}")
     if restated and not pushed:
         refuse(f"channel {name}: restated asks for the digest to quote this channel every "
                f"episode, and pushed is false, so the digest carries none of it")
@@ -783,14 +810,15 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Callable[[str], None]
         refuse(f"channel {name}: nothing is owed to a channel nobody else reads")
     channel = Channel(name, writer, readers, shape, **paths, pushed=pushed,
                       restated=restated, measured=measured,
-                      silence_penalty_percent=penalty, schema=schema, agent_view=agent_view,
+                      silence_penalty_percent=penalty, schema=schema,
+                      agent_view=raw.get("agent_view", "paths"),
                       **(transfer_terms(name, raw, penalty, refuse) if schema else {}))
     validate_agent_view(channel, refuse)
     return channel
 
 
 def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...],
-                refuse: Callable[[str], None]) -> None:
+                refuse: Refuse) -> None:
     """Refuse a table in which two concrete paths coincide, a file channel has no
     directory to sit in, or a channel takes a harness file's name.
 
@@ -897,7 +925,7 @@ def tools_from(records: list[dict] | None) -> list[Tool]:
 
 
 def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
-               refuse: Callable[[str], None]) -> Tool:
+               refuse: Refuse) -> Tool:
     """One [[tool]] table as a Tool, or a refusal naming the tool and the key.
 
     `table` is what has been parsed before it, for the duplicate-name rule, and
@@ -950,7 +978,7 @@ def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str)
 
     An omitted table means no tools. Pure: nothing is set.
     """
-    def refuse(why: str) -> None:
+    def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{source}: {why}")
 
     if tables is None:
@@ -1337,8 +1365,9 @@ def spent_out(account: dict) -> bool:
 def stalled(account: dict) -> bool:
     """Whether the agent has refused its last REFUSAL_STREAK episodes running.
 
-    A refusal that reaches here was declined by every model the chain offered,
-    so a streak is an agent the classifier will not let start, not a bad episode.
+    Every turn requests the provider and model pinned to the seat, so a streak of
+    REFUSAL_STREAK refusal-ended episodes means that model will not let the agent
+    start, not that an episode went badly.
     """
     recent = [s["stop"] for s in account["episodes"][-REFUSAL_STREAK:]]
     return len(recent) == REFUSAL_STREAK and set(recent) == {"refusal"}
@@ -1396,12 +1425,13 @@ def seating_of(agent: str, account: dict) -> Seating:
     label is labelled by its number.
     """
     seat = account.get("seat") or "1"
-    seen = (account.get("peers") or {}).get("seen") or {seat: agent}
+    peers = account.get("peers") or {}
+    seen = peers.get("seen") or {seat: agent}
     seen = dict(sorted(seen.items(), key=lambda kv: int(kv[0])))
-    given = dict((account.get("peers") or {}).get("labels") or {})
+    given = dict(peers.get("labels") or {})
     if account.get("label"):
         given[seat] = account["label"]
-    raw_order = (account.get("peers") or {}).get("presentation")
+    raw_order = peers.get("presentation")
     presentation = tuple(str(s) for s in raw_order if str(s) in seen) if raw_order else tuple(seen)
     if raw_order and (len(presentation) != len(seen) or set(presentation) != set(seen)):
         presentation = tuple(seen)
@@ -1894,11 +1924,17 @@ def said_to(instances: list[Instance]) -> dict[str, str]:
     return said
 
 
+def owning_instance(path: str, instances: Iterable[Instance]) -> Instance | None:
+    """The instance a digest path belongs to: the deepest one that is the path or
+    holds it, so a file nested in a directory is its own. None where none does."""
+    holders = [i for i in instances if path == i.path or path.startswith(i.path + "/")]
+    return max(holders, key=lambda i: len(i.path)) if holders else None
+
+
 def digest_name(path: str, instances: list[Instance],
                 experimenter_paths: frozenset[str] = frozenset()) -> str:
     """The agent-facing name of an internal item in a digest."""
-    matches = [i for i in instances if path == i.path or path.startswith(i.path + "/")]
-    inst = max(matches, key=lambda i: len(i.path), default=None)
+    inst = owning_instance(path, instances)
     if inst is None or inst.channel.agent_view == "paths":
         return path
     if inst.channel.agent_view == "letters":
@@ -1961,8 +1997,7 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
     """Render a channel item's content in the vocabulary of its semantic view."""
     if SHELL_TOOL:
         return body
-    matches = [i for i in instances if path == i.path or path.startswith(i.path + "/")]
-    inst = max(matches, key=lambda i: len(i.path), default=None)
+    inst = owning_instance(path, instances)
     if inst is None or inst.channel.agent_view != "transfer":
         return body
     fields = body.strip().split()
@@ -2094,9 +2129,7 @@ def digest_for(agent: str, account: dict, files: dict[str, str],
         return digest_name(name, instances, experimenter_paths)
 
     def expires_silently(name: str) -> bool:
-        matches = [inst for inst in instances
-                   if name == inst.path or name.startswith(inst.path + "/")]
-        inst = max(matches, key=lambda item: len(item.path), default=None)
+        inst = owning_instance(name, instances)
         return bool(inst and ((inst.channel.shape == "directory" and
                                inst.channel.writer == "self" and
                                inst.channel.readers == "all") or
@@ -3645,21 +3678,22 @@ def watch_text(text: str) -> None:
 # --- 12. The turn loop -----------------------------------------------------------
 
 
-def new_episode_record(floor: int) -> dict:
+def new_episode_record() -> dict:
     """The record run_turns fills in, with every field present from the start.
 
     stop: how the episode ended, harness_error until something else is known.
     spent: micro-dollars, committed on every path. turns, commands, retries,
     observation: what happened. resolved_model: the dated snapshot behind the
     alias. live_balance_writes/errors/tampered: how the per-turn writes of the
-    balance file went. refused_turns: turns the API declined, whether or not they
-    ended the episode. balances: the balance after each
-    billed turn, the elements this episode adds to the series.
+    balance file went. balance_floor: the balance the turn loop stops at, which is
+    zero. refused_turns: turns the API declined, whether or not they ended the
+    episode. balances: the balance after each billed turn, the elements this episode
+    adds to the series.
     """
     return {"stop": "harness_error", "spent": 0, "turns": [], "commands": [], "retries": [],
             "error": None, "observation": "", "resolved_model": None,
             "live_balance_writes": 0, "live_balance_errors": 0, "live_balance_tampered": 0,
-            "balance_floor": floor, "refused_turns": 0,
+            "balance_floor": 0, "refused_turns": 0,
             "balances": []}
 
 
@@ -3720,21 +3754,21 @@ def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
     return tuple(results)
 
 
-def open_episode(shell: Shell, index: int, provider: str, model: str, remaining: int,
-                 floor: int) -> tuple[dict, str]:
+def open_episode(shell: Shell, index: int, provider: str, model: str,
+                 remaining: int) -> tuple[dict, str]:
     """The episode's record, and the first user turn it opens on.
 
     Invariant 2: the first user turn is the raw stdout of the initial observation
     command, verbatim, bounded by OBSERVATION_LIMIT because it is the environment
     the harness composed and not a call the agent chose.
     """
-    out = new_episode_record(floor)
+    out = new_episode_record()
     first = observation()
     out["commands"].append(first)
     out["observation"] = sh(shell, first, OBSERVATION_LIMIT)
     watch(f"\n=== episode {index} ===")
     watch(f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining"
-          f"  (floor {floor:,}) ===")
+          "  (floor 0) ===")
     return out, out["observation"]
 
 
@@ -3792,13 +3826,10 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, i
     specs = episode_specs(bound)
     system = system_of(account)
     limit = int(providers.model_spec(provider, model).context_window * CONTEXT_FRACTION)
-    # admits() starts no episode at or below zero, so every episode begins with
-    # something to spend and stops at the same place.
-    floor = 0
     centi, balance = 0, remaining
     refused = 0                              # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
-    out, next_input = open_episode(shell, index, provider, model, remaining, floor)
+    out, next_input = open_episode(shell, index, provider, model, remaining)
     context = SessionContext(agent, label, index, interactions_root(), lambda: STOPPING)
     session = router.open_session(provider, model, system, specs, MAX_TOKENS, context)
 
@@ -3810,7 +3841,9 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, i
             if STOPPING:
                 out["stop"] = "interrupted"
                 break
-            if balance <= floor:
+            # admits() starts no episode at or below zero, so every episode begins
+            # with something to spend and stops at the same place.
+            if balance <= 0:
                 out["stop"] = "budget_exhausted"
                 break
 
@@ -3900,28 +3933,66 @@ def run_turns(router: ProviderRouter, shell: Shell, account: dict, agent: str, i
 
 # --- 13. Settlement --------------------------------------------------------------
 
+
+class TransferRecord(TypedDict):
+    """What an episode's transfer came to, as the account and the trace keep it.
+
+    declared: the declaration as read, None where none was. seat, label, agent: the
+    receiver, set once the declaration names a seat of the experiment. amount: what
+    moved, capped at the episode's spend; rebate and debit: what that did to the
+    giver under the channel's funded_by. changed: whether anything was declared.
+    error: why a declaration moved nothing. penalty: the share taken for moving none.
+    """
+    declared: str | None
+    seat: str | None
+    label: str | None
+    agent: str | None
+    amount: int
+    rebate: int
+    debit: int
+    changed: bool
+    error: str | None
+    penalty: int
+
+
 # What an episode's transfer record holds where no declaration was made, or none
 # could be: the shape every reader of the record can rely on.
-EMPTY_TRANSFER = {"declared": None, "seat": None, "label": None, "agent": None,
-                  "amount": 0, "rebate": 0, "debit": 0, "changed": False,
-                  "error": None, "penalty": 0}
+EMPTY_TRANSFER: TransferRecord = {"declared": None, "seat": None, "label": None, "agent": None,
+                                  "amount": 0, "rebate": 0, "debit": 0, "changed": False,
+                                  "error": None, "penalty": 0}
+
+
+@dataclasses.dataclass(frozen=True)
+class TransferParsed:
+    """A declaration that parsed: what was written, the label it names and the amount."""
+    declared: str
+    label: str
+    amount: int
+
+
+@dataclasses.dataclass(frozen=True)
+class TransferFault:
+    """A declaration that moves nothing whoever it names: what was written where it
+    could be read, and why it does not parse. Both None is no declaration at all."""
+    declared: str | None
+    error: str | None
 
 
 def transfer_declaration(ch: Channel, path: Path,
-                         peer_labels: Iterable[str]) -> tuple[str | None, str | None, int | None,
-                                                              str | None]:
-    """Read this episode's transfer as declaration, recipient, amount and parse error."""
+                         peer_labels: Iterable[str]) -> TransferParsed | TransferFault:
+    """Read this episode's transfer: what was declared, and either the recipient and
+    amount it names or why it names none."""
     if ch.shape == "file":
         if not path.exists():
-            return None, None, None, None
+            return TransferFault(None, None)
         try:
             declared = path.read_text(encoding="utf-8", errors="replace")[:FILE_CONTENT_LIMIT]
         except OSError as e:
-            return None, None, None, f"could not be read: {type(e).__name__}"
+            return TransferFault(None, f"could not be read: {type(e).__name__}")
         lines = [ln.strip() for ln in declared.splitlines() if ln.strip()]
         if len(lines) != 1 or not (match := TRANSFER_LINE.match(lines[0])):
-            return declared, None, None, "not one line of <seat> <amount>"
-        return declared, match["label"], int(match["amount"]), None
+            return TransferFault(declared, "not one line of <seat> <amount>")
+        return TransferParsed(declared, match["label"], int(match["amount"]))
 
     active: list[tuple[str, str]] = []
     for label in peer_labels:
@@ -3931,23 +4002,23 @@ def transfer_declaration(ch: Channel, path: Path,
         try:
             body = slot.read_text(encoding="utf-8", errors="replace")[:FILE_CONTENT_LIMIT]
         except OSError as e:
-            return None, None, None, f"could not be read: {type(e).__name__}"
+            return TransferFault(None, f"could not be read: {type(e).__name__}")
         if body.strip():
             active.append((label, body))
     if not active:
-        return None, None, None, None
+        return TransferFault(None, None)
     if len(active) != 1:
         declared = "".join(f"{label} {body.strip()}\n" for label, body in active)
-        return declared, None, None, "more than one transfer was submitted"
+        return TransferFault(declared, "more than one transfer was submitted")
     label, body = active[0]
     lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
     declared = f"{label} {body.strip()}\n"
     if len(lines) != 1 or not lines[0].isdigit():
-        return declared, label, None, "the amount is not one whole number that is at least 1"
-    return declared, label, int(lines[0]), None
+        return TransferFault(declared, "the amount is not one whole number that is at least 1")
+    return TransferParsed(declared, label, int(lines[0]))
 
 
-def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
+def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: TransferRecord,
                   credit: Callable[[str, int], None]) -> None:
     """Move what the declaration asks for, and record what moved.
 
@@ -3960,13 +4031,15 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
     by_label = {label: seat for seat, label in s.labels.items()}
     if not s.peers:
         return
-    rec["declared"], label, asked, rec["error"] = transfer_declaration(
-        ch, path, [s.labels[seat] for seat in s.peers])
-    if rec["error"] or rec["declared"] is None:
+    found = transfer_declaration(ch, path, [s.labels[seat] for seat in s.peers])
+    rec["declared"] = found.declared
+    if isinstance(found, TransferFault):
+        rec["error"] = found.error
         return
     if ch.funded_by == "none":
         rec["error"] = "transfers are off"
         return
+    label = found.label
     seat = by_label.get(label)
     if seat == s.seat:
         rec["error"] = "an agent cannot transfer to itself"
@@ -3974,24 +4047,25 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
     if seat is None:
         rec["error"] = f"no seat {label} in this experiment"
         return
-    rec["seat"], rec["label"], rec["agent"] = seat, label, s.seen[seat]
+    receiver = s.seen[seat]
+    rec["seat"], rec["label"], rec["agent"] = seat, label, receiver
     if seat not in ep.reach:
         rec["error"] = f"seat {label} is out"
         return
-    if asked <= 0:
+    if found.amount <= 0:
         rec["error"] = "the amount must be at least 1"
         return
     if spent <= 0:
         rec["error"] = "the episode spent nothing to offset"
         return
 
-    rec["amount"] = min(asked, spent)
+    rec["amount"] = min(found.amount, spent)
     if ch.funded_by == "harness":
         rec["rebate"] = rec["amount"] * ch.rebate_percent // 100
     else:
         rec["debit"] = rec["amount"]
 
-    credit(rec["agent"], rec["amount"])
+    credit(receiver, rec["amount"])
     # One series element for what the transfer did to the giver, none where it did
     # nothing: a harness-funded transfer at rebate 0 leaves the balance alone.
     adjust(account, rec["rebate"] - rec["debit"])
@@ -4000,8 +4074,8 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: dict,
     account["debited"] = account.get("debited", 0) + rec["debit"]
 
 
-def resolve_transfer(ep: Episode, ch: Channel, path: Path, spent: int, settles: bool,
-                     credit: Callable[[str, int], None]) -> dict:
+def resolve_transfer(ep: Episode, inst: Instance, spent: int, settles: bool,
+                     credit: Callable[[str, int], None]) -> TransferRecord:
     """Make the episode's transfer, and take a share of what is left where it made none.
 
     Exactly one transfer an episode: no more is the grammar's, no less is this
@@ -4009,23 +4083,26 @@ def resolve_transfer(ep: Episode, ch: Channel, path: Path, spent: int, settles: 
     submitted during this episode can move money. `settles` is false for an
     episode with no turn or inside the grace.
     """
-    rec = dict(EMPTY_TRANSFER)
-    move_transfer(ep, ch, path, spent, rec, credit)
+    rec = EMPTY_TRANSFER.copy()
+    move_transfer(ep, inst.channel, inst.host, spent, rec, credit)
     rec["changed"] = rec["declared"] is not None
     if rec["amount"] > 0 or not settles:
         return rec
     if spent <= 0 or not ep.reach:
         return rec
-    rec["penalty"] = penalise(ep.account, ch)
+    rec["penalty"] = penalise(ep.account, inst.channel)
     return rec
 
 
-def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> dict:
+def resolve_directory(ep: Episode, inst: Instance, spent: int, settles: bool,
+                      credit: Callable[[str, int], None]) -> dict:
     """Take a share of what is left where a directory every agent reads gained nothing.
 
     Something in it that was not in it before, read forward from what it holds
-    now, so a path that only went away is not in the comparison at all.
+    now, so a path that only went away is not in the comparison at all. A post
+    moves no money, so `spent` and `credit` go unread.
     """
+    ch = inst.channel
     post_channels = {tool.channel for tool in tools() if tool.kind == "post_public"}
     if ch.name in post_channels:
         posted = bool(file_sha256(inst.host / TOOL_KINDS["post_public"].file))
@@ -4040,12 +4117,14 @@ def resolve_directory(ep: Episode, ch: Channel, inst: Instance, settles: bool) -
     return rec
 
 
-def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> dict:
+def resolve_mailbox(ep: Episode, inst: Instance, spent: int, settles: bool,
+                    credit: Callable[[str, int], None]) -> dict:
     """Take a share of what is left where the episode sent no message.
 
     A message is a file: <outbox>/<label> arrives at that peer as
     <inbox>/<this agent's label>. Any number of reachable slots may be filled; the
     obligation is met when at least one is. Only a reachable peer's slot is judged.
+    A message moves no money, so `spent` and `credit` go unread.
     """
     slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
     rec: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
@@ -4064,11 +4143,11 @@ def resolve_mailbox(ep: Episode, ch: Channel, inst: Instance, settles: bool) -> 
     spoke = bool(rec["addressed"])
     if spoke or not settles:
         return rec
-    rec["penalty"] = penalise(ep.account, ch)
+    rec["penalty"] = penalise(ep.account, inst.channel)
     return rec
 
 
-def outbox_why(rec: dict, ch: Channel) -> str:
+def outbox_why(rec: Mapping[str, Any], ch: Channel) -> str:
     """What the outbox was charged for, named by slot where a slot is at fault.
 
     One share covers however many ways an episode broke the rule, so this names
@@ -4083,23 +4162,52 @@ def outbox_why(rec: dict, ch: Channel) -> str:
     return " and ".join(why)
 
 
-def settled_why(settled: Iterable[tuple[Channel, dict]]) -> str:
+def transfer_met(rec: Mapping[str, Any]) -> bool:
+    """A transfer meets the obligation only when the episode moved money and no share
+    was taken for having moved none."""
+    return bool(rec["amount"]) and not rec["penalty"]
+
+
+@dataclasses.dataclass(frozen=True)
+class Settlement:
+    """One rule an obligated channel is settled by: what settling it does, what met
+    means, and what an unmet one is called.
+
+    `resolve` settles one episode against the agent's own instance and returns the
+    record the account and the trace keep. It is handed what any rule settles with -
+    the episode, the instance, what the episode spent, whether it settles, and how a
+    credit reaches its receiver - and reads what its own rule needs. `met` reads a
+    record back, just settled or out of a trace, as whether the obligation was met.
+    `why` names what an unmet one left undone, in the words the console line and
+    the viewer share.
+    """
+    resolve: Callable[[Episode, Instance, int, bool, Callable[[str, int], None]],
+                      Mapping[str, Any]]
+    met: Callable[[Mapping[str, Any]], bool]
+    why: Callable[[Mapping[str, Any], Channel], str]
+
+
+# One entry a rule, keyed by Channel.settles_as. settle_episode resolves by it, the
+# console line and view.unmet say what went undone by it, and analyze.met_of judges
+# by it, so no two of them can take one channel for different kinds.
+SETTLEMENTS: dict[SettlesAs, Settlement] = {
+    "transfer": Settlement(resolve_transfer, transfer_met,
+                           lambda rec, ch: "no transfer of its own"),
+    "mailbox": Settlement(resolve_mailbox, lambda rec: bool(rec["addressed"]), outbox_why),
+    "directory": Settlement(resolve_directory, lambda rec: bool(rec["posted"]),
+                            lambda rec, ch: "no post"),
+}
+
+
+def settled_why(settled: Iterable[tuple[Channel, Mapping[str, Any]]]) -> str:
     """What each channel settled for, for the console line, named by channel.
 
     Takes the channels settle_episode settled beside their records, so the
     statement is made of what the episode ran under and not of the table in force.
+    A channel is named where a share was taken, in its rule's words.
     """
-    said = []
-    for ch, rec in settled:
-        if ch.schema:
-            if rec["penalty"]:
-                said.append(f"  {ch.name}: no transfer of its own, took {rec['penalty']}")
-        elif ch.shape == "mailbox":
-            if rec["penalty"]:
-                said.append(f"  {ch.name}: {outbox_why(rec, ch)}, took {rec['penalty']}")
-        elif not rec["posted"] and rec["penalty"]:
-            said.append(f"  {ch.name}: no post, took {rec['penalty']}")
-    return "".join(said)
+    return "".join(f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(rec, ch)}, "
+                   f"took {rec['penalty']}" for ch, rec in settled if rec["penalty"])
 
 
 # --- 14. Provenance and the trace ------------------------------------------------
@@ -4578,17 +4686,12 @@ def settle_episode(ep: Episode, out: dict, credit: Callable[[str, int], None] | 
     credit = credit or credit_on_disk
     own = [i for i in ep.instances if i.writable and i.channel.obligated]
     ordered = sorted(own, key=lambda i: not i.channel.schema)
-    records: dict[str, dict] = {}
+    records: dict[str, Mapping[str, Any]] = {}
     for inst in ordered:
-        ch = inst.channel
-        if ch.schema == "transfer":
-            records[ch.name] = resolve_transfer(ep, ch, inst.host, out["spent"], settles, credit)
-        elif ch.shape == "mailbox":
-            records[ch.name] = resolve_mailbox(ep, ch, inst, settles)
-        else:
-            records[ch.name] = resolve_directory(ep, ch, inst, settles)
+        records[inst.name] = SETTLEMENTS[inst.channel.settles_as].resolve(
+            ep, inst, out["spent"], settles, credit)
     parsed = records[ordered[0].name] if ordered and ordered[0].channel.schema else None
-    return {"transfer": parsed or dict(EMPTY_TRANSFER), "channels": records,
+    return {"transfer": parsed or EMPTY_TRANSFER.copy(), "channels": records,
             # The channels beside their records, so the console line and anything
             # else that reads them need not find them by name in a global.
             "settled": [(i.channel, records[i.channel.name]) for i in ordered]}
@@ -4716,12 +4819,12 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     line = (f"{ep.agent:<6} ep{ep.index:<3} {trace['stop']:<16} spent={trace['spent']:>7} "
             f"left={trace['remaining']:>9} turns={len(trace['turns']):>3} "
             f"read_balance={str(trace['read_balance']).lower()}")
-    # No route reaches a balance, so anything but zero means the arrangement that
-    # guarantees that has failed.
     # Written outside every channel: the work was kept, and the episode spent
     # turns putting it somewhere that does not come back.
     if trace.get("misplaced"):
         line += f"  misplaced={len(trace['misplaced'])}"
+    # No route reaches a balance, so anything but zero means the arrangement that
+    # guarantees that has failed.
     if trace["live_balance_tampered"]:
         line += f"  BALANCE UNSTABLE={trace['live_balance_tampered']}x"
     # Refusals are counted, and their category named, because an episode that met
@@ -4779,7 +4882,7 @@ def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
           harness_files: dict | None = None, labels: Iterable[str] = ("1",),
           tool_tables: list[dict] | None = None) -> ProviderRouter:
     """Read configuration and preflight every provider/model used by a seat."""
-    def refuse(why: str) -> None:
+    def refuse(why: str) -> NoReturn:
         print(why, file=sys.stderr)
         raise SystemExit(2)
 

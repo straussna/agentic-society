@@ -17,7 +17,7 @@ import sys
 import threading
 import tomllib
 from pathlib import Path
-from typing import Any, Callable, TypedDict, TypeVar
+from typing import Any, Callable, NoReturn, TypedDict, TypeVar
 
 import harness
 import product
@@ -144,9 +144,9 @@ def check_ids(ids: list[str], where: str) -> None:
                          f"called: {bad}")
 
 
-def refuser(path: Path) -> Callable[[str], None]:
+def refuser(path: Path) -> harness.Refuse:
     """How this manifest refuses: every message led by the file it came from."""
-    def refuse(why: str) -> None:
+    def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{path}: {why}")
     return refuse
 

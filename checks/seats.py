@@ -5,6 +5,7 @@ from __future__ import annotations
 import analyze
 import experiment
 import harness
+import view
 
 from checks.fake import Err, fake, run, say
 from checks.lanes import (
@@ -696,3 +697,35 @@ def check_the_transfer_share_is_taken_before_the_other_two():
     assert t["channels"]["mail"]["penalty"] == third, (t["channels"]["mail"]["penalty"], third)
     assert account["remaining"] == left - first - second - third == account["series"][-1]
     assert account["remaining"] * 8 <= left * 1.05, "three halves off the top leave an eighth"
+
+
+def check_the_console_and_the_page_name_an_unmet_obligation_alike():
+    """What an episode left undone reads the same on its console line and on the page.
+
+    Both take the words from the channel's rule in harness.SETTLEMENTS. The console
+    names a channel only where a share was taken, so inside the grace it names none
+    while the page still states what went undone; and a transfer that moved nothing
+    is named on the page by its error, which the console prints on a line of its own.
+    """
+    with temp_root(channels=ALL_OWED) as root:
+        seated(root, other={})
+        with quiet() as out:
+            t = harness.run_once("t", fake(run("true"), say()))
+    line = next(ln for ln in out.getvalue().splitlines() if ln.startswith("t "))
+    stated = {f"  {u['channel']}: {u['why']}, took {u['penalty']}" for u in view.unmet(t)}
+    assert stated == {f"  transfer: no transfer of its own, took {t['transfer']['penalty']}",
+                      f"  blackboard: no post, took {t['channels']['blackboard']['penalty']}",
+                      f"  mail: no message, took {t['channels']['mail']['penalty']}"}, stated
+    assert all(s in line for s in stated) and line.count(", took ") == 3, line
+
+    with temp_root(GRACE_EPISODES=1, channels=ALL_OWED) as root:
+        seated(root, other={})
+        with quiet() as out:
+            waived = harness.run_once("t", fake(run("echo '2 0' > out/transfer"), say()))
+    said = out.getvalue()
+    line = next(ln for ln in said.splitlines() if ln.startswith("t "))
+    assert ", took " not in line, f"a share nobody took is not on the console: {line}"
+    assert "t: transfer declaration moved nothing: the amount must be at least 1" in said, said
+    assert [(u["channel"], u["why"], u["penalty"]) for u in view.unmet(waived)] == [
+        ("blackboard", "no post", 0), ("mail", "no message", 0),
+        ("transfer", "the amount must be at least 1", 0)], view.unmet(waived)

@@ -83,6 +83,11 @@ def check_a_channel_table_is_validated():
                  ["restated asks for the digest"]),
                 (one(silence_penalty_percent=101), ["between 0 and 100"]),
                 (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
+                (one(agent_view="shelf"),
+                 ["agent_view must be one of ['paths', 'memory', 'letters', 'board', "
+                  "'transfer'], got 'shelf'"]),
+                (tables({"name": "b", "writer": "experimenter", "source": "studio-brief",
+                         "path": "b", "agent_view": "shelf"}), ["agent_view must be one of"]),
                 (one(agent_view="letters"), ["agent_view 'letters' does not describe"]),
                 (mail(agent_view="board"), ["agent_view 'board' does not describe"]),
                 (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
@@ -126,7 +131,8 @@ def check_a_channel_table_is_validated():
 
 
 def check_retired_keys_are_refused():
-    """Every key that moved onto a channel is refused by its old name, and told where it went."""
+    """Every key RETIRED names is refused by name, in config.toml and in a manifest,
+    and the refusal says where that setting is declared."""
     with rooted(HostBox) as root:
         f = root / "config.toml"
         for key in harness.RETIRED:
@@ -366,6 +372,24 @@ def check_harness_files_can_be_renamed():
     assert "===" not in t["observation"], "the listing alone"
     assert t["turns"][0]["tools"][0]["result"] == "theirs\n", "the environment is all still there"
     assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
+
+
+def check_a_trace_that_names_no_harness_files_is_read_under_the_defaults():
+    """A trace that predates recorded names ran under the code's, not the ones in force.
+
+    A manifest applied in this process replaces HARNESS_FILES, so reading an old
+    trace through it would name files that episode never had. table_of reads the
+    default table the same way.
+    """
+    with pinned():
+        harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")
+        in_force = dict(harness.HARNESS_FILES)
+        old = analyze.harness_files_of({"provenance": {}})
+        recorded = analyze.harness_files_of({"provenance": {"harness_files": in_force}})
+        default = dict(harness.DEFAULT_HARNESS_FILES)
+    assert in_force == {"balance": "bal", "digest": "say"}, in_force
+    assert old == default == {"balance": "n", "digest": "m"}, (old, default)
+    assert recorded == in_force, "a trace that names its files is read by them"
 
 
 def check_a_channel_is_settled_only_where_it_asks_to_be():

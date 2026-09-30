@@ -119,9 +119,9 @@ def label_of(t: dict) -> str:
 
 
 def harness_files_of(t: dict) -> dict[str, str]:
-    """What the harness's own files were called this episode, or the names in force
-    where the trace predates them."""
-    return t["provenance"].get("harness_files") or dict(harness.HARNESS_FILES)
+    """What the harness's own files were called this episode, or the code's default
+    names where the trace predates them, as table_of reads the default table."""
+    return t["provenance"].get("harness_files") or dict(harness.DEFAULT_HARNESS_FILES)
 
 
 def channel_records(t: dict) -> dict[str, dict]:
@@ -142,7 +142,7 @@ def settled_channels(t: dict) -> list[tuple[harness.Channel, dict]]:
 
 
 def met_of(ch: harness.Channel, rec: dict) -> bool | None:
-    """Whether one settled channel's obligation was met, by the rule that settles it.
+    """Whether one settled channel's obligation was met, by its rule in harness.SETTLEMENTS.
 
     None where the record is empty, which is a channel that settled nothing. What
     was met and what was charged are two questions: a share is taken only from an
@@ -150,13 +150,7 @@ def met_of(ch: harness.Channel, rec: dict) -> bool | None:
     """
     if not rec:
         return None
-    if ch.schema:
-        # A transfer meets the obligation only when this episode moved money and
-        # no share was taken for having moved none.
-        return bool(rec["amount"]) and not rec["penalty"]
-    if ch.shape == "mailbox":
-        return messaged(rec)
-    return bool(rec["posted"])
+    return harness.SETTLEMENTS[ch.settles_as].met(rec)
 
 
 def mailbox_channel_of(t: dict) -> harness.Channel | None:

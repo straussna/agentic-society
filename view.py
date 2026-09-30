@@ -725,20 +725,18 @@ def obligations(t: dict | None) -> dict[str, bool | None]:
 def unmet(t: dict | None) -> list[dict]:
     """Each obligation this episode left undone, in table order, and what it cost.
 
-    Said in the words the harness's own console line uses, so the page and the
-    console cannot describe one episode differently. `penalty` is what was taken,
-    which is zero inside the grace and at a rate of zero.
+    Said in the words the harness's own console line uses, from the same
+    harness.SETTLEMENTS entry, so the page and the console cannot describe one
+    episode differently. A record that carries its own error - a transfer
+    declaration that moved nothing, which the console prints on a line of its own -
+    says that instead. `penalty` is what was taken, which is zero inside the grace
+    and at a rate of zero.
     """
     out = []
     for ch, rec in analyze.settled_channels(t or {}):
         if analyze.met_of(ch, rec) is not False:
             continue
-        if ch.schema:
-            why = rec.get("error") or "no transfer of its own"
-        elif ch.shape == "mailbox":
-            why = harness.outbox_why(rec, ch)
-        else:
-            why = "no post"
+        why = rec.get("error") or harness.SETTLEMENTS[ch.settles_as].why(rec, ch)
         out.append({"channel": ch.name, "why": why, "penalty": rec.get("penalty") or 0})
     return out
 
