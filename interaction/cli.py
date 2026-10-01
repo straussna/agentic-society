@@ -7,12 +7,13 @@ import json
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
-from .contracts import VERSION
-from .store import InteractionConflict, InteractionError, InteractionStore
+from .contracts import VERSION, InteractionRequest
+from .store import InteractionConflict, InteractionError, InteractionStore, UnreadableRecord
 
 
-def describe(request, draft: list[dict]) -> None:
+def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
     print(f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}")
     supplied = request.input
     if supplied["kind"] == "initial_observation":
@@ -36,10 +37,30 @@ def describe(request, draft: list[dict]) -> None:
     print(f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}")
 
 
+def waiting(store: InteractionStore,
+            agent: str) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
+    """The request pending for `agent` and its draft.
+
+    A pending pointer or request that does not read is reported and reads as none; a
+    draft that does not read is reported and starts empty, since the next save replaces it.
+    """
+    try:
+        request = store.current(agent)
+    except UnreadableRecord as error:
+        print(f"unreadable: {error}")
+        return None, []
+    if request is None:
+        return None, []
+    try:
+        return request, store.load_draft(agent, request.request_id)
+    except UnreadableRecord as error:
+        print(f"unreadable: {error}")
+        return request, []
+
+
 def run(agent: str, root: Path) -> int:
     store = InteractionStore(root)
-    request = store.current(agent)
-    draft = store.load_draft(agent, request.request_id) if request else []
+    request, draft = waiting(store, agent)
     if request:
         describe(request, draft)
     else:
@@ -57,8 +78,7 @@ def run(agent: str, root: Path) -> int:
             if command in ("quit", "q"):
                 return 0
             if command in ("tools", "refresh"):
-                request = store.current(agent)
-                draft = store.load_draft(agent, request.request_id) if request else []
+                request, draft = waiting(store, agent)
                 if request:
                     describe(request, draft)
                 else:
@@ -110,16 +130,19 @@ def run(agent: str, root: Path) -> int:
             print(f"invalid value: {error}")
         except InteractionConflict as error:
             print(f"not submitted: {error}")
+        except UnreadableRecord as error:
+            print(f"unreadable: {error}")
         except InteractionError as error:
             print(f"request changed: {error}")
-            request = store.current(agent)
-            draft = store.load_draft(agent, request.request_id) if request else []
+            request, draft = waiting(store, agent)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agent", required=True, help="agent identifier to control")
+    # harness.interactions_root() for this repository, spelled out because the
+    # interaction package sits below harness and does not import it.
     parser.add_argument("--root", type=Path,
                         default=Path(__file__).resolve().parents[1] / "interactions",
                         help=argparse.SUPPRESS)

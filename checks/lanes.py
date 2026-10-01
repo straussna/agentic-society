@@ -6,9 +6,10 @@ helpers that read the record back."""
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterable
 from pathlib import Path
 import contextlib
+import dataclasses
 import difflib
 import io
 import json
@@ -85,8 +86,9 @@ def _ask_docker() -> bool:
     """Put the question to the daemon. Says so once if the image is not built."""
     if not shutil.which("docker") or subprocess.run(["docker", "info"], capture_output=True).returncode:
         return False
-    if subprocess.run(["docker", "image", "inspect", harness.IMAGE], capture_output=True).returncode:
-        print(f"image {harness.IMAGE} not built\n")
+    if subprocess.run(["docker", "image", "inspect", harness.SETTINGS.image],
+                      capture_output=True).returncode:
+        print(f"image {harness.SETTINGS.image} not built\n")
         return False
     return True
 
@@ -259,7 +261,7 @@ def leaked_containers() -> str:
 
 
 def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
-    """Write an experiment manifest under a temporary ROOT, for the manifest checks to use."""
+    """Write an experiment manifest under a temporary root, for the manifest checks to use."""
     head = text.split("[[agent]]", 1)[0]
     prefix = ""
     if not re.search(r"(?m)^provider\s*=", head):
@@ -320,7 +322,7 @@ def offers(*declared: dict) -> list[dict]:
 
 def digest_name() -> str:
     """What the digest is called under the table in force."""
-    return harness.HARNESS_FILES["digest"]
+    return harness.SETTINGS.harness_files["digest"]
 
 
 def ledger_name() -> str:
@@ -344,7 +346,7 @@ def channel_toml(declared: list[dict], harness_files: dict | None = None) -> str
 
 
 def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) -> Path:
-    """Plant an experimenter channel's files under a temporary ROOT and declare the channel.
+    """Plant an experimenter channel's files under a temporary root and declare the channel.
 
     Inside a root's block, since pinned() puts the table back when the block ends.
     """
@@ -353,47 +355,73 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
                                    "path": path}), None, "check")
     return planted
 
-# Every harness global a check is allowed to move, and therefore every one pinned()
-# puts back. temp_root refuses any name outside this set.
-RESTORED = harness.TUNABLES | {"ROOT", "WATCH", "REFUSAL_TURNS", "BOX", "drive", "ready", "start",
-                                "CHANNELS", "HARNESS_FILES", "TOOLS", "SHELL_TOOL", "PINNED", "load_account",
-                                "replace_file",
-                            # Set per check and put back by pinned(), so no check
-                            # carries into the next in the same worker.
-                            "STOPPING", "catch_signals"}
+# Every harness name a check is allowed to move, and therefore every one pinned()
+# puts back: the settings, the seams a check stands a double in, and the constants
+# and flags it sets. temp_root refuses any other.
+SEAMS = {"SETTINGS", "BOX", "ready", "start", "load_account", "replace_file", "console_line",
+         "PINNED", "WATCH", "REFUSAL_TURNS",
+         # Set per check and put back by pinned(), so no check carries into the
+         # next in the same worker.
+         "STOPPING", "catch_signals"}
+
+# What a check may amend: every tunable, and the root. The tables are
+# apply_channels' and apply_tools', which hold them to their rules.
+TUNED = {t.lower() for t in harness.TUNABLES} | {"root"}
+
+# How many pinned() blocks are open: amend() moves a setting only inside one.
+_depth = 0
 
 
 @contextlib.contextmanager
 def pinned():
-    """Restore every episode global a check may move, on exit.
+    """Restore every harness name a check may move, the settings among them, on exit.
 
     catch_signals is stubbed and not restored: a handler installed by a check
     driving harness.main would outlive it and answer the suite's own Ctrl+C.
     """
-    saved = {k: getattr(harness, k) for k in RESTORED}
+    global _depth
+    saved = {k: getattr(harness, k) for k in SEAMS - {"SETTINGS"}}
     harness.catch_signals = lambda: None
+    _depth += 1
     try:
-        yield
+        with harness.using(harness.SETTINGS):
+            yield
     finally:
+        _depth -= 1
         for k, v in saved.items():
             setattr(harness, k, v)
+
+
+def amend(**fields) -> None:
+    """Move settings for the rest of a pinned() block: amend(max_turns=1, command_timeout=2).
+
+    Straight into the settings in force, and not through config.toml or a manifest,
+    so a value neither file could give stands."""
+    assert _depth, "amend() outside pinned(): nothing would put the settings back"
+    assert set(fields) <= TUNED, f"{sorted(set(fields) - TUNED)} cannot be amended"
+    harness.SETTINGS = dataclasses.replace(harness.SETTINGS, **fields)
 
 
 @contextlib.contextmanager
 def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     """Point harness at a throwaway directory, with episodes running in `box`.
 
-    `overrides` set harness module globals (MAX_TURNS=1, COMMAND_TIMEOUT=2) for the
-    duration, and pinned() puts every one of them back. `tools` are [[tool]] tables,
-    decided against whatever channel table is then in force.
+    `overrides` amend a tunable (max_turns=1, command_timeout=2) or move a seam
+    (BOX=RecordingBox, start=capture) for the duration, and pinned() puts every one
+    of them back. `tools` are [[tool]] tables, decided against whatever channel table
+    is then in force.
     """
     provider = overrides.pop("PROVIDER", "anthropic")
     model = overrides.pop("MODEL", "claude-sonnet-5")
-    unknown = set(overrides) - RESTORED
+    fields = {k: v for k, v in overrides.items() if k in TUNED - {"root"}}
+    seams = {k: v for k, v in overrides.items() if k not in fields}
+    unknown = set(seams) - (SEAMS - {"SETTINGS"})
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
     with pinned(), tempfile.TemporaryDirectory(
             prefix="mtr-check-", ignore_cleanup_errors=True) as d:
-        harness.ROOT = Path(d)
+        # Before the tables: a tool table is refused or not by the delivery and the
+        # digest in force.
+        amend(root=Path(d), **fields)
         harness.BOX = box
         load_account = harness.load_account
 
@@ -404,7 +432,7 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
             return load_account(agent, **terms)
 
         harness.load_account = load_test_account
-        for k, v in overrides.items():
+        for k, v in seams.items():
             setattr(harness, k, v)
         if channels is not None or harness_files is not None:
             harness.apply_channels(channels, harness_files, "check")
@@ -554,7 +582,7 @@ def differs(a, b) -> str:
 
 
 def plant(root: Path, name: str = "s", **files: str) -> Path:
-    """Write a starter-files tree under a temporary ROOT, for the starter-files checks to use."""
+    """Write a starter-files tree under a temporary root, for the starter-files checks to use."""
     d = root / "files" / name
     for rel, text in (files or {"m1": "alpha\n", "d/m2": "beta\n"}).items():
         (d / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -562,8 +590,8 @@ def plant(root: Path, name: str = "s", **files: str) -> Path:
     return d
 
 
-def lay_out(root: Path, **agents: dict[str, str]) -> list[str]:
-    """Lay out an experiment's directories under the ROOT in force, for the experiment checks to use.
+def lay_out(**agents: dict[str, str]) -> list[str]:
+    """Lay out an experiment's directories under the root in force, for the experiment checks to use.
 
     "group/" goes on that agent's blackboard, "out/" in its outbox where only the seat
     it names reads it, and anything else in its private store.
@@ -603,7 +631,7 @@ def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None,
     # added if the caller left it out - at the front, since the seat a check does
     # not name is the one it does not care about. A caller that does name it
     # keeps it where it put it, which is how a check reaches a seat other than 1.
-    ids = lay_out(root, **(agents if agent in agents else {agent: {}} | agents))
+    ids = lay_out(**(agents if agent in agents else {agent: {}} | agents))
     seats = experiment.seats_of(ids)
     for seat, other in seats.items():
         with quiet():
@@ -636,8 +664,13 @@ def put_out(agent: str) -> None:
 
 
 def unfinished() -> None:
-    """Take away the first episode's trace, leaving the raw log a running one leaves."""
+    """Take away the first episode's trace, and its commit from the account, leaving the
+    raw log a running one leaves and the account as it stood when the episode started."""
     harness.trace_path("t", 1).unlink()
+    account = ground_truth()
+    account["series"] = account["series"][:account["episodes"][0]["series_from"] + 1]
+    account["remaining"], account["episodes"] = account["series"][-1], []
+    harness.save_account("t", account)
 
 
 @contextlib.contextmanager
@@ -655,30 +688,36 @@ def two_seats():
         yield view.experiment_of("g01"), experiment.seats_of(ids)
 
 
-def fake_experiment(root: Path, acted: list[tuple], series: tuple[int, ...] = (1000,),
+def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
                     agents: tuple[str, ...] = ("g01", "g02", "g03"), **trace_fields) -> dict:
-    """An experiment written straight to disk: one trace per episode taken, one account per seat.
+    """An experiment written straight to disk: one trace per episode taken, one account per
+    seat, which lists every episode it took as committed.
 
     `acted` is the episodes in the order they started, each `(agent, "hh:mm")` or
     `(agent, "hh:mm", {fields})` for a trace with more in it; `trace_fields` go
     into every trace. Returns the experiment as view.py reads it.
     """
     seats = experiment.seats_of(list(agents))
-    taken: dict[str, int] = {}
+    taken: dict[str, list[dict]] = {}
     for agent, at, *more in acted:
-        taken[agent] = taken.get(agent, 0) + 1
-        p = harness.trace_path(agent, taken[agent])
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps({
-            "agent": agent, "episode": taken[agent], "stop": "end_turn", "spent": 1,
+        episodes = taken.setdefault(agent, [])
+        trace = {
+            "agent": agent, "episode": len(episodes) + 1, "stop": "end_turn", "spent": 1,
             "turns": [], "remaining": 0, "files": [], "state_saved": True,
-            "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats},
-            **trace_fields, **(more[0] if more else {})}), encoding="utf-8")
+            "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats,
+                           "harness_files": dict(harness.SETTINGS.harness_files),
+                           "message_delivery": "episode"},
+            **trace_fields, **(more[0] if more else {})}
+        episodes.append({key: trace[key] for key in ("episode", "stop", "spent")})
+        p = harness.trace_path(agent, len(episodes))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(trace), encoding="utf-8")
     for seat, agent in seats.items():
         harness.records_dir(agent).mkdir(parents=True, exist_ok=True)
-        (harness.records_dir(agent) / "account.json").write_text(json.dumps({
+        harness.account_path(agent).write_text(json.dumps({
             "agent": agent, "seat": seat, "peers": {"seen": seats},
-            "series": list(series), "remaining": series[-1], "initial": 1000, "episodes": [],
+            "series": list(series), "remaining": series[-1], "initial": 1000,
+            "episodes": taken.get(agent, []),
         }), encoding="utf-8")
     return view.experiment_named("g")
 

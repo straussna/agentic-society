@@ -15,15 +15,16 @@ there is one, and the trace records which it was. `starter_files` and
 agent meets the goal as a file it found and paid to read rather than as something the
 harness said.
 
-At the first episode whose balance is at or below `starter_files_below`, the tree under `files/<starter_files>`
-is copied into the agent's private store (`state/` under the default table) before the
+At the first episode whose balance is at or below `starter_files_below`, the file or tree
+`starter_files` names — under `files/`, or a `./` or `../` path beside the manifest — is
+copied into the agent's private store (`state/` under the default table) before the
 container starts, so the agent meets it in the listing the episode opens on and not in
-anything the harness says. Set both or neither; starter files that never land and a
-threshold with nothing to land are both refused at startup, as are starter files that are
-not a directory. They land once — the record in `account.json` is the guard, so
-re-running an episode cannot plant them twice, and a path the agent has since written to stops the
-agent instead of being overwritten, because clobbering the agent's own file would destroy
-the only record of it.
+anything the harness says. A single file lands under its own name. Set both or neither;
+starter files that never land and a threshold with nothing to land are both refused at
+startup, as are starter files naming no existing file or directory. They land once — the
+record in `account.json` is the guard, so re-running an episode cannot plant them twice,
+and a path the agent has since written to stops the agent instead of being overwritten,
+because clobbering the agent's own file would destroy the only record of it.
 
 The starter files' name and threshold are pinned in `account.json` when the agent is created, beside
 its budget and model, and that is what every later episode reads: editing the manifest does

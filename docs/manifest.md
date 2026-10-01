@@ -6,8 +6,8 @@ What an experimenter can declare, and the words the harness is described in.
 
 ---
 
-This is a specification of what the code does. The code speaks this vocabulary; section
-13 records the words it replaced. Every part of it is implemented and checked.
+This is a specification of what the code does. The code speaks this vocabulary. Every
+part of it is implemented and checked.
 
 ## Vocabulary
 
@@ -32,6 +32,8 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Episode** | One container lifetime: a fresh sandbox, one shell, turns until the agent ends its turn without a tool call, the context fills, the balance runs out or a safety stop is reached. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
 | **Round** | One episode for every agent still in the experiment |
+| **At the table** | A seat is at the table while the run of `experiment.py` still drives it: from the run's start, unless it is out or more than one round behind the table's round, until it is out or leaves for the rest of the run on a fault of its own or an environment that would not build. **The table's round** is the furthest round any seat has played, whether or not it is at the table |
+| **In the competition** | A seat is in the competition while its account admits an episode and it is at most one round behind the table's round, whether or not the run has it at the table. Every stop that counts seats counts the seats in the competition, and they alone are candidates and survivors |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
 | **Grace period** | Episodes at the start of an agent's life during which no silence penalty is taken |
@@ -70,7 +72,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
 | **Receipt** | A file the harness writes back into the writer's environment saying what a schema parsed and what it moved. Optional |
-| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, forgiving the overshoot. Zero is out either way |
+| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. Zero is out either way |
 
 ### What is recorded
 
@@ -124,21 +126,36 @@ runs one.
 | Flag | Meaning |
 |---|---|
 | `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
-| `-r N` | Up to N rounds, default 1, stopping early as budgets end |
+| `-r N` | Up to N rounds, default 1, stopping early as budgets end; under `--resume` a round the last run left unfinished is finished first, and is one of the N |
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
-| `--resume` | Continue existing compatible accounts; without it, previous state moves under `displaced/` and a fresh run starts |
+| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished voting round's election the last run did not, and never one it did; a seat more than one round behind the furthest round any seat has played sits out, and is no longer in the competition. Without it, previous state moves under `displaced/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
-| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, with SEAT's new agent on the human provider, and stop |
+| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
 | `harness.py --watch` | Echo the agent's words and account to stdout |
 | `harness.py --fork-from AGENT --at N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
 | `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
 
-Each experiment writes `experiment_records/<experiment_id>/progress.json`,
-`outcome.json` and, for a branch, `lineage.json`. The outcome's `termination_reason` is
-one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`, `all_eliminated`,
-`completed` or `interrupted`. Human seats are answered as [docs/human.md](human.md)
-describes.
+Each experiment writes under `experiment_records/<experiment_id>/`: `progress.jsonl`,
+one line per phase each round reaches as it reaches it, the last naming the round the
+rounds ended at, so its rounds never go back; `progress.json`, the latest of those;
+`outcome.json`; and, for a branch, `lineage.json`. A round that a stop counting seats ends
+the rounds before has no line, and the round the cost ceiling ends them before has its
+preparation alone, which carries the cost that ended them. The outcome's
+`termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,
+`all_eliminated`, `none_can_act` or `interrupted`. Every stop that counts seats is judged
+on the seats still in the competition, whose accounts admit an episode and which are at
+most one round behind the table's round, the furthest round any seat has played, whether
+or not the run has them at the table: a seat whose episode ended on a fault of its own,
+or whose environment would not build, leaves the table for the rest of that run and stays
+in until it falls further behind, which is once the table's round is two past the last it
+played. One further behind sits out every round of every run, and is no longer in: it
+counts toward no stop, survives nothing and stands in no election.
+`all_eliminated` is no seat left in; `none_can_act` is seats left in and not one of them
+able to take an episode in this run. The outcome's `survivors` are the seats still in as
+the run ends, and its `elimination_order` the seats an election put out, so a seat out of
+the competition for its balance or for sitting out is in neither, and what it holds is in
+`scores`. Human seats are answered as [docs/human.md](human.md) describes.
 
 ## 2. Top level
 
@@ -146,8 +163,8 @@ describes.
 |---|---|---|
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
-| `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one funded seat remains |
-| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two funded seats remain |
+| `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is still in the competition (section 1) |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a voting round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are still in the competition (section 1), both of them electors in it. A tie the experimenter's stop kept an elector's ballot from ends nothing, since that ballot could have broken it |
 | `[harness_files]` | table | Names of the files the harness writes, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The environment's channels. Declaring any replaces the default set whole |
 | `[[tool]]` | tables | The actions offered beside the shell, each pointed at a channel and carrying the words it is given. Section 4.8 |
@@ -467,9 +484,21 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot. Peers receive only the aggregate outcome, never voter-to-target mappings. It is offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included; a later call replaces the earlier vote. After that round, nonvoters and the unique highest vote-getter are eliminated; if two or more agents share the highest total, nobody is eliminated by vote |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
+
+**The election** follows each `every`th round. Every seat still in the competition is a
+candidate, and a ballot counts toward the candidate it names. The electors are the seats
+that took the round's episode without a fault; a seat that takes the round after its
+election was held is none, and takes it as a discussion, offered every tool but the
+ballot. An elector offered the ballot that cast none is eliminated; one with no peer left
+to name was offered none. The candidate with the unique highest total above zero is
+eliminated by vote. Nobody is eliminated by vote where two or more candidates share the
+highest total, or where the experimenter's stop ended an elector's episode before it cast
+the ballot it was offered: such an elector is not a nonvoter, and where the stop landed
+would otherwise decide who goes. The result goes to every candidate and elector, whose
+account keeps every election it was in as `elections`, the last as `last_election`.
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the
 one instance the agent writes, there being only one place it could mean. A `read_path`'s
@@ -509,7 +538,7 @@ would end every episode on its first turn:
 |---|---|
 | no `[[tool]]` at all | the agent is offered nothing to act with, and an empty tool set is not a request the API takes |
 | no declared `bash` tool with `delivery = "pull"` or `[harness_files] digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
-| no declared `bash` tool where this seating leaves every declared tool out | the table is not empty but the request would be, for the same reason and with the same result |
+| no declared `bash` tool where this seating leaves every declared tool out | the tool table is not empty but the request would be, for the same reason and with the same result |
 
 The first two are settled when the harness starts, before any environment is built. The
 third is a seat's rather than
@@ -616,7 +645,8 @@ the round, the agent's label, the agents still active and the current phase. A v
 supplies the cycle length. The first round after a vote also summarizes its result.
 Rounds on the vote cadence say `vote only`, identify communication as unavailable and
 name the vote tool the agent must call before ending the episode. Private-memory tools
-remain available.
+remain available. A seat that takes such a round after its election was held takes it as
+a discussion, and is offered every tool but the ballot.
 
 A transfer channel's `ledger` names its ledger file (`"g"` in the default table): three integers a line,
 giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
@@ -664,7 +694,7 @@ post, ballot, trace or provider session is inherited. The source trace must have
 its state and must contain every copied memory as complete UTF-8 text. The account and
 each later trace record the source episode and the copied files' digests.
 
-This is a creation term rather than a fork: it preserves only behaviorally visible
+This is set at creation rather than by a fork: it preserves only behaviorally visible
 private memory while every other part of the agent starts fresh. It is refused if the
 source is another seat in the new experiment, because starting fresh would displace
 that source before it could be read.
@@ -895,7 +925,7 @@ Every refusal is a `SystemExit` naming the file and the key.
 - `[harness_files]` with a key other than `balance`, `digest` and `round`, a value that
   is not a string, or a multi-segment file name. Any may be `""`: no balance file is
   planted for any seat, no digest is written, or no round announcement is written.
-- Settings' own ranges are checked once, by `apply_config`, wherever they came from.
+- Settings' own ranges are checked once, by `overlay`, wherever they came from.
 
 ## 11. What reaches the trace
 
@@ -926,7 +956,10 @@ whether it was submitted, what moved, and `penalty`. The account keeps `penalise
 running total per channel.
 
 Every tool record carries `tool` (`bash` or the declared name), `result`, and then
-`command` for the shell or `input` for a declared tool, the other being null.
+`command` for the shell or `input` for a declared tool, the other being null. The
+trace's `offered` names the tools the episode's request carried, `bash` among them where
+the shell was: an election reads it to tell a seat that cast no ballot from one that was
+offered none.
 `trace_version` is 4. The trace names `provider`, `requested_model`, and
 `resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
 native stop reasons, and the provider provenance. Raw logs write the provider and complete
@@ -950,44 +983,3 @@ requires version-4 traces, and an agent with traces of any other version is refu
    a second copy.
 9. Every episode is stamped with everything it ran under, and any difference from the
    previous episode starts a new arm.
-
-## 13. Today's names
-
-The words the code used before the vocabulary was settled, kept so older notes and
-conversations can be read. None survives in the code or the docs. Default paths inside
-the environment did not change, except `out/gift`, which is `out/transfer`.
-
-| Before | After | Concept | Why |
-|---|---|---|---|
-| system, harness | harness | The code that runs everything | The agent-engineering papers' word; "system" collides with the system prompt |
-| operator | experimenter | The person configuring a run of the tool | The research-design word; "operator" is a product name and an ops role |
-| run | agent | One participant and its lineage | Standard everywhere; with agent and experiment both standard, run named nothing extra |
-| session | episode | One container lifetime, ending on a termination condition | RL's word for exactly that; "session" in observability means a longer grouping |
-| cohort | experiment | Several agents under one manifest | MLflow's unit of comparison; cohort is a statistics word with no MAS meaning |
-| world | environment | Everything the agent can see and touch | RL and MAS standard |
-| ordered, barrier | sequential, simultaneous | Order of moves within a round | Sequential and simultaneous play; simultaneous rounds are BSP supersteps |
-| seed, seed_below | starter_files, starter_files_below | Files placed once in an agent's private directory | "Seed" means RNG to every reader; starter says what the files are for |
-| `seeds/` | `files/` | Where given files live | It holds starter files and experimenter channels alike |
-| shared | shared_files, an experimenter channel | Files identical and read-only in every seat | Names the writer; the channel object makes it one case, not a special one |
-| group message, board | blackboard | Each agent's public directory, read by all | The classical MAS term, revived for LLM agents |
-| private message, outbox, inbox | mailbox, outbox, inbox | One file per peer, delivered to that peer alone | The messaging pattern; outbox and inbox were already right |
-| gift | transfer | Moving budget to a peer | Finance's word; game theory's side payment. "Gift" implied a motive |
-| gift_mode minted / transfer / off | funded_by harness / giver / none | Who pays for a transfer | Says where the money comes from instead of naming an accounting effect |
-| refund_percent | rebate_percent | Share of a transfer returned to the giver | A rebate is a partial return on money spent; a refund implies the whole |
-| group / private / gift penalty percent | silence_penalty_percent, one per channel | Share taken for adding nothing | Says what it punishes; one rule instead of three keys |
-| grammar | schema | The fixed format the harness parses | The structured-output word; a grammar is how a schema is checked, not what it is |
-| clamp_negative | floor_at_zero | Below zero becomes zero | Says what happens to the number |
-| grace_sessions | grace_episodes | Free episodes at the start | Follows the episode rename; grace period is standard |
-| turn_cap, timeout, live_n | max_turns, command_timeout, live_balance | Episode limits | Each says what it bounds; `n` was the unlabelled treatment's file name leaking into config |
-| message_limit, opening_limit | digest_file_limit, observation_limit | Clips on what an episode is shown | Named for the thing clipped |
-| `m`, the record | digest | What is new since the agent last looked | An email digest is exactly this |
-| the opening | initial observation | The first thing an episode sees | RL standard |
-| meter | account | An agent's money record | Balance, history, transactions: what an account holds |
-| creation terms | pinned settings | Settings fixed when an agent is created | Pinned is the word the docs already use for the prompt |
-| region | channel | One permissioned part of the environment | MARL's word for a communication path; region described a place, not a permission |
-| `cohorts/` | `experiments/` | Where manifests live | Follows the experiment rename |
-| `--run-id`, `--print-seed` | `--agent`, `--print-files` | CLI flags | Follow the renames |
-| wake | episode start | The moment an episode begins | A verb dressed as a noun; no term needed |
-| `notes`, `shared`, `blackboard`, `peer_blackboard`, `outbox`, `inbox` (record kinds) | the channel's declared name, and `role` | How a file record says where a file sat | The record names the channel the manifest declared; the role says whose instance it was |
-| `posted`, `blackboard_penalised`, `mailbox` (flat trace keys) | `channels[<name>]` | What each channel settled for | One record per channel, under its declared name |
-| `blackboard_penalised`, `mailbox_penalised`, `transfer_penalised` (account) | `penalised[<name>]` | The running penalty total | Same rule |

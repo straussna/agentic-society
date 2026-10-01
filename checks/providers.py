@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import inspect
 import json
 import os
+import sys
 import tempfile
+import types
 from pathlib import Path
 from types import SimpleNamespace as NS
 
 import experiment
+import harness
 import providers
 from providers import SessionContext, ToolResult, ToolSpec
-from providers.anthropic import AnthropicProvider, normalize as normalize_anthropic
+from providers.anthropic import AnthropicProvider
+from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
-from checks.fake import per_agent, say
-from checks.lanes import quiet, temp_root
+from checks.fake import DEFAULT, fake, per_agent, say
+from checks.lanes import PERSONA, amend, episode_once, pinned, quiet, temp_root
 
 
 TOOLS = (ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}},
@@ -35,6 +41,84 @@ class Messages:
 
 class Responses(Messages):
     pass
+
+
+class Raising:
+    """An SDK resource whose every call fails with `error`."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def create(self, *args, **params):
+        raise self.error
+
+    retrieve = create
+
+
+# Stand-ins for the SDKs' exception classes, named and nested as both SDKs declare
+# them; the checks import neither SDK. classify_error reads a class's name, the
+# names in its MRO, and status_code.
+class APIError(Exception):
+    pass
+
+
+class APIConnectionError(APIError):
+    def __init__(self, message="Connection error."):
+        super().__init__(message)
+
+
+class APITimeoutError(APIConnectionError):
+    def __init__(self):
+        super().__init__("Request timed out.")
+
+
+class APIStatusError(APIError):
+    def __init__(self, status):
+        super().__init__(f"Error code: {status}")
+        self.status_code = status
+
+
+class AuthenticationError(APIStatusError):
+    def __init__(self):
+        super().__init__(401)
+
+
+class PermissionDeniedError(APIStatusError):
+    def __init__(self):
+        super().__init__(403)
+
+
+def statusless(name):
+    """An exception of a class called `name` with no status code, which only its name classifies."""
+    return type(name, (APIError,), {})()
+
+
+@contextlib.contextmanager
+def swapped(table, **values):
+    """Set each key of `table` to its value, or remove it for None; put every one back on exit."""
+    def put(key, value):
+        if value is None:
+            table.pop(key, None)
+        else:
+            table[key] = value
+    old = {key: table.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            put(key, value)
+        yield
+    finally:
+        for key, value in old.items():
+            put(key, value)
+
+
+def unbuildable(name):
+    """An SDK module whose client constructors fail the check that reaches them."""
+    module = types.ModuleType(name)
+
+    def build(*args, **kwargs):
+        raise AssertionError(f"the {name} SDK built a client")
+    module.Anthropic = module.OpenAI = build
+    return module
 
 
 def check_anthropic_messages_wire_shape_and_state():
@@ -182,45 +266,111 @@ def check_cli_provider_and_model_overrides_are_paired():
 
 
 def check_provider_preflight_requires_only_its_own_key():
+    """A provider without its key, or whose key is refused, says where the key goes.
+
+    A preflight that got no answer is not about the key, and does not say so; nor is
+    one the key was accepted for and not permitted, whose key is already set.
+    """
     class Models:
         def retrieve(self, *args, **kwargs):
             return NS(id=args[0] if args else kwargs.get("model_id"))
-    old = {name: os.environ.get(name) for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")}
-    try:
-        os.environ.pop("ANTHROPIC_API_KEY", None)
-        os.environ["OPENAI_API_KEY"] = "test"
+    with swapped(os.environ, ANTHROPIC_API_KEY=None, OPENAI_API_KEY="test"):
         OpenAIProvider(NS(models=Models())).preflight(["gpt-5.6-terra"])
         try:
             AnthropicProvider(NS(models=Models())).preflight(["claude-sonnet-5"])
         except providers.ProviderError as error:
-            assert error.category == "authentication"
+            assert error.category == "authentication" and error.provider == "anthropic"
+            assert str(error).endswith(
+                "Set ANTHROPIC_API_KEY in the shell this experiment is launched from."), str(error)
         else:
             raise AssertionError("Anthropic started without its key")
-    finally:
-        for name, value in old.items():
-            if value is None:
-                os.environ.pop(name, None)
+        os.environ.pop("OPENAI_API_KEY")
+        try:
+            OpenAIProvider(NS(models=Models())).preflight(["gpt-5.6-terra"])
+        except providers.ProviderError as error:
+            assert "Set OPENAI_API_KEY in the shell" in str(error), str(error)
+        else:
+            raise AssertionError("OpenAI started without its key")
+
+    with swapped(os.environ, ANTHROPIC_API_KEY="test", OPENAI_API_KEY="test"):
+        for build, variable, model in ((AnthropicProvider, "ANTHROPIC_API_KEY", "claude-sonnet-5"),
+                                       (OpenAIProvider, "OPENAI_API_KEY", "gpt-5.6-terra")):
+            for error, category, hinted in ((AuthenticationError(), "authentication", True),
+                                            (PermissionDeniedError(), "authentication", False),
+                                            (APIConnectionError(), "retryable_api", False)):
+                try:
+                    build(NS(models=Raising(error))).preflight([model])
+                except providers.ProviderError as failure:
+                    assert failure.category == category, (variable, failure.as_dict())
+                    assert failure.status_code == getattr(error, "status_code", None)
+                    hint = f"Set {variable} in the shell this experiment is launched from."
+                    assert str(failure).endswith(hint) == hinted, str(failure)
+                    assert hinted or str(failure) == f"{type(error).__name__}: {error}", \
+                        str(failure)
+                else:
+                    raise AssertionError(f"{variable}: preflight passed {error!r}")
+
+
+def check_start_refuses_a_missing_key_before_any_client_is_built():
+    """An experiment launched without a seat's key is told which key and where it goes.
+
+    The refusal comes before either SDK builds a client, since one may refuse a
+    missing key itself, in words that say nothing of the shell. A start that refuses
+    installs none of the settings it read: the tool table it was given included.
+    That table reaches the preflight held to the manifest's own channel table, one
+    the settings in force do not have. A start that passes installs every one of
+    them, each built on the one before: config.toml, the manifest's defaults, its
+    channel table and its tool table.
+    """
+    unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL",
+                           "OPENAI_BASE_URL"))
+    sdks = {name: unbuildable(name) for name in ("anthropic", "openai")}
+    declared = [{"name": "bash", "kind": "bash"},
+                {"name": "jot", "kind": "write_file", "channel": "journal"}]
+    for provider, model in (("anthropic", "claude-sonnet-5"), ("openai", "gpt-5.6-terra")):
+        variable = f"{provider.upper()}_API_KEY"
+        with swapped(os.environ, **unset), swapped(sys.modules, **sdks), pinned(), \
+                tempfile.TemporaryDirectory() as folder, quiet() as out:
+            amend(root=Path(folder))
+            before = harness.SETTINGS
+            try:
+                harness.start(requirements=[(provider, model)], channel_tables=PERSONA,
+                              tool_tables=declared)
+            except SystemExit as error:
+                assert error.code == 2, error.code
             else:
-                os.environ[name] = value
+                raise AssertionError(f"{provider} started without {variable}")
+            assert harness.SETTINGS is before, "a refused start leaves the settings as it found them"
+        refusal = out.getvalue().strip().splitlines()[-1]
+        assert refusal == (f"{provider} preflight failed: {variable} is not set. Set {variable} "
+                           "in the shell this experiment is launched from."), refusal
+
+    made = fake()
+    with swapped(vars(providers), DirectProviderRouter=lambda requirements: made), pinned(), \
+            tempfile.TemporaryDirectory() as folder, quiet():
+        amend(root=Path(folder))
+        (Path(folder) / "config.toml").write_text("max_turns = 300\n", encoding="utf-8")
+        router = harness.start(overrides={"system_prompt": "said", "grace_episodes": 1},
+                               requirements=[("anthropic", "claude-sonnet-5")],
+                               channel_tables=PERSONA, tool_tables=declared)
+        s = harness.SETTINGS
+        assert router is made, "start returns the router it preflighted"
+        assert (s.max_turns, s.grace_episodes, s.system_prompt) == (300, 1, "said"), \
+            "config.toml and the manifest's defaults are both in force after a start"
+        assert [c.name for c in s.channels] == [t["name"] for t in PERSONA], s.channels
+        assert [t.name for t in s.tools] == ["bash", "jot"], s.tools
 
 
 def check_custom_provider_endpoints_are_refused():
     for variable, build in (("ANTHROPIC_BASE_URL", lambda: AnthropicProvider(NS())),
                             ("OPENAI_BASE_URL", lambda: OpenAIProvider(NS()))):
-        old = os.environ.get(variable)
-        os.environ[variable] = "https://proxy.invalid"
-        try:
+        with swapped(os.environ, **{variable: "https://proxy.invalid"}):
             try:
                 build()
             except providers.ProviderConfigurationError:
                 pass
             else:
                 raise AssertionError(f"accepted {variable}")
-        finally:
-            if old is None:
-                os.environ.pop(variable, None)
-            else:
-                os.environ[variable] = old
 
 
 def check_version_three_accounts_are_refused():
@@ -234,3 +384,131 @@ def check_version_three_accounts_are_refused():
             assert "version-3" in str(error) and "fresh agent id" in str(error)
         else:
             raise AssertionError("accepted a version-3 account")
+
+
+def check_each_adapter_declares_the_provenance_its_traces_record():
+    """A trace's provider record is the name, the adapter's own facts, and the model spec.
+
+    The facts are declared once, on the adapter class, and pinned here as a reader of
+    earlier traces knows them: a change to an adapter's is a change to every trace.
+    The facts, the catalog and whether a person answers are all read off the class,
+    so each is class data there: a property read off a class is the property, not
+    its value.
+    """
+    declared = {
+        "anthropic": {"adapter": "anthropic-messages-v1", "endpoint": "first-party"},
+        "openai": {"adapter": "openai-responses-v1", "endpoint": "first-party", "store": False,
+                   "reasoning_state": "encrypted"},
+        "human": {"adapter": "interaction-store-v1", "endpoint": "local"},
+    }
+    assert list(providers.FACTORIES) == list(declared), list(providers.FACTORIES)
+    for name, factory in providers.FACTORIES.items():
+        for attr in ("interactive", "models", "provenance_facts"):
+            assert not hasattr(inspect.getattr_static(factory, attr), "__get__"), \
+                f"{name}.{attr} is read off the class, where a property is not its value"
+        assert providers.CATALOGS[name] is factory.models, f"{name}: the catalog is the adapter's"
+        for model, spec in factory.models.items():
+            record = providers.provenance(name, model)
+            assert list(record) == ["name", *declared[name], "model_spec"], (name, list(record))
+            assert record == {"name": name, **declared[name], "model_spec": spec.as_dict()}, record
+            assert (record["model_spec"]["provider"], record["model_spec"]["name"]) == (name, model)
+    assert [name for name in providers.FACTORIES if providers.is_interactive(name)] == ["human"], \
+        "a person answers the human seat's turns, and no other's"
+
+
+def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
+    """A request that got no answer is retried like a 429, whichever adapter sent it.
+
+    The SDKs raise APIConnectionError and APITimeoutError with no status code. Read
+    by status alone they are the adapter's fault, and one dropped connection ends a
+    billed episode as harness_error on its first attempt.
+    """
+    cases = ((APIConnectionError(), "retryable_api"), (APITimeoutError(), "retryable_api"),
+             (ConnectionResetError(), "retryable_api"), (TimeoutError(), "retryable_api"),
+             (APIStatusError(429), "retryable_api"), (APIStatusError(503), "retryable_api"),
+             (APIStatusError(400), "permanent_api"), (APIStatusError(404), "permanent_api"),
+             (APIStatusError(401), "authentication"), (APIStatusError(403), "authentication"),
+             (AuthenticationError(), "authentication"), (APIError("unreadable"), "adapter"),
+             (ValueError("unreadable"), "adapter"),
+             (statusless("AuthenticationError"), "authentication"),
+             (statusless("PermissionDeniedError"), "authentication"))
+    sessions = {
+        "anthropic": lambda raising: AnthropicProvider(NS(messages=raising)).open_session(
+            "claude-sonnet-5", "", TOOLS, 1, CONTEXT),
+        "openai": lambda raising: OpenAIProvider(NS(responses=raising)).open_session(
+            "gpt-5.6-terra", "", TOOLS, 1, CONTEXT),
+    }
+    for error, category in cases:
+        for name, session in sessions.items():
+            try:
+                session(Raising(error)).request("x")
+            except providers.ProviderError as failure:
+                assert (failure.provider, failure.category) == (name, category), \
+                    (name, type(error).__name__, failure.as_dict())
+                assert failure.status_code == getattr(error, "status_code", None)
+                assert failure.native_type == type(error).__name__ and failure.__cause__ is error
+                # What a trace's provider_error says of a failure mid-episode: the
+                # SDK's words and no more, the key having been accepted to get there.
+                assert str(failure) == f"{type(error).__name__}: {error}", str(failure)
+            else:
+                raise AssertionError(f"{name} returned a response for {error!r}")
+
+    # The retry is the harness's: a lost connection is tried again, and one that
+    # outlasts every attempt ends the episode as the API's failure.
+    with temp_root():
+        t = episode_once(classify_error(APIConnectionError(), "anthropic"), *DEFAULT)
+    assert t["stop"] == "end_turn", t["stop"]
+    assert t["retries"] == [{"attempt": 1, "provider": "anthropic", "error": "ProviderError",
+                             "category": "retryable_api", "status": None}], t["retries"]
+    with temp_root():
+        t = episode_once(*(classify_error(APITimeoutError(), "anthropic")
+                           for _ in range(harness.RETRY_ATTEMPTS)))
+    assert t["stop"] == "api_error", t["stop"]
+    assert len(t["retries"]) == harness.RETRY_ATTEMPTS - 1, t["retries"]
+    assert t["provider_error"]["native_type"] == "APITimeoutError", t["provider_error"]
+
+
+def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
+    """Every way a Responses turn can end reaches its canonical stop.
+
+    A refusal part is a refusal, a response cut at max_output_tokens is max_tokens,
+    one neither completed nor cut there is other, and function arguments that are
+    not a JSON object are the adapter's failure and never a tool call.
+    """
+    def response(output, status="completed", incomplete=None):
+        return NS(id="r", model="gpt-5.6-terra", status=status, incomplete_details=incomplete,
+                  output=output, usage=NS(input_tokens=10, output_tokens=5,
+                                          input_tokens_details=NS(cached_tokens=0,
+                                                                  cache_write_tokens=0),
+                                          output_tokens_details=NS(reasoning_tokens=0)))
+
+    def message(*parts):
+        return NS(type="message", content=list(parts))
+
+    refused = normalize_openai(response([message(
+        NS(type="output_text", text="partial"),
+        NS(type="refusal", refusal="I can't help with that."))]), "gpt-5.6-terra")
+    assert refused.stop_reason == "refusal", refused.stop_reason
+    assert refused.refusal and refused.refusal.explanation == "I can't help with that.", refused.refusal
+    assert refused.text == ("partial",) and refused.charges, "a refusal that wrote text is billed"
+
+    cut = normalize_openai(response([message(NS(type="output_text", text="half"))], "incomplete",
+                                    NS(reason="max_output_tokens")), "gpt-5.6-terra")
+    assert (cut.stop_reason, cut.native_stop_reason) == ("max_tokens", "max_output_tokens"), cut
+    assert cut.native_stop_details == {"reason": "max_output_tokens"}, cut.native_stop_details
+    assert cut.refusal is None
+
+    filtered = normalize_openai(response([], "incomplete", NS(reason="content_filter")),
+                                "gpt-5.6-terra")
+    assert (filtered.stop_reason, filtered.native_stop_reason) == ("other", "content_filter")
+    pending = normalize_openai(response([], "in_progress"), "gpt-5.6-terra")
+    assert (pending.stop_reason, pending.native_stop_reason) == ("other", "in_progress"), pending
+
+    for arguments in ("[1]", "{"):
+        call = NS(type="function_call", call_id="c", name="bash", arguments=arguments)
+        try:
+            normalize_openai(response([call]), "gpt-5.6-terra")
+        except providers.ProviderError as error:
+            assert (error.provider, error.category) == ("openai", "adapter"), error.as_dict()
+        else:
+            raise AssertionError(f"arguments {arguments!r} became a tool call")

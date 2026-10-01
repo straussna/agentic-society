@@ -20,7 +20,6 @@ import time
 import traceback
 from typing import Callable
 
-import harness
 import providers
 from checks import checks
 from checks.lanes import WIDE_SWEEP, Skip, configure, docker_ready, sweep_filter

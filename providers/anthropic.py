@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable
 from typing import Any
 
-from .base import (Charge, ModelSpec, NormalizedTurn, PendingResponse, ProviderConfigurationError,
-                   ProviderError, Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
-                   native_dict)
+from .base import (Charge, ModelSpec, NormalizedTurn, PendingResponse, Refusal, SessionContext,
+                   StopReason, ToolCall, ToolResult, ToolSpec, Usage, charge, classify_error, field,
+                   native_dict, refuse_custom_endpoint, require_key)
 
 
 MODELS = {
@@ -31,20 +30,9 @@ MODELS = {
 }
 
 
-def _error(error: Exception) -> ProviderError:
-    status = getattr(error, "status_code", None)
-    name = type(error).__name__
-    text = f"{name}: {error}"
-    if status in (401, 403) or "Authentication" in name or "PermissionDenied" in name:
-        category = "authentication"
-    elif status in (408, 409, 429) or isinstance(status, int) and status >= 500:
-        category = "retryable_api"
-    elif status is not None:
-        category = "permanent_api"
-    else:
-        category = "adapter"
-    return ProviderError(text, category=category, provider="anthropic",
-                         status_code=status, native_type=name)
+# The native stop reasons with a canonical namesake; any other is "other".
+STOPS: dict[str, StopReason] = {"end_turn": "end_turn", "tool_use": "tool_use",
+                                "max_tokens": "max_tokens", "refusal": "refusal"}
 
 
 def normalize(native: Any, requested_model: str) -> NormalizedTurn:
@@ -89,8 +77,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     native_stop = field(native, "stop_reason")
     if native_stop == "refusal" and not content:
         charges = ()
-    stop = {"end_turn": "end_turn", "tool_use": "tool_use", "max_tokens": "max_tokens",
-            "refusal": "refusal"}.get(native_stop, "other")
+    stop: StopReason = STOPS.get(native_stop, "other")
     stop_details = native_dict(field(native, "stop_details", {})) if field(native, "stop_details") else None
     refusal = None
     if native_stop == "refusal" or field(native, "refusal"):
@@ -139,7 +126,7 @@ class AnthropicSession:
         try:
             response = self.client.messages.create(**params)
         except Exception as error:
-            raise _error(error) from error
+            raise classify_error(error, self.provider) from error
         raw = native_dict(response)
 
         def finish() -> NormalizedTurn:
@@ -154,35 +141,32 @@ class AnthropicSession:
 
 class AnthropicProvider:
     name = "anthropic"
+    interactive = False
+    key_variable = "ANTHROPIC_API_KEY"
     models = MODELS
+    provenance_facts = {"adapter": "anthropic-messages-v1", "endpoint": "first-party"}
 
     def __init__(self, client: Any | None = None):
-        if os.environ.get("ANTHROPIC_BASE_URL"):
-            raise ProviderConfigurationError(
-                "ANTHROPIC_BASE_URL is not supported; provider adapters use first-party endpoints",
-                provider=self.name)
+        refuse_custom_endpoint("ANTHROPIC_BASE_URL", self.name)
         if client is None:
+            # Before the SDK builds a client, which may refuse a missing key in
+            # words of its own that do not say where the key goes.
+            require_key(self.key_variable, self.name)
             try:
                 import anthropic
                 client = anthropic.Anthropic(max_retries=0)
             except Exception as error:
-                raise _error(error) from error
+                raise classify_error(error, self.name, self.key_variable) from error
         self.client = client
 
     def preflight(self, models: Iterable[str]) -> None:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise ProviderError("ANTHROPIC_API_KEY is not set", category="authentication",
-                                provider=self.name)
+        require_key(self.key_variable, self.name)
         for model in sorted(set(models)):
             try:
                 self.client.models.retrieve(model_id=model)
             except Exception as error:
-                raise _error(error) from error
+                raise classify_error(error, self.name, self.key_variable) from error
 
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
                      max_tokens: int, context: SessionContext) -> AnthropicSession:
         return AnthropicSession(self.client, model, system, tools, max_tokens)
-
-    def provenance(self, model: str) -> dict[str, Any]:
-        return {"name": self.name, "adapter": "anthropic-messages-v1",
-                "endpoint": "first-party", "model_spec": self.models[model].as_dict()}

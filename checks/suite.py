@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import ast
+import dataclasses
 import inspect
 import os
 import re
+import textwrap
 import tomllib
 import harness
 
 from checks import checks
-from checks.lanes import RESTORED, SUITE, WIDE_SWEEP, sweep_filter
+from checks.lanes import SEAMS, SUITE, WIDE_SWEEP, sweep_filter
 
 
 def check_the_sweep_only_takes_this_suites_containers():
@@ -73,35 +76,94 @@ def check_agents_md_mirrors_claude_md():
 def check_every_harness_global_a_check_moves_is_restored():
     """Every harness name a check assigns is one `pinned()` puts back.
 
-    `pinned()` restores the names in `RESTORED` and no others, and one worker
+    `pinned()` restores the names in `SEAMS` and no others, and one worker
     runs many checks, so that set is what keeps a check's override out of the
     next one. `temp_root` refuses an override outside it, and an assignment
-    straight onto the module is held to the same set here.
+    straight onto the module is held to the same set here: read off the syntax
+    tree, so one target of several and a setattr naming it are found too. A
+    setting is a field of harness.SETTINGS, moved by amend().
     """
+    probe = ast.parse("harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\n"
+                      "setattr(harness, 'd', 4)\nharness.e == 5\n")
+    assert sorted(assigned_on(probe, "harness")) == ["a", "b", "c", "d"], \
+        "the scan reads every form an assignment takes, and a comparison is none"
     moved: dict[str, set[str]] = {}
     for label, fn in checks().items():
         try:
-            source = inspect.getsource(fn)
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
         except (OSError, TypeError):
             continue
-        for name in re.findall(r"\bharness\.([A-Za-z_]\w*)\s*=(?!=)", source):
+        for name in assigned_on(tree, "harness"):
             moved.setdefault(name, set()).add(label)
     assert moved, "no check assigns a harness global; the scan found nothing to hold"
-    loose = {name: sorted(ls) for name, ls in moved.items() if name not in RESTORED}
-    assert not loose, f"assigned by a check and not in RESTORED: {loose}"
+    loose = {name: sorted(ls) for name, ls in moved.items() if name not in SEAMS}
+    assert not loose, f"assigned by a check and not in SEAMS: {loose}"
+
+
+def assigned_on(tree: ast.AST, module: str) -> list[str]:
+    """Every attribute of `module` the code in `tree` assigns: a target of its own, one
+    of several unpacked at once, an augmented one, or one a setattr names."""
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and \
+                node.func.id == "setattr" and len(node.args) == 3 and \
+                isinstance(node.args[0], ast.Name) and node.args[0].id == module and \
+                isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+            names.append(node.args[1].value)
+        targets = (list(node.targets) if isinstance(node, ast.Assign) else
+                   [node.target] if isinstance(node, (ast.AugAssign, ast.AnnAssign)) else [])
+        while targets:
+            target = targets.pop()
+            if isinstance(target, (ast.Tuple, ast.List)):
+                targets.extend(target.elts)
+            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and \
+                    target.value.id == module:
+                names.append(target.attr)
+    return names
 
 
 def check_no_setting_is_given_in_two_places():
-    """config.toml and an experiment own disjoint halves of the settings.
+    """config.toml and an experiment own disjoint halves of the settings, and a process
+    holds them in one place.
 
     A setting given in both files is a run whose terms depend on which was read last.
     Each file refuses the other's keys by name; this asserts the two halves cover
-    every tunable exactly once, and that the files the repo ships keep to them.
+    every tunable exactly once, and that the files the repo ships keep to them. In a
+    process every tunable is a field of the one frozen Settings, spelled as the files
+    spell it and stated in every episode's provenance. No module global spells a
+    setting in capitals beside it, where an assignment would configure nothing, and
+    nothing imports SETTINGS by name, which would hold on to the settings in force at
+    the import.
     """
     assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, "every tunable is owned"
     assert not harness.PROCESS & harness.TREATMENT, sorted(harness.PROCESS & harness.TREATMENT)
 
+    tunables = {t.lower() for t in harness.TUNABLES}
+    fields = {f.name for f in dataclasses.fields(harness.Settings)}
+    assert tunables == fields - {"root", "channels", "harness_files", "tools"}, \
+        f"a tunable is the field of its lowercased name: {sorted(tunables ^ fields)}"
+    held = fields | {name for name, value in vars(harness.Settings).items()
+                     if isinstance(value, property)}
+    shadowing = sorted(name.upper() for name in held if hasattr(harness, name.upper()))
+    assert not shadowing, f"a module global beside harness.SETTINGS configures nothing: {shadowing}"
+    try:
+        setattr(harness.Settings(), "budget", 1)
+    except dataclasses.FrozenInstanceError:
+        pass
+    else:
+        raise AssertionError("Settings is frozen: configuration replaces it whole")
+    # The prompt is stated as `system`; the budget is pinned in the account as `initial`.
+    prov = harness.provenance("anthropic", "claude-sonnet-5")
+    unstated = sorted(tunables - {"system_prompt", "budget"} - set(prov))
+    assert not unstated and "system" in prov, f"provenance omits {unstated}"
+
     root = Path(harness.__file__).parent
+    for p in [*root.glob("*.py"), *(root / "checks").glob("*.py"),
+              *(root / "providers").glob("*.py"), *(root / "interaction").glob("*.py")]:
+        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module == "harness":
+                assert "SETTINGS" not in {alias.name for alias in node.names}, \
+                    f"{p.name} imports SETTINGS by name; read harness.SETTINGS"
     cfg = tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
     assert set(cfg) == {p.lower() for p in harness.PROCESS}, \
         f"config.toml states the process parameters and only those: {sorted(cfg)}"

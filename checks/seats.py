@@ -5,6 +5,7 @@ from __future__ import annotations
 import analyze
 import experiment
 import harness
+import view
 
 from checks.fake import Err, fake, run, say
 from checks.lanes import (
@@ -53,9 +54,8 @@ def check_a_private_store_never_leaves_its_agent():
     The whole point of two writable trees: one is addressed to the experiment and
     one is not, and the harness never copies the second anywhere.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root,
-                      g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
                       g02={"secret.md": "theirs alone\n", "group/msg": "hello 1\n"})
         instances = environment_of("g01", ids)
         snap = harness.snapshot(instances, [9])
@@ -83,9 +83,8 @@ def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
     mentions is what the agent wrote. A neighbour's blackboard full of balances and
     the word "budget" would otherwise answer for it at round one.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root,
-                      g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
                       g02={"group/out": "the budget is 90 and ./n1 holds it\n"})
         snap = harness.snapshot(environment_of("g01", ids), [100, 90])
 
@@ -109,8 +108,8 @@ def check_starter_files_and_a_peer_are_told_apart():
     starter files, so one flag covering both cannot answer what the starter files
     put there.
     """
-    with rooted(HostBox) as root:
-        ids = lay_out(root, g01={"NOTES.md": "mine\n", "m1": "alpha\n"},
+    with rooted(HostBox):
+        ids = lay_out(g01={"NOTES.md": "mine\n", "m1": "alpha\n"},
                       g02={"group/out": "theirs\n"})
         seats = experiment.seats_of(ids)
         snap = harness.snapshot(environment_of("g01", ids), [9],
@@ -134,7 +133,7 @@ def check_every_captured_file_names_an_author():
     experimenter's, what the agent wrote anywhere is its own, and a peer's
     message names the seat it came from.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/out": "theirs\n", "out/1": "just for you\n"})
@@ -206,7 +205,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
         digest = harness.files_sha256("brief")
         with quiet():
             assert harness.fork("t", 1, "f") == 0
-        forked_shared = (harness.ROOT / "environments" / "f" / "shared").exists()
+        forked_shared = (harness.SETTINGS.root / "environments" / "f" / "shared").exists()
         forked_notes = (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8")
     by = files_by_path(t)
     assert by["shared/BRIEF"]["channel"] == "shared", by["shared/BRIEF"]
@@ -248,9 +247,8 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
     The asymmetry the ruleset turns on: a blackboard is read by everyone and an
     outbox by exactly one, so what an agent says can be aimed.
     """
-    with rooted(HostBox) as root:
-        lay_out(root, g01={"out/3": "for three alone\n",
-                           "group/RESULT": "for everyone\n"},
+    with rooted(HostBox):
+        lay_out(g01={"out/3": "for three alone\n", "group/RESULT": "for everyone\n"},
                 g02={}, g03={})
         ids = ["g01", "g02", "g03"]
         seen = {p: files_by_path(harness.snapshot(environment_of(p, ids), [9])) for p in ids}
@@ -346,7 +344,7 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
                                                "echo posted > 1/RESULT"), say()))
         account = ground_truth()
     assert t["channels"]["mail"] == {"broken": [], "addressed": ["2", "3"], "penalty": 0}
-    assert analyze.messaged(t["channels"]["mail"]) is True
+    assert analyze.met_of(harness.channel("mail", harness.table_of(t)), t["channels"]["mail"]) is True
     assert "mail" not in account.get("penalised", {}), account
     assert "not one message" not in buf.getvalue(), buf.getvalue()
 
@@ -532,8 +530,8 @@ def check_the_channels_answer_differently():
     The whole arrangement in one episode: what the agent may not write it cannot
     reach by writing, by chmod, or by replacing the directory the file sits in.
     """
-    with docker_root() as root:
-        ids = lay_out(root, t={"NOTES.md": "private\n", "group/out": "mine\n"},
+    with docker_root():
+        ids = lay_out(t={"NOTES.md": "private\n", "group/out": "mine\n"},
                       other={"NOTES.md": "unseen\n", "group/out": "theirs\n",
                              "out/1": "just for you\n"})
         with quiet():
@@ -602,8 +600,8 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
     In a container the agent cannot write there at all, but the record does not
     lean on that: what makes a file the agent's is the channel it is in.
     """
-    with temp_root() as root:
-        ids = lay_out(root, t={"NOTES.md": "mine\n"}, other={"group/out": "theirs\n"})
+    with temp_root():
+        ids = lay_out(t={"NOTES.md": "mine\n"}, other={"group/out": "theirs\n"})
         (harness.mirror("other", "blackboard") / "added").write_text("put here somehow\n")
         snap = harness.snapshot(environment_of("t", ids), [9])
 
@@ -641,12 +639,12 @@ def check_a_seat_that_is_out_is_not_a_message():
 
 
 def check_the_first_episodes_of_an_agent_answer_for_nothing():
-    """GRACE_EPISODES: the first episodes of an agent are charged none of the three.
+    """grace_episodes: the first episodes of an agent are charged none of the three.
 
     The grace waives the charges and nothing else: turns are billed at the usual
     rates, the obligations are still measured, and a free episode's transfer moves.
     """
-    with temp_root(GRACE_EPISODES=1, channels=ALL_OWED) as root:
+    with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
         free = episode_once(run("echo notes > state/NOTES"), say())
         due = episode_once(run("echo notes >> state/NOTES"), say())
@@ -668,7 +666,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     assert account["remaining"] == account["series"][-1]
 
     # A transfer is a movement and not a charge, so a free episode still gives.
-    with temp_root(GRACE_EPISODES=1, channels=tables(transfer={**HALF, "rebate_percent": 100})) as root:
+    with temp_root(grace_episodes=1, channels=tables(transfer={**HALF, "rebate_percent": 100})) as root:
         seated(root, other={})
         gave = episode_once(run("echo '2 90' > out/transfer"), say())
         taker = ground_truth("other")
@@ -677,7 +675,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
 
     # No grace by default, so every agent that is not under this ruleset is
     # charged from its first episode as it always was.
-    assert harness.GRACE_EPISODES == 0
+    assert harness.SETTINGS.grace_episodes == 0
 
 
 def check_the_transfer_share_is_taken_before_the_other_two():
@@ -699,3 +697,35 @@ def check_the_transfer_share_is_taken_before_the_other_two():
     assert t["channels"]["mail"]["penalty"] == third, (t["channels"]["mail"]["penalty"], third)
     assert account["remaining"] == left - first - second - third == account["series"][-1]
     assert account["remaining"] * 8 <= left * 1.05, "three halves off the top leave an eighth"
+
+
+def check_the_console_and_the_page_name_an_unmet_obligation_alike():
+    """What an episode left undone reads the same on its console line and on the page.
+
+    Both take the words from the channel's rule in harness.SETTLEMENTS. The console
+    names a channel only where a share was taken, so inside the grace it names none
+    while the page still states what went undone; and a transfer that moved nothing
+    is named on the page by its error, which the console prints on a line of its own.
+    """
+    with temp_root(channels=ALL_OWED) as root:
+        seated(root, other={})
+        with quiet() as out:
+            t = harness.run_once("t", fake(run("true"), say()))
+    line = next(ln for ln in out.getvalue().splitlines() if ln.startswith("t "))
+    stated = {f"  {u['channel']}: {u['why']}, took {u['penalty']}" for u in view.unmet(t)}
+    assert stated == {f"  transfer: no transfer of its own, took {t['transfer']['penalty']}",
+                      f"  blackboard: no post, took {t['channels']['blackboard']['penalty']}",
+                      f"  mail: no message, took {t['channels']['mail']['penalty']}"}, stated
+    assert all(s in line for s in stated) and line.count(", took ") == 3, line
+
+    with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
+        seated(root, other={})
+        with quiet() as out:
+            waived = harness.run_once("t", fake(run("echo '2 0' > out/transfer"), say()))
+    said = out.getvalue()
+    line = next(ln for ln in said.splitlines() if ln.startswith("t "))
+    assert ", took " not in line, f"a share nobody took is not on the console: {line}"
+    assert "t: transfer declaration moved nothing: the amount must be at least 1" in said, said
+    assert [(u["channel"], u["why"], u["penalty"]) for u in view.unmet(waived)] == [
+        ("blackboard", "no post", 0), ("mail", "no message", 0),
+        ("transfer", "the amount must be at least 1", 0)], view.unmet(waived)

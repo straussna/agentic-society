@@ -57,7 +57,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 refuse every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 242 of 267.
+down. `--no-docker` runs 340 of 366.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -69,15 +69,22 @@ run takes well over 40s, restart Docker.
 
 A suite run only removes containers carrying its own pid, so two runs at once
 leave each other alone and no run of `check.py` can touch a live experiment.
-Nothing collects what a run killed outright leaves behind: `--sweep-all` does,
-and is the only mode that reaches a container this process did not make.
+A plain run does not collect what a run killed outright leaves behind; `--sweep-all`
+does, and is the only mode that reaches a container this process did not make.
 
 Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
-flood against a deadline) and anything setting `COMMAND_TIMEOUT`.
-`a_simultaneous_round_runs_its_episodes_at_once` and
-`an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight` use a 10
-second thread barrier and also fail under contention. `-j` must not exceed the
-core count; the default is sized for this machine.
+flood against a deadline) and anything setting `command_timeout`. Every check that
+holds one thread on another for up to 10 seconds, on a barrier or an event, also
+fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
+`an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
+`a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
+`a_round_writes_each_phase_as_it_reaches_it`,
+`two_clients_racing_one_request_leave_one_winner_and_one_conflict`,
+`one_submission_sent_twice_at_once_returns_the_winner_to_both`,
+`human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn`,
+`human_provider_ends_the_turn_on_an_end_turn_submission` and
+`human_provider_cancels_its_request_when_the_episode_stops`. `-j` must not
+exceed the core count; the default is sized for this machine.
 
 # Stopping an agent early
 
@@ -85,10 +92,13 @@ One `Ctrl+C` ends the agent cleanly. It does not raise: it sets a flag that the
 turn loop reads where it reads the account floor, so the episode ends the way an
 exhausted budget ends it — the turn in flight finishes, its spend is committed,
 the agent's trees are mirrored back, the trace is written and the container is
-reaped. An experiment ends every remaining round, and every agent keeps its seat, so it
-can be started again from where it stopped. Under a simultaneous round every episode in
-flight ends at its next turn the same way, and all of them are committed before the
-rounds end.
+reaped. An experiment ends every remaining round, and every agent keeps its seat, so
+`py -3 experiment.py <name> -r N --resume` continues it from where it stopped, finishing
+the round the stop landed in before the next begins, as
+`py -3 harness.py --agent <id> --manifest <path> --resume` continues one agent. The same
+command without `--resume` moves what the stopped run left under `displaced/` and starts
+fresh. Under a simultaneous round every episode in flight ends at its next turn the same
+way, and all of them are committed before the rounds end.
 
 The cost is latency: worst case one whole turn, which is one API call plus the
 commands it asks for. Press `Ctrl+C` a second time to stop waiting. The handler

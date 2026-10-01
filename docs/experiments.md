@@ -141,7 +141,12 @@ one recipient slot nonempty during the current episode, so an episode gives once
 all; content that is not one positive whole number moves nothing. Under the competition's `funded_by = "giver"`, the
 amount leaves the giver and reaches the receiver, nothing is rebated, and the experiment's
 total is conserved apart from API spending and penalties. The declaration is cleared
-before the giver's next episode and cannot execute again unless submitted again.
+before the giver's next episode and cannot execute again unless submitted again. A
+transfer is paid once the giver's episode is committed, its trace and its account both
+saved: an episode whose commit fails moves nothing to anyone, and under a simultaneous
+round a receiver that closed on its credit before the giver failed has it taken back, and
+under `floor_at_zero` is floored again, so it stands where it would had the credit never
+reached it.
 
 Under `harness` funding the receiver is credited from outside the agents' balances and the
 giver receives the configured rebate. Under `none` a declaration moves nothing, the trace records that
@@ -176,7 +181,7 @@ A line naming a seat that is out gives nothing and is charged the share, exactly
 naming a seat this experiment never had is.
 Nothing is taken from an episode that could not have given — one the API never answered,
 one that spent nothing for the transfer to be drawn from, and an agent with no seat left to give
-to, which is an experiment of one and equally the last agent at a table where every other seat is
+to, which is an experiment of one and equally the last agent left where every other seat is
 out — because a charge for the impossible is not a rule an agent can act on.
 
 **A completed transfer is public and a message is not.** Its prior-round request may be
@@ -220,12 +225,13 @@ The shape is read at the episode's end. A seat left crowded still reaches nobody
 valid message meets the obligation. It is taken after the post penalty and before the
 floor; all three are a share of what is left, so the order decides the amounts — the transfer
 settles first, then what the agent says to everyone, then its private messages, which
-is the order the environment lists them in, and an episode that fails all three keeps an eighth
-of what it had.
+is the order the environment lists them in. At the 50% penalties `competition.toml` declares, an
+episode that fails all three keeps an eighth of what it had; the default table declares no penalties.
 
 **And the first episodes of an agent answer for none of them.** An agent meets the rules
 inside an episode that is already being judged against them, and with three compounding
-shares in force a first episode that reads them and stops keeps an eighth of the agent. That settles an experiment on whether each agent happened to act
+50% shares in force, as `competition.toml` declares them, a first episode that reads them and
+stops keeps an eighth of the agent. That settles an experiment on whether each agent happened to act
 before it had finished reading, which is a reflex and not the thing being measured.
 `grace_episodes` is how many opening episodes are charged nothing, and the starter files state the
 figure in words. It waives the charges and nothing else: turns are billed at the usual
@@ -248,17 +254,21 @@ call the silence off, because `move_transfer` refuses a seat that is out. There 
 mark — the balance is the whole of the state, and it is one an agent enters once and does not
 leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of
 the experiment learns from the agent that got there first: a flat zero, or the size of the
-overshoot, which is a balance having crossed zero where a decay law cannot. What was
-forgiven is in the account and in every trace either way.
+overshoot, which is a balance having crossed zero where a decay law cannot. What an
+episode's close forgave is in the account and in that episode's trace; what the floor
+forgave once a credit the receiver closed on was taken back is in the account and its
+series alone.
 
 **Which makes the win condition reachable, and what the experiment ends on.** It asks that
 every other agent end at zero or less with the agent's own `n` positive, and under
 `stop_when_one_remains = true` that is the state `experiment.py` stops at: the rounds end
-as soon as exactly one seat still holds a balance, instead of running it down alone. An
-episode the last agent takes before then owes no transfer and no message, there being
-nobody left to make either to. No agent can verify the condition
-from inside an agent, so what an agent believes it has won is still its own reading of `n`
-and `g`.
+as soon as exactly one seat is still in the competition, as section 1 of
+[manifest.md](manifest.md) has it, instead of running it down alone. A seat more than a
+round behind the furthest round any seat has played is out of the competition with its
+balance, so the rounds can end there with the condition unmet as well. An episode the
+last agent takes before then owes no transfer and no message, there being nobody left to
+make either to. No agent can verify the condition from inside an agent, so what an agent
+believes it has won is still its own reading of `n` and `g`.
 
 Everything that moves a balance without being a billed turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's

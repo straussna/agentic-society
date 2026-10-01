@@ -12,6 +12,7 @@ import harness
 from checks.fake import fake, run, say
 from checks.lanes import (
     HostBox,
+    amend,
     episode_once,
     files_by_path,
     ground_truth,
@@ -21,6 +22,7 @@ from checks.lanes import (
     refused,
     rooted,
     seated,
+    seats_manifest,
     temp_root,
     trace_on_disk,
     turn_cost,
@@ -59,7 +61,7 @@ def check_starter_files_land_when_the_balance_falls():
     """
     # A say() episode spends 1750, so this is above episode 1's balance and below
     # episode 2's: the starter files land at the second episode and not the first.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         before = episode_once(say())
         after = episode_once(say())
@@ -85,7 +87,7 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     # episodes run whatever a turn costs under the model in force.
     below = 500_000 - 2 * turn_cost()
     for name, steps in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
-        with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=below) as root:
+        with temp_root(budget=500_000, starter_files="s", starter_files_below=below) as root:
             plant(root)
             with quiet():
                 harness.run_episodes(name, fake(*steps), 4)
@@ -104,7 +106,7 @@ def check_starter_files_are_recorded_and_idempotent():
     """The account records what landed, and a later episode does not plant it again."""
     # At the budget itself the threshold is met at episode 1: material that was
     # always there, not material that appeared.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())     # the agent overwrites it
         after = episode_once(say())
@@ -121,7 +123,7 @@ def check_starter_files_are_recorded_and_idempotent():
 
 def check_starter_files_are_not_the_agents():
     """What the agent was given is `ours`; only what it invented is not."""
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=500_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
         t = episode_once(run("echo doctrine > state/NOTES.md"), say())
 
@@ -140,7 +142,7 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
     """A starter-files path the agent already wrote stops the agent instead of clobbering it."""
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())
         refused(lambda: episode_once(say()), "m1",
@@ -155,7 +157,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
     is ignored, other terms are refused, and an account from before the terms
     were pinned adopts the config at its next episode.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         first = episode_once(say())
@@ -164,7 +166,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert first["provenance"]["starter_files"] == "s"
 
         # The config moves on; the agent does not.
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "other", 500_000
+        amend(starter_files="other", starter_files_below=500_000)
         second = episode_once(say())
         assert second["provenance"]["starter_files"] == "s" and second["provenance"]["starter_files_below"] == 499_000
         assert ground_truth()["starter_files_landed"]["name"] == "s", \
@@ -182,7 +184,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         m = ground_truth()
         del m["starter_files"], m["starter_files_below"]
         harness.save_account("t", m)
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "s", 499_000
+        amend(starter_files="s", starter_files_below=499_000)
         episode_once(say())
         assert ground_truth()["starter_files"] == "s"
 
@@ -193,7 +195,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
     A fork from before they landed carries none, and takes the config it is next
     run under.
     """
-    with temp_root(BUDGET=500_000, STARTER_FILES="s", STARTER_FILES_BELOW=499_000) as root:
+    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         episode_once(say())
@@ -206,7 +208,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
         assert ground_truth("after")["starter_files_landed"]["name"] == "s"
         assert "starter_files" not in ground_truth("before")
         assert "starter_files_landed" not in ground_truth("before")
-        harness.STARTER_FILES, harness.STARTER_FILES_BELOW = "other", 500_000
+        amend(starter_files="other", starter_files_below=500_000)
         with quiet():
             harness.run_once("before", fake(say()))
         assert ground_truth("before")["starter_files"] == "other", "adopted at its first episode"
@@ -233,7 +235,8 @@ def check_starter_files_config_is_validated():
 
         with pinned():
             declared(starter_files="ok", starter_files_below=400_000)
-            assert (harness.STARTER_FILES, harness.STARTER_FILES_BELOW) == ("ok", 400_000)
+            assert (harness.SETTINGS.starter_files, harness.SETTINGS.starter_files_below) == \
+                ("ok", 400_000)
         # The digest covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")
@@ -306,7 +309,8 @@ def check_fork_refuses_what_it_cannot_rebuild():
     with rooted(HostBox):
         priv = harness.records_dir("p") / "traces"
         priv.mkdir(parents=True)
-        harness.save_account("p", {"account_version": 2, "agent": "p", "provider": "anthropic",
+        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
+                                   "provider": "anthropic",
                                    "model": "claude-opus-5", "initial": 10,
                                    "created_at": "now", "remaining": 9, "series": [10, 9],
                                    "episodes": [{"episode": 1, "stop": "end_turn",
@@ -341,8 +345,102 @@ def check_fork_refuses_what_it_cannot_rebuild():
             assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), \
                 f"a refused fork left a {name} agent behind"
 
+        # A trace whose episode the account never came to list: the commit stopped
+        # between writing the one and saving the other.
+        harness.trace_path("p", 2).write_text(
+            json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8")
+        with quiet() as said:
+            assert harness.fork("p", 2, "x-orphan") == 2, "forked an episode its account never listed"
+        assert "never committed" in said.getvalue(), said.getvalue()
+        assert not harness.records_dir("x-orphan").exists(), "a refused fork left an agent behind"
+
         harness.trace_path("p", 1).write_text(json.dumps(trace()), encoding="utf-8")
         with quiet():
             assert harness.fork("p", 9, "x-missing") != 0, "forked an episode that never ran"
             assert harness.fork("nosuch", 1, "x-none") != 0, "forked an agent that is not there"
             assert harness.fork("p", 1, "good") == 0, "and a storable episode still forks"
+
+
+def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
+    """A record outside every tree the agent writes stops the fork before anything is written.
+
+    Otherwise the records ahead of it would sit in the new id's mirrors, and the
+    corrected fork under the same id would be refused as an agent that exists.
+    """
+    with rooted(HostBox):
+        (harness.records_dir("p") / "traces").mkdir(parents=True)
+        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
+                                   "provider": "anthropic", "model": "claude-opus-5",
+                                   "initial": 10, "created_at": "now", "remaining": 9,
+                                   "series": [10, 9],
+                                   "episodes": [{"episode": 1, "stop": "end_turn",
+                                                 "spent": 1, "turns": 1}]})
+        mine = {"path": "state/a.txt", "channel": "notes", "writer": "self", "readers": "self",
+                "role": "own", "size": 3, "author": "self", "ours": False, "starter": False,
+                "text": "hi\n"}
+        trace = {"trace_version": harness.TRACE_VERSION, "episode": 1, "state_saved": True,
+                 "series_after": [10, 9], "files": [mine, {**mine, "path": "elsewhere/b.txt"}]}
+        harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
+        with quiet() as said:
+            assert harness.fork("p", 1, "f") == 2, "forked a record no tree holds"
+        assert "elsewhere/b.txt" in said.getvalue(), said.getvalue()
+        assert not harness.environment_dir("f").exists(), \
+            f"a refused fork left mirrors behind: {sorted(harness.environment_dir('f').rglob('*'))}"
+        assert not harness.records_dir("f").exists(), "and records"
+
+        trace["files"] = [mine]
+        harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
+        with quiet():
+            assert harness.fork("p", 1, "f") == 0, "the corrected fork takes the same id"
+        assert (harness.mirror("f", "notes") / "a.txt").read_text(encoding="utf-8") == "hi\n"
+
+
+def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
+    """drift() reads the previous episode's trace, and before a fork's first that is the parent's.
+
+    A fork is given its parent's episodes without their traces, so its first episode is
+    compared with the parent's trace of the episode it was forked at, and every later
+    one with its own. An episode whose previous trace is absent reports nothing and is
+    not refused: an account can list a history no trace here recorded.
+    """
+    with temp_root():
+        episode_once(say())
+        with quiet():
+            assert harness.fork("t", 1, "f") == 0
+        amend(context_fraction=0.5)
+        with quiet():
+            first = harness.run_once("f", fake(say()))
+            later = harness.run_once("f", fake(say()))
+        harness.trace_path("f", 3).unlink()
+        with quiet():
+            blind = harness.run_once("f", fake(say()))
+    assert first["episode"] == 2, first["episode"]
+    # The fork's own id in its seat is no drift: a new id is what a fork is.
+    assert first["provenance_drift"] == ["context_fraction: 0.85 -> 0.5"], first["provenance_drift"]
+    assert later["provenance_drift"] == [], "its own trace after that, and nothing moved"
+    assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind["provenance_drift"]
+
+
+def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its_seats():
+    """A branch forks every seat, so every seat of its first episode is held by a new id;
+    each is a fork of the agent the parent's trace seated there, and none is drift.
+
+    What the branch changed is: its seats run under another experiment and manifest
+    from there on, so their episodes are another arm and the record says where.
+    """
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={})
+        path = seats_manifest(root, ids)
+        source = experiment.load_manifest(path)
+        with quiet():
+            experiment.sequential_round(ids, set(ids), 0, fake(say(), say()),
+                                        experiment.stamp_of(source), source["labels"])
+            branch = experiment.load_manifest(
+                experiment.branch_experiment(path, 1, "br", "2", root / "br.toml"))
+            experiment.sequential_round(["br-01", "br-02"], {"br-01"}, 1, fake(say()),
+                                        experiment.stamp_of(branch), branch["labels"])
+        was, t = trace_on_disk("g01", 1)["provenance"], trace_on_disk("br-01", 2)
+    assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"]["peers"]
+    assert t["provenance_drift"] == [
+        f"experiment_id: {was['experiment_id']!r} -> 'br'",
+        f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}"], t["provenance_drift"]

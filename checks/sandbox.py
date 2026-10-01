@@ -111,14 +111,14 @@ def check_a_long_blackboard_cannot_crowd_out_the_others():
     in a clipped blob would say which one went missing.
     """
     with temp_root() as root:
-        seated(root, loud={"group/message": "L" * (harness.DIGEST_FILE_LIMIT * 4)},
+        seated(root, loud={"group/message": "L" * (harness.SETTINGS.digest_file_limit * 4)},
                quietly={"group/message": "quiet but present\n"})
         t = episode_once(run(f"cat {digest_name()}"), say())
 
     shown_before = t["turns"][0]["tools"][0]["result"]
     assert "quiet but present" in shown_before, "a later seat survives a long one"
     assert "truncated" in shown_before, "and the cut says it was one"
-    assert shown_before.count("L") < harness.DIGEST_FILE_LIMIT * 2, \
+    assert shown_before.count("L") < harness.SETTINGS.digest_file_limit * 2, \
         "the long message is clipped, not shown_before whole"
 
 
@@ -172,7 +172,7 @@ def check_a_message_already_shown_is_named_and_not_repeated():
 def check_pull_delivery_leaves_the_record_to_be_fetched():
     """Under pull nothing is quoted: the episode opens on the listing alone, there
     is no m, and every message still sits in the environment at the ordinary price."""
-    with temp_root(DELIVERY="pull") as root:
+    with temp_root(delivery="pull") as root:
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={"group/message": "the standing position\n",
                             "out/1": "the standing note\n"})
@@ -348,7 +348,7 @@ def check_hostile_output_survives():
     The flood is 4MB, which exercises Shell.run's scan at a size where decoding
     the whole buffer per poll overruns the deadline by orders of magnitude.
     """
-    with docker_root(COMMAND_TIMEOUT=5):
+    with docker_root(command_timeout=5):
         t = episode_once(run("head -c 4096 /dev/urandom"),
                       run("head -c 4000000 /dev/zero | tr '\\0' x"),
                       run("sleep 30"), say())
@@ -357,7 +357,8 @@ def check_hostile_output_survives():
         flood = results[1]
         assert "truncated:" in flood, "the flood should have been clipped"
         assert "timed out" not in flood, "scanning the flood must not outlast the deadline"
-        assert len(flood) < harness.TOOL_RESULT_LIMIT + 500, f"clipped to the tool bound: {len(flood)}"
+        assert len(flood) < harness.SETTINGS.tool_result_limit + 500, \
+            f"clipped to the tool bound: {len(flood)}"
         assert any("timed out after 5s" in r for r in results), "the hang should be marked"
 
 
@@ -392,9 +393,9 @@ def check_a_live_balance_counts_as_a_number_written():
     """A balance that arrived mid-episode counts as a number the agent wrote.
 
     mentions["number"] is decided against the balances the agent could have
-    read, which under LIVE_BALANCE include the episode's own elements.
+    read, which under live_balance include the episode's own elements.
     """
-    with temp_root(LIVE_BALANCE=True):
+    with temp_root(live_balance=True):
         t = episode_once(run("echo hi"),
                       run("tr -d '[]' < n1 | tr ',' '\\n' | tail -1 > state/note.txt"),
                       say())
@@ -527,7 +528,7 @@ def check_a_container_failure_stops_the_episode_cleanly():
     The container, the state copy, and the shell all come before the first API
     call, so nothing reaching this path was billed and there is no trace.
     """
-    with docker_root(IMAGE="mtr-No-Such-Image:latest"):     # rejected on sight, no pull
+    with docker_root(image="mtr-No-Such-Image:latest"):     # rejected on sight, no pull
         with quiet() as buf:
             assert harness.run_episodes("t", fake(*DEFAULT), 3) == 4
         assert "could not build an environment" in buf.getvalue(), buf.getvalue()
@@ -591,6 +592,118 @@ def check_save_state_keeps_the_previous_tree_when_the_swap_fails():
         assert not harness.modes_file(mirror).exists(), "no modes are written for a tree that did not land"
 
 
+def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over():
+    """A swap whose rollback fails too leaves the tree in its .previous sidecar, and no
+    empty mirror is made in its place.
+
+    The same save tries the rollback once more; where that fails as well, the next
+    build, or the next save of that tree, puts it back before anything else. A False
+    still loses nothing the mirror held.
+    """
+    with rooted(HostBox):
+        with quiet():
+            account = harness.load_account("t")
+        instances = harness.environment("t", account)
+        mirror = harness.mirror("t", "notes")
+        previous = mirror.with_name("notes.previous")
+        (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")
+
+        def fetch(dest):
+            (dest / "new.txt").write_text("new\n", encoding="utf-8")
+            return True
+
+        real = harness.replace_file
+
+        def refusing_the_swap_and_rollbacks(refused):
+            """replace_file with the swap refused, and the first `refused` renames of the
+            tree put aside back into place."""
+            def replace(src, dest):
+                nonlocal refused
+                if src.name == "notes.incoming":
+                    raise OSError("the swap failed")
+                if src.name == "notes.previous" and refused:
+                    refused -= 1
+                    raise OSError("the rollback failed")
+                real(src, dest)
+            return replace
+
+        harness.replace_file = refusing_the_swap_and_rollbacks(1)
+        assert harness.save_state(mirror, fetch, lambda: None) is False
+        harness.replace_file = real
+        assert mirror.is_dir() and sorted(p.name for p in mirror.iterdir()) == ["keep.txt"], \
+            f"the second rollback did not put the tree back: {sorted(p.name for p in mirror.parent.iterdir())}"
+        assert not previous.exists(), "and the tree is not left aside as well"
+
+        for route in ("build", "save"):
+            harness.replace_file = refusing_the_swap_and_rollbacks(2)
+            assert harness.save_state(mirror, fetch, lambda: None) is False
+            assert not mirror.exists(), f"an empty mirror was made over the tree put aside ({route})"
+            assert (previous / "keep.txt").read_text(encoding="utf-8") == "kept\n", route
+            harness.replace_file = real
+            if route == "build":
+                harness.ensure_mirrors(instances)
+            else:
+                assert harness.save_state(mirror, lambda dest: False, lambda: None) is False
+            assert sorted(p.name for p in mirror.iterdir()) == ["keep.txt"], (route, sorted(mirror.iterdir()))
+            assert not previous.exists(), f"the {route} put the tree back where it was"
+
+
+def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
+    """A receipt sits in a directory the agent writes, so the agent can take it away and
+    write there itself; what it writes is recorded as its own and left where it is.
+
+    Only a file holding what the harness planted is scrubbed before the next receipt,
+    which is planted over whatever the agent left. Invariant 7: nothing the agent
+    wrote goes unrecorded.
+    """
+    with temp_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        first = episode_once(run("echo early > out/receipt", "echo '2 100' > out/transfer"), say())
+        second = episode_once(run("cat out/receipt"),
+                              run("rm -f out/receipt && echo mine > out/receipt"), say())
+        receipt = harness.mirror("t", "mail") / "receipt"
+
+        def build_and_abandon() -> None:
+            # A build scrubs the mirror and an abandoned one mirrors nothing back,
+            # so the mirror is left as the build's scrub left it.
+            with quiet():
+                harness.build_episode("t").abandon()
+
+        build_and_abandon()
+        left = receipt.read_text(encoding="utf-8") if receipt.exists() else None
+        third = episode_once(run("cat out/receipt"), say())
+        planted = receipt.read_text(encoding="utf-8")
+        build_and_abandon()
+        scrubbed = not receipt.exists()
+
+    for t, text in ((first, "early\n"), (second, "mine\n")):
+        rec = files_by_path(t).get("out/receipt")
+        assert rec and rec["text"] == text and rec["author"] == "self" and not rec["ours"], \
+            (t["episode"], rec)
+        assert rec["channel"] == "mail" and rec["role"] == "own", rec
+    assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), \
+        "the receipt is planted over what the agent left there"
+    assert left == "mine\n", f"the agent's file was scrubbed as a receipt: {left!r}"
+    assert third["turns"][0]["tools"][0]["result"].startswith("round: 2\n"), third["turns"][0]
+    assert "out/receipt" not in files_by_path(third), "a receipt the agent left alone is in no record"
+    assert planted.startswith("round: 2\n"), f"the receipt came back to the mirror: {planted!r}"
+    assert scrubbed, "and it is what the next build scrubs"
+
+
+def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wrote():
+    """Root's and read-only, a receipt in the agent's outbox still goes with rm, which asks
+    the directory. What the agent writes in its place comes back as its own."""
+    with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+        seated(root, other={})
+        episode_once(run("echo '2 100' > out/transfer"), say())
+        t = episode_once(run("rm -f out/receipt && echo mine > out/receipt && echo REPLACED"), say())
+        kept = (harness.mirror("t", "mail") / "receipt").read_text(encoding="utf-8")
+    assert "REPLACED" in t["turns"][0]["tools"][0]["result"], t["turns"][0]["tools"][0]
+    rec = files_by_path(t).get("out/receipt")
+    assert rec and rec["text"] == "mine\n" and rec["author"] == "self" and not rec["ours"], rec
+    assert kept == "mine\n", kept
+
+
 def check_the_modes_sidecar_is_read_back():
     """The modes sidecar reads as path -> mode, skipping a line with no path."""
     with rooted(HostBox) as root:
@@ -614,11 +727,11 @@ def check_containers_are_reaped():
 def check_an_unterminated_heredoc_is_not_probed_for_tools():
     """A heredoc whose terminator never arrived is body, not commands.
 
-    A turn truncated at MAX_TOKENS mid-heredoc leaves one, and none of its prose
+    A turn truncated at max_tokens mid-heredoc leaves one, and none of its prose
     reaches probe_missing.
     """
     cut = "cd /work/state && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
-    with docker_root(MAX_TURNS=1, COMMAND_TIMEOUT=5):
+    with docker_root(max_turns=1, command_timeout=5):
         t = episode_once(run(cut, stop="max_tokens"))
     assert t["missing_tools"] == [], t["missing_tools"]
 
@@ -670,7 +783,7 @@ def check_a_balance_resists_every_route():
     A mode denies writing a file and says nothing about replacing it: rm and mv
     ask the directory. Every balance sits in /work, which is root's.
     """
-    with docker_root(LIVE_BALANCE=True):
+    with docker_root(live_balance=True):
         t = episode_once(run("printf X >> n1 2>&1 || echo DENIED",
                           "chmod 666 n1 2>&1 || echo DENIED",
                           "rm -f n1 2>&1 || echo DENIED",
@@ -704,7 +817,7 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     Written as root from outside the agent's shell, so the mode the agent sees
     is the locked one either way. The stage file lives in /tmp.
     """
-    with docker_root(LIVE_BALANCE=True):
+    with docker_root(live_balance=True):
         t = episode_once(run("stat -c '%a %U:%G %n' n1", "ls -a /work", "ls -a state"), say())
     stat, work, listing = (c["result"] for c in t["turns"][0]["tools"])
     assert stat.strip() == "444 root:root n1", stat

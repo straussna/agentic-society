@@ -1,13 +1,16 @@
 """Watch an experiment and answer interactive seats: py -3 view.py [--experiment h | --agent h02]
 
-Serves a read-only page on 127.0.0.1 showing one experiment's activity, every
-directory channel, and one transcript at a time, above every seat's balance,
-what it has spent, and any transfer ledger. Player actions enter only through the
-interactive provider's coordination store."""
+Serves a page on 127.0.0.1 showing one experiment's activity, every directory
+channel, and one transcript at a time, above every seat's balance, what it has
+spent, and any transfer ledger. Every GET route only reads. The one POST route,
+held to the page's origin and token, writes an interactive seat's submission into
+the interactive provider's coordination store under interactions/, and nothing
+else."""
 
 from __future__ import annotations
 
 import argparse
+import copy
 import http.server
 import json
 import re
@@ -18,14 +21,15 @@ import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Mapping, NamedTuple
 
 import analyze
 import experiment
 import harness
 import product
+import providers
 from interaction import (InteractionConflict, InteractionError, InteractionStore,
-                         InvalidSubmission, StaleRequest)
+                         InvalidSubmission, StaleRequest, UnreadableRecord)
 
 PORT = 8765
 MAX_INTERACTION_BODY = 64 * 1024
@@ -59,22 +63,28 @@ PAGE = Path(__file__).with_name("view.html").read_text(encoding="utf-8")
 
 # manifest digest -> (manifest, path). The account carries the digest rather than
 # a path, so shipped manifests can describe a first episode before its trace lands.
-_MANIFESTS: dict[str, tuple[dict, Path]] | None = None
+_MANIFESTS: dict[str, tuple[experiment.Manifest, Path]] | None = None
 _MANIFEST_STATE: tuple[tuple[str, int, int], ...] | None = None
+
+# (the state of disk it was read from, the grouping). Guarded because the server is
+# threaded and every open page asks for it on every poll.
+_EXPERIMENTS: tuple[tuple, list[dict]] | None = None
+_EXPERIMENTS_LOCK = threading.Lock()
 
 
 # --- reading what is on disk ------------------------------------------------
 
 
 def read_json(path: Path) -> dict | None:
-    """One JSON file, or None if it is not readable.
+    """One JSON object, or None if the file is not readable or holds something else.
 
     save_account commits with os.replace, which on Windows surfaces to a reader as
     a PermissionError, so a poll landing on a commit is retried once.
     """
     for attempt in (1, 2):
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else None
         except FileNotFoundError:
             return None
         except (PermissionError, OSError, ValueError):
@@ -82,6 +92,15 @@ def read_json(path: Path) -> dict | None:
                 return None
             time.sleep(0.05)
     return None
+
+
+def stat_key(path: Path) -> tuple[int, int] | None:
+    """A file's mtime and size, which is what a cache here keys on; None where it is gone."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
 
 
 # path -> ((mtime, size), parsed). Guarded because the server is threaded and
@@ -96,11 +115,9 @@ def load_trace(path: Path) -> dict | None:
     A trace is written whole when its episode ends and never touched again, so
     it is cached against the mtime and size that identify it.
     """
-    try:
-        st = path.stat()
-    except OSError:
+    key = stat_key(path)
+    if key is None:
         return None
-    key = (st.st_mtime_ns, st.st_size)
     with _TRACE_LOCK:
         hit = _TRACES.get(path)
         if hit is not None and hit[0] == key:
@@ -120,70 +137,101 @@ def agent_names() -> list[str]:
     analyze.py writes when it was given no agent id, and it has none.
     """
     return [d.name for d in sorted(harness.records_root().glob("*"))
-            if (d / "account.json").exists()]
+            if harness.account_path(d.name).exists()]
 
 
-def account_of(agent: str) -> dict:
+def account_of(agent: str) -> Mapping[str, Any]:
     """One agent's account, empty where it has none this poll."""
-    return read_json(harness.records_dir(agent) / "account.json") or {}
+    return read_json(harness.account_path(agent)) or {}
 
 
-def manifests() -> dict[str, tuple[dict, Path]]:
+def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
     """Shipped manifests by digest, reparsed when one changes on disk."""
     global _MANIFESTS, _MANIFEST_STATE
     root = Path(__file__).with_name("experiments")
     paths = sorted(root.rglob("*.toml"))
     state = tuple((str(path), stat.st_mtime_ns, stat.st_size)
                   for path in paths if (stat := path.stat()))
-    if _MANIFESTS is None or state != _MANIFEST_STATE:
-        found = {}
-        for path in paths:
-            try:
-                manifest = experiment.load_manifest(path)
-            except SystemExit:
-                continue
-            found[manifest["sha256"]] = (manifest, path)
-        _MANIFESTS, _MANIFEST_STATE = found, state
-    return _MANIFESTS
+    if _MANIFESTS is not None and state == _MANIFEST_STATE:
+        return _MANIFESTS
+    found: dict[str, tuple[experiment.Manifest, Path]] = {}
+    for path in paths:
+        try:
+            manifest = experiment.load_manifest(path)
+        except SystemExit:
+            continue
+        found[manifest["sha256"]] = (manifest, path)
+    _MANIFESTS, _MANIFEST_STATE = found, state
+    return found
 
 
-def manifest_of(agent: str) -> tuple[dict, Path] | None:
-    """The shipped manifest stamped on an agent's account, where it is available."""
-    digest = (account_of(agent).get("experiment") or {}).get("manifest_sha256")
+def manifest_of(agent: str,
+                account: Mapping[str, Any] | None = None) -> tuple[experiment.Manifest, Path] | None:
+    """The shipped manifest stamped on an agent's account, where it is available.
+
+    `account` is the account a caller has already read this poll; without it the
+    account is read here.
+    """
+    account = account_of(agent) if account is None else account
+    digest = (account.get("experiment") or {}).get("manifest_sha256")
     return manifests().get(digest) if digest else None
 
 
-def manifest_ahead_of(last: dict | None, agent: str) -> tuple[dict, Path] | None:
+def manifest_ahead_of(last: dict | None, agent: str,
+                      account: Mapping[str, Any] | None = None
+                      ) -> tuple[experiment.Manifest, Path] | None:
     """The stamped manifest when it is newer than the agent's last trace."""
-    found = manifest_of(agent)
+    found = manifest_of(agent, account)
     if found is None:
         return None
-    digest = analyze.provenance_of(last).get("manifest_sha256") if last else None
+    digest = last["provenance"].get("manifest_sha256") if last else None
     return found if digest != found[0]["sha256"] else None
 
 
-def traces_of(agent: str) -> list[dict]:
-    """Every finished episode of an agent, in order."""
-    return [t for t in (load_trace(p) for p in harness.trace_paths(agent)) if t is not None]
+def committed(agent: str, account: Mapping[str, Any] | None = None) -> int:
+    """How many episodes the agent has committed: those its account lists.
 
+    close_episode writes the trace before the account, so a trace past this count is
+    one whose commit stopped between the two, and no episode of the agent's. `account`
+    is the account a caller has already read this poll, so that one poll reads one
+    state of it; without it the account is read here.
 
-def latest_trace(agent: str) -> dict | None:
-    """The agent's last committed episode, or None before it has one."""
-    paths = harness.trace_paths(agent)
-    return load_trace(paths[-1]) if paths else None
-
-
-def live_index(agent: str) -> int | None:
-    """The episode with no trace yet, or None if the agent is between starts.
-
-    Unfinished is exactly a raw log with no trace beside it, which is not the
-    same as running: how long since the log grew is what live_age reports.
+    An account this poll could not read - save_account's rename caught mid-poll -
+    reads as empty, which says nothing of what committed. For that poll the traces
+    answer alone: every one on disk is committed, and a raw log past the last of them
+    is the episode in flight.
     """
-    raws = sorted((harness.records_dir(agent) / "raw").glob("episode-*.jsonl"))
+    account = account_of(agent) if account is None else account
+    if account:
+        return len(account.get("episodes") or [])
+    paths = harness.trace_paths(agent)
+    return harness.episode_number(paths[-1]) if paths else 0
+
+
+def traces_of(agent: str, account: Mapping[str, Any] | None = None) -> list[dict]:
+    """Every committed episode of an agent, in order, counted as committed() counts."""
+    account = account_of(agent) if account is None else account
+    paths = harness.committed_traces(agent, account) if account else harness.trace_paths(agent)
+    return [t for t in (load_trace(p) for p in paths) if t is not None]
+
+
+def latest_trace(agent: str, account: Mapping[str, Any] | None = None) -> dict | None:
+    """The agent's last committed episode, or None before it has one."""
+    count = committed(agent, account)
+    return load_trace(harness.trace_path(agent, count)) if count else None
+
+
+def live_index(agent: str, account: Mapping[str, Any] | None = None) -> int | None:
+    """The episode not yet committed, or None if the agent is between starts.
+
+    Unfinished is exactly a raw log past the episodes committed() counts, which is
+    not the same as running: how long since the log grew is what live_age reports.
+    """
+    raws = harness.raw_paths(agent)
     if not raws:
         return None
     index = harness.episode_number(raws[-1])
-    return None if harness.trace_path(agent, index).exists() else index
+    return None if index <= committed(agent, account) else index
 
 
 def live_age(agent: str, index: int | None) -> float | None:
@@ -282,7 +330,7 @@ def observation_clipped(t: dict) -> bool:
     its own limit is one that lost a middle. The limit is the agent's, read off the
     episode's provenance and not this process's config.
     """
-    limit = analyze.provenance_of(t).get("observation_limit")
+    limit = t["provenance"].get("observation_limit")
     return bool(limit) and len(t.get("observation") or "") > limit
 
 
@@ -294,19 +342,16 @@ def message_paths(t: dict) -> set[str] | None:
 
 def digest_name(agent: str, t: dict, path: str) -> str:
     """An internal path as the episode's channel presents it to that agent."""
-    name = getattr(harness, "digest_name", None)
-    if name is None:
-        return path
     account = account_of(agent)
     instances = harness.environment(agent, account, harness.table_of(t))
-    return name(path, instances, harness.experimenter_digest_paths(account, instances))
+    return harness.digest_name(path, instances, harness.experimenter_digest_paths(account, instances))
 
 
 def inbox_prefix(mail: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the opening digest."""
     if mail is None:
         return None
-    return "Letter from " if getattr(mail, "agent_view", "paths") == "letters" else f"{mail.inbox}/"
+    return "Letter from " if mail.agent_view == "letters" else f"{mail.inbox}/"
 
 
 def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
@@ -334,20 +379,26 @@ def from_trace(t: dict) -> list[dict]:
         "text": turn.get("text") or "",
         "thinking": turn.get("thinking") or "",
         "tools": [{"result": tool.get("result"),
-                   "shell": not tool.get("tool") or tool.get("tool") == harness.SHELL_SPEC.name,
-                   "call": call_shown(tool.get("tool"), tool.get("command"), tool.get("input"))}
+                   # A shell call run_tools answered as no tool carries its input and
+                   # is drawn as the call it was, as call_shown writes it.
+                   "shell": analyze.is_shell(tool.get("tool")) and tool.get("input") is None,
+                   "call": analyze.call_shown(tool.get("tool"), tool.get("command"),
+                                              tool.get("input"))}
                   for tool in turn.get("tools") or []],
         "tokens": turn.get("usage") or {},
     } for turn in t.get("turns") or []]
 
 
-def from_raw(lines: list[dict], account: dict) -> list[dict]:
+def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     """A running episode's turns from canonical events written after native responses.
 
-    Each response goes back through harness.bill_once, so an id is billed once
-    and a replay is zeroed. Command results are None until the trace lands.
+    Billed by the rule harness.bill_once applies, restated over the logged dict: a
+    response id's charges count once and a replay of it is zeroed, so each balance
+    is the one the account commits, counted down from zero where this poll could not
+    read the account. Command results are None until the trace lands, and a shell
+    call is the command it asked for: whether run_tools ran it is the trace's to say.
     """
-    remaining = account["remaining"]
+    remaining = account.get("remaining", 0)
     centi, seen, out = 0, set(), []
     for line in lines:
         if line.get("kind") != "normalized_response":
@@ -375,35 +426,22 @@ def from_raw(lines: list[dict], account: dict) -> list[dict]:
             "text": "\n".join(data.get("text") or []),
             "thinking": "\n".join(data.get("reasoning") or []),
             "tools": [{"result": None,
-                       "shell": call.get("name") == harness.SHELL_SPEC.name,
-                       "call": call_shown(call.get("name"),
-                                          (call.get("input") or {}).get("command"),
-                                          call.get("input") or {})}
+                       "shell": analyze.is_shell(call.get("name")),
+                       "call": analyze.call_shown(
+                           call.get("name"), (call.get("input") or {}).get("command"),
+                           None if analyze.is_shell(call.get("name")) else call.get("input"))}
                       for call in calls],
             "tokens": u,
         })
     return out
 
 
-def call_shown(name: str | None, command: str | None, args: Any) -> str:
-    """The one line a tool call is shown as.
-
-    The shell's is the command it ran, or "(restart)" for the bare form. A
-    declared tool's is the call itself, since it ran no command of its own.
-    Traces older than the tool table name no tool and are all the shell's.
-    """
-    if name and name != harness.SHELL_SPEC.name:
-        carried = ", ".join(f"{k}={v!r}" for k, v in sorted((args or {}).items()))
-        return f"{name}({carried})"
-    return "(restart)" if command is None else command
-
-
-def live_turns(agent: str, index: int, account: dict) -> list[dict]:
+def live_turns(agent: str, index: int, account: Mapping[str, Any]) -> list[dict]:
     """The turns of an unfinished episode, read off its raw log."""
     return from_raw(latest_attempt(raw_lines(harness.raw_path(agent, index))), account)
 
 
-def live_state(agent: str, index: int | None, account: dict) -> dict:
+def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dict:
     """What an unfinished episode has done so far, derived from its raw log.
 
     `turns` are its turns, `spent` what they have cost, `balance` what the last
@@ -421,7 +459,7 @@ def live_state(agent: str, index: int | None, account: dict) -> dict:
 # --- who is at the table ----------------------------------------------------
 
 
-def group_of(agent: str, account: dict) -> str:
+def group_of(agent: str, account: Mapping[str, Any]) -> str:
     """The set of agents this one belongs to, as one name.
 
     An experiment knows its own membership, so that is used where it exists; the
@@ -435,7 +473,7 @@ def group_of(agent: str, account: dict) -> str:
     return head if head and all(m.startswith(head) for m in members) else "+".join(members)
 
 
-def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
+def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | None:
     """The experiment an agent is seated in, as its members in seat order.
 
     An agent is seated when the mapping it carries puts it in its own seat; one
@@ -447,29 +485,28 @@ def seating_key(agent: str, account: dict) -> tuple[str, ...] | None:
     return tuple(s.seen.values())
 
 
-def agent_table(last: dict | None, agent: str | None = None) -> list[harness.Channel]:
-    """The channel table an agent last ran under, from its latest trace; the
-    stamped manifest before it has one, and the process table as a fallback."""
-    found = manifest_ahead_of(last, agent) if agent else None
-    if found:
-        manifest, path = found
-        return harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                         str(path), tuple(manifest["labels"].values()))[0]
-    if last:
-        return harness.table_of(last)
-    return harness.channels()
+def manifest_environment(manifest: experiment.Manifest,
+                         path: Path) -> tuple[list[harness.Channel], dict[str, str]]:
+    """A shipped manifest's channel table and harness file names, validated together."""
+    return harness.validate_channels(manifest["channels"], manifest["harness_files"],
+                                     str(path), tuple(manifest["labels"].values()))
 
 
-def agent_harness_files(last: dict | None, agent: str) -> dict[str, str]:
-    """Harness file names from the trace, stamped manifest, or process defaults."""
-    found = manifest_ahead_of(last, agent)
+def agent_environment(last: dict | None, agent: str,
+                      account: Mapping[str, Any] | None = None
+                      ) -> tuple[list[harness.Channel], dict[str, str]]:
+    """The channel table and harness file names an agent runs under.
+
+    `last` is its latest trace and `account` its account, where a caller has read it
+    this poll. The stamped manifest's where the manifest is newer than `last` or there
+    is no trace yet, `last`'s otherwise, and the process's where there is neither.
+    """
+    found = manifest_ahead_of(last, agent, account)
     if found:
-        manifest, path = found
-        return harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                         str(path), tuple(manifest["labels"].values()))[1]
+        return manifest_environment(*found)
     if last:
-        return analyze.harness_files_of(last)
-    return dict(harness.HARNESS_FILES)
+        return harness.table_of(last), analyze.harness_files_of(last)
+    return harness.channels(), dict(harness.SETTINGS.harness_files)
 
 
 def experiment_table(exp: dict) -> list[harness.Channel]:
@@ -488,8 +525,8 @@ def named_group(members: list[str]) -> str:
     return group_of(members[0], {"peers": {"seen": seen}})
 
 
-def anchored_groups(accounts: dict[str, dict],
-                    catalog: dict[str, tuple[dict, Path]] | None = None
+def anchored_groups(accounts: Mapping[str, Mapping[str, Any]],
+                    catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None
                     ) -> tuple[list[dict], set[str]]:
     """Experiments identified by a manifest stamp already written to one account.
 
@@ -513,14 +550,12 @@ def anchored_groups(accounts: dict[str, dict],
         seats = {seat: agent for seat, agent in experiment.seats_of(declared).items()
                  if agent in members}
         labels = {seat: manifest["labels"][seat] for seat in seats}
-        table = harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                          str(path), tuple(manifest["labels"].values()))[0]
+        table, _ = manifest_environment(manifest, path)
         out.append({
             "name": named_group(declared), "seated": True, "seats": seats,
             "experiment_id": manifest.get("experiment_id", path.stem),
             "members": members, "posts": bool(harness.mailbox_channel(table)
                                                 or harness.schema_channel(table)),
-            "running": sum(acting(agent, live_index(agent)) for agent in members),
             "channels": [ch.as_table() for ch in table], "labels": labels,
             "tools": manifest["tools"] or [],
         })
@@ -528,14 +563,55 @@ def anchored_groups(accounts: dict[str, dict],
     return out, claimed
 
 
+def grouping_state() -> tuple:
+    """What the experiment grouping is read from, as it stands: every account, each
+    agent's latest trace, which is the one the grouping reads, and the shipped
+    manifests. Equal states group alike."""
+    # Rereads the manifests where they moved, which _MANIFEST_STATE then records.
+    manifests()
+    agents = []
+    for agent in agent_names():
+        paths = harness.trace_paths(agent)
+        latest = (paths[-1].name, stat_key(paths[-1])) if paths else None
+        agents.append((agent, stat_key(harness.account_path(agent)), latest))
+    return str(harness.records_root()), _MANIFEST_STATE, tuple(agents)
+
+
 def experiments() -> list[dict]:
-    """Every set of agents on disk, the seated ones first.
+    """Every set of agents on disk, the seated ones first, each with how many of its
+    members are acting.
+
+    The grouping is read again only when what it is read from has moved. One read
+    without an account agent_names() lists - save_account's rename caught mid-poll -
+    is served to that poll and kept for none, so the next poll reads it again. Acting
+    is a question of the clock as well, so it is asked on every call.
+    """
+    global _EXPERIMENTS
+    state = grouping_state()
+    with _EXPERIMENTS_LOCK:
+        if _EXPERIMENTS is not None and _EXPERIMENTS[0] == state:
+            grouping = _EXPERIMENTS[1]
+        else:
+            grouping, whole = read_experiments()
+            if whole:
+                _EXPERIMENTS = (state, grouping)
+        out = copy.deepcopy(grouping)
+    for exp in out:
+        exp["running"] = sum(acting(agent, live_index(agent)) for agent in exp["members"])
+    return out
+
+
+def read_experiments() -> tuple[list[dict], bool]:
+    """Every set of agents on disk, the seated ones first, read afresh, and whether
+    every account agent_names() lists was read into it.
 
     Agents sharing a seating are one experiment, named by group_of. One whose mapping
-    does not seat it is grouped by its id's letters and marked unseated.
+    does not seat it is grouped by its id's letters and marked unseated. Each account
+    is read once: what an experiment shows of its members comes from that read.
     """
-    accounts = {agent: account for agent in agent_names()
-                if (account := read_json(harness.records_dir(agent) / "account.json")) is not None}
+    listed = agent_names()
+    accounts = {agent: account for agent in listed
+                if (account := read_json(harness.account_path(agent))) is not None}
     anchored, claimed = anchored_groups(accounts)
     groups: dict[tuple, dict] = {}
     for agent, account in accounts.items():
@@ -544,17 +620,16 @@ def experiments() -> list[dict]:
         key = seating_key(agent, account)
         seen = harness.seating_of(agent, account).seen
         ident = key or ("unseated", group_of(agent, account))
-        exp = groups.get(ident)
+        exp: dict[str, Any] | None = groups.get(ident)
         if exp is None:
             exp = groups[ident] = {
                 "name": group_of(agent, account), "seated": key is not None,
                 "experiment_id": (account.get("experiment") or {}).get("experiment_id")
                                  or group_of(agent, account),
                 "seats": dict(seen) if key else {}, "members": [],
-                "posts": False, "running": 0,
+                "posts": False,
             }
         exp["members"].append(agent)
-        exp["running"] += acting(agent, live_index(agent))
 
     out = sorted([*anchored, *groups.values()],
                  key=lambda exp: (not exp["seated"], exp["name"]))
@@ -572,21 +647,22 @@ def experiments() -> list[dict]:
         # same ones.
         if "channels" not in exp:
             first = next((a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0])
-            last = latest_trace(first)
-            table = agent_table(last, first)
-            account = account_of(first)
+            account = accounts[first]
+            last = latest_trace(first, account)
+            table, _ = agent_environment(last, first, account)
             exp["channels"] = [ch.as_table() for ch in table]
             exp["labels"] = dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
             mail = harness.mailbox_channel(table)
             schema = harness.schema_channel(table)
             exp["posts"] = bool(mail or schema)
-            found = manifest_of(first)
+            found = manifest_of(first, account)
             exp["tools"] = ((found[0]["tools"] or []) if found else
-                            (analyze.provenance_of(last).get("tools") if last else []) or [])
-    return out
+                            (last["provenance"].get("tools") if last else []) or [])
+    return out, len(accounts) == len(listed)
 
 
 def experiment_named(name: str) -> dict | None:
+    """The experiment by this name, or None."""
     return next((exp for exp in experiments() if exp["name"] == name), None)
 
 
@@ -611,7 +687,7 @@ def places_of(exp: dict) -> list[tuple[str | None, str]]:
 
 def started_at(t: dict) -> str:
     """When the episode started, from its provenance."""
-    return analyze.provenance_of(t)["started_at"]
+    return t["provenance"]["started_at"]
 
 
 def experiment_episodes(exp: dict) -> list[dict]:
@@ -637,8 +713,8 @@ def experiment_episodes(exp: dict) -> list[dict]:
 def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     """The episodes in flight, each in the round it belongs to.
 
-    An agent with a raw log and no trace is taking its turn now, which is the round
-    after the last one it acted in.
+    An agent with a raw log past its committed episodes is taking its turn now,
+    which is the round after the last one it acted in.
     """
     out = []
     for seat, agent in places_of(exp):
@@ -659,11 +735,9 @@ def round_now(exp: dict, rows: list[dict]) -> int:
 # --- what every seat is holding ---------------------------------------------
 
 
-def latest_transfer(agent: str, account: dict, latest: dict,
-                    table: list[harness.Channel]) -> dict | None:
+def latest_transfer(latest: dict, table: list[harness.Channel]) -> dict | None:
     """The transfer submitted by the latest episode and what settlement made of it."""
-    schema = harness.schema_channel(table)
-    if schema is None:
+    if harness.schema_channel(table) is None:
         return None
     resolved = latest.get("transfer") or {}
     if not resolved.get("declared"):
@@ -696,20 +770,18 @@ def obligations(t: dict | None) -> dict[str, bool | None]:
 def unmet(t: dict | None) -> list[dict]:
     """Each obligation this episode left undone, in table order, and what it cost.
 
-    Said in the words the harness's own console line uses, so the page and the
-    console cannot describe one episode differently. `penalty` is what was taken,
-    which is zero inside the grace and at a rate of zero.
+    Said in the words the harness's own console line uses, from the same
+    harness.SETTLEMENTS entry, so the page and the console cannot describe one
+    episode differently. A record that carries its own error - a transfer
+    declaration that moved nothing, which the console prints on a line of its own -
+    says that instead. `penalty` is what was taken, which is zero inside the grace
+    and at a rate of zero.
     """
     out = []
     for ch, rec in analyze.settled_channels(t or {}):
         if analyze.met_of(ch, rec) is not False:
             continue
-        if ch.schema:
-            why = rec.get("error") or "no transfer of its own"
-        elif ch.shape == "mailbox":
-            why = harness.outbox_why(rec, ch)
-        else:
-            why = "no post"
+        why = rec.get("error") or harness.SETTLEMENTS[ch.settles_as].why(rec, ch)
         out.append({"channel": ch.name, "why": why, "penalty": rec.get("penalty") or 0})
     return out
 
@@ -717,13 +789,19 @@ def unmet(t: dict | None) -> list[dict]:
 def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     """One seat's tile: what it holds, what it is doing, and what it has moved."""
     account = account_of(agent)
-    ts = traces_of(agent)
+    ts = traces_of(agent, account)
     last = ts[-1] if ts else None
     episodes = account.get("episodes") or []
     latest = episodes[-1] if episodes else {}
-    live = live_index(agent)
-    interaction = InteractionStore(harness.ROOT / "interactions").current(agent)
+    live = live_index(agent, account)
+    try:
+        interaction = InteractionStore(harness.interactions_root()).current(agent)
+    except InteractionError:
+        # Left out, as /api/interaction leaves it out: the seat's own route reports the
+        # file, and the seat's next request is written over it.
+        interaction = None
     going = live_state(agent, live, account)
+    table, _ = agent_environment(last, agent, account)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
@@ -775,7 +853,7 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # What each channel's silence has cost, by channel name.
         "penalised": account.get("penalised") or {},
         "forgiven": account.get("forgiven", 0),
-        "transfer": latest_transfer(agent, account, latest, agent_table(last, agent)),
+        "transfer": latest_transfer(latest, table),
     }
 
 
@@ -784,15 +862,16 @@ def header(exp: dict) -> dict:
 
     Each balance comes from its agent's own account, the source the harness
     renders the balance files from. The ledger is harness.ledger for any one
-    member; every reader computes it alike.
+    member; every reader computes it alike. It reads every other member's account
+    from disk, so a poll that cannot read one - save_account's rename caught
+    mid-poll - shows no ledger and leaves it to the next.
     """
     rows = experiment_episodes(exp)
     rnd = round_now(exp, rows)
     first = exp["members"][0]
     account = account_of(first)
     last = rows[-1]["trace"] if rows else None
-    hf = agent_harness_files(last, first)
-    table = agent_table(last, first)
+    table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
     seats = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
@@ -806,8 +885,12 @@ def header(exp: dict) -> dict:
     phase = ("vote complete" if rnd in elections else
              "vote" if every and rnd and rnd % every == 0 else "discussion")
     experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
-    records = product.records(harness.ROOT, experiment_id)
-    cost = product.cost(exp["members"], account_of, stamp.get("cost") or {})
+    records = product.records(harness.SETTINGS.root, experiment_id)
+    cost = product.cost(exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive)
+    try:
+        ledger = [list(g) for g in harness.ledger(first, account)] if exp["seated"] else []
+    except (OSError, ValueError):
+        ledger = []
     return {
         "experiment": exp["name"], "experiment_id": experiment_id,
         "seated": exp["seated"], "posts": exp["posts"],
@@ -815,9 +898,9 @@ def header(exp: dict) -> dict:
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
         "seats": seats,
-        "ledger": [list(g) for g in harness.ledger(first, account)] if exp["seated"] else [],
+        "ledger": ledger,
         "round": rnd,
-        "schedule": (analyze.provenance_of(last).get("schedule") if last else None)
+        "schedule": (last["provenance"].get("schedule") if last else None)
                     or stamp.get("schedule") or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
         "active": sum(seat["out_reason"] is None for seat in seats),
@@ -919,6 +1002,14 @@ def change_of(before: Any, after: Any) -> str:
     return "edited" if before != after else "standing"
 
 
+def transfer_path(room: Mailroom, path: str) -> bool:
+    """Whether a path is the current episode's transfer declaration."""
+    return bool(room.schema and
+                (path == room.schema.path or
+                 (room.schema.shape == "mailbox" and
+                  path.startswith(room.schema.outbox + "/"))))
+
+
 def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
                   tip: bool = False) -> dict:
     """One movement of one path in one outbox."""
@@ -932,10 +1023,7 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         "from_seat": from_seat, "from_label": exp["labels"].get(from_seat or "", from_seat),
         "from_agent": row["agent"],
         "to_seat": seat, "to_label": label, "to_agent": exp["seats"].get(seat) if seat else None,
-        "path": path, "kind": ("transfer" if room.schema and
-                                  (path == room.schema.path or
-                                   (room.schema.shape == "mailbox" and
-                                    path.startswith(room.schema.outbox + "/"))) else "message"),
+        "path": path, "kind": "transfer" if transfer_path(room, path) else "message",
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text, "binary": after is not ABSENT and after is None,
@@ -953,14 +1041,6 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
         ev["to_seat"] = resolved.get("seat") or seat_of_label(exp, ev["to_label"])
         ev["to_agent"] = resolved.get("agent") or exp["seats"].get(ev["to_seat"] or "")
     return ev
-
-
-def transfer_path(room: Mailroom, path: str) -> bool:
-    """Whether a path is the current episode's transfer declaration."""
-    return bool(room.schema and
-                (path == room.schema.path or
-                 (room.schema.shape == "mailbox" and
-                  path.startswith(room.schema.outbox + "/"))))
 
 
 def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None],
@@ -992,7 +1072,14 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
 
 
 def messages(exp: dict, since: int = 0) -> dict:
-    """Every mailbox and schema-channel event, in round order."""
+    """Every mailbox and schema-channel event, in round order.
+
+    Under episode delivery a message lasts one episode, so what a committed outbox
+    holds was sent afresh by that episode. A trace naming no message_delivery was
+    written while an outbox stood until changed, so its messages are diffed against
+    the sender's episode before: standing where unchanged, withdrawn where gone.
+    A transfer declaration is every episode's own under either.
+    """
     rows = experiment_episodes(exp)
     room = mailroom(exp)
     events, tips = [], []
@@ -1005,13 +1092,11 @@ def messages(exp: dict, since: int = 0) -> dict:
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
-            episodic = analyze.provenance_of(row["trace"]).get("message_delivery") == "episode"
+            episodic = row["trace"]["provenance"].get("message_delivery") == "episode"
             for path in sorted(now if episodic else set(prev) | set(now)):
-                if transfer_path(room, path):
+                if episodic or transfer_path(room, path):
                     if path in now:
                         events.append(message_event(room, row, path, ABSENT, now[path]))
-                elif episodic:
-                    events.append(message_event(room, row, path, ABSENT, now[path]))
                 else:
                     events.append(message_event(room, row, path,
                                                 prev.get(path, ABSENT), now.get(path, ABSENT)))
@@ -1037,7 +1122,15 @@ def messages(exp: dict, since: int = 0) -> dict:
 
 
 def player_history(exp: dict, agent: str) -> dict:
-    """Public posts and the player's private conversations, including accepted sends."""
+    """Public posts and the player's private conversations, including accepted sends.
+
+    A call the player's submission made is shown from the moment it is accepted, and
+    once its episode commits it the trace's record of it is the one shown. The two
+    are matched on the player's own episode number, which a request carries and a
+    round is not: a forked seat plays its first round in an episode past the ones it
+    inherited. An accepted call is shown in the round its episode was taken in, or,
+    before that episode commits, in the round after the player's last.
+    """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
     post_tool = next((tool for tool in exp.get("tools") or []
@@ -1070,48 +1163,41 @@ def player_history(exp: dict, agent: str) -> dict:
                and agent in (event["from_agent"], event["to_agent"])
                and isinstance(event.get("text"), str) and event["text"]]
 
-    request_dir = harness.ROOT / "interactions" / "requests" / agent
-    submission_dir = harness.ROOT / "interactions" / "submissions" / agent
     player_seat = next((seat for seat, member in places_of(exp) if member == agent), None)
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
-    public_keys = {(event["episode"], event["from_agent"], event["text"])
+    rounds = {row["episode"]: row["round"] for row in rows if row["agent"] == agent}
+    ahead = max(rounds.values(), default=0) + 1
+    public_keys = {(event["agent_episode"], event["from_agent"], event["text"])
                    for event in public}
-    private_keys = {(event["round"], event["from_agent"], event["to_label"], event["text"])
+    private_keys = {(event["episode"], event["from_agent"], event["to_label"], event["text"])
                     for event in private}
-    if request_dir.is_dir() and submission_dir.is_dir():
-        for request_path in sorted(request_dir.glob("*.json")):
-            try:
-                request = json.loads(request_path.read_text(encoding="utf-8"))
-                submission = json.loads((submission_dir / request_path.name).read_text(
-                    encoding="utf-8"))
-                episode = int(request["episode"])
-            except (FileNotFoundError, OSError, ValueError, KeyError, json.JSONDecodeError):
+    for request, submission in InteractionStore(harness.interactions_root()).history(agent):
+        episode = request.episode
+        rnd = rounds.get(episode, ahead)
+        for call in submission.tool_calls:
+            text = call.input.get("body")
+            if not isinstance(text, str) or not text:
                 continue
-            for call in submission.get("tool_calls") or []:
-                inputs = call.get("input") or {}
-                text = inputs.get("body")
-                if not isinstance(text, str) or not text:
-                    continue
-                kind = tool_kinds.get(call.get("name"))
-                if kind == "post_public":
-                    key = (episode, agent, text)
-                    if key not in public_keys:
-                        public.append({"episode": episode, "agent_episode": episode,
-                                       "from_agent": agent, "from_label": request.get("label", agent),
-                                       "text": text, "accepted": True})
-                        public_keys.add(key)
-                elif kind == "send_message_to":
-                    label = inputs.get("to")
-                    seat = seat_of_label(exp, label)
-                    key = (episode, agent, label, text)
-                    if isinstance(label, str) and key not in private_keys:
-                        private.append({"round": episode, "episode": episode,
-                                        "from_seat": player_seat,
-                                        "from_label": request.get("label", agent),
-                                        "from_agent": agent, "to_seat": seat, "to_label": label,
-                                        "to_agent": exp["seats"].get(seat) if seat else None,
-                                        "text": text, "accepted": True})
-                        private_keys.add(key)
+            kind = tool_kinds.get(call.name)
+            if kind == "post_public":
+                key = (episode, agent, text)
+                if key not in public_keys:
+                    public.append({"episode": rnd, "agent_episode": episode,
+                                   "from_agent": agent, "from_label": request.label,
+                                   "text": text, "accepted": True})
+                    public_keys.add(key)
+            elif kind == "send_message_to":
+                label = call.input.get("to")
+                seat = seat_of_label(exp, label)
+                key = (episode, agent, label, text)
+                if isinstance(label, str) and key not in private_keys:
+                    private.append({"round": rnd, "episode": episode,
+                                    "from_seat": player_seat,
+                                    "from_label": request.label,
+                                    "from_agent": agent, "to_seat": seat, "to_label": label,
+                                    "to_agent": exp["seats"].get(seat) if seat else None,
+                                    "text": text, "accepted": True})
+                    private_keys.add(key)
     public.sort(key=lambda event: (event["episode"], event.get("agent_episode", 0),
                                    event["from_agent"], event["text"]))
     private.sort(key=lambda event: (event["round"], event["episode"],
@@ -1170,7 +1256,7 @@ def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
     return out
 
 
-def given_in(ch: harness.Channel, account: dict) -> set[str]:
+def given_in(ch: harness.Channel, account: Mapping[str, Any]) -> set[str]:
     """The paths the starter files put in this tree: only a private store holds any."""
     return harness.starter_paths(account) if ch.readers == "self" else set()
 
@@ -1190,7 +1276,9 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
     latest = rounds[-1]
     if live_rows(exp, rows):
         return rounds[:-1]
-    active = {agent for _, agent in places_of(exp) if harness.why_out(account_of(agent)) is None}
+    # A seat whose account this poll cannot read is still to act, so its round stays open.
+    active = {agent for _, agent in places_of(exp)
+              if not (account := account_of(agent)) or harness.why_out(account) is None}
     acted = {row["agent"] for row in rows if row["round"] == latest}
     return rounds if not active or active <= acted else rounds[:-1]
 
@@ -1267,7 +1355,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
     columns = []
     for seat, agent in places_of(exp):
         account = account_of(agent)
-        live = live_index(agent)
+        live = live_index(agent, account)
         columns.append({
             "seat": seat, "agent": agent, "label": account.get("label") or seat,
             "committed": len(account.get("episodes") or []),
@@ -1335,8 +1423,8 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     account = account_of(agent)
     rows = experiment_episodes(exp) if exp else []
     rnd = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
-    ts = traces_of(agent)
-    live = live_index(agent)
+    ts = traces_of(agent, account)
+    live = live_index(agent, account)
     episodes = [{
         "episode": t["episode"], "round": rnd.get(t["episode"]),
         "stop": t["stop"], "spent": t["spent"], "turns": len(t["turns"]),
@@ -1344,7 +1432,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "refused": len(analyze.refused_turns_of(t)),
         "transfer": t.get("transfer") or {}, "channels": analyze.channel_records(t),
         "forgiven": t.get("forgiven") or 0,
-        "provenance": analyze.provenance_of(t),
+        "provenance": t["provenance"],
         "drift": t.get("provenance_drift") or [],
         "halted": t["stop"] in harness.STOPS_THE_AGENT,
         "live": False,
@@ -1384,7 +1472,7 @@ def episode_view(agent: str, index: int, since: int = 0) -> dict | None:
     """
     if not harness.trace_path(agent, index).exists() and not harness.raw_path(agent, index).exists():
         return None
-    trace = load_trace(harness.trace_path(agent, index))
+    trace = load_trace(harness.trace_path(agent, index)) if index <= committed(agent) else None
     out = raw_view(agent, index, since) if trace is None else traced_view(agent, index, trace, since)
     turns = out["turns"]
     out["turns"] = [t for t in turns if (t["turn"] or 0) > since]
@@ -1414,7 +1502,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         listing, sections = observation_split(trace.get("observation") or "")
         out["observation"] = {
             "command": trace["commands"][0],
-            "shell": analyze.provenance_of(trace).get("shell_tool", True),
+            "shell": trace["provenance"].get("shell_tool", True),
             "result": trace.get("observation") or "",
             # `listing` and `shown_before` are `result` split where the digest's
             # record begins; `name` is the digest file the record came from.
@@ -1438,14 +1526,13 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     """
     account = account_of(agent)
     going = live_state(agent, index, account)
-    last = latest_trace(agent)
-    table = agent_table(last, agent)
-    hf = agent_harness_files(last, agent)
-    found = manifest_ahead_of(last, agent)
-    delivery = (found[0]["overrides"].get("delivery", harness.DELIVERY) if found else
-                (analyze.provenance_of(last)["delivery"] if last else harness.DELIVERY))
-    shell = (any(t.get("kind") == "bash" for t in found[0]["tools"]) if found else
-             (analyze.provenance_of(last).get("shell_tool", True) if last else harness.SHELL_TOOL))
+    last = latest_trace(agent, account)
+    table, hf = agent_environment(last, agent, account)
+    found = manifest_ahead_of(last, agent, account)
+    delivery = (found[0]["overrides"].get("delivery", harness.SETTINGS.delivery) if found else
+                (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery))
+    shell = (any(t.get("kind") == "bash" for t in found[0]["tools"] or []) if found else
+             (last["provenance"].get("shell_tool", True) if last else harness.SETTINGS.shell_tool))
     mail = harness.mailbox_channel(table)
     out = {
         "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,
@@ -1527,9 +1614,12 @@ class View(http.server.BaseHTTPRequestHandler):
             return self.send_json({"error": "no such route"}, status=404)
         if parts[2] not in agent_names():
             return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
-        if self.headers.get("Origin") != getattr(self.server, "origin", None):
+        server = self.view_server
+        origin = self.headers.get("Origin")
+        if origin is None or origin != server.origin:
             return self.send_json({"error": "origin refused"}, status=403)
-        if self.headers.get("X-Interaction-Token") != getattr(self.server, "control_token", None):
+        token = self.headers.get("X-Interaction-Token")
+        if token is None or token != server.control_token:
             return self.send_json({"error": "control token required"}, status=403)
         if self.headers.get_content_type() != "application/json":
             return self.send_json({"error": "Content-Type must be application/json"}, status=415)
@@ -1543,14 +1633,15 @@ class View(http.server.BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("body is not an object")
-            result = InteractionStore(harness.ROOT / "interactions").submit(
-                parts[2], parts[3], payload)
+            result = self.interactions().submit(parts[2], parts[3], payload)
         except (InvalidSubmission, ValueError, json.JSONDecodeError) as error:
             return self.send_json({"error": str(error)}, status=400)
         except StaleRequest as error:
             return self.send_json({"error": str(error)}, status=409)
         except InteractionConflict as error:
             return self.send_json({"error": str(error)}, status=409)
+        except UnreadableRecord as error:
+            return self.send_json({"error": str(error)}, status=500)
         except InteractionError as error:
             return self.send_json({"error": str(error)}, status=404)
         return self.send_json({"submission": result.as_dict()}, status=201)
@@ -1564,15 +1655,16 @@ class View(http.server.BaseHTTPRequestHandler):
         if not parts:
             return self.send_page()
         if parts == ["api", "experiments"]:
-            return self.send_json({"experiments": experiments(), "focus": getattr(self.server, "focus", None),
-                                   "poll": POLL_MS, "stale": STALE_AFTER, "root": str(harness.ROOT)})
+            return self.send_json({"experiments": experiments(), "focus": self.view_server.focus,
+                                   "poll": POLL_MS, "stale": STALE_AFTER,
+                                   "root": str(harness.SETTINGS.root)})
         if parts == ["api", "interaction"]:
-            pending = InteractionStore(harness.ROOT / "interactions").pending()
+            pending = self.interactions().pending()
             return self.send_json({"requests": [request.as_dict() for request in pending]})
         if len(parts) == 3 and parts[:2] == ["api", "interaction"]:
             if parts[2] not in agent_names():
                 return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
-            request = InteractionStore(harness.ROOT / "interactions").current(parts[2])
+            request = self.interactions().current(parts[2])
             if request is None:
                 return self.send_json({"request": None})
             return self.send_json({"request": request.as_dict()})
@@ -1627,8 +1719,8 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.send_json({"error": "no such route"}, status=404)
 
     def send_page(self) -> None:
-        token = getattr(self.server, "control_token", "")
-        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__", token).encode("utf-8")
+        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__",
+                            self.view_server.control_token).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1648,22 +1740,42 @@ class View(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, fmt: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         """Quiet. A line per poll is a line every second and a half, forever."""
 
+    @property
+    def view_server(self) -> ViewServer:
+        """The server answering, with the focus, token and origin serve() gave it."""
+        if not isinstance(self.server, ViewServer):
+            raise TypeError(f"View is served by a ViewServer, not {type(self.server).__name__}")
+        return self.server
 
-def serve(port: int = PORT, focus: str | None = None) -> http.server.ThreadingHTTPServer:
+    def interactions(self) -> InteractionStore:
+        """The store the human provider publishes to, under the root this request reads."""
+        return InteractionStore(harness.interactions_root())
+
+
+class ViewServer(http.server.ThreadingHTTPServer):
+    """Loopback only. An interactive POST must carry `control_token`, which the served page
+    embeds, and come from `origin`, this server's own."""
+
+    focus: str | None
+    control_token: str
+    origin: str
+
+    def __init__(self, port: int, focus: str | None):
+        super().__init__(("127.0.0.1", port), View)
+        self.focus = focus
+        self.control_token = secrets.token_urlsafe(32)
+        self.origin = f"http://127.0.0.1:{self.server_address[1]}"
+
+
+def serve(port: int = PORT, focus: str | None = None) -> ViewServer:
     """A server bound and ready, which the caller starts.
 
-    Bound to loopback and nothing else. Interactive POSTs require the random token
-    embedded in the served page and an exact same-origin request.
     Returned, not started, so a check can drive the real handler in-process.
     """
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), View)
-    httpd.focus = focus
-    httpd.control_token = secrets.token_urlsafe(32)
-    httpd.origin = f"http://127.0.0.1:{httpd.server_address[1]}"
-    return httpd
+    return ViewServer(port, focus)
 
 
 # --- cli --------------------------------------------------------------------

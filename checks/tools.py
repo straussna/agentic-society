@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
+import shlex
+
 import analyze
 import experiment
 import harness
+import view
 
 from checks.fake import fake, run, say, use
 from checks.lanes import (
@@ -34,24 +39,30 @@ LOOK = {"name": "look", "kind": "read_path", "channel": "blackboard"}
 BASH = {"name": "bash", "kind": "bash"}
 
 
+class Proc:
+    """A shell process still running."""
+
+    @staticmethod
+    def poll():
+        return None
+
+
+class BrokenShell:
+    """A shell that finds nothing at any path and refuses every write."""
+
+    restarts = 0
+    proc = Proc()
+
+    @staticmethod
+    def run(command, timeout):
+        return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+
+
 def check_semantic_summaries_and_failures_expose_no_storage_details():
     """Tool-only labels and failures describe actions rather than their backing paths."""
     summary = harness.named("unchanged", ["Private memory", "Letter to 2"])
     assert summary == "=== unchanged ===\n- Private memory\n- Letter to 2\n", summary
     assert harness.NAMED.match(summary.splitlines()[0])
-
-    class Proc:
-        @staticmethod
-        def poll():
-            return None
-
-    class BrokenShell:
-        restarts = 0
-        proc = Proc()
-
-        @staticmethod
-        def run(command, timeout):
-            return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
 
     declared = offers("write_memory:notes", "send_message_to:mail",
                       "post_public:blackboard", "transfer:transfer")
@@ -254,9 +265,9 @@ def check_bash_requires_an_explicit_declaration():
     with temp_root():
         chans = harness.channels()
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SHELL_TOOL is True
+        assert harness.SETTINGS.shell_tool is True
         harness.apply_tools([POST], chans, "manifest")
-        assert harness.SHELL_TOOL is False
+        assert harness.SETTINGS.shell_tool is False
         assert harness.validate_tools(None, chans, "manifest") == []
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "no [[tool]] is declared")
@@ -326,9 +337,41 @@ def check_a_tool_table_is_validated():
         assert harness.validate_tools(None, [], "manifest") == []
 
 
+def check_every_belongs_to_whichever_kind_holds_a_ballot():
+    """`every` is a ballot's cadence, read off the menu and not off a kind's name.
+
+    A second kind that holds a ballot takes `every` and is held to it as a vote
+    is, is named wherever a refusal says who takes it, and counts against the one
+    ballot an experiment declares.
+    """
+    chans = list(harness.DEFAULT_CHANNELS)
+
+    def poll(**fields):
+        return {"name": "p", "kind": "poll", "channel": "notes"} | fields
+
+    harness.TOOL_KINDS["poll"] = harness.TOOL_KINDS["vote"]
+    try:
+        table = harness.validate_tools([poll(every=3)], chans, "check")
+        assert [(t.kind, t.every) for t in table] == [("poll", 3)], table
+        refused(lambda: harness.validate_tools([poll()], chans, "check"),
+                "check:", "kind 'poll' requires every")
+        refused(lambda: harness.validate_tools(
+                    [{"name": "x", "kind": "read_path", "channel": "notes", "every": 5}],
+                    chans, "check"),
+                "check:", "every belongs to kind 'vote' or 'poll'")
+        refused(lambda: harness.validate_tools(
+                    [{"name": "v", "kind": "vote", "channel": "notes", "every": 5},
+                     poll(every=3)], chans, "check"),
+                "check:", "at most one vote tool")
+    finally:
+        del harness.TOOL_KINDS["poll"]
+
+
 def tool_toml(*declared: dict) -> str:
     """Render tool tables as the TOML a manifest holds."""
-    return "".join("[[tool]]\n" + "".join(f'{k} = "{v}"\n' for k, v in t.items()) + "\n"
+    def value(v) -> str:
+        return str(v) if isinstance(v, int) else f'"{v}"'
+    return "".join("[[tool]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in t.items()) + "\n"
                    for t in declared)
 
 
@@ -477,6 +520,51 @@ def check_a_tool_result_says_what_actually_happened():
     assert "no '..'" in escape and "Nothing was written" in escape, escape
     assert read == "theirs\n", read
     assert "state/secret is not in the 'blackboard' channel" in outside, outside
+
+
+def check_an_action_naming_no_path_answers_in_its_own_words():
+    """A message, a public post and private memory name no path, so each answers in
+    sentences of its own: done, already so where the body is what is held, refused where
+    the body is not text, and not done where the write did not land. What is already so
+    is said as such, and not as a second success."""
+    declared = offers("send_message_to:mail", "post_public:blackboard", "write_memory:notes")
+    with temp_root(tools=declared) as root:
+        seated(root, "t", other={})
+        with quiet():
+            harness.run_once("t", fake(
+                use("send_message_to", to="2", body="psst"),
+                use("send_message_to", to="2", body="psst"),
+                use("send_message_to", to="2", body=7),
+                use("post_public", body="hello all"),
+                use("post_public", body="hello all"),
+                use("post_public", body=["hello"]),
+                use("write_memory", body="remember"),
+                use("write_memory", body="remember"),
+                use("write_memory", body=None),
+                say()))
+        said = [c["result"] for turn in trace_on_disk("t", 1)["turns"] for c in turn["tools"]]
+        actions = {item.tool.kind: item for item in harness.bind_tools(
+            harness.tools(), harness.channels(), harness.environment("t", ground_truth("t")), ["2"])}
+        not_landed = [actions["send_message_to"].call(BrokenShell(), {"to": "2", "body": "psst"}),
+                      actions["post_public"].call(BrokenShell(), {"body": "hello all"}),
+                      actions["write_memory"].call(BrokenShell(), {"body": "remember"})]
+
+    assert said == [
+        "Your message to 2 was set for their next episode.",
+        "Your message to 2 is already set exactly as written for this episode.",
+        "The letter must be text. Nothing was sent.",
+        "Your public post was published.",
+        "Your public post is already saved exactly as written.",
+        "The public post must be text. Nothing was published.",
+        "Your private memory was saved.",
+        "Your private memory is already saved exactly as written.",
+        "Your private memory must be text. Nothing was saved.",
+    ], said
+    assert not_landed == [
+        "Your message to 2 could not be sent. Nothing changed.",
+        "Your public post could not be published. Nothing changed.",
+        "Your private memory could not be saved. Nothing changed.",
+    ], not_landed
 
 
 def check_the_tools_offered_reach_provenance():
@@ -633,6 +721,189 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
             "an omitted ballot does not carry into the next episode"
 
 
+def check_a_ballots_episode_runs_no_command_it_did_not_offer():
+    """A ballot's episode withholds the shell, so a bash call there is answered as a tool
+    that is not there and runs nothing, whatever the table offers on other episodes. The
+    transcript and the page show it as the call it made, and not as the shell restarted."""
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    vote = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}
+    remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
+    with temp_root(channels=tables(ballot), tools=[BASH, remember, vote]) as root:
+        seated(root, "t", o={})
+        account = harness.load_account("t")
+        account["episodes"] = [{"episode": 1, "stop": "no_tool_call"}]
+        harness.save_account("t", account)
+        seen = []
+        with quiet():
+            t = harness.run_once("t", fake(run("echo ran > state/ran"), use("vote", to="2"),
+                                           say(), seen=seen))
+        offered = next(item["tools"] for item in seen if item.get("kind") == "session")
+        ran = (harness.mirror("t", "notes") / "ran").exists()
+
+    assert [tool["name"] for tool in offered] == ["remember", "vote"], offered
+    said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
+    assert said[0] == "there is no tool named 'bash'. Nothing was done.", said
+    assert not ran and "echo ran > state/ran" not in t["commands"], t["commands"]
+    shown = analyze.tool_call(t["turns"][0]["tools"][0])
+    assert shown == "bash(command='echo ran > state/ran')", shown
+    page = view.from_trace(t)[0]["tools"][0]
+    assert page["call"] == shown and page["shell"] is False, page
+
+
+def check_the_audit_prints_the_tools_each_episode_is_sent():
+    """--print-context shows the tool set run_turns sends, a ballot's episode included.
+
+    The audit exists to show exactly what an agent is sent, so the shell it
+    withholds on a ballot's episode and the tools it offers there are the ones the
+    request carries, and a description stating a setting states config.toml's.
+    """
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    declared = [BASH, {"name": "remember", "kind": "write_memory", "channel": "notes"},
+                {"name": "send", "kind": "send_message_to", "channel": "mail"},
+                {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}, LOOK]
+    seats = '[[agent]]\nid = "t"\n\n[[agent]]\nid = "o"\n'
+    with temp_root(channels=tables(ballot), tools=declared) as root:
+        (root / "config.toml").write_text("tool_result_limit = 1500\n", encoding="utf-8")
+        path = manifest_file(root, 'system_prompt = ""\n' + channel_toml(tables(ballot)) + "\n"
+                             + tool_toml(*declared) + seats)
+        with quiet() as buf:
+            assert harness.print_context(None, path, "t") == 0
+        printed = buf.getvalue()
+        assert "clipped at 1500 characters" in printed, printed
+
+        # An experiment's episodes run under its config.toml, which start() installs.
+        harness.load_config()
+        seated(root, "t", t={}, o={})
+        sent = []
+        for _ in range(2):
+            seen = []
+            with quiet():
+                harness.run_once("t", fake(say(), seen=seen))
+            sent.append(next(item["tools"] for item in seen if item["kind"] == "session"))
+
+    audited = []
+    for episode in (1, 2):
+        opening = printed.index(f"--- episode {episode} opening ---")
+        at = printed.index("tool specs:\n", opening) + len("tool specs:\n")
+        audited.append(json.JSONDecoder().raw_decode(printed, at)[0])
+    assert [[t["name"] for t in specs] for specs in sent] == \
+        [["bash", "remember", "send", "look"], ["remember", "vote"]], sent
+    assert audited == sent, (audited, sent)
+
+
+def check_the_audit_opens_on_the_memory_an_agent_inherits():
+    """--print-context composes under a root of its own, so the trace memory_from names
+    is carried there from the root its agent ran under, and the audit shows the memory
+    the new agent opens on."""
+    remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
+    notes = tables(notes={"pushed": True})
+    body = "kept from the last experiment\n"
+    with temp_root(channels=notes, tools=[BASH, remember]) as root:
+        source = harness.trace_path("old", 7)
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({
+            "trace_version": harness.TRACE_VERSION, "agent": "old", "episode": 7,
+            "state_saved": True,
+            "provenance": {"channels": [c.as_table() for c in harness.channels()],
+                           "tools": [t.as_table() for t in harness.tools()]},
+            "files": [{"path": "state/memory.md", "channel": "notes", "writer": "self",
+                       "readers": "self", "role": "own", "size": len(body.encode("utf-8")),
+                       "text": body}]}), encoding="utf-8")
+        path = manifest_file(root, 'system_prompt = ""\n' + channel_toml(notes) + "\n"
+                             + tool_toml(BASH, remember)
+                             + '[[agent]]\nid = "new"\nmemory_from = { agent = "old", episode = 7 }\n')
+        with quiet() as buf:
+            assert harness.print_context(None, path, "new") == 0, buf.getvalue()
+
+    assert body in buf.getvalue(), buf.getvalue()
+
+
+def check_building_an_episode_clears_what_one_episode_submits():
+    """Messages, transfers, a post and a ballot are one episode's; private memory is not.
+
+    A mailbox's slots are cleared whether the mailbox carries messages or
+    currency, a transfer file is cleared whole, and a tool's own file is cleared
+    where its kind keeps it for one episode only.
+    """
+    class Recorder:
+        def __init__(self):
+            self.commands = []
+
+        def run(self, command, timeout):
+            self.commands.append(command)
+            return "cleared"
+
+    ballot = {"name": "ballot", "writer": "self", "readers": "self",
+              "shape": "directory", "path": "ballot", "pushed": False}
+    currency = tables(ballot)
+    transfer = next(ch for ch in currency if ch["name"] == "transfer")
+    transfer.pop("path")
+    transfer.update(readers="addressee", shape="mailbox", outbox="currency/outbox",
+                    inbox="currency/inbox", funded_by="giver", rebate_percent=0)
+    declared = offers("write_memory:notes", "post_public:blackboard", "transfer:transfer",
+                      {"name": "vote", "kind": "vote", "channel": "ballot", "every": 5})
+    cleared = {}
+    for arm, channels in (("file", tables(ballot)), ("mailbox", currency)):
+        with temp_root(channels=channels, tools=declared) as root:
+            seated(root, "t", t={}, o={}, d={})
+            shell = Recorder()
+            harness.clear_episode_actions(shell, harness.environment("t", ground_truth("t")))
+            assert len(shell.commands) == 1, shell.commands
+            cleared[arm] = shlex.split(shell.commands[0])[3:-3]
+
+    assert cleared["file"] == ["1/post.md", "out/2", "out/3", "out/transfer", "ballot/vote"], \
+        cleared["file"]
+    assert cleared["mailbox"] == ["1/post.md", "out/2", "out/3", "currency/outbox/2",
+                                  "currency/outbox/3", "ballot/vote"], cleared["mailbox"]
+    memory = harness.TOOL_KINDS["write_memory"].file
+    assert not any(path.endswith(memory) for paths in cleared.values() for path in paths), \
+        "private memory carries into the next episode"
+
+
+def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
+    """A kind that writes is bound to the agent's own instance or not bound at all.
+
+    bind_tools leaves such a tool out where the channel planted nothing the agent
+    writes, and a Bound made anywhere else without one is refused as it is made,
+    not inside a billed turn. read_path writes nothing, is built with nothing to
+    write even on a channel the agent writes, and reads what was planted.
+    """
+    with temp_root(tools=[POST, LOOK]) as root:
+        seated(root, "t", t={}, o={})
+        instances = harness.environment("t", ground_truth("t"))
+        post, look = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
+        assert post.own.path == "1" and post.own.writable, post.own
+        assert look.writes_to is None, look.writes_to
+        try:
+            harness.Bound(look.tool, look.channel, look.instances, post.own)
+        except ValueError as e:
+            assert "writes nothing" in str(e), e
+        else:
+            raise AssertionError("a read_path tool was built with an instance to write")
+
+        theirs = tuple(i for i in instances if i.name == "blackboard" and not i.writable)
+        try:
+            harness.Bound(post.tool, post.channel, theirs, None)
+        except ValueError as e:
+            assert "planted no instance the agent writes" in str(e), e
+        else:
+            raise AssertionError("a write_file tool was built with nowhere to write")
+        reader = harness.Bound(look.tool, look.channel, theirs, None)
+        assert "which holds 2/." in reader.spec().description, reader.spec().description
+        try:
+            reader.own
+        except ValueError as e:
+            assert "writes nothing" in str(e), e
+        else:
+            raise AssertionError("read_path answered with an instance it does not write")
+
+        only_theirs = [i for i in instances if not (i.name == "blackboard" and i.writable)]
+        offered = harness.bind_tools(harness.tools(), harness.channels(), only_theirs, ["2"])
+        assert [b.tool.name for b in offered] == ["look"], offered
+
+
 def check_the_shell_can_be_withheld_and_the_tools_still_act():
     """An experiment may offer its actions and not the shell.
 
@@ -644,7 +915,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
     digest, which is content, and not on a listing.
     """
     with temp_root(channels=tables(mail={"silence_penalty_percent": 50}),
-                   tools=[SEND, POST, LOOK], SHELL_TOOL=False) as root:
+                   tools=[SEND, POST, LOOK]) as root:
         seated(root, "t", t={}, o={"group/note": "theirs\n"})
         seen = []
         with quiet():
@@ -672,7 +943,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
         assert said[2] == "theirs\n", said
 
     # Bash is disabled outside a declared experiment.
-    assert harness.SHELL_TOOL is False, "bash requires a declaration"
+    assert harness.SETTINGS.shell_tool is False, "bash requires a declaration"
     assert "SHELL_TOOL" not in harness.TREATMENT, "the tool table decides bash access"
 
 
@@ -682,26 +953,40 @@ def check_withholding_the_shell_needs_something_to_act_with():
     Both are experiments that would end every episode on its first turn: one with
     an empty tool set, which is not a request the API takes, and one whose first
     user turn would be empty because the listing is gone and no digest replaces it.
+    The second is held to the settings the table is declared under, and not to the
+    ones in force: start() builds the whole before it replaces any of them.
     """
     chans = list(harness.DEFAULT_CHANNELS)
-    with temp_root(SHELL_TOOL=False):
+    with temp_root():
         refused(lambda: harness.apply_tools([], chans, "manifest"),
                 "manifest:", "no [[tool]] is declared", "nothing to act with")
         refused(lambda: harness.apply_tools(None, chans, "manifest"),
                 "manifest:", "no [[tool]] is declared")
+        pull = dataclasses.replace(harness.SETTINGS, delivery="pull")
+        refused(lambda: harness.with_tools(pull, [POST], chans, "manifest"),
+                "manifest:", "opens on the digest", "'pull'")
+        undigested = dataclasses.replace(
+            harness.SETTINGS, harness_files={**harness.SETTINGS.harness_files, "digest": ""})
+        refused(lambda: harness.with_tools(undigested, [POST], chans, "manifest"),
+                "manifest:", "opens on the digest")
 
-    with temp_root(SHELL_TOOL=False, DELIVERY="pull"):
+    with temp_root(delivery="pull"):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest", "'pull'")
+        before = harness.SETTINGS
+        push = dataclasses.replace(before, delivery="push")
+        built = harness.with_tools(push, [POST], chans, "manifest")
+        assert [t.name for t in built.tools] == ["post"], built.tools
+        assert harness.SETTINGS is before, "with_tools builds settings and installs none"
 
-    with temp_root(SHELL_TOOL=False, harness_files={"digest": ""}):
+    with temp_root(harness_files={"digest": ""}):
         refused(lambda: harness.apply_tools([POST], chans, "manifest"),
                 "manifest:", "opens on the digest")
 
     # All three stand once the shell is offered again.
-    with temp_root(DELIVERY="pull"):
+    with temp_root(delivery="pull"):
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SHELL_TOOL is True
+        assert harness.SETTINGS.shell_tool is True
 
 
 def check_running_one_seat_carries_the_whole_experiment_it_names():
@@ -742,7 +1027,7 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_refused():
     no peers, is left out and leaves nothing behind it. Refused as the environment
     is built, before the container starts and before anything is billed.
     """
-    with temp_root(tools=[SEND], SHELL_TOOL=False) as root:
+    with temp_root(tools=[SEND]) as root:
         # Accepted at declaration: the table is not empty and the digest is pushed.
         assert [t.name for t in harness.tools()] == ["send"]
         with quiet():

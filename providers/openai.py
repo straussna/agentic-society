@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterable
 from typing import Any
 
-from .base import (ModelSpec, NormalizedTurn, PendingResponse, ProviderConfigurationError,
-                   ProviderError, Refusal, SessionContext, ToolCall, ToolResult, ToolSpec, Usage, charge, field,
-                   native_dict)
+from .base import (ModelSpec, NormalizedTurn, PendingResponse, ProviderError, Refusal,
+                   SessionContext, StopReason, ToolCall, ToolResult, ToolSpec, Usage, charge,
+                   classify_error, field, native_dict, refuse_custom_endpoint, require_key)
 
 
 MODELS = {
@@ -40,22 +39,6 @@ def _input_item(item: Any) -> dict[str, Any]:
     else:
         return {key: value for key, value in raw.items() if value is not None}
     return {key: raw[key] for key in keys if raw.get(key) is not None}
-
-
-def _error(error: Exception) -> ProviderError:
-    status = getattr(error, "status_code", None)
-    name = type(error).__name__
-    text = f"{name}: {error}"
-    if status in (401, 403) or "Authentication" in name or "PermissionDenied" in name:
-        category = "authentication"
-    elif status in (408, 409, 429) or isinstance(status, int) and status >= 500:
-        category = "retryable_api"
-    elif status is not None:
-        category = "permanent_api"
-    else:
-        category = "adapter"
-    return ProviderError(text, category=category, provider="openai",
-                         status_code=status, native_type=name)
 
 
 def normalize(native: Any, requested_model: str) -> NormalizedTurn:
@@ -109,6 +92,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     status = str(field(native, "status", ""))
     incomplete = field(native, "incomplete_details", {}) or {}
     native_stop = field(incomplete, "reason") or status or None
+    stop: StopReason
     if refusals:
         stop = "refusal"
     elif status == "incomplete" and native_stop in ("max_output_tokens", "max_tokens"):
@@ -161,7 +145,7 @@ class OpenAISession:
         try:
             response = self.client.responses.create(**params)
         except Exception as error:
-            raise _error(error) from error
+            raise classify_error(error, self.provider) from error
         raw = native_dict(response)
 
         def finish() -> NormalizedTurn:
@@ -173,36 +157,33 @@ class OpenAISession:
 
 class OpenAIProvider:
     name = "openai"
+    interactive = False
+    key_variable = "OPENAI_API_KEY"
     models = MODELS
+    provenance_facts = {"adapter": "openai-responses-v1", "endpoint": "first-party",
+                        "store": False, "reasoning_state": "encrypted"}
 
     def __init__(self, client: Any | None = None):
-        if os.environ.get("OPENAI_BASE_URL"):
-            raise ProviderConfigurationError(
-                "OPENAI_BASE_URL is not supported; provider adapters use first-party endpoints",
-                provider=self.name)
+        refuse_custom_endpoint("OPENAI_BASE_URL", self.name)
         if client is None:
+            # Before the SDK builds a client, which may refuse a missing key in
+            # words of its own that do not say where the key goes.
+            require_key(self.key_variable, self.name)
             try:
                 import openai
                 client = openai.OpenAI(max_retries=0)
             except Exception as error:
-                raise _error(error) from error
+                raise classify_error(error, self.name, self.key_variable) from error
         self.client = client
 
     def preflight(self, models: Iterable[str]) -> None:
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ProviderError("OPENAI_API_KEY is not set", category="authentication",
-                                provider=self.name)
+        require_key(self.key_variable, self.name)
         for model in sorted(set(models)):
             try:
                 self.client.models.retrieve(model)
             except Exception as error:
-                raise _error(error) from error
+                raise classify_error(error, self.name, self.key_variable) from error
 
     def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
                      max_tokens: int, context: SessionContext) -> OpenAISession:
         return OpenAISession(self.client, model, system, tools, max_tokens)
-
-    def provenance(self, model: str) -> dict[str, Any]:
-        return {"name": self.name, "adapter": "openai-responses-v1",
-                "endpoint": "first-party", "model_spec": self.models[model].as_dict(),
-                "store": False, "reasoning_state": "encrypted"}

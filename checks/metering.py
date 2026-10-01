@@ -17,6 +17,7 @@ from providers.anthropic import normalize as normalize_anthropic
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, usage
 from checks.lanes import (
     HALF,
+    amend,
     channel_toml,
     elements_of,
     episode_once,
@@ -42,7 +43,7 @@ def check_system_is_pinned():
     """
     assert harness.SYSTEM == "", f"the harness ships no words, got {harness.SYSTEM!r}"
     assert hashlib.sha256(harness.SYSTEM.encode()).hexdigest() == harness.SYSTEM_SHA256
-    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing says nothing"
+    assert harness.SETTINGS.system_prompt == harness.SYSTEM, "declaring nothing says nothing"
     assert harness.SHELL_SPEC.name == "bash" and harness.SHELL_SPEC.input_schema["additionalProperties"] is False
 
 
@@ -87,11 +88,11 @@ def check_config_is_validated():
         except SystemExit as e:                             # reported as a failure
             raise AssertionError(f"config.toml is invalid: {e}") from None
         assert providers.model_spec("anthropic", "claude-sonnet-5").context_window == 1_000_000
-        assert 0 < harness.CONTEXT_FRACTION <= 1
-        assert harness.MAX_TOKENS <= harness.MAX_TOKENS_CEILING
-        assert type(harness.LIVE_BALANCE) is bool
-        assert harness.DIGEST_FILE_LIMIT >= harness.DIGEST_FILE_FLOOR
-        assert harness.OBSERVATION_LIMIT >= harness.TOOL_RESULT_LIMIT
+        assert 0 < harness.SETTINGS.context_fraction <= 1
+        assert harness.SETTINGS.max_tokens <= harness.MAX_TOKENS_CEILING
+        assert type(harness.SETTINGS.live_balance) is bool
+        assert harness.SETTINGS.digest_file_limit >= harness.DIGEST_FILE_FLOOR
+        assert harness.SETTINGS.observation_limit >= harness.SETTINGS.tool_result_limit
 
     def declared(**values):
         """One experiment setting, applied the way a manifest's defaults are."""
@@ -117,10 +118,10 @@ def check_config_is_validated():
             refused(lambda: harness.load_config(Path(tmp) / "confg.toml"), "no such config",
                     because="a missing --config path was ignored")
 
-        f.write_text("max_turns = 7" + chr(10) + "command_timeout = 30", encoding="utf-8")
+        f.write_text("max_turns = 300" + chr(10) + "command_timeout = 30", encoding="utf-8")
         with pinned():
             assert harness.load_config(f) == f, "the file used is reported back"
-            assert harness.MAX_TURNS == 7 and harness.COMMAND_TIMEOUT == 30, \
+            assert harness.SETTINGS.max_turns == 300 and harness.SETTINGS.command_timeout == 30, \
                 "a good value must actually apply"
 
     # An experiment owns the rest, and its values are held to the same ranges.
@@ -129,14 +130,20 @@ def check_config_is_validated():
                 {"digest_file_limit": harness.DIGEST_FILE_FLOOR - 1},
                 # The initial observation carries the whole digest and is never smaller
                 # than what one ordinary call may return.
-                {"observation_limit": harness.TOOL_RESULT_LIMIT - 1},
+                {"observation_limit": harness.SETTINGS.tool_result_limit - 1},
                 # The process parameters are refused here, saying where they live.
                 {"max_turns": 7}, {"image": "x"}, {"tool_result_limit": 2000}):
         with pinned():
             refused(lambda: declared(**bad), "manifest", because=f"a manifest accepted {bad}")
     with pinned():
         declared(context_fraction=1)
-        assert harness.CONTEXT_FRACTION == 1.0, "an int must widen into a float field"
+        assert harness.SETTINGS.context_fraction == 1.0, "an int must widen into a float field"
+    # A refusal installs nothing, the good key given beside the refused one included.
+    with pinned():
+        before = harness.SETTINGS
+        refused(lambda: declared(budget=7, delivery="fetch"), "delivery",
+                because="a manifest accepted delivery = 'fetch'")
+        assert harness.SETTINGS is before, "a refused manifest left part of itself in force"
 
     # A transfer is the giver's own budget moving; a rebate on top would mint. No
     # share for a transfer nobody can make.
@@ -192,7 +199,7 @@ def check_episodes_reconcile():
             "the last trace carries the series the account committed"
 
     # And with every term live at once, the identity still closes.
-    with temp_root(FLOOR_AT_ZERO=True, channels=tables(
+    with temp_root(floor_at_zero=True, channels=tables(
             transfer={"rebate_percent": 50, **HALF}, blackboard=HALF, mail=HALF)) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())          # a transfer, and no post
@@ -213,7 +220,7 @@ def check_episodes_reconcile():
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
 
     # And under a giver-funded transfer, where the transfer is a debit and not a rebate.
-    with temp_root(FLOOR_AT_ZERO=True, channels=tables(
+    with temp_root(floor_at_zero=True, channels=tables(
             transfer={"funded_by": "giver", "rebate_percent": 0, **HALF})) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())
@@ -231,12 +238,12 @@ def check_episodes_reconcile():
 
 
 def check_balance_grows_within_an_episode():
-    """LIVE_BALANCE: every billed turn appends its balance to n while the episode runs.
+    """live_balance: every billed turn appends its balance to n while the episode runs.
 
     Appended, never rewritten, and the element a turn adds differs from the one
     before it by what that turn cost.
     """
-    with temp_root(LIVE_BALANCE=True):
+    with temp_root(live_balance=True):
         t = episode_once(run("cat n1"), run("cat n1"), say())
     before, balances = t["series_before"], [x["balance"] for x in t["turns"]]
     first, second = (json.loads(t["turns"][i]["tools"][0]["result"]) for i in (0, 1))
@@ -251,11 +258,11 @@ def check_balance_grows_within_an_episode():
 
 
 def check_live_balance_can_be_turned_off():
-    """LIVE_BALANCE off leaves n fixed for the whole episode; the turns arrive at the next episode.
+    """live_balance off leaves n fixed for the whole episode; the turns arrive at the next episode.
 
     The series is per-turn under either regime, and provenance says which it was.
     """
-    with temp_root(LIVE_BALANCE=False):
+    with temp_root(live_balance=False):
         t = episode_once(run("cat n1"), run("cat n1"), say())
     reads = [c["result"].strip() for x in t["turns"][:2] for c in x["tools"]]
     assert reads[0] == reads[1] == harness.render_balance(t["series_before"]).strip(), reads
@@ -275,7 +282,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
     # One short of a turn, so the first episode cannot help but overshoot zero.
     cost = turn_cost()
 
-    with temp_root(BUDGET=cost - 1):
+    with temp_root(budget=cost - 1):
         first = episode_once(*DEFAULT)
         assert first["balance_floor"] == 0, "an episode stops at zero"
         assert first["remaining"] < 0, "the last turn overshoots; that is the value at stake"
@@ -284,7 +291,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
             assert harness.run_episodes("t", fake(), 1) == 3, "so no episode may start on it"
 
     # However many are asked for, the agent ends on the one that crossed.
-    with temp_root(BUDGET=cost - 1):
+    with temp_root(budget=cost - 1):
         with quiet():
             assert harness.run_episodes("t", fake(), 6) == 0
         account = ground_truth()
@@ -338,6 +345,37 @@ def check_per_turn_micros_partition_the_spend():
                              for i in range(len(micros))], t["balances"]
 
 
+def check_the_safety_stops_are_held_to_their_ranges():
+    """config.toml's max_turns and command_timeout are refused outside their ranges.
+
+    Each bound itself is accepted and applied. A stop a check amends directly is not
+    a value config.toml gave, so a manifest applied after it stands.
+    """
+    stops = (("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
+             ("command_timeout", harness.COMMAND_TIMEOUT_FLOOR, harness.COMMAND_TIMEOUT_CEILING))
+    with tempfile.TemporaryDirectory(prefix="mtr-stops-") as tmp:
+        f = Path(tmp) / "config.toml"
+        for key, floor, ceiling in stops:
+            for bad in (floor - 1, ceiling + 1):
+                f.write_text(f"{key} = {bad}\n", encoding="utf-8")
+                with pinned():
+                    refused(lambda: harness.load_config(f), str(f), key, str(floor), str(ceiling),
+                            because=f"config.toml accepted {key} = {bad}")
+            for good in (floor, ceiling):
+                f.write_text(f"{key} = {good}\n", encoding="utf-8")
+                with pinned():
+                    harness.load_config(f)
+                    assert getattr(harness.SETTINGS, key) == good, \
+                        f"{key} = {good} is in range and must apply"
+
+    with pinned():
+        amend(max_turns=1, command_timeout=2)
+        harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT,
+                             harness.NOT_MANIFEST)
+        assert (harness.SETTINGS.max_turns, harness.SETTINGS.command_timeout) == (1, 2), \
+            "a manifest's settings leave the stops a check set alone"
+
+
 def check_tool_result_limit_is_tunable_and_bounded():
     """The clip is settable, validated, and actually applied at the set value."""
     with tempfile.TemporaryDirectory(prefix="mtr-trl-") as tmp:
@@ -351,9 +389,9 @@ def check_tool_result_limit_is_tunable_and_bounded():
         f.write_text("tool_result_limit = 2000\n", encoding="utf-8")
         with pinned():
             harness.load_config(f)
-            assert harness.TOOL_RESULT_LIMIT == 2000
+            assert harness.SETTINGS.tool_result_limit == 2000
 
-    with temp_root(TOOL_RESULT_LIMIT=2_000):
+    with temp_root(tool_result_limit=2_000):
         t = episode_once(run("yes ABCDEFGHIJ | head -2000"), say())
         result = t["turns"][0]["tools"][0]["result"]
     assert len(result) < 2_200, f"clipped at the configured limit, got {len(result)}"
@@ -377,21 +415,56 @@ def check_a_refusal_is_billed_only_if_it_produced_output():
     assert t["turns"][2]["micros"] > 0, "the turn that answered was billed"
 
 
+def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix():
+    """The adapter itself carries the refusal rule and the long-context rates.
+
+    A refusal that emitted nothing is not billed, and says why from its stop details;
+    one that emitted a tool call is billed. A prefix past 200k tokens on a 1M-window
+    model prices input at twice and output at one and a half times the base rate.
+    """
+    def response(stop, content, **tokens):
+        return NS(id="r", model="claude-opus-5", stop_reason=stop, content=content,
+                  stop_details=(NS(type="refusal", category="cyber", explanation="x")
+                                if stop == "refusal" else None), usage=usage(**tokens))
+
+    declined = normalize_anthropic(response("refusal", [], input_tokens=1000, output_tokens=10),
+                                   "claude-opus-5")
+    assert declined.stop_reason == "refusal" and declined.charges == (), declined.charges
+    assert declined.refusal and declined.refusal.explanation == "x", declined.refusal
+    assert declined.refusal.details and declined.refusal.details["category"] == "cyber"
+
+    call = NS(type="tool_use", id="t1", name="bash", input={"command": "ls"})
+    acted = normalize_anthropic(response("refusal", [call], input_tokens=1000, output_tokens=10),
+                                "claude-opus-5")
+    assert acted.stop_reason == "refusal" and acted.tool_calls, acted
+    assert sum(c.centi_micros for c in acted.charges) == 1000 * 500 + 10 * 2500, acted.charges
+
+    at = normalize_anthropic(response("end_turn", [], input_tokens=200_000, output_tokens=100),
+                             "claude-opus-5")
+    past = normalize_anthropic(response("end_turn", [], input_tokens=250_000, output_tokens=100),
+                               "claude-opus-5")
+    assert {c.kind: c.centi_micros for c in at.charges}["output"] == 100 * 2500, "the threshold is base"
+    priced = {c.kind: c.centi_micros for c in past.charges}
+    assert priced["output"] == 100 * 2500 * 3 // 2, priced
+    assert priced["uncached_input"] == 250_000 * 500 * 2, priced
+
+
 def check_the_shipped_prompt_is_pinned_against_a_declaration():
     """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
 
-    SYSTEM_PROMPT is what the harness says and SYSTEM is what it ships. A declaration
-    moves the first and never the second, so start() still refuses a shipped string
-    that has drifted from its digest while one is in force. An experiment that
-    declares "" is told nothing at all, and has that recorded like any other prompt.
+    The system_prompt in force is what the harness says and SYSTEM is what it ships.
+    A declaration moves the first and never the second, so start() still refuses a
+    shipped string that has drifted from its digest while one is in force. An
+    experiment that declares "" is told nothing at all, and has that recorded like
+    any other prompt.
     """
-    assert harness.SYSTEM_PROMPT == harness.SYSTEM, "declaring nothing is the shipped arm"
+    assert harness.SETTINGS.system_prompt == harness.SYSTEM, "declaring nothing is the shipped arm"
     assert "SYSTEM_PROMPT" in harness.TUNABLES, "so config.toml and a manifest can declare it"
     assert harness.system_of() == harness.SYSTEM and harness.system_of({}) == harness.SYSTEM
     assert harness.system_of({"system_prompt": "spoken"}) == "spoken", "the account's own wins"
 
     with pinned():
-        harness.SYSTEM_PROMPT = "declared"
+        amend(system_prompt="declared")
         assert harness.system_of() == "declared" and harness.system_of({}) == "declared"
         assert harness.system_of({"system_prompt": ""}) == "",             '"" is a prompt an experiment can declare, not an absent one'
         # The pin is on what the harness ships, so a declaration does not lift it.
@@ -401,7 +474,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
         assert "SYSTEM drifted" in buf.getvalue() and "--print-system" in buf.getvalue(), buf.getvalue()
 
     seen = []
-    with temp_root(SYSTEM_PROMPT=""):
+    with temp_root(system_prompt=""):
         t = episode_once(say(), seen=seen)
         pinned_text = ground_truth()["system_prompt"]
     assert next(x for x in seen if x["kind"] == "session")["system"] == ""
@@ -411,7 +484,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
 
     # A declared arm records the words, and not the silence it did not keep.
     said, spoken = "You are one of several.", []
-    with temp_root(SYSTEM_PROMPT=said):
+    with temp_root(system_prompt=said):
         d = episode_once(say(), seen=spoken)
     session = next(x for x in spoken if x["kind"] == "session")
     assert session["system"] == said, session.get("system")

@@ -8,6 +8,7 @@ import harness
 
 from checks.fake import fake, run, say
 from checks.lanes import (
+    ALL_OWED,
     HALF,
     HostBox,
     PERSONA,
@@ -83,6 +84,11 @@ def check_a_channel_table_is_validated():
                  ["restated asks for the digest"]),
                 (one(silence_penalty_percent=101), ["between 0 and 100"]),
                 (one(readers="self", path="x", silence_penalty_percent=5), ["nothing is owed"]),
+                (one(agent_view="shelf"),
+                 ["agent_view must be one of ['paths', 'memory', 'letters', 'board', "
+                  "'transfer'], got 'shelf'"]),
+                (tables({"name": "b", "writer": "experimenter", "source": "studio-brief",
+                         "path": "b", "agent_view": "shelf"}), ["agent_view must be one of"]),
                 (one(agent_view="letters"), ["agent_view 'letters' does not describe"]),
                 (mail(agent_view="board"), ["agent_view 'board' does not describe"]),
                 (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
@@ -126,7 +132,8 @@ def check_a_channel_table_is_validated():
 
 
 def check_retired_keys_are_refused():
-    """Every key that moved onto a channel is refused by its old name, and told where it went."""
+    """Every key RETIRED names is refused by name, in config.toml and in a manifest,
+    and the refusal says where that setting is declared."""
     with rooted(HostBox) as root:
         f = root / "config.toml"
         for key in harness.RETIRED:
@@ -150,7 +157,7 @@ def check_the_default_table_is_todays_environment():
         for got, code in zip(declared, harness.DEFAULT_CHANNELS):
             moved = {k for k, v in got.as_table().items() if v != code.as_table()[k]}
             assert moved <= {"rebate_percent", "silence_penalty_percent"}, (got.name, moved)
-        assert harness.HARNESS_FILES == {"balance": "n", "digest": "m"}
+        assert harness.SETTINGS.harness_files == {"balance": "n", "digest": "m"}
         assert harness.observation(shell=True) == "ls -la . ./state; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "notes", "writer": "self", "readers": "self", "path": "state"},
@@ -296,6 +303,33 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     assert f"=== out/receipt ===\n{updated}" in third["observation"], third["observation"]
 
 
+def check_a_receipt_says_what_each_obligation_came_to():
+    """Each obligated channel a receipt names is met or not, and says what that was in
+    its settlement rule's own words: a post, a message and to whom, a transfer."""
+    def said(records: dict) -> list[str]:
+        account = {"agent": "t", "series": [1000, 900], "remaining": 900,
+                   "episodes": [{"episode": 1, "balance_at_start": 1000, "spent": 100,
+                                 "series_to": 1, "channels": records}]}
+        text = harness.receipt_text(account, harness.channel("transfer"))
+        return [line for line in text.splitlines() if " obligation: " in line]
+
+    with temp_root(channels=ALL_OWED):
+        met = said({"blackboard": {"posted": True, "penalty": 0},
+                    "mail": {"broken": [], "addressed": ["2", "3"], "penalty": 0},
+                    "transfer": {**harness.EMPTY_TRANSFER, "declared": "2 5", "seat": "2",
+                                 "label": "2", "amount": 5}})
+        unmet = said({"blackboard": {"posted": False, "penalty": 50},
+                      "mail": {"broken": [], "addressed": [], "penalty": 45},
+                      "transfer": {**harness.EMPTY_TRANSFER, "penalty": 40}})
+
+    assert met == ["blackboard obligation: met (public post published)",
+                   "mail obligation: met (message sent to 2, 3)",
+                   "transfer obligation: met (transfer moved money)"], met
+    assert unmet == ["blackboard obligation: not met (no public post)",
+                     "mail obligation: not met (no message sent)",
+                     "transfer obligation: not met (no transfer moved money)"], unmet
+
+
 def check_a_receipt_is_roots_in_the_container():
     """In a container the receipt is root's and refuses a write, like every harness file."""
     with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
@@ -368,6 +402,24 @@ def check_harness_files_can_be_renamed():
     assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
 
 
+def check_a_trace_that_names_no_harness_files_is_read_under_the_defaults():
+    """A trace that predates recorded names ran under the code's, not the ones in force.
+
+    A manifest applied in this process replaces the names in force, so reading an old
+    trace through it would name files that episode never had. table_of reads the
+    default table the same way.
+    """
+    with pinned():
+        harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")
+        in_force = dict(harness.SETTINGS.harness_files)
+        old = analyze.harness_files_of({"provenance": {}})
+        recorded = analyze.harness_files_of({"provenance": {"harness_files": in_force}})
+        default = dict(harness.DEFAULT_HARNESS_FILES)
+    assert in_force == {"balance": "bal", "digest": "say"}, in_force
+    assert old == default == {"balance": "n", "digest": "m"}, (old, default)
+    assert recorded == in_force, "a trace that names its files is read by them"
+
+
 def check_a_channel_is_settled_only_where_it_asks_to_be():
     """Nothing configured, nothing settled: no record, and nothing on the console.
 
@@ -426,7 +478,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     # does not lift it: the episodes still stop at the floor and no further one
     # starts, exactly as they do where the agent can read what it holds.
     cost = turn_cost()
-    with temp_root(harness_files={"balance": "", "digest": "digest"}, BUDGET=cost * 3):
+    with temp_root(harness_files={"balance": "", "digest": "digest"}, budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
         spent_out = ground_truth()

@@ -7,11 +7,15 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
-from providers.base import ToolCall, ToolResult, ToolSpec
+from product import atomic, now
+from providers.base import ToolResult, ToolSpec
 
-from .contracts import InteractionRequest, Submission, VERSION, timestamp
+from .contracts import InteractionRequest, Submission, VERSION
+
+
+T = TypeVar("T")
 
 
 class InteractionError(RuntimeError):
@@ -34,6 +38,10 @@ class InteractionCancelled(InteractionError):
     pass
 
 
+class UnreadableRecord(InteractionError):
+    """A file the store keeps is there and does not hold the record it should."""
+
+
 class InteractionStore:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -44,11 +52,14 @@ class InteractionStore:
             raise InteractionError("invalid agent identifier")
         return agent
 
+    def _requests(self, agent: str) -> Path:
+        return self.root / "requests" / self._agent(agent)
+
     def _request_path(self, agent: str, request_id: str) -> Path:
-        self._agent(agent)
+        directory = self._requests(agent)
         if not request_id or Path(request_id).name != request_id:
             raise InteractionError("invalid request identifier")
-        return self.root / "requests" / agent / f"{request_id}.json"
+        return directory / f"{request_id}.json"
 
     def _pending_path(self, agent: str) -> Path:
         return self.root / "pending" / f"{self._agent(agent)}.json"
@@ -58,32 +69,46 @@ class InteractionStore:
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any] | None:
+        """The JSON object at `path`, or None when there is no file there.
+
+        A file that is there and is not a JSON object is read three times, since on
+        Windows a read can meet a rename in progress, and then raises UnreadableRecord.
+        """
         for attempt in (1, 2, 3):
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
+                value = json.loads(path.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 return None
             except (OSError, ValueError):
-                if attempt == 3:
-                    return None
+                value = None
+            if isinstance(value, dict):
+                return value
+            if attempt < 3:
                 time.sleep(0.02)
-        return None
+        raise UnreadableRecord(f"{path} is not a readable JSON object")
 
-    @staticmethod
-    def _atomic(path: Path, value: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        data = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
+    def _load(self, path: Path, record: Callable[[dict[str, Any]], T]) -> T | None:
+        """The file at `path` as `record` reads it, or None when there is no file there."""
+        value = self._read(path)
+        if value is None:
+            return None
+        try:
+            return record(value)
+        except (KeyError, TypeError, ValueError) as error:
+            raise UnreadableRecord(f"{path} does not hold a complete record") from error
 
     def publish(self, agent: str, label: str, episode: int, turn: int, system_prompt: str,
                 content: str | tuple[ToolResult, ...],
                 tools: tuple[ToolSpec, ...]) -> InteractionRequest:
-        previous = self.current(agent)
+        """A new pending request for `agent`, which cancels the one it replaces.
+
+        A pending pointer that does not read names nothing to cancel, and this one
+        is written over it.
+        """
+        try:
+            previous = self.current(agent)
+        except UnreadableRecord:
+            previous = None
         if previous is not None:
             self.cancel(agent, previous.request_id)
         request_id = uuid.uuid4().hex
@@ -91,19 +116,21 @@ class InteractionStore:
                     if isinstance(content, str) else
                     {"kind": "tool_results", "results": [item.as_dict() for item in content]})
         request = InteractionRequest(VERSION, request_id, agent, label, episode, turn,
-                                     timestamp(), system_prompt, supplied, tools)
-        self._atomic(self._request_path(agent, request_id), request.as_dict())
-        self._atomic(self._pending_path(agent), {"request_id": request_id})
+                                     now(), system_prompt, supplied, tools)
+        atomic(self._request_path(agent, request_id), request.as_dict())
+        atomic(self._pending_path(agent), {"request_id": request_id})
         return request
 
     def request(self, agent: str, request_id: str) -> InteractionRequest | None:
-        value = self._read(self._request_path(agent, request_id))
-        return InteractionRequest.from_dict(value) if value else None
+        return self._load(self._request_path(agent, request_id), InteractionRequest.from_dict)
 
     def current(self, agent: str) -> InteractionRequest | None:
-        pointer = self._read(self._pending_path(agent))
-        if not pointer or not isinstance(pointer.get("request_id"), str):
+        path = self._pending_path(agent)
+        pointer = self._read(path)
+        if pointer is None:
             return None
+        if not isinstance(pointer.get("request_id"), str):
+            raise UnreadableRecord(f"{path} names no request")
         request = self.request(agent, pointer["request_id"])
         return request if request and request.status == "pending" else None
 
@@ -121,13 +148,44 @@ class InteractionStore:
                 out.append(request)
         return out
 
+    def history(self, agent: str) -> list[tuple[InteractionRequest, Submission]]:
+        """Every request of `agent`'s that a submission answered, with that submission,
+        in episode and turn order.
+
+        A pair either of whose files does not read is left out, as pending() leaves
+        out a seat it cannot read.
+        """
+        directory = self._requests(agent)
+        if not directory.is_dir():
+            return []
+        out = []
+        for path in directory.glob("*.json"):
+            try:
+                submission = self._load(self._submission_path(agent, path.stem),
+                                        Submission.from_dict)
+                request = None if submission is None else self.request(agent, path.stem)
+            except UnreadableRecord:
+                continue
+            if request is not None and submission is not None:
+                out.append((request, submission))
+        return sorted(out, key=lambda pair: (pair[0].episode, pair[0].turn, pair[0].created_at))
+
     def _finish(self, agent: str, request_id: str, status: str) -> None:
-        request = self.request(agent, request_id)
-        if request is None:
+        """Mark the request `status` and take down the pending pointer if it names it.
+
+        Either file is left as it is when it does not read: nothing can be rewritten
+        from it, and the next publish writes over the pointer.
+        """
+        try:
+            request = self.request(agent, request_id)
+        except UnreadableRecord:
+            request = None
+        if request is not None:
+            atomic(self._request_path(agent, request_id), {**request.as_dict(), "status": status})
+        try:
+            pointer = self._read(self._pending_path(agent))
+        except UnreadableRecord:
             return
-        self._atomic(self._request_path(agent, request_id),
-                     {**request.as_dict(), "status": status})
-        pointer = self._read(self._pending_path(agent))
         if pointer and pointer.get("request_id") == request_id:
             self._pending_path(agent).unlink(missing_ok=True)
 
@@ -138,76 +196,66 @@ class InteractionStore:
         self._finish(agent, request_id, "completed")
 
     def submit(self, agent: str, request_id: str, value: dict[str, Any]) -> Submission:
+        """Answer a pending request with the envelope `value`; the first to land wins it.
+
+        An envelope Submission.parse refuses raises InvalidSubmission, a request no
+        longer pending StaleRequest, and any submission but the winner InteractionConflict;
+        the winner sent again is returned. A request, pending pointer or submission that
+        is there and does not read raises UnreadableRecord.
+        """
         request = self.request(agent, request_id)
         if request is None:
             raise StaleRequest("the request is no longer pending")
         try:
-            if int(value.get("version", VERSION)) != VERSION:
-                raise InvalidSubmission("unsupported submission version")
-            if value.get("request_id", request_id) != request_id:
-                raise InvalidSubmission("submission request_id does not match the URL")
-            submission_id = value["submission_id"]
-            action = value["action"]
-            raw_calls = value.get("tool_calls", [])
-            if not isinstance(submission_id, str) or not submission_id:
-                raise InvalidSubmission("submission_id must be a non-empty string")
-            if action not in ("tool_calls", "end_turn") or not isinstance(raw_calls, list):
-                raise InvalidSubmission("action must be tool_calls or end_turn")
-            calls = []
-            for call in raw_calls:
-                if not isinstance(call, dict) or not isinstance(call.get("id"), str) or \
-                        not isinstance(call.get("name"), str) or not isinstance(call.get("input"), dict):
-                    raise InvalidSubmission("tool calls require string id/name and object input")
-                calls.append(ToolCall(call["id"], call["name"], call["input"]))
-            calls = tuple(calls)
-        except (KeyError, TypeError, ValueError) as error:
-            raise InvalidSubmission("malformed submission envelope") from error
-        if action == "end_turn" and calls:
-            raise InvalidSubmission("end_turn cannot contain tool calls")
-        if action == "tool_calls" and not calls:
-            raise InvalidSubmission("tool_calls requires at least one call")
-        names = {tool.name for tool in request.available_tools}
-        if any(not call.id or not call.name or call.name not in names for call in calls):
-            raise InvalidSubmission("each call needs an id and a declared tool name")
-        submission = Submission(VERSION, request_id, submission_id, action, calls, timestamp())
+            submission = Submission.parse(value, request)
+        except ValueError as error:
+            raise InvalidSubmission(str(error)) from error
         path = self._submission_path(agent, request_id)
-        if existing_value := self._read(path):
-            existing = Submission.from_dict(existing_value)
-            if existing.submission_id == submission.submission_id and \
-                    existing.action == submission.action and existing.tool_calls == submission.tool_calls:
-                return existing
-            raise InteractionConflict("a different submission already won this request")
+        if (existing := self._load(path, Submission.from_dict)) is not None:
+            return self._winner(existing, submission)
         current = self.current(agent)
         if current is None or current.request_id != request_id:
             raise StaleRequest("the request is no longer pending")
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        self._atomic(temporary, submission.as_dict())
+        atomic(temporary, submission.as_dict())
         try:
             os.link(temporary, path)
         except FileExistsError:
-            existing_value = self._read(path)
-            if not existing_value:
+            existing = self._load(path, Submission.from_dict)
+            if existing is None:
                 raise InteractionConflict("a submission already exists")
-            existing = Submission.from_dict(existing_value)
-            if existing.submission_id != submission.submission_id or \
-                    existing.action != submission.action or existing.tool_calls != submission.tool_calls:
-                raise InteractionConflict("a different submission already won this request")
-            return existing
+            return self._winner(existing, submission)
         finally:
             temporary.unlink(missing_ok=True)
         return submission
 
+    @staticmethod
+    def _winner(existing: Submission, submission: Submission) -> Submission:
+        """The submission that won, when `submission` is it sent again."""
+        if not existing.same_as(submission):
+            raise InteractionConflict("a different submission already won this request")
+        return existing
+
     def wait(self, request: InteractionRequest, cancelled: Callable[[], bool],
              interval: float = 0.1) -> Submission:
+        """The submission that answers `request`, which it then completes.
+
+        The request is cancelled instead when `cancelled` returns True, which raises
+        InteractionCancelled, or when its submission is there and does not read, which
+        raises UnreadableRecord: once a submission is there nothing can replace it.
+        """
         path = self._submission_path(request.agent, request.request_id)
         while True:
             if cancelled():
                 self.cancel(request.agent, request.request_id)
                 raise InteractionCancelled("interactive request cancelled")
-            value = self._read(path)
-            if value:
-                submission = Submission.from_dict(value)
+            try:
+                submission = self._load(path, Submission.from_dict)
+            except UnreadableRecord:
+                self.cancel(request.agent, request.request_id)
+                raise
+            if submission is not None:
                 self.complete(request.agent, request.request_id)
                 return submission
             time.sleep(interval)
@@ -220,5 +268,5 @@ class InteractionStore:
         current = self.current(agent)
         if current is None or current.request_id != request_id:
             raise StaleRequest("the request is no longer pending")
-        self._atomic(self.root / "drafts" / self._agent(agent) / f"{request_id}.json",
-                     {"version": VERSION, "request_id": request_id, "tool_calls": calls})
+        atomic(self.root / "drafts" / self._agent(agent) / f"{request_id}.json",
+               {"version": VERSION, "request_id": request_id, "tool_calls": calls})

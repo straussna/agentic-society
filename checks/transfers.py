@@ -10,7 +10,6 @@ from checks.lanes import (
     FULL_REBATE,
     HALF,
     HostBox,
-    channel_toml,
     docker_root,
     episode_once,
     ground_truth,
@@ -334,12 +333,12 @@ def check_a_negative_balance_is_floored_to_zero():
     stops asking. The floor decides what n holds, not whether an episode follows.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True) as root:
         seated(root, other={})
         t = episode_once(*DEFAULT)
         account = ground_truth("t")
-        # Inside the block: admits() reads the module globals, and out here
-        # FLOOR_AT_ZERO is back to its default, which is a different question.
+        # Inside the block: admits() reads the settings in force, and out here
+        # floor_at_zero is back to its default, which is a different question.
         assert not harness.admits(account), "and the agent is not asked for another episode"
     assert t["spent"] > account["initial"], "the last turn has to overshoot for this to say anything"
     assert t["forgiven"] == t["spent"] - account["initial"], t["forgiven"]
@@ -347,7 +346,7 @@ def check_a_negative_balance_is_floored_to_zero():
         "the balance rests at zero, and n says so"
     assert account["forgiven"] == t["forgiven"]
     # Off by default: without it the agent ends holding the negative, as it always has.
-    assert harness.FLOOR_AT_ZERO is False
+    assert harness.SETTINGS.floor_at_zero is False
 
 
 def check_an_agent_at_zero_is_not_asked_again():
@@ -357,7 +356,7 @@ def check_an_agent_at_zero_is_not_asked_again():
     is the whole of the state, and zero is one nothing moves it off.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True) as root:
         seated(root, other={})
         with quiet():
             assert harness.run_episodes("t", fake(), 4) == 0
@@ -377,7 +376,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
     own, and still moves nothing: an agent that reached zero stays there.
     """
     cost = turn_cost()
-    with temp_root(BUDGET=cost - 1, FLOOR_AT_ZERO=True, channels=OWED_AND_REBATED) as root:
+    with temp_root(budget=cost - 1, floor_at_zero=True, channels=OWED_AND_REBATED) as root:
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(*DEFAULT))
@@ -434,8 +433,8 @@ def check_a_ledger_resists_every_route():
     Every transfer being public is only true while the file saying so cannot be
     edited by the agents it is about.
     """
-    with docker_root() as root:
-        ids = lay_out(root, t={}, other={})
+    with docker_root():
+        ids = lay_out(t={}, other={})
         with quiet():
             account = harness.load_account("t")
         account["seat"], account["peers"] = "1", {"seen": experiment.seats_of(ids)}

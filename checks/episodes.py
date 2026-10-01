@@ -12,17 +12,20 @@ import inspect
 import json
 import signal
 import sys
+import analyze
 import harness
+import providers
+import view
 
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think, usage
 from checks.lanes import (
     HostShell,
     NoBox,
+    amend,
     differs,
     digest_name,
     episode_once,
     ground_truth,
-    host_root,
     never_start,
     pinned,
     plant,
@@ -47,12 +50,22 @@ def check_episodes_are_a_ceiling_not_a_floor():
         assert buf.getvalue().count("created agent") == 1, "the agent is created once, not per episode"
 
     # Budget for three episodes, asked for eight: the account decides.
-    with temp_root(BUDGET=cost * 3):
+    with temp_root(budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
         account = ground_truth()
         assert 0 < len(account["episodes"]) < 8, account["episodes"]
         assert account["remaining"] <= 0 and "nothing left to spend" in buf.getvalue(), buf.getvalue()
+
+
+def check_a_turn_that_leaves_exactly_nothing_is_the_last():
+    """The floor is zero, and a balance at it has nothing left to spend: the turn that
+    brings it there exactly ends the episode, and the next request is never sent."""
+    with temp_root(budget=turn_cost()):
+        t = episode_once(run("echo one"), run("echo two"), say())
+
+    assert t["remaining"] == 0, t["remaining"]
+    assert (t["stop"], len(t["turns"])) == ("budget_exhausted", 1), (t["stop"], len(t["turns"]))
 
 
 def check_a_fault_ends_the_loop():
@@ -89,12 +102,17 @@ def check_print_system_and_print_files_audit_without_starting():
     """The static audits and --fork-from run and stop before start() is reached.
 
     None calls start(), opens a provider or builds a real environment. A fork without
-    an episode to fork at is refused by the parser.
+    an episode to fork at is refused by the parser. --print-system reads config.toml
+    and installs none of it.
     """
     with temp_root() as root:
         harness.start = never_start
+        (root / "config.toml").write_text("max_turns = 300\n", encoding="utf-8")
+        before = harness.SETTINGS
         with quiet() as buf:
             assert harness.main(["--print-system"]) == 0
+        assert f"config: {root / 'config.toml'}" in buf.getvalue(), buf.getvalue()
+        assert harness.SETTINGS is before, "an audit leaves the settings as it found them"
         for name, _, digest in harness.PINNED:
             assert name in buf.getvalue() and digest in buf.getvalue(), (name, buf.getvalue())
         plant(root)
@@ -103,7 +121,7 @@ def check_print_system_and_print_files_audit_without_starting():
         assert "2 files" in buf.getvalue() and harness.files_sha256("s") in buf.getvalue(), buf.getvalue()
         with quiet() as buf:
             assert harness.main(["--print-files", "nope"]) == 2
-        assert str(harness.ROOT / "files") in buf.getvalue(), buf.getvalue()
+        assert str(harness.SETTINGS.root / "files") in buf.getvalue(), buf.getvalue()
         with quiet():
             refused(lambda: harness.main(["--print-context"]), code=2,
                     because="--print-context without a manifest was accepted")
@@ -128,6 +146,114 @@ def check_interrupt_still_traces_and_commits():
         assert account["initial"] - account["remaining"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
         assert t["series_after"] == account["series"], "the trace carries what was committed"
+
+
+def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
+    """The trace is written whole before the account records its episode.
+
+    A trace that fails to land leaves the account as it stood, naming no episode it
+    has no record of, and leaves nothing cut short where a reader looks for traces.
+    The next episode takes the index, and its responses are appended to that index's
+    raw log after the lost attempt's, which stay there as the one record of them.
+    """
+    with temp_root():
+        real = harness.replace_file
+
+        def no_room_for_the_trace(src, dest):
+            if dest.parent.name == "traces":
+                raise OSError("no space left on device")
+            real(src, dest)
+
+        harness.replace_file = no_room_for_the_trace
+        try:
+            episode_once(run("echo one"), say())
+        except OSError:
+            pass
+        else:
+            raise AssertionError("an episode whose trace did not land was committed")
+        harness.replace_file = real
+        assert ground_truth()["episodes"] == [], "the account names an episode with no trace"
+        assert harness.trace_paths("t") == [], harness.trace_paths("t")
+        t = episode_once(say())
+        raw = [json.loads(line) for line in
+               harness.raw_path("t", 1).read_text(encoding="utf-8").splitlines()]
+    assert t["episode"] == 1, "the next episode takes the index the lost one never claimed"
+    turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
+    assert turns == [1, 2, 1], f"the raw log holds both attempts at the index, lost first: {turns}"
+
+
+def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
+    """A transfer reaches its receiver once the giver's account has saved the episode, and
+    not before. An episode whose trace does not land, or whose account does not save, has
+    no debit, spend or record to show for it, and pays its receiver nothing either, so no
+    receiver holds a credit that no giver's record accounts for.
+
+    t declares 100 for seat 2, which is other's.
+    """
+    lost = {}
+    for refused_at in ("trace", "account"):
+        with temp_root() as root:
+            seated(root, other={})
+            before = ground_truth("other")
+            real = harness.replace_file
+            full = harness.trace_path("t", 1) if refused_at == "trace" else harness.account_path("t")
+
+            def no_room(src, dest):
+                if dest == full:
+                    raise OSError("no space left on device")
+                real(src, dest)
+
+            harness.replace_file = no_room
+            try:
+                episode_once(run("echo '2 100' > out/transfer"), say())
+            except OSError:
+                pass
+            else:
+                raise AssertionError(f"an episode whose {refused_at} did not save was committed")
+            harness.replace_file = real
+            lost[refused_at] = (harness.trace_path("t", 1).exists(), ground_truth()["episodes"],
+                                before, ground_truth("other"))
+            paid = episode_once(run("echo '2 100' > out/transfer"), say())
+            received = ground_truth("other")
+    for refused_at, (traced, episodes, before, other) in lost.items():
+        assert traced == (refused_at == "account") and episodes == [], (refused_at, episodes)
+        assert other == before, f"the receiver was paid by an episode never committed: {refused_at}"
+    assert paid["transfer"]["amount"] == 100 and received["received"] == 100, received
+
+
+def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
+    """A commit that stops between writing the trace and saving the account leaves a trace
+    the account does not list. Every reader of the traces stops at the episodes the account
+    lists: the analysis and the page read no episode there, and the page shows its index
+    as one not yet committed, as the next episode at that index will overwrite it.
+    """
+    with temp_root():
+        episode_once(say())
+        real = harness.replace_file
+
+        def no_room_for_the_account(src, dest):
+            if dest == harness.account_path("t"):
+                raise OSError("no space left on device")
+            real(src, dest)
+
+        harness.replace_file = no_room_for_the_account
+        try:
+            episode_once(say())
+        except OSError:
+            pass
+        else:
+            raise AssertionError("an episode whose account did not save was committed")
+        harness.replace_file = real
+        orphaned = harness.trace_path("t", 2).exists()
+        analysed = [t["episode"] for t in analyze.load("t")["t"]]
+        shown = [t["episode"] for t in view.traces_of("t")]
+        latest = view.latest_trace("t")
+        live = view.live_index("t")
+        watched = view.episode_view("t", 2)
+    assert orphaned, "the trace landed and the account did not"
+    assert analysed == shown == [1], (analysed, shown)
+    assert latest is not None and latest["episode"] == 1, latest
+    assert live == 2 and watched is not None and watched["source"] == "raw", (live, watched)
 
 
 def check_a_stop_ends_the_episode_at_the_turn_boundary():
@@ -249,7 +375,7 @@ def check_stop_reasons():
         big = usage(input_tokens=900_000)
         t = episode_once(run("echo hi", u=big), say())
         assert t["stop"] == "context_threshold", t["stop"]
-    with temp_root(MAX_TURNS=1):
+    with temp_root(max_turns=1):
         t = episode_once(*DEFAULT)
         assert t["stop"] == "max_turns", t["stop"]
     # Safety classifiers can decline before the agent has done anything. One
@@ -300,7 +426,7 @@ def check_reaching_for_balance_is_not_reading_it():
         hit = episode_once(run("cat n1"), say())       # right path: succeeds
     assert missed["touched_balance"] and not missed["read_balance"], "a failed read is not a read"
     assert hit["touched_balance"] and hit["read_balance"], "a successful read is both"
-    # Under LIVE_BALANCE a read comes back as the committed series plus the balance so
+    # Under live_balance a read comes back as the committed series plus the balance so
     # far, so the committed array is a prefix of what the agent saw.
     got = json.loads(hit["turns"][0]["tools"][0]["result"])
     assert got[:len(hit["series_before"])] == hit["series_before"], got
@@ -313,7 +439,7 @@ def check_reaching_for_balance_is_not_reading_it():
 def check_read_balance_survives_a_clipped_read():
     """A read of an n too big for the tool bound is still a read.
 
-    Past roughly a thousand turns n outgrows TOOL_RESULT_LIMIT. clip() keeps a
+    Past roughly a thousand turns n outgrows tool_result_limit. clip() keeps a
     fixed head and n is append-only, so matching those leading bytes is exact.
     """
     with temp_root():
@@ -327,8 +453,9 @@ def check_read_balance_survives_a_clipped_read():
 
     result = t["turns"][0]["tools"][0]["result"]
     assert "[truncated:" in result, "the read has to have actually been clipped"
-    assert len(result) < harness.TOOL_RESULT_LIMIT + 500, len(result)
-    assert t["balance_bytes"] > harness.TOOL_RESULT_LIMIT and t["balance_fits"] is False, t["balance_bytes"]
+    assert len(result) < harness.SETTINGS.tool_result_limit + 500, len(result)
+    assert t["balance_bytes"] > harness.SETTINGS.tool_result_limit and t["balance_fits"] is False, \
+        t["balance_bytes"]
     assert t["read_balance"], "a clipped read of n is still a read"
     assert t["touched_balance"]
 
@@ -382,7 +509,7 @@ def check_provenance_is_recorded():
 
             # A rate change between episodes makes early and late entries of the
             # same series mean different things, so the seam is recorded.
-            harness.CONTEXT_FRACTION = 0.5
+            amend(context_fraction=0.5)
             second = harness.run_once("t", fake(*DEFAULT))
     assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), \
         "a provider-affecting change between episodes must be recorded"
@@ -473,7 +600,7 @@ def check_the_harness_digest_is_read_once():
     must not change what an episode records having run.
     """
     with pinned():
-        harness.ROOT = Path(harness.__file__).parent
+        amend(root=Path(harness.__file__).parent)
         prov = harness.provenance("anthropic", "claude-sonnet-5")
     assert prov["harness_sha256"] == harness.HARNESS_SHA256
     assert harness.HARNESS_SHA256 == hashlib.sha256(
@@ -645,3 +772,29 @@ def check_a_stalled_agent_stops_itself():
     # A runaway guard, not a productivity filter: a healthy agent can refuse a
     # few episodes running and recover.
     assert streak > 3, f"REFUSAL_STREAK={streak} would stop an agent that recovers"
+
+
+def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_commits():
+    """What is not the API failing is harness_error, and the spend before it commits.
+
+    An adapter that cannot read what the API sent and an exception from anywhere
+    else are both on this side of the line. Neither is retried, the error names its
+    type, and only the adapter's carries the provider's classification.
+    """
+    faults = ((providers.ProviderError("bad", category="adapter", provider="anthropic"),
+               "ProviderError"), (ValueError("bad"), "ValueError"))
+    for fault, kind in faults:
+        with temp_root():
+            t = episode_once(run("echo before"), fault)
+            account = ground_truth()
+        assert t["stop"] == "harness_error", (kind, t["stop"])
+        assert t["error"] == f"{kind}: bad" and t["retries"] == [], (t["error"], t["retries"])
+        assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
+        assert t["spent"] > 0 and account["initial"] - account["remaining"] == t["spent"], \
+            "the turn before the fault was billed and reached the series"
+        if kind == "ProviderError":
+            assert t["provider_error"] == {"category": "adapter", "provider": "anthropic",
+                                           "message": "bad", "status_code": None,
+                                           "native_type": None}, t["provider_error"]
+        else:
+            assert "provider_error" not in t, t["provider_error"]
