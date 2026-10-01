@@ -556,19 +556,21 @@ def elements_of(s: dict) -> int:
             + bool(s.get("received")))
 
 
-def without_listing_times(x):
-    """The same value with `ls -la` mtimes flattened.
+def without_listing_drift(x):
+    """The same value with what an `ls -la` listing takes from outside the episode flattened.
 
     A listing renders its times to the minute, so two environments built either side
-    of one differ there. The minute a directory was made is not something
-    watching can reach.
+    of one differ there. Its `..` entry is the directory the environment sits in, which
+    in the local lane is the host's shared temp directory, whose link count moves as
+    concurrent checks add and remove siblings. Neither is something an episode can reach.
     """
     if isinstance(x, str):
-        return re.sub(r"[A-Z][a-z]{2} [ \d]?\d \d{2}:\d{2}", "<mtime>", x)
+        x = re.sub(r"[A-Z][a-z]{2} [ \d]?\d \d{2}:\d{2}", "<mtime>", x)
+        return re.sub(r"(?m)^[^\n]* \.\.$", "<parent> ..", x)
     if isinstance(x, list):
-        return [without_listing_times(v) for v in x]
+        return [without_listing_drift(v) for v in x]
     if isinstance(x, dict):
-        return {k: without_listing_times(v) for k, v in x.items()}
+        return {k: without_listing_drift(v) for k, v in x.items()}
     return x
 
 

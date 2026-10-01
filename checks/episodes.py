@@ -35,7 +35,7 @@ from checks.lanes import (
     seated,
     temp_root,
     turn_cost,
-    without_listing_times,
+    without_listing_drift,
 )
 
 def check_episodes_are_a_ceiling_not_a_floor():
@@ -542,7 +542,7 @@ def check_watch_is_quiet_and_display_only():
     assert "$ " not in shown, "commands are not shown"
     assert "echo hi > state/note.txt" not in shown, "commands are not shown"
     assert harness.observation() not in shown, "the initial observation command is not shown"
-    q, l = without_listing_times(quiet_seen), without_listing_times(loud_seen)
+    q, l = without_listing_drift(quiet_seen), without_listing_drift(loud_seen)
     assert q == l, "watching must not change what is sent to the model: " + differs(q, l)
     for t in (plain, loud):
         # Wall clock, not the record: these differ between any two agents.
@@ -550,7 +550,7 @@ def check_watch_is_quiet_and_display_only():
         t["provenance"].pop("started_at")
     # The observation carries the listing, whose mtimes are the minute the
     # environment was built. Everything else must agree exactly.
-    assert without_listing_times(plain.pop("observation")) == without_listing_times(loud.pop("observation"))
+    assert without_listing_drift(plain.pop("observation")) == without_listing_drift(loud.pop("observation"))
     assert plain == loud, "watching must not change the record: " + differs(plain, loud)
 
 
@@ -568,7 +568,7 @@ def check_run_once_is_build_then_run_then_commit():
         t = json.loads(json.dumps(t))
         t.pop("duration_s")
         t["provenance"].pop("started_at")
-        return without_listing_times(t)
+        return without_listing_drift(t)
 
     with temp_root() as root:
         seated(root, other=neighbour)
