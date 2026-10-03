@@ -6,25 +6,60 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from .base import (ModelSpec, NormalizedTurn, PendingResponse, ProviderError, Refusal,
-                   SessionContext, StopReason, ToolCall, ToolResult, ToolSpec, Usage, charge,
-                   classify_error, field, native_dict, refuse_custom_endpoint, require_key)
+from .base import (
+    ModelSpec,
+    NormalizedTurn,
+    PendingResponse,
+    ProviderError,
+    Refusal,
+    SessionContext,
+    StopReason,
+    ToolCall,
+    ToolResult,
+    ToolSpec,
+    Usage,
+    charge,
+    classify_error,
+    field,
+    native_dict,
+    refuse_custom_endpoint,
+    require_key,
+)
 
 
 MODELS = {
     "gpt-5.6-sol": ModelSpec(
-        "openai", "gpt-5.6-sol", 1_050_000,
-        (("uncached_input", 400), ("cache_read", 40), ("cache_write", 500),
-         ("output", 2000)), 128_000, 272_000, (2, 1), (3, 2),
-        "2026-11-21", "Update the gpt-5.6-sol promotional rates before running."),
+        "openai",
+        "gpt-5.6-sol",
+        1_050_000,
+        (("uncached_input", 400), ("cache_read", 40), ("cache_write", 500), ("output", 2000)),
+        128_000,
+        272_000,
+        (2, 1),
+        (3, 2),
+        "2026-11-21",
+        "Update the gpt-5.6-sol promotional rates before running.",
+    ),
     "gpt-5.6-terra": ModelSpec(
-        "openai", "gpt-5.6-terra", 1_050_000,
-        (("uncached_input", 200), ("cache_read", 20), ("cache_write", 250),
-         ("output", 1200)), 128_000, 272_000, (2, 1), (3, 2)),
+        "openai",
+        "gpt-5.6-terra",
+        1_050_000,
+        (("uncached_input", 200), ("cache_read", 20), ("cache_write", 250), ("output", 1200)),
+        128_000,
+        272_000,
+        (2, 1),
+        (3, 2),
+    ),
     "gpt-5.6-luna": ModelSpec(
-        "openai", "gpt-5.6-luna", 1_050_000,
-        (("uncached_input", 20), ("cache_read", 2), ("cache_write", 25),
-         ("output", 120)), 128_000, 272_000, (2, 1), (3, 2)),
+        "openai",
+        "gpt-5.6-luna",
+        1_050_000,
+        (("uncached_input", 20), ("cache_read", 2), ("cache_write", 25), ("output", 120)),
+        128_000,
+        272_000,
+        (2, 1),
+        (3, 2),
+    ),
 }
 
 
@@ -50,13 +85,17 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
             try:
                 parsed = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
             except (json.JSONDecodeError, TypeError, ValueError) as error:
-                raise ProviderError(f"invalid function arguments: {error}", category="adapter",
-                                    provider="openai", native_type=type(error).__name__) from error
+                raise ProviderError(
+                    f"invalid function arguments: {error}",
+                    category="adapter",
+                    provider="openai",
+                    native_type=type(error).__name__,
+                ) from error
             if not isinstance(parsed, dict):
-                raise ProviderError("function arguments are not a JSON object", category="adapter",
-                                    provider="openai")
-            calls.append(ToolCall(str(field(item, "call_id", field(item, "id", ""))),
-                                  str(field(item, "name", "")), parsed))
+                raise ProviderError("function arguments are not a JSON object", category="adapter", provider="openai")
+            calls.append(
+                ToolCall(str(field(item, "call_id", field(item, "id", ""))), str(field(item, "name", "")), parsed)
+            )
         elif kind == "reasoning":
             for summary in field(item, "summary", []) or []:
                 text = field(summary, "text")
@@ -105,18 +144,27 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
         stop = "other"
     refusal = Refusal("refusal", "\n".join(refusals)) if refusals else None
     stop_details = native_dict(incomplete) if incomplete else None
-    return NormalizedTurn(str(field(native, "id", "")), "openai", requested_model,
-                          str(field(native, "model", requested_model)), stop,
-                          str(native_stop) if native_stop is not None else None,
-                          tuple(texts), tuple(reasoning), tuple(calls), usage, charges,
-                          refusal, stop_details)
+    return NormalizedTurn(
+        str(field(native, "id", "")),
+        "openai",
+        requested_model,
+        str(field(native, "model", requested_model)),
+        stop,
+        str(native_stop) if native_stop is not None else None,
+        tuple(texts),
+        tuple(reasoning),
+        tuple(calls),
+        usage,
+        charges,
+        refusal,
+        stop_details,
+    )
 
 
 class OpenAISession:
     provider = "openai"
 
-    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...],
-                 max_tokens: int):
+    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int):
         self.client = client
         self.requested_model = model
         self.system = system
@@ -128,8 +176,10 @@ class OpenAISession:
         if isinstance(content, str):
             additions = [{"role": "user", "content": [{"type": "input_text", "text": content}]}]
         else:
-            additions = [{"type": "function_call_output", "call_id": result.tool_call_id,
-                          "output": result.content} for result in content]
+            additions = [
+                {"type": "function_call_output", "call_id": result.tool_call_id, "output": result.content}
+                for result in content
+            ]
         items = [*self.items, *additions]
         params: dict[str, Any] = {
             "model": self.requested_model,
@@ -137,8 +187,16 @@ class OpenAISession:
             "max_output_tokens": self.max_tokens,
             "store": False,
             "include": ["reasoning.encrypted_content"],
-            "tools": [{"type": "function", "name": tool.name, "description": tool.description,
-                       "parameters": tool.input_schema, "strict": True} for tool in self.tools],
+            "tools": [
+                {
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                    "strict": True,
+                }
+                for tool in self.tools
+            ],
         }
         if self.system:
             params["instructions"] = self.system
@@ -152,6 +210,7 @@ class OpenAISession:
             turn = normalize(response, self.requested_model)
             self.items = [*items, *[_input_item(item) for item in field(response, "output", []) or []]]
             return turn
+
         return PendingResponse(self.provider, raw, finish)
 
 
@@ -160,8 +219,12 @@ class OpenAIProvider:
     interactive = False
     key_variable = "OPENAI_API_KEY"
     models = MODELS
-    provenance_facts = {"adapter": "openai-responses-v1", "endpoint": "first-party",
-                        "store": False, "reasoning_state": "encrypted"}
+    provenance_facts = {
+        "adapter": "openai-responses-v1",
+        "endpoint": "first-party",
+        "store": False,
+        "reasoning_state": "encrypted",
+    }
 
     def __init__(self, client: Any | None = None):
         refuse_custom_endpoint("OPENAI_BASE_URL", self.name)
@@ -171,6 +234,7 @@ class OpenAIProvider:
             require_key(self.key_variable, self.name)
             try:
                 import openai
+
                 client = openai.OpenAI(max_retries=0)
             except Exception as error:
                 raise classify_error(error, self.name, self.key_variable) from error
@@ -184,6 +248,7 @@ class OpenAIProvider:
             except Exception as error:
                 raise classify_error(error, self.name, self.key_variable) from error
 
-    def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int, context: SessionContext) -> OpenAISession:
+    def open_session(
+        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+    ) -> OpenAISession:
         return OpenAISession(self.client, model, system, tools, max_tokens)

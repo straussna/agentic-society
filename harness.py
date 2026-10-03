@@ -58,13 +58,25 @@ import tomllib
 from collections.abc import Set as AbstractSet
 from pathlib import Path
 from types import MappingProxyType
-from typing import (IO, Any, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, NotRequired,
-                    Protocol, Sequence, TypedDict, get_args)
+from typing import (
+    IO,
+    Any,
+    Callable,
+    Iterable,
+    Iterator,
+    Literal,
+    Mapping,
+    NoReturn,
+    NotRequired,
+    Protocol,
+    Sequence,
+    TypedDict,
+    get_args,
+)
 
 import product
 import providers
-from providers import (NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult,
-                       SessionContext, ToolSpec)
+from providers import NormalizedTurn, ProviderError, ProviderRouter, ToolCall, ToolResult, SessionContext, ToolSpec
 
 
 # --- 1. What the harness says ----------------------------------------------------
@@ -89,14 +101,17 @@ REFUSAL_NOTICE_SHA256 = "4263e6bab90f883bbbcb2a9676a27a4aef7bde825461b3f56a2b266
 # Every string the harness ships, as (name, text, pinned digest). One list, so
 # --print-system audits exactly what start() refuses to run on. The pin holds the
 # shipped default to its digest; a declared prompt is held by provenance instead.
-PINNED = (("SYSTEM", SYSTEM, SYSTEM_SHA256),
-          ("REFUSAL_NOTICE", REFUSAL_NOTICE, REFUSAL_NOTICE_SHA256))
+PINNED = (("SYSTEM", SYSTEM, SYSTEM_SHA256), ("REFUSAL_NOTICE", REFUSAL_NOTICE, REFUSAL_NOTICE_SHA256))
 
 SHELL_SPEC = ToolSpec(
     "bash",
     "Run a command in the episode shell. Set command to null to restart the shell.",
-    {"type": "object", "properties": {"command": {"type": ["string", "null"]}},
-     "required": ["command"], "additionalProperties": False},
+    {
+        "type": "object",
+        "properties": {"command": {"type": ["string", "null"]}},
+        "required": ["command"],
+        "additionalProperties": False,
+    },
 )
 
 
@@ -134,9 +149,19 @@ PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_L
 
 # An experiment's, and refused in config.toml: everything an agent's situation is
 # made of, alongside the [[channel]] tables and [harness_files] that go with it.
-TREATMENT = {"SYSTEM_PROMPT", "BUDGET", "STARTER_FILES", "STARTER_FILES_BELOW",
-             "CONTEXT_FRACTION", "DELIVERY", "DIGEST_FILE_LIMIT", "OBSERVATION_LIMIT",
-             "LIVE_BALANCE", "GRACE_EPISODES", "FLOOR_AT_ZERO"}
+TREATMENT = {
+    "SYSTEM_PROMPT",
+    "BUDGET",
+    "STARTER_FILES",
+    "STARTER_FILES_BELOW",
+    "CONTEXT_FRACTION",
+    "DELIVERY",
+    "DIGEST_FILE_LIMIT",
+    "OBSERVATION_LIMIT",
+    "LIVE_BALANCE",
+    "GRACE_EPISODES",
+    "FLOOR_AT_ZERO",
+}
 
 TUNABLES = PROCESS | TREATMENT
 
@@ -150,8 +175,8 @@ RETIRED = {
     "fallbacks": "nothing: every turn requests the provider and model pinned to its seat",
     "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
-    "rebate_percent": "rebate_percent on the channel with schema = \"transfer\"",
-    "transfer_silence_penalty_percent": "silence_penalty_percent on the channel with schema = \"transfer\"",
+    "rebate_percent": 'rebate_percent on the channel with schema = "transfer"',
+    "transfer_silence_penalty_percent": 'silence_penalty_percent on the channel with schema = "transfer"',
     "blackboard_silence_penalty_percent": "silence_penalty_percent on the blackboard channel",
     "mailbox_silence_penalty_percent": "silence_penalty_percent on the mailbox channel",
     "shared_files": 'a [[channel]] with writer = "experimenter" and a source',
@@ -194,8 +219,9 @@ def read_config(base: Settings, path: Path | None = None) -> tuple[Settings, Pat
     top = tomllib.loads(f.read_text(encoding="utf-8"))
     for table in ("channel", "harness_files", "tool"):
         if table in top:
-            raise SystemExit(f"{f}: {table} is {NOT_CONFIG}. Declare it in a manifest under "
-                             f"{base.root / 'experiments'}")
+            raise SystemExit(
+                f"{f}: {table} is {NOT_CONFIG}. Declare it in a manifest under {base.root / 'experiments'}"
+            )
     return overlay(base, top, str(f), PROCESS, NOT_CONFIG), f
 
 
@@ -215,9 +241,16 @@ def load_config(path: Path | None = None) -> Path | None:
 Refuse = Callable[[str], NoReturn]
 
 
-def check_keys(refuse: Refuse, where: str, raw: dict, allowed: Iterable[str],
-               types: Iterable[tuple[str, type]] = (), retired: dict[str, str] | None = None,
-               expected: str = "", elsewhere: dict[str, str] | None = None) -> None:
+def check_keys(
+    refuse: Refuse,
+    where: str,
+    raw: dict,
+    allowed: Iterable[str],
+    types: Iterable[tuple[str, type]] = (),
+    retired: dict[str, str] | None = None,
+    expected: str = "",
+    elsewhere: dict[str, str] | None = None,
+) -> None:
     """Refuse an unknown key or a wrong type, naming the table and the key.
 
     The one place config.toml, a manifest, an [[agent]] table and a [[channel]]
@@ -232,15 +265,15 @@ def check_keys(refuse: Refuse, where: str, raw: dict, allowed: Iterable[str],
         if elsewhere and key in elsewhere:
             refuse(f"{where}{key} is {elsewhere[key]}")
     if unknown := sorted(set(raw) - set(allowed)):
-        refuse(f"{where}unknown key {unknown[0]!r}; "
-               f"expected {expected or sorted(allowed)}")
+        refuse(f"{where}unknown key {unknown[0]!r}; expected {expected or sorted(allowed)}")
     for key, kind in types:
         if key in raw and type(raw[key]) is not kind:
             refuse(f"{where}{key} must be {kind.__name__}, got {type(raw[key]).__name__}")
 
 
-def overlay(base: Settings, values: dict[str, Any], source: str, allowed: Iterable[str] = TUNABLES,
-            elsewhere: str = "") -> Settings:
+def overlay(
+    base: Settings, values: dict[str, Any], source: str, allowed: Iterable[str] = TUNABLES, elsewhere: str = ""
+) -> Settings:
     """The settings config keys make of `base`, validated as a whole.
 
     `source` names where the values came from in every refusal. `allowed` is the half
@@ -258,8 +291,14 @@ def overlay(base: Settings, values: dict[str, Any], source: str, allowed: Iterab
     def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{f}: {why}")
 
-    check_keys(refuse, "", values, [t.lower() for t in allowed], retired=RETIRED,
-               elsewhere={k.lower(): elsewhere for k in TUNABLES - allowed} if elsewhere else None)
+    check_keys(
+        refuse,
+        "",
+        values,
+        [t.lower() for t in allowed],
+        retired=RETIRED,
+        elsewhere={k.lower(): elsewhere for k in TUNABLES - allowed} if elsewhere else None,
+    )
     changes: dict[str, Any] = {}
     for key, value in values.items():
         default = getattr(base, key)
@@ -270,46 +309,62 @@ def overlay(base: Settings, values: dict[str, Any], source: str, allowed: Iterab
             refuse(f"{key} must be {type(default).__name__}, got {type(value).__name__}")
         changes[key] = value
     s = dataclasses.replace(base, **changes)
-    validate_terms(f, provider=None, model=None, budget=s.budget, starter_files=s.starter_files,
-                   starter_files_below=s.starter_files_below)
+    validate_terms(
+        f,
+        provider=None,
+        model=None,
+        budget=s.budget,
+        starter_files=s.starter_files,
+        starter_files_below=s.starter_files_below,
+    )
     if not 0 < s.context_fraction <= 1:
         refuse(f"context_fraction must be in (0, 1], got {s.context_fraction}")
     if min(s.max_tokens, s.max_turns, s.command_timeout) <= 0:
         refuse("max_tokens, max_turns, and command_timeout must all be positive")
     if "max_turns" in values and not MAX_TURNS_FLOOR <= s.max_turns <= MAX_TURNS_CEILING:
-        refuse(f"max_turns must be from {MAX_TURNS_FLOOR} to {MAX_TURNS_CEILING}, got "
-               f"{s.max_turns}; it is a safety stop, true of every run: lower, it can end an "
-               f"episode the agent had not finished, and higher, it no longer stops a runaway")
-    if "command_timeout" in values and \
-            not COMMAND_TIMEOUT_FLOOR <= s.command_timeout <= COMMAND_TIMEOUT_CEILING:
-        refuse(f"command_timeout must be from {COMMAND_TIMEOUT_FLOOR} to "
-               f"{COMMAND_TIMEOUT_CEILING} seconds, got {s.command_timeout}; it is a safety "
-               f"stop, true of every run: lower, it can kill a command that would have "
-               f"finished, and higher, it no longer stops a hung one")
+        refuse(
+            f"max_turns must be from {MAX_TURNS_FLOOR} to {MAX_TURNS_CEILING}, got "
+            f"{s.max_turns}; it is a safety stop, true of every run: lower, it can end an "
+            f"episode the agent had not finished, and higher, it no longer stops a runaway"
+        )
+    if "command_timeout" in values and not COMMAND_TIMEOUT_FLOOR <= s.command_timeout <= COMMAND_TIMEOUT_CEILING:
+        refuse(
+            f"command_timeout must be from {COMMAND_TIMEOUT_FLOOR} to "
+            f"{COMMAND_TIMEOUT_CEILING} seconds, got {s.command_timeout}; it is a safety "
+            f"stop, true of every run: lower, it can kill a command that would have "
+            f"finished, and higher, it no longer stops a hung one"
+        )
     if s.grace_episodes < 0:
         refuse(f"grace_episodes must be zero or positive, got {s.grace_episodes}")
     if s.delivery not in DELIVERIES:
         refuse(f"delivery must be one of {list(DELIVERIES)}, got {s.delivery!r}")
     if not TOOL_RESULT_FLOOR <= s.tool_result_limit:
-        refuse(f"tool_result_limit must be at least {TOOL_RESULT_FLOOR}, got "
-               f"{s.tool_result_limit}; below that a clipped read keeps no usable head")
+        refuse(
+            f"tool_result_limit must be at least {TOOL_RESULT_FLOOR}, got "
+            f"{s.tool_result_limit}; below that a clipped read keeps no usable head"
+        )
     if not DIGEST_FILE_FLOOR <= s.digest_file_limit:
-        refuse(f"digest_file_limit must be at least {DIGEST_FILE_FLOOR}, got "
-               f"{s.digest_file_limit}; below that a clipped message says less than the "
-               f"marker saying it was clipped")
+        refuse(
+            f"digest_file_limit must be at least {DIGEST_FILE_FLOOR}, got "
+            f"{s.digest_file_limit}; below that a clipped message says less than the "
+            f"marker saying it was clipped"
+        )
     if s.observation_limit < s.tool_result_limit:
-        refuse(f"observation_limit must be at least tool_result_limit "
-               f"({s.tool_result_limit}), got {s.observation_limit}; the initial observation "
-               f"carries the whole experiment's record and is never smaller than what "
-               f"one call may return")
+        refuse(
+            f"observation_limit must be at least tool_result_limit "
+            f"({s.tool_result_limit}), got {s.observation_limit}; the initial observation "
+            f"carries the whole experiment's record and is never smaller than what "
+            f"one call may return"
+        )
     if s.max_tokens > MAX_TOKENS_CEILING:
-        refuse(f"max_tokens must be at most {MAX_TOKENS_CEILING}; the harness does "
-               f"not stream, and larger values hit the SDK's HTTP timeout mid-episode")
+        refuse(
+            f"max_tokens must be at most {MAX_TOKENS_CEILING}; the harness does "
+            f"not stream, and larger values hit the SDK's HTTP timeout mid-episode"
+        )
     return s
 
 
-def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = TUNABLES,
-                 elsewhere: str = "") -> None:
+def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = TUNABLES, elsewhere: str = "") -> None:
     """Overlay config keys onto the settings in force: overlay, installed.
 
     A refused key installs nothing, the keys before it included.
@@ -318,9 +373,16 @@ def apply_config(values: dict[str, Any], source: str, allowed: Iterable[str] = T
     SETTINGS = overlay(SETTINGS, values, source, allowed, elsewhere)
 
 
-def validate_terms(source: str, *, provider: str | None, model: str | None, budget: int | None,
-                   starter_files: str | None, starter_files_below: int | None,
-                   who: str = "") -> None:
+def validate_terms(
+    source: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    budget: int | None,
+    starter_files: str | None,
+    starter_files_below: int | None,
+    who: str = "",
+) -> None:
     """Refuse pinned settings that cannot stand, naming the file and the key.
 
     The one set of rules for config.toml, a manifest's defaults and a manifest's
@@ -336,18 +398,20 @@ def validate_terms(source: str, *, provider: str | None, model: str | None, budg
             raise SystemExit(f"{lead}{error}") from None
     if budget is not None and budget <= 0:
         raise SystemExit(f"{lead}budget must be positive, got {budget}")
-    if (starter_files is None) != (starter_files_below is None) or \
-            bool(starter_files) != bool(starter_files_below):
-        raise SystemExit(f"{lead}starter_files and starter_files_below are set together or not at "
-                         f"all; got starter_files={starter_files!r}, "
-                         f"starter_files_below={starter_files_below!r}. Starter files that never "
-                         f"land and a threshold with nothing to land are both agents you did not "
-                         f"mean to start")
+    if (starter_files is None) != (starter_files_below is None) or bool(starter_files) != bool(starter_files_below):
+        raise SystemExit(
+            f"{lead}starter_files and starter_files_below are set together or not at "
+            f"all; got starter_files={starter_files!r}, "
+            f"starter_files_below={starter_files_below!r}. Starter files that never "
+            f"land and a threshold with nothing to land are both agents you did not "
+            f"mean to start"
+        )
     if starter_files_below is not None and starter_files_below < 0:
         raise SystemExit(f"{lead}starter_files_below must be zero or positive, got {starter_files_below}")
     if starter_files and not (files_dir(starter_files).is_dir() or files_dir(starter_files).is_file()):
-        raise SystemExit(f"{lead}starter_files {starter_files!r} is not a file or directory at "
-                         f"{files_dir(starter_files)}")
+        raise SystemExit(
+            f"{lead}starter_files {starter_files!r} is not a file or directory at {files_dir(starter_files)}"
+        )
 
 
 # --- 4. The channel and tool tables -----------------------------------------------
@@ -374,24 +438,25 @@ class Channel:
     A channel has one writer, one set of readers and one shape. The harness makes
     the declaration true with ownership and modes and records it in provenance.
     """
+
     name: str
     writer: Writer
     readers: Readers
     shape: Shape = "directory"
-    path: str = ""                   # directory and file shapes; may hold {label}
-    outbox: str = ""                 # mailbox: the writer's side
-    inbox: str = ""                  # mailbox: each reader's side
-    pushed: bool = True              # quoted in the digest under push delivery; every
-                                     # channel, a private store included
-    restated: bool = False           # quoted every episode, never named as unchanged
-    measured: bool = False           # the episode records what this channel gained
+    path: str = ""  # directory and file shapes; may hold {label}
+    outbox: str = ""  # mailbox: the writer's side
+    inbox: str = ""  # mailbox: each reader's side
+    pushed: bool = True  # quoted in the digest under push delivery; every
+    # channel, a private store included
+    restated: bool = False  # quoted every episode, never named as unchanged
+    measured: bool = False  # the episode records what this channel gained
     silence_penalty_percent: int = 0
     schema: Schema = ""
-    funded_by: Funder = "harness"    # transfer: who pays for one
-    rebate_percent: int = 100        # transfer, harness-funded
-    ledger: str = ""                 # transfer: the harness file holding every transfer
-    receipt: str = ""                # transfer: where the parse result is written back
-    source: str = ""                 # experimenter channels: a directory under files/
+    funded_by: Funder = "harness"  # transfer: who pays for one
+    rebate_percent: int = 100  # transfer, harness-funded
+    ledger: str = ""  # transfer: the harness file holding every transfer
+    receipt: str = ""  # transfer: where the parse result is written back
+    source: str = ""  # experimenter channels: a directory under files/
     agent_view: AgentView = "paths"  # how the digest names what the channel holds
 
     def path_for(self, label: str) -> str:
@@ -436,8 +501,12 @@ class Channel:
     def declared(self) -> dict:
         """The fields a manifest would have to write to get this channel: defaults left out."""
         defaults = {f.name: f.default for f in dataclasses.fields(Channel)}
-        return {k: v for k, v in dataclasses.asdict(self).items()
-                if k in ("name", "writer", "readers") or v != defaults.get(k)}
+        return {
+            k: v
+            for k, v in dataclasses.asdict(self).items()
+            if k in ("name", "writer", "readers") or v != defaults.get(k)
+        }
+
 
 # The default set: the competition environment, in the paths the starter files
 # name. Code defaults, not config.toml's: no penalty, a full rebate.
@@ -445,8 +514,17 @@ DEFAULT_CHANNELS: tuple[Channel, ...] = (
     Channel("notes", "self", "self", "directory", path="state"),
     Channel("blackboard", "self", "all", "directory", path="{label}", measured=True),
     Channel("mail", "self", "addressee", "mailbox", outbox="out", inbox="in", measured=True),
-    Channel("transfer", "self", "harness", "file", path="out/transfer", schema="transfer",
-            funded_by="harness", rebate_percent=100, ledger="g"),
+    Channel(
+        "transfer",
+        "self",
+        "harness",
+        "file",
+        path="out/transfer",
+        schema="transfer",
+        funded_by="harness",
+        rebate_percent=100,
+        ledger="g",
+    ),
 )
 
 # The files the harness writes into every environment, by role: <balance><label>
@@ -500,11 +578,11 @@ def channel(name: str, table: Iterable[Channel] | None = None) -> Channel:
         raise KeyError(f"no channel {name!r} in the table")
     return found
 
+
 # What a channel declaration may say. docs/manifest.md section 10 is the prose.
 WRITERS: tuple[Writer, ...] = get_args(Writer)
 
-PAIRS = {("self", "self"), ("self", "all"), ("self", "addressee"), ("self", "harness"),
-         ("experimenter", "all")}
+PAIRS = {("self", "self"), ("self", "all"), ("self", "addressee"), ("self", "harness"), ("experimenter", "all")}
 
 # What a transfer does to the giver. "harness": the receiver is credited and the giver
 # rebated the channel's rebate_percent of the amount, so the experiment's total grows.
@@ -514,19 +592,45 @@ TRANSFER_FUNDERS: tuple[Funder, ...] = get_args(Funder)
 
 SCHEMAS = {"transfer": ("funded_by", "rebate_percent", "ledger", "receipt")}
 
-CHANNEL_KEYS = {"name", "writer", "readers", "shape", "path", "outbox", "inbox", "source", "pushed",
-                "restated", "measured", "silence_penalty_percent", "schema", "agent_view",
-                *SCHEMAS["transfer"]}
+CHANNEL_KEYS = {
+    "name",
+    "writer",
+    "readers",
+    "shape",
+    "path",
+    "outbox",
+    "inbox",
+    "source",
+    "pushed",
+    "restated",
+    "measured",
+    "silence_penalty_percent",
+    "schema",
+    "agent_view",
+    *SCHEMAS["transfer"],
+}
 
 # How the digest may present a channel. Which of them fits which channel is
 # validate_agent_view's to decide.
 AGENT_VIEWS: tuple[AgentView, ...] = get_args(AgentView)
 
-CHANNEL_TYPES = (("shape", str), ("path", str), ("outbox", str), ("inbox", str), ("source", str),
-                 ("schema", str), ("funded_by", str), ("ledger", str), ("receipt", str),
-                 ("pushed", bool), ("restated", bool), ("measured", bool),
-                 ("silence_penalty_percent", int),
-                 ("rebate_percent", int), ("agent_view", str))
+CHANNEL_TYPES = (
+    ("shape", str),
+    ("path", str),
+    ("outbox", str),
+    ("inbox", str),
+    ("source", str),
+    ("schema", str),
+    ("funded_by", str),
+    ("ledger", str),
+    ("receipt", str),
+    ("pushed", bool),
+    ("restated", bool),
+    ("measured", bool),
+    ("silence_penalty_percent", int),
+    ("rebate_percent", int),
+    ("agent_view", str),
+)
 
 NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -537,9 +641,14 @@ SIDECARS = (".modes", ".incoming", ".previous")
 HARNESS_FILE_KEYS = ("balance", "digest", "round")
 
 
-def validate_channels(tables: list[dict] | None, harness_files: dict | None, source: str,
-                      labels: Iterable[str] = ("1",), *, base: Settings | None = None
-                      ) -> tuple[list[Channel], dict[str, str]]:
+def validate_channels(
+    tables: list[dict] | None,
+    harness_files: dict | None,
+    source: str,
+    labels: Iterable[str] = ("1",),
+    *,
+    base: Settings | None = None,
+) -> tuple[list[Channel], dict[str, str]]:
     """Read a channel table and harness file names, or refuse them naming the file and key.
 
     `tables` None keeps the table `base` holds; `harness_files` None keeps the names
@@ -548,6 +657,7 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
     against every harness file, with `labels` standing in for {label}. Pure: nothing
     is set.
     """
+
     def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{source}: {why}")
 
@@ -556,8 +666,9 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
     if harness_files is not None:
         if not isinstance(harness_files, dict):
             refuse("[harness_files] is a table")
-        check_keys(refuse, "harness_files: ", harness_files, HARNESS_FILE_KEYS,
-                   [(key, str) for key in HARNESS_FILE_KEYS])
+        check_keys(
+            refuse, "harness_files: ", harness_files, HARNESS_FILE_KEYS, [(key, str) for key in HARNESS_FILE_KEYS]
+        )
         hf.update(harness_files)
         for key in HARNESS_FILE_KEYS:
             if hf.get(key) and not NAME.match(hf[key]):
@@ -573,8 +684,9 @@ def validate_channels(tables: list[dict] | None, harness_files: dict | None, sou
             table.append(parse_channel(raw, table, refuse))
         parsed = [c for c in table if c.schema]
         if len(parsed) > 1:
-            refuse(f"one schema channel per experiment today; {parsed[0].name!r} and "
-                   f"{parsed[1].name!r} both declare one")
+            refuse(
+                f"one schema channel per experiment today; {parsed[0].name!r} and {parsed[1].name!r} both declare one"
+            )
     claim_paths(table, hf, tuple(labels), refuse)
     return table, hf
 
@@ -587,10 +699,11 @@ def path_fault(path: Any) -> str | None:
     """
     if not isinstance(path, str) or not path:
         return "must be a path"
-    if path.startswith("/") or any(seg in (".", "..") or not SEGMENT.match(seg)
-                                    for seg in path.split("/")):
-        return (f"{path!r} must be segments of letters, digits, '.', '_', "
-                f"'-' and at most one {{label}}, with no leading '/' and no '..'")
+    if path.startswith("/") or any(seg in (".", "..") or not SEGMENT.match(seg) for seg in path.split("/")):
+        return (
+            f"{path!r} must be segments of letters, digits, '.', '_', "
+            f"'-' and at most one {{label}}, with no leading '/' and no '..'"
+        )
     if path.count("{label}") > 1:
         return f"{path!r} names {{label}} more than once"
     if path.split("/")[0].endswith(SIDECARS):
@@ -598,8 +711,7 @@ def path_fault(path: Any) -> str | None:
     return None
 
 
-def check_path(refuse: Refuse, name: str, key: str, path: Any,
-               placeholder: bool) -> None:
+def check_path(refuse: Refuse, name: str, key: str, path: Any, placeholder: bool) -> None:
     """Refuse a path no channel can stand at, naming the channel and the key.
 
     `placeholder` is whether {label} belongs in it, which only a directory every
@@ -608,33 +720,38 @@ def check_path(refuse: Refuse, name: str, key: str, path: Any,
     if fault := path_fault(path):
         refuse(f"channel {name}: {key} {fault}")
     if "{label}" in path and not placeholder:
-        refuse(f"channel {name}: {{label}} has no meaning in {key} here; only a directory "
-               f"every agent writes has one instance per agent")
+        refuse(
+            f"channel {name}: {{label}} has no meaning in {key} here; only a directory "
+            f"every agent writes has one instance per agent"
+        )
     if placeholder and "{label}" not in path:
-        refuse(f"channel {name}: a directory every agent writes has one instance per agent, "
-               f"so its path must name {{label}}")
+        refuse(
+            f"channel {name}: a directory every agent writes has one instance per agent, "
+            f"so its path must name {{label}}"
+        )
 
 
 def validate_agent_view(channel: Channel, refuse: Refuse) -> None:
     """Require a view from AGENT_VIEWS, and one that describes the channel shape it names."""
     view = channel.agent_view
     if view not in AGENT_VIEWS:
-        refuse(f"channel {channel.name}: agent_view must be one of {list(AGENT_VIEWS)}, "
-               f"got {view!r}")
+        refuse(f"channel {channel.name}: agent_view must be one of {list(AGENT_VIEWS)}, got {view!r}")
     valid = (
         view == "paths"
-        or (view == "memory" and channel.shape == "directory"
-            and ((channel.writer == "self" and channel.readers == "self")
-                 or channel.writer == "experimenter"))
+        or (
+            view == "memory"
+            and channel.shape == "directory"
+            and ((channel.writer == "self" and channel.readers == "self") or channel.writer == "experimenter")
+        )
         or (view == "letters" and channel.shape == "mailbox")
-        or (view == "board" and channel.shape == "directory"
-            and channel.writer == "self" and channel.readers == "all")
-        or (view == "transfer" and channel.schema == "transfer"
-            and channel.shape in ("file", "mailbox"))
+        or (view == "board" and channel.shape == "directory" and channel.writer == "self" and channel.readers == "all")
+        or (view == "transfer" and channel.schema == "transfer" and channel.shape in ("file", "mailbox"))
     )
     if not valid:
-        refuse(f"channel {channel.name}: agent_view {view!r} does not describe its "
-               f"{channel.writer}/{channel.readers}/{channel.shape} channel")
+        refuse(
+            f"channel {channel.name}: agent_view {view!r} does not describe its "
+            f"{channel.writer}/{channel.readers}/{channel.shape} channel"
+        )
 
 
 def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
@@ -644,29 +761,37 @@ def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
     are refused by name. `restated` stands: an experimenter channel is a constant, and
     standing text in front of the agent every episode is what one is for.
     """
-    if extra := sorted(set(raw) & {"shape", "outbox", "inbox", "schema", "measured",
-                                   "silence_penalty_percent", *SCHEMAS["transfer"]}):
-        refuse(f"channel {name}: an experimenter channel takes source, path, pushed and "
-               f"restated, not {extra[0]}")
+    if extra := sorted(
+        set(raw) & {"shape", "outbox", "inbox", "schema", "measured", "silence_penalty_percent", *SCHEMAS["transfer"]}
+    ):
+        refuse(f"channel {name}: an experimenter channel takes source, path, pushed and restated, not {extra[0]}")
     src = raw.get("source")
     if not isinstance(src, str) or not src or not files_dir(src).is_dir():
-        refuse(f"channel {name}: source {src!r} is not a directory under "
-               f"{SETTINGS.root / 'files'}")
+        refuse(f"channel {name}: source {src!r} is not a directory under {SETTINGS.root / 'files'}")
     check_path(refuse, name, "path", raw.get("path"), False)
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     if restated and not pushed:
-        refuse(f"channel {name}: restated asks for the digest to quote this channel every "
-               f"episode, and pushed is false, so the digest carries none of it")
-    channel = Channel(name, "experimenter", "all", "directory", path=raw["path"],
-                      pushed=pushed, restated=restated, source=src,
-                      agent_view=raw.get("agent_view", "paths"))
+        refuse(
+            f"channel {name}: restated asks for the digest to quote this channel every "
+            f"episode, and pushed is false, so the digest carries none of it"
+        )
+    channel = Channel(
+        name,
+        "experimenter",
+        "all",
+        "directory",
+        path=raw["path"],
+        pushed=pushed,
+        restated=restated,
+        source=src,
+        agent_view=raw.get("agent_view", "paths"),
+    )
     validate_agent_view(channel, refuse)
     return channel
 
 
-def mailbox_paths(name: str, raw: dict, readers: Readers, shape: Shape,
-                  refuse: Refuse) -> dict:
+def mailbox_paths(name: str, raw: dict, readers: Readers, shape: Shape, refuse: Refuse) -> dict:
     """A mailbox's two sides: the writer's outbox and each reader's inbox."""
     if readers != "addressee":
         refuse(f"channel {name}: a mailbox is read by its addressee")
@@ -680,8 +805,7 @@ def mailbox_paths(name: str, raw: dict, readers: Readers, shape: Shape,
     return {"outbox": outbox, "inbox": inbox}
 
 
-def one_path(name: str, raw: dict, readers: Readers, shape: Shape,
-             refuse: Refuse) -> dict:
+def one_path(name: str, raw: dict, readers: Readers, shape: Shape, refuse: Refuse) -> dict:
     """A directory's or a file's single path.
 
     A directory every agent reads is one instance per seat, so its path names
@@ -690,16 +814,18 @@ def one_path(name: str, raw: dict, readers: Readers, shape: Shape,
     if "outbox" in raw or "inbox" in raw:
         refuse(f"channel {name}: outbox and inbox belong to a mailbox")
     if readers == "addressee":
-        refuse(f"channel {name}: an addressee reads a mailbox; give it shape = \"mailbox\"")
+        refuse(f'channel {name}: an addressee reads a mailbox; give it shape = "mailbox"')
     path = raw.get("path")
     check_path(refuse, name, "path", path, shape == "directory" and readers == "all")
     return {"path": path}
+
 
 # One entry a shape: where that shape declares its paths and what they must be. The
 # keys are Shape's, in its order: a mailbox declares its two sides and every other
 # shape its one path.
 SHAPE_PATHS: dict[Shape, Callable[[str, dict, Readers, Shape, Refuse], dict]] = {
-    shape: mailbox_paths if shape == "mailbox" else one_path for shape in get_args(Shape)}
+    shape: mailbox_paths if shape == "mailbox" else one_path for shape in get_args(Shape)
+}
 
 
 def transfer_terms(name: str, raw: dict, penalty: int, refuse: Refuse) -> dict:
@@ -707,28 +833,32 @@ def transfer_terms(name: str, raw: dict, penalty: int, refuse: Refuse) -> dict:
     giver, where every transfer is recorded, and where the parse result is written."""
     funded_by = raw.get("funded_by", "harness")
     if funded_by not in TRANSFER_FUNDERS:
-        refuse(f"channel {name}: funded_by must be one of {list(TRANSFER_FUNDERS)}, "
-               f"got {funded_by!r}")
+        refuse(f"channel {name}: funded_by must be one of {list(TRANSFER_FUNDERS)}, got {funded_by!r}")
     rebate = raw.get("rebate_percent", 100)
     if not 0 <= rebate <= 100:
-        refuse(f"channel {name}: rebate_percent must be between 0 and 100, got {rebate}; "
-               f"above 100 one agent mints budget out of a transfer it gets back in full")
+        refuse(
+            f"channel {name}: rebate_percent must be between 0 and 100, got {rebate}; "
+            f"above 100 one agent mints budget out of a transfer it gets back in full"
+        )
     if funded_by == "giver" and rebate != 0:
-        refuse(f"channel {name}: rebate_percent must be 0 under funded_by \"giver\", got "
-               f"{rebate}; a transfer is the giver's own budget moving, and a rebate on "
-               f"top of it would mint")
+        refuse(
+            f'channel {name}: rebate_percent must be 0 under funded_by "giver", got '
+            f"{rebate}; a transfer is the giver's own budget moving, and a rebate on "
+            f"top of it would mint"
+        )
     if funded_by == "none" and penalty:
-        refuse(f"channel {name}: silence_penalty_percent must be 0 under funded_by "
-               f"\"none\", got {penalty}; no share is taken for not making a transfer "
-               f"nobody can make")
+        refuse(
+            f"channel {name}: silence_penalty_percent must be 0 under funded_by "
+            f'"none", got {penalty}; no share is taken for not making a transfer '
+            f"nobody can make"
+        )
     ledger_name = raw.get("ledger", "")
     if ledger_name and not NAME.match(ledger_name):
-        refuse(f"channel {name}: ledger must be one path segment, or \"\" for none")
+        refuse(f'channel {name}: ledger must be one path segment, or "" for none')
     receipt = raw.get("receipt", "")
     if receipt:
         check_path(refuse, name, "receipt", receipt, False)
-    return {"funded_by": funded_by, "rebate_percent": rebate,
-            "ledger": ledger_name, "receipt": receipt}
+    return {"funded_by": funded_by, "rebate_percent": rebate, "ledger": ledger_name, "receipt": receipt}
 
 
 def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
@@ -742,19 +872,22 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
     if not isinstance(name, str) or not name:
         refuse("every channel needs a name")
     if not NAME.match(name) or name.endswith(SIDECARS):
-        refuse(f"channel name {name!r} must be one path segment and not end in "
-               f".modes, .incoming or .previous")
+        refuse(f"channel name {name!r} must be one path segment and not end in .modes, .incoming or .previous")
     if any(c.name == name for c in table):
         refuse(f"channel {name!r} is declared twice")
     check_keys(refuse, f"channel {name}: ", raw, CHANNEL_KEYS, CHANNEL_TYPES)
     writer = raw.get("writer")
     if writer not in WRITERS:
-        refuse(f"channel {name}: writer must be one of {list(WRITERS)}, got {writer!r}; "
-               f"the harness's own files are the [harness_files] table")
+        refuse(
+            f"channel {name}: writer must be one of {list(WRITERS)}, got {writer!r}; "
+            f"the harness's own files are the [harness_files] table"
+        )
     readers = raw.get("readers", "all" if writer == "experimenter" else None)
     if (writer, readers) not in PAIRS:
-        refuse(f"channel {name}: writer {writer!r} read by {readers!r} is not a channel the "
-               f"harness has; see docs/manifest.md section 4.1")
+        refuse(
+            f"channel {name}: writer {writer!r} read by {readers!r} is not a channel the "
+            f"harness has; see docs/manifest.md section 4.1"
+        )
     if writer == "experimenter":
         return experimenter_channel(name, raw, refuse)
 
@@ -765,53 +898,60 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
     schema = raw.get("schema", "")
     if readers == "harness":
         if shape != "file" or not schema:
-            refuse(f"channel {name}: a channel the harness reads is one file with a schema "
-                   f"from {sorted(SCHEMAS)}")
+            refuse(f"channel {name}: a channel the harness reads is one file with a schema from {sorted(SCHEMAS)}")
         if schema not in SCHEMAS:
             refuse(f"channel {name}: schema must be one of {sorted(SCHEMAS)}, got {schema!r}")
     else:
-        if schema and not (schema == "transfer" and readers == "addressee"
-                           and shape == "mailbox"):
-            refuse(f"channel {name}: a schema is either one file read by the harness or "
-                   f"a transfer mailbox read by its addressee")
+        if schema and not (schema == "transfer" and readers == "addressee" and shape == "mailbox"):
+            refuse(
+                f"channel {name}: a schema is either one file read by the harness or "
+                f"a transfer mailbox read by its addressee"
+            )
         for key in SCHEMAS["transfer"]:
             if not schema and key in raw:
-                refuse(f"channel {name}: {key} is a field of the transfer schema, and this "
-                       f"channel has none")
+                refuse(f"channel {name}: {key} is a field of the transfer schema, and this channel has none")
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     if restated and not pushed:
-        refuse(f"channel {name}: restated asks for the digest to quote this channel every "
-               f"episode, and pushed is false, so the digest carries none of it")
+        refuse(
+            f"channel {name}: restated asks for the digest to quote this channel every "
+            f"episode, and pushed is false, so the digest carries none of it"
+        )
     measured = raw.get("measured", False)
     penalty = raw.get("silence_penalty_percent", 0)
     if not 0 <= penalty <= 100:
         refuse(f"channel {name}: silence_penalty_percent must be between 0 and 100, got {penalty}")
     if readers == "self" and penalty:
         refuse(f"channel {name}: nothing is owed to a channel nobody else reads")
-    channel = Channel(name, writer, readers, shape, **paths, pushed=pushed,
-                      restated=restated, measured=measured,
-                      silence_penalty_percent=penalty, schema=schema,
-                      agent_view=raw.get("agent_view", "paths"),
-                      **(transfer_terms(name, raw, penalty, refuse) if schema else {}))
+    channel = Channel(
+        name,
+        writer,
+        readers,
+        shape,
+        **paths,
+        pushed=pushed,
+        restated=restated,
+        measured=measured,
+        silence_penalty_percent=penalty,
+        schema=schema,
+        agent_view=raw.get("agent_view", "paths"),
+        **(transfer_terms(name, raw, penalty, refuse) if schema else {}),
+    )
     validate_agent_view(channel, refuse)
     return channel
 
 
-def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...],
-                refuse: Refuse) -> None:
+def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...], refuse: Refuse) -> None:
     """Refuse a table in which two concrete paths coincide, a file channel has no
     directory to sit in, or a channel takes a harness file's name.
 
     Every path is expanded over every label, so a label that lands on a channel's
     path is refused here too.
     """
-    holders = [c.path for c in table if c.is_private_store] + \
-              [c.outbox for c in table if c.shape == "mailbox"]
+    holders = [c.path for c in table if c.is_private_store] + [c.outbox for c in table if c.shape == "mailbox"]
     for c in table:
         if c.shape == "file" and not any(c.path.startswith(h + "/") for h in holders):
-            refuse(f"channel {c.name}: {c.path} is not inside a directory the agent writes, so "
-                   f"nothing could hold it")
+            refuse(f"channel {c.name}: {c.path} is not inside a directory the agent writes, so nothing could hold it")
     claimed: dict[str, str] = {}
 
     def claim(path: str, what: str) -> None:
@@ -844,8 +984,9 @@ def claim_paths(table: list[Channel], hf: dict[str, str], labels: tuple[str, ...
         claim(hf["round"], "the round status")
 
 
-def with_channels(base: Settings, tables: list[dict] | None, harness_files: dict | None,
-                  source: str, labels: Iterable[str] = ("1",)) -> Settings:
+def with_channels(
+    base: Settings, tables: list[dict] | None, harness_files: dict | None, source: str, labels: Iterable[str] = ("1",)
+) -> Settings:
     """`base` with a channel table and harness file names validated into it. Pure.
 
     An experimenter channel's source is found under the root in force, so `base`
@@ -855,8 +996,9 @@ def with_channels(base: Settings, tables: list[dict] | None, harness_files: dict
     return dataclasses.replace(base, channels=tuple(table), harness_files=MappingProxyType(hf))
 
 
-def apply_channels(tables: list[dict] | None, harness_files: dict | None, source: str,
-                   labels: Iterable[str] = ("1",)) -> None:
+def apply_channels(
+    tables: list[dict] | None, harness_files: dict | None, source: str, labels: Iterable[str] = ("1",)
+) -> None:
     """Validate a channel table and harness file names and make them the ones in force."""
     global SETTINGS
     SETTINGS = with_channels(SETTINGS, tables, harness_files, source, labels)
@@ -875,11 +1017,12 @@ class Tool:
     the input schema is the harness's, because that is the contract a call is held
     to. Bash is offered only when declared.
     """
+
     name: str
-    kind: str                        # a key of TOOL_KINDS
-    channel: str = ""                # empty for bash
-    description: str = ""            # the experimenter's words; "" takes the harness's
-    every: int = 0                   # a ballot: offered on each Nth episode
+    kind: str  # a key of TOOL_KINDS
+    channel: str = ""  # empty for bash
+    description: str = ""  # the experimenter's words; "" takes the harness's
+    every: int = 0  # a ballot: offered on each Nth episode
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
@@ -887,13 +1030,13 @@ class Tool:
             table.pop("every")
         return table
 
+
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 TOOL_KEYS = ("name", "kind", "channel", "description", "every")
 
-TOOL_TYPES = (("name", str), ("kind", str), ("channel", str), ("description", str),
-              ("every", int))
+TOOL_TYPES = (("name", str), ("kind", str), ("channel", str), ("description", str), ("every", int))
 
 
 def tools() -> list[Tool]:
@@ -912,8 +1055,7 @@ def tools_from(records: list[dict] | None) -> list[Tool]:
     return [Tool(**r) for r in records or []]
 
 
-def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
-               refuse: Refuse) -> Tool:
+def parse_tool(raw: dict, table: list[Tool], chans: list[Channel], refuse: Refuse) -> Tool:
     """One [[tool]] table as a Tool, or a refusal naming the tool and the key.
 
     `table` is what has been parsed before it, for the duplicate-name rule, and
@@ -923,14 +1065,17 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     if not isinstance(name, str) or not name:
         refuse("every tool needs a name")
     if not TOOL_NAME.match(name):
-        refuse(f"tool name {name!r} must be at most 64 letters, digits, '_' and '-', "
-               f"which is the grammar the API takes")
+        refuse(
+            f"tool name {name!r} must be at most 64 letters, digits, '_' and '-', which is the grammar the API takes"
+        )
     if any(t.name == name for t in table):
         refuse(f"tool {name!r} is declared twice")
     if held := sorted(set(raw) & {"input_schema", "schema", "properties", "required"}):
-        refuse(f"tool {name}: {held[0]} is the harness's, not a manifest's; the input "
-               f"schema is the contract a call is held to, and is built from the kind "
-               f"and the channel. The description is the words this tool is given")
+        refuse(
+            f"tool {name}: {held[0]} is the harness's, not a manifest's; the input "
+            f"schema is the contract a call is held to, and is built from the kind "
+            f"and the channel. The description is the words this tool is given"
+        )
     check_keys(refuse, f"tool {name}: ", raw, TOOL_KEYS, TOOL_TYPES)
     kind = raw.get("kind")
     if kind not in TOOL_KINDS:
@@ -944,20 +1089,16 @@ def parse_tool(raw: dict, table: list[Tool], chans: list[Channel],
     where = raw.get("channel")
     ch = next((c for c in chans if c.name == where), None)
     if ch is None:
-        refuse(f"tool {name}: channel {where!r} is not in the channel table "
-               f"{[c.name for c in chans]}")
+        refuse(f"tool {name}: channel {where!r} is not in the channel table {[c.name for c in chans]}")
     spec = TOOL_KINDS[kind]
     if not spec.fits(ch):
-        refuse(f"tool {name}: kind {kind!r} takes {spec.takes}, and channel "
-               f"{ch.name!r} is not one")
+        refuse(f"tool {name}: kind {kind!r} takes {spec.takes}, and channel {ch.name!r} is not one")
     every = raw.get("every", 0)
     if spec.ballot:
         if every < 1:
-            refuse(f"tool {name}: kind {kind!r} requires every to be a positive integer, "
-                   f"got {every!r}")
+            refuse(f"tool {name}: kind {kind!r} requires every to be a positive integer, got {every!r}")
     elif "every" in raw:
-        refuse(f"tool {name}: every belongs to kind "
-               + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot))
+        refuse(f"tool {name}: every belongs to kind " + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot))
     return Tool(name, kind, ch.name, raw.get("description", ""), every)
 
 
@@ -966,6 +1107,7 @@ def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str)
 
     An omitted table means no tools. Pure: nothing is set.
     """
+
     def refuse(why: str) -> NoReturn:
         raise SystemExit(f"{source}: {why}")
 
@@ -981,8 +1123,7 @@ def validate_tools(tables: list[dict] | None, chans: list[Channel], source: str)
     return out
 
 
-def with_tools(base: Settings, tables: list[dict] | None, chans: list[Channel],
-               source: str) -> Settings:
+def with_tools(base: Settings, tables: list[dict] | None, chans: list[Channel], source: str) -> Settings:
     """`base` with a tool table validated against `chans` into it. Pure.
 
     Bash is offered where the table declares it. A table that declares nothing, or
@@ -991,14 +1132,18 @@ def with_tools(base: Settings, tables: list[dict] | None, chans: list[Channel],
     s = dataclasses.replace(base, tools=tuple(validate_tools(tables, chans, source)))
     if not s.shell_tool:
         if not s.tools:
-            raise SystemExit(f"{source}: bash is not declared and no [[tool]] is declared, so "
-                             f"the agent is offered nothing to act with and every episode "
-                             f"ends on its first turn")
+            raise SystemExit(
+                f"{source}: bash is not declared and no [[tool]] is declared, so "
+                f"the agent is offered nothing to act with and every episode "
+                f"ends on its first turn"
+            )
         if s.delivery != "push" or not s.harness_files["digest"]:
-            raise SystemExit(f"{source}: bash is not declared, so an episode opens on the "
-                             f"digest and nothing else; delivery is {s.delivery!r} and the "
-                             f"digest is {s.harness_files['digest']!r}, which leaves the first "
-                             f"turn with nothing in it")
+            raise SystemExit(
+                f"{source}: bash is not declared, so an episode opens on the "
+                f"digest and nothing else; delivery is {s.delivery!r} and the "
+                f"digest is {s.harness_files['digest']!r}, which leaves the first "
+                f"turn with nothing in it"
+            )
     return s
 
 
@@ -1026,6 +1171,7 @@ class Settings:
     root in force, through files_dir. Composing under another root builds first and
     moves root after, as print_context does.
     """
+
     # Where records/, environments/, interactions/, displaced/, files/ and config.toml
     # are: this file's directory, until a check points it at a throwaway one.
     root: Path = Path(__file__).resolve().parent
@@ -1033,9 +1179,9 @@ class Settings:
     # config.toml's half: PROCESS.
     # The sandbox image the container is started from.
     image: str = "metered-agent:latest"
-    max_tokens: int = 8_192            # output ceiling per turn
-    max_turns: int = 200               # safety stop
-    command_timeout: int = 60          # seconds per bash command
+    max_tokens: int = 8_192  # output ceiling per turn
+    max_turns: int = 200  # safety stop
+    command_timeout: int = 60  # seconds per bash command
     # Characters per tool result, in what the agent receives and in the trace. Also
     # the ceiling on what one call can cost, since the model is billed on what
     # survives the clip and never on what the command produced.
@@ -1047,13 +1193,13 @@ class Settings:
     # straight from a list of ids; "" sends no system parameter at all. Pinned per agent
     # at creation, and recorded whole and by digest in every episode's provenance.
     system_prompt: str = SYSTEM
-    budget: int = 500_000              # micro-dollars per agent, at creation only
-    context_fraction: float = 0.85     # of the model's window; crossing it ends the episode
+    budget: int = 500_000  # micro-dollars per agent, at creation only
+    context_fraction: float = 0.85  # of the model's window; crossing it ends the episode
     # Rewrite the balance file in the container after every billed turn.
     live_balance: bool = True
     # Episodes at the start of an agent that answer for no obligation.
     grace_episodes: int = 0
-    floor_at_zero: bool = False        # put a balance below zero back to zero
+    floor_at_zero: bool = False  # put a balance below zero back to zero
     # A file or directory under files/, or a path beside the manifest; "" is an empty
     # environment.
     starter_files: str = ""
@@ -1154,7 +1300,7 @@ ACCOUNT_VERSION = 2
 # reaches the agent.
 WATCH = False
 
-WATCH_LIMIT = 2_000          # agent text on screen; the trace still keeps it all
+WATCH_LIMIT = 2_000  # agent text on screen; the trace still keeps it all
 
 # Agent prefix on echoed lines. Set per episode, and held per thread so episodes
 # running at once each label their own lines.
@@ -1171,8 +1317,9 @@ STOPPING = False
 
 # Child processes get a process group of their own, so a console Ctrl+C reaches
 # this process and not the docker client or the shell it is waiting on.
-DETACHED = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-            if sys.platform == "win32" else {"start_new_session": True})
+DETACHED = (
+    {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32" else {"start_new_session": True}
+)
 
 # Consecutive refused episodes after which an agent is treated as stuck, not
 # unlucky. An episode counts only if refusals ended it, so one that was
@@ -1231,8 +1378,10 @@ def records_dir(agent: str) -> Path:
 
 
 # What a run started without --resume says of the records it moved aside.
-FRESH_START = ("warning: starting fresh; displaced previous state for {names} to {bundle} "
-               "(use --resume to continue existing compatible records)")
+FRESH_START = (
+    "warning: starting fresh; displaced previous state for {names} to {bundle} "
+    "(use --resume to continue existing compatible records)"
+)
 
 
 def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
@@ -1242,10 +1391,12 @@ def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
     where anything was moved.
     """
     agents = tuple(agents)
-    sources = [(kind, place(agent))
-               for kind, place in (("records", records_dir), ("environments", environment_dir))
-               for agent in agents
-               if place(agent).exists()]
+    sources = [
+        (kind, place(agent))
+        for kind, place in (("records", records_dir), ("environments", environment_dir))
+        for agent in agents
+        if place(agent).exists()
+    ]
     if not sources:
         return None
 
@@ -1344,6 +1495,7 @@ def mirror(agent: str, name: str) -> Path:
 class Elimination(TypedDict):
     """Why an election took an agent out: the round it followed, the reason in words,
     and the votes the agent received in it."""
+
     round: int
     reason: str
     votes: int
@@ -1358,6 +1510,7 @@ class Election(TypedDict):
     out, "" for none. top_votes, top_tied: the highest total, and whether more than
     one candidate held it. remaining: the candidates it left in.
     """
+
     round: int
     tally: dict[str, int]
     electors: list[str]
@@ -1377,6 +1530,7 @@ class AccountEpisode(TypedDict):
     received: what peers settling in the same round credited inside its span.
     receipts: what was planted at each receipt path, by digest.
     """
+
     episode: int
     stop: str
     spent: int
@@ -1403,11 +1557,12 @@ class Account(TypedDict):
     viewer read an account as it stands on disk, {} where there is none, so what they
     hand one to takes a Mapping.
     """
+
     account_version: int
     agent: str
     provider: str
     model: str
-    initial: int                                   # the budget, in micro-dollars
+    initial: int  # the budget, in micro-dollars
     created_at: str
     seat: str
     remaining: int
@@ -1416,11 +1571,11 @@ class Account(TypedDict):
     starter_files: NotRequired[str]
     starter_files_below: NotRequired[int]
     system_prompt: NotRequired[str]
-    forked_from: NotRequired[dict[str, Any]]       # agent, episode, modes
+    forked_from: NotRequired[dict[str, Any]]  # agent, episode, modes
     # What experiment.py stamps before each episode.
     label: NotRequired[str]
-    peers: NotRequired[dict[str, Any]]             # seen, labels, presentation
-    experiment: NotRequired[dict[str, Any]]        # the stamp, and memory_from
+    peers: NotRequired[dict[str, Any]]  # seen, labels, presentation
+    experiment: NotRequired[dict[str, Any]]  # the stamp, and memory_from
     # The starter files once they land, each experimenter source as first read, and
     # the digest's sections as last shown.
     starter_files_landed: NotRequired[dict[str, Any]]
@@ -1433,7 +1588,7 @@ class Account(TypedDict):
     rebated: NotRequired[int]
     debited: NotRequired[int]
     forgiven: NotRequired[int]
-    penalised: NotRequired[dict[str, int]]         # by channel name
+    penalised: NotRequired[dict[str, int]]  # by channel name
     # experiment.py's memory, election, branch and product records.
     memory_from: NotRequired[dict[str, Any] | None]
     memory_inherited: NotRequired[dict[str, Any]]
@@ -1441,7 +1596,7 @@ class Account(TypedDict):
     last_election: NotRequired[Election]
     eliminated: NotRequired[Elimination]
     branch: NotRequired[dict[str, Any]]
-    product: NotRequired[dict[str, str]]           # quality_tier
+    product: NotRequired[dict[str, str]]  # quality_tier
 
 
 def save_account(agent: str, account: Account) -> None:
@@ -1467,11 +1622,16 @@ def replace_file(src: Path, dest: Path) -> None:
     """os.replace, retried while a Windows reader holds `dest` open: product.replace."""
     product.replace(src, dest)
 
+
 # The pinned settings, as load_account's keyword -> the account key that holds each.
-CREATION_TERMS = {"system_prompt": "system_prompt", "provider": "provider", "model": "model",
-                  "budget": "initial",
-                  "starter_files": "starter_files",
-                  "starter_files_below": "starter_files_below"}
+CREATION_TERMS = {
+    "system_prompt": "system_prompt",
+    "provider": "provider",
+    "model": "model",
+    "budget": "initial",
+    "starter_files": "starter_files",
+    "starter_files_below": "starter_files_below",
+}
 
 
 def term_shown(key: str, value: Any) -> str:
@@ -1479,10 +1639,16 @@ def term_shown(key: str, value: Any) -> str:
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
 
 
-def load_account(agent: str, *, provider: str | None = None, model: str | None = None,
-                 budget: int | None = None,
-                 starter_files: str | None = None, starter_files_below: int | None = None,
-                 system_prompt: str | None = None) -> Account:
+def load_account(
+    agent: str,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    budget: int | None = None,
+    starter_files: str | None = None,
+    starter_files_below: int | None = None,
+    system_prompt: str | None = None,
+) -> Account:
     """Read the agent's ground truth, creating the agent on first use.
 
     The pinned settings - the system prompt, provider, model, budget, starter files and
@@ -1492,8 +1658,14 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
     was created on.
     """
     s = SETTINGS
-    given = {"provider": provider, "model": model, "budget": budget, "starter_files": starter_files,
-             "starter_files_below": starter_files_below, "system_prompt": system_prompt}
+    given = {
+        "provider": provider,
+        "model": model,
+        "budget": budget,
+        "starter_files": starter_files,
+        "starter_files_below": starter_files_below,
+        "system_prompt": system_prompt,
+    }
     f = account_path(agent)
     if not f.exists():
         if provider is None or model is None:
@@ -1502,34 +1674,49 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
         name = s.starter_files if starter_files is None else starter_files
         below = s.starter_files_below if starter_files_below is None else starter_files_below
         prompt = s.system_prompt if system_prompt is None else system_prompt
-        validate_terms("account", provider=provider, model=model, budget=initial,
-                       starter_files=name, starter_files_below=below, who=agent)
+        validate_terms(
+            "account",
+            provider=provider,
+            model=model,
+            budget=initial,
+            starter_files=name,
+            starter_files_below=below,
+            who=agent,
+        )
         for d in (traces_dir(agent), *(mirror(agent, c.name) for c in s.channels if c.mirrored)):
             d.mkdir(parents=True, exist_ok=True)
         # Element 0 of the series is the initial balance; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
-        save_account(agent, {"account_version": ACCOUNT_VERSION, "agent": agent,
-                             "provider": provider,
-                             "model": model, "initial": initial,
-                             "seat": "1",
-                             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                             "remaining": initial, "series": [initial],
-                             "episodes": [],
-                             "starter_files": name,
-                             "starter_files_below": below,
-                             "system_prompt": prompt})
+        save_account(
+            agent,
+            {
+                "account_version": ACCOUNT_VERSION,
+                "agent": agent,
+                "provider": provider,
+                "model": model,
+                "initial": initial,
+                "seat": "1",
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "remaining": initial,
+                "series": [initial],
+                "episodes": [],
+                "starter_files": name,
+                "starter_files_below": below,
+                "system_prompt": prompt,
+            },
+        )
         starter = f", starter_files {name!r} at or below {below}" if name else ""
         # The shipped prompt is the arm a silent manifest asks for, so only a
         # declared one is worth a line.
-        declared = ("" if prompt == SYSTEM else
-                    f", system prompt sha256={system_sha256(prompt)[:12]}")
-        print(f"created agent {agent}: {initial} micro-dollars, "
-              f"{provider}/{model}{declared}{starter}")
+        declared = "" if prompt == SYSTEM else f", system prompt sha256={system_sha256(prompt)[:12]}"
+        print(f"created agent {agent}: {initial} micro-dollars, {provider}/{model}{declared}{starter}")
     account = json.loads(f.read_text(encoding="utf-8"))
     if account.get("account_version") != ACCOUNT_VERSION or "provider" not in account:
-        raise SystemExit(f"agent {agent} has an account from the version-3 record format; "
-                         "start a fresh agent id for provider-neutral records")
+        raise SystemExit(
+            f"agent {agent} has an account from the version-3 record format; "
+            "start a fresh agent id for provider-neutral records"
+        )
     try:
         providers.model_spec(account["provider"], account["model"])
     except providers.ProviderConfigurationError as error:
@@ -1541,10 +1728,10 @@ def load_account(agent: str, *, provider: str | None = None, model: str | None =
             raise SystemExit(
                 f"agent {agent} was created with {key}={term_shown(key, account[key])}, and is now "
                 f"asked to run with {term_shown(key, given[term])}. Episodes either side of that "
-                f"are not one experiment; start a new agent")
+                f"are not one experiment; start a new agent"
+            )
         if key not in account:
-            raise SystemExit(f"agent {agent} has an incompatible account missing {key!r}; "
-                             "start a fresh agent id")
+            raise SystemExit(f"agent {agent} has an incompatible account missing {key!r}; start a fresh agent id")
     return account
 
 
@@ -1567,8 +1754,10 @@ def starter_terms(account: Account) -> tuple[str, int]:
 
     Pinned in the account at creation; an account without them reads the tunables.
     """
-    return (account.get("starter_files", SETTINGS.starter_files),
-            account.get("starter_files_below", SETTINGS.starter_files_below))
+    return (
+        account.get("starter_files", SETTINGS.starter_files),
+        account.get("starter_files_below", SETTINGS.starter_files_below),
+    )
 
 
 def spent_out(account: Mapping[str, Any]) -> bool:
@@ -1619,10 +1808,11 @@ class Seating:
     An agent driven on its own is an experiment of one, so everything downstream
     gets a seating either way. Identity maps and presentation are in seat order.
     """
-    seat: str                        # the agent's own seat
-    seen: dict[str, str]             # seat -> agent id, every seat of the experiment
-    labels: dict[str, str]           # seat -> label, every seat
-    presentation: tuple[str, ...]    # every seat in fixed display order
+
+    seat: str  # the agent's own seat
+    seen: dict[str, str]  # seat -> agent id, every seat of the experiment
+    labels: dict[str, str]  # seat -> label, every seat
+    presentation: tuple[str, ...]  # every seat in fixed display order
 
     @property
     def label(self) -> str:
@@ -1717,6 +1907,7 @@ def penalise(account: Account, ch: Channel) -> int:
 
 # --- 7. Starter files and experimenter sources -----------------------------------
 
+
 # Starter files are a file or tree copied into the private store before an episode,
 # so the agent meets them in the listing the opening command prints and not in
 # anything the harness says. Their names and contents are prompt surface, recorded
@@ -1732,8 +1923,7 @@ def files_listing(name: str) -> list[tuple[str, bytes]]:
     root = files_dir(name)
     if root.is_file():
         return [(root.name, root.read_bytes())]
-    return [(p.relative_to(root).as_posix(), p.read_bytes())
-            for p in sorted(root.rglob("*")) if p.is_file()]
+    return [(p.relative_to(root).as_posix(), p.read_bytes()) for p in sorted(root.rglob("*")) if p.is_file()]
 
 
 def files_sha256(name: str) -> str:
@@ -1748,8 +1938,7 @@ def files_sha256(name: str) -> str:
     return h.hexdigest()
 
 
-def plant_starter_files(agent: str, store: Path, store_path: str, account: Account,
-                        index: int) -> dict | None:
+def plant_starter_files(agent: str, store: Path, store_path: str, account: Account, index: int) -> dict | None:
     """Copy the starter files into the private store once the balance has fallen far enough.
 
     `store` is the store's host mirror and `store_path` its path in the environment.
@@ -1762,26 +1951,36 @@ def plant_starter_files(agent: str, store: Path, store_path: str, account: Accou
         raise SystemExit(
             f"agent {agent} received starter_files {planted['name']!r} ({planted['sha256'][:12]}) at episode "
             f"{planted['episode']}, and files/{name} now digests to {files_sha256(name)[:12]}. "
-            f"Episodes either side of that are not one experiment; start a new agent")
+            f"Episodes either side of that are not one experiment; start a new agent"
+        )
     if planted or not name or account["remaining"] > below:
         return None
 
     listing = files_listing(name)
     if collisions := [rel for rel, _ in listing if (store / rel).exists()]:
-        raise SystemExit(f"agent {agent}: starter files {name!r} would overwrite {collisions} in "
-                         f"{store_path}/, which the agent wrote; rename the starter files or give "
-                         f"them to a fresh agent")
+        raise SystemExit(
+            f"agent {agent}: starter files {name!r} would overwrite {collisions} in "
+            f"{store_path}/, which the agent wrote; rename the starter files or give "
+            f"them to a fresh agent"
+        )
     for rel, data in listing:
         dest = store / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
-    record = {"name": name, "sha256": files_sha256(name), "episode": index,
-              "remaining": account["remaining"], "paths": [rel for rel, _ in listing]}
+    record = {
+        "name": name,
+        "sha256": files_sha256(name),
+        "episode": index,
+        "remaining": account["remaining"],
+        "paths": [rel for rel, _ in listing],
+    }
     account["starter_files_landed"] = record
     save_account(agent, account)
-    print(f"{agent}: starter files {name!r} at episode {index} with {account['remaining']} left: "
-          f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, "
-          f"sha256={record['sha256'][:12]}")
+    print(
+        f"{agent}: starter files {name!r} at episode {index} with {account['remaining']} left: "
+        f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, "
+        f"sha256={record['sha256'][:12]}"
+    )
     return record
 
 
@@ -1810,7 +2009,8 @@ def guard_sources(agent: str, account: Account, index: int, instances: list[Inst
                 f"agent {agent} first read channel {ch.name!r} from files/{was['source']} "
                 f"({was['sha256'][:12]}) at episode {was['episode']}, and files/{ch.source} now "
                 f"digests to {digest[:12]}. Episodes either side of that are not one experiment; "
-                f"start a new agent")
+                f"start a new agent"
+            )
         if not was:
             seen[ch.name] = {"source": ch.source, "sha256": digest, "episode": index}
             changed = True
@@ -1829,13 +2029,14 @@ class Instance:
     a transfer mailbox, is the writer's outbox and one inbox per peer; a parsed
     file is one own instance, nested inside the directory it sits in.
     """
+
     channel: Channel
-    path: str                        # in /work, no leading slash
-    host: Path                       # the mirror on disk; for a file, the file
-    role: str                        # "own" | "peer" | "experimenter"
-    label: str                       # the writer's label, "" for the experimenter
-    nested: bool = False             # a file whose bytes travel with the tree above it
-    exclude: frozenset = frozenset() # a directory's inner paths that belong to nested files
+    path: str  # in /work, no leading slash
+    host: Path  # the mirror on disk; for a file, the file
+    role: str  # "own" | "peer" | "experimenter"
+    label: str  # the writer's label, "" for the experimenter
+    nested: bool = False  # a file whose bytes travel with the tree above it
+    exclude: frozenset = frozenset()  # a directory's inner paths that belong to nested files
 
     @property
     def name(self) -> str:
@@ -1847,8 +2048,7 @@ class Instance:
 
     @property
     def is_file(self) -> bool:
-        return self.channel.shape == "file" or (self.channel.shape == "mailbox"
-                                                and self.role == "peer")
+        return self.channel.shape == "file" or (self.channel.shape == "mailbox" and self.role == "peer")
 
     @property
     def root(self) -> str:
@@ -1857,8 +2057,7 @@ class Instance:
         return posixpath.dirname(full) if self.is_file else full
 
 
-def environment(agent: str, account: Mapping[str, Any],
-                table: list[Channel] | None = None) -> list[Instance]:
+def environment(agent: str, account: Mapping[str, Any], table: list[Channel] | None = None) -> list[Instance]:
     """Every instance of every channel in one agent's environment, in declaration order.
 
     An experimenter channel is one instance; a private store is one; a directory
@@ -1877,16 +2076,26 @@ def environment(agent: str, account: Mapping[str, Any],
         elif ch.is_private_store:
             out.append(Instance(ch, ch.path, mirror(agent, ch.name), "own", s.label))
         elif ch.shape == "directory":
-            out += [Instance(ch, ch.path_for(s.labels[seat]), mirror(s.seen[seat], ch.name),
-                             "own" if seat == s.seat else "peer", s.labels[seat])
-                    for seat in s.presentation]
+            out += [
+                Instance(
+                    ch,
+                    ch.path_for(s.labels[seat]),
+                    mirror(s.seen[seat], ch.name),
+                    "own" if seat == s.seat else "peer",
+                    s.labels[seat],
+                )
+                for seat in s.presentation
+            ]
         elif ch.shape == "mailbox":
             if not s.peers:
                 continue
             out.append(Instance(ch, ch.outbox, mirror(agent, ch.name), "own", s.label))
-            out += [Instance(ch, f"{ch.inbox}/{s.labels[seat]}",
-                             mirror(s.seen[seat], ch.name) / s.label, "peer", s.labels[seat])
-                    for seat in s.peers]
+            out += [
+                Instance(
+                    ch, f"{ch.inbox}/{s.labels[seat]}", mirror(s.seen[seat], ch.name) / s.label, "peer", s.labels[seat]
+                )
+                for seat in s.peers
+            ]
         elif ch.shape == "file":
             if ch.readers == "harness" and not s.peers:
                 continue
@@ -1906,14 +2115,15 @@ def nested(instances: list[Instance]) -> list[Instance]:
         if not (inst.channel.shape == "file" and inst.role == "own"):
             out.append(inst)
             continue
-        above = next((i for i, d in enumerate(out) if d.writable and not d.is_file
-                      and inst.path.startswith(d.path + "/")), None)
+        above = next(
+            (i for i, d in enumerate(out) if d.writable and not d.is_file and inst.path.startswith(d.path + "/")), None
+        )
         if above is None:
             # A file whose holding directory is not in this environment is not
             # in it either.
             continue
         d = out[above]
-        rel = inst.path[len(d.path) + 1:]
+        rel = inst.path[len(d.path) + 1 :]
         out[above] = dataclasses.replace(d, exclude=d.exclude | {rel})
         at = above + 1
         while at < len(out) and out[at].nested:
@@ -1933,7 +2143,7 @@ def reserved(instances: list[Instance], paths: list[str]) -> list[Instance]:
     for path in paths:
         for i, d in enumerate(instances):
             if d.writable and not d.is_file and path.startswith(d.path + "/"):
-                instances[i] = dataclasses.replace(d, exclude=d.exclude | {path[len(d.path) + 1:]})
+                instances[i] = dataclasses.replace(d, exclude=d.exclude | {path[len(d.path) + 1 :]})
     return instances
 
 
@@ -1941,8 +2151,11 @@ def receipts_planted(files: Mapping[str, str]) -> dict[str, str]:
     """The receipts among the harness files an episode planted, as path -> sha256 of the
     bytes planted. Kept in the episode's record, it is what tells a receipt from a file
     the agent put in its place."""
-    return {c.receipt: hashlib.sha256(files[c.receipt].encode("utf-8")).hexdigest()
-            for c in channels() if c.schema and c.receipt and c.receipt in files}
+    return {
+        c.receipt: hashlib.sha256(files[c.receipt].encode("utf-8")).hexdigest()
+        for c in channels()
+        if c.schema and c.receipt and c.receipt in files
+    }
 
 
 def receipt_files(instances: list[Instance], planted: Mapping[str, str]) -> dict[Path, bool]:
@@ -2012,9 +2225,10 @@ def balances(agent: str, account: Account) -> dict[str, list[int]]:
     authoritative as the reader's own and neither is read back out of an environment.
     """
     s = seating_of(agent, account)
-    return {s.labels[seat]: (list(account["series"])
-                             if s.seen[seat] == agent else series_on_disk(s.seen[seat]))
-            for seat in s.presentation}
+    return {
+        s.labels[seat]: (list(account["series"]) if s.seen[seat] == agent else series_on_disk(s.seen[seat]))
+        for seat in s.presentation
+    }
 
 
 def ledger_events(agent: str, account: Mapping[str, Any]) -> list[tuple[int, str, str, int]]:
@@ -2064,34 +2278,42 @@ def receipt_text(account: Account, ch: Channel) -> str:
     grace = episode.get("episode", 0) <= SETTINGS.grace_episodes
     giver = seating_of(account["agent"], account).label
     recipient = transfer.get("label") or transfer.get("seat")
-    moved = (f"{giver} (you) -> {recipient}; actual amount moved: "
-             f"{transfer['amount']} micro-dollars"
-             if transfer.get("amount") else f"nothing ({transfer.get('error') or 'no declaration'})")
-    lines = [f"round: {episode.get('episode', '?')}",
-             f"starting balance: {start}",
-             f"API spend: {episode.get('spent', 0)}",
-             f"obligation penalties waived by grace: {'yes' if grace else 'no'}",
-             f"transfer declaration: {declared[0] if declared else 'nothing'}",
-             f"transfer made: {'yes' if transfer_made else 'no'}",
-             f"transfer moved: {moved}",
-             f"transfer debit: {transfer.get('debit', 0)}",
-             f"transfer rebate: {transfer.get('rebate', 0)}"]
+    moved = (
+        f"{giver} (you) -> {recipient}; actual amount moved: {transfer['amount']} micro-dollars"
+        if transfer.get("amount")
+        else f"nothing ({transfer.get('error') or 'no declaration'})"
+    )
+    lines = [
+        f"round: {episode.get('episode', '?')}",
+        f"starting balance: {start}",
+        f"API spend: {episode.get('spent', 0)}",
+        f"obligation penalties waived by grace: {'yes' if grace else 'no'}",
+        f"transfer declaration: {declared[0] if declared else 'nothing'}",
+        f"transfer made: {'yes' if transfer_made else 'no'}",
+        f"transfer moved: {moved}",
+        f"transfer debit: {transfer.get('debit', 0)}",
+        f"transfer rebate: {transfer.get('rebate', 0)}",
+    ]
     for channel in channels():
         if not channel.obligated or channel.name not in records:
             continue
         record = records[channel.name]
         settlement = SETTLEMENTS[channel.settles_as]
         met = settlement.met(record)
-        lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} "
-                     f"({settlement.detail(record, met)})")
+        lines.append(f"{channel.name} obligation: {'met' if met else 'not met'} ({settlement.detail(record, met)})")
         lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")
-    lines += [f"total penalties: {penalties}",
-              f"received from peers: {received}",
-              f"balance-floor adjustment: {forgiven}",
-              f"ending balance: {ending}",
-              ("reconciliation: starting balance - API spend - transfer debit + transfer rebate "
-               "- total penalties + received from peers + balance-floor adjustment = ending balance")]
+    lines += [
+        f"total penalties: {penalties}",
+        f"received from peers: {received}",
+        f"balance-floor adjustment: {forgiven}",
+        f"ending balance: {ending}",
+        (
+            "reconciliation: starting balance - API spend - transfer debit + transfer rebate "
+            "- total penalties + received from peers + balance-floor adjustment = ending balance"
+        ),
+    ]
     return "\n".join(lines) + "\n"
+
 
 # One quoted item of the digest is a header line naming it, then its content.
 # An unchanged or withdrawn group is a kind header followed by one display name per line.
@@ -2116,6 +2338,7 @@ def said_to(instances: list[Instance]) -> dict[str, str]:
     A binary is named and sized, never inlined. A peer's mailbox slot that holds
     no regular file is absent, as it is absent from the environment.
     """
+
     def content(p: Path) -> str:
         data = p.read_bytes()
         if b"\0" in data:
@@ -2144,8 +2367,7 @@ def owning_instance(path: str, instances: Iterable[Instance]) -> Instance | None
     return max(holders, key=lambda i: len(i.path)) if holders else None
 
 
-def digest_name(path: str, instances: list[Instance],
-                experimenter_paths: frozenset[str] = frozenset()) -> str:
+def digest_name(path: str, instances: list[Instance], experimenter_paths: frozenset[str] = frozenset()) -> str:
     """The agent-facing name of an internal item in a digest."""
     inst = owning_instance(path, instances)
     if inst is None or inst.channel.agent_view == "paths":
@@ -2161,7 +2383,7 @@ def digest_name(path: str, instances: list[Instance],
         suffix = " (you)" if inst.role == "own" else ""
         return f"Public post from {inst.label}{suffix}"
     if inst.channel.agent_view == "memory":
-        name = path[len(inst.path):].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
+        name = path[len(inst.path) :].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
         experimenter = inst.role == "experimenter" or path in experimenter_paths
         if name == "personas":
             return "Experimenter orientation" if experimenter else "Orientation"
@@ -2181,12 +2403,10 @@ def digest_name(path: str, instances: list[Instance],
     return path
 
 
-def experimenter_digest_paths(account: Mapping[str, Any],
-                              instances: list[Instance]) -> frozenset[str]:
+def experimenter_digest_paths(account: Mapping[str, Any], instances: list[Instance]) -> frozenset[str]:
     """Starter-file paths whose digest presentation must name the experimenter."""
     private = next((inst for inst in instances if inst.channel.is_private_store), None)
-    return (frozenset(f"{private.path}/{path}" for path in starter_paths(account))
-            if private else frozenset())
+    return frozenset(f"{private.path}/{path}" for path in starter_paths(account)) if private else frozenset()
 
 
 def harness_digest_name(name: str, agent: str, account: Account) -> str:
@@ -2219,14 +2439,18 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
     if inst.channel.shape == "mailbox":
         if len(fields) != 1 or not fields[0].isdigit():
             return "No valid currency transfer was submitted last round.\n"
-        return (f"requested amount: {fields[0]} micro-dollars\n"
-                "status: submitted in the giver's previous episode; the transfer ledger "
-                "reports the amount actually moved\n")
+        return (
+            f"requested amount: {fields[0]} micro-dollars\n"
+            "status: submitted in the giver's previous episode; the transfer ledger "
+            "reports the amount actually moved\n"
+        )
     if len(fields) != 2 or not fields[1].isdigit():
         return "No valid transfer was submitted last round.\n"
-    return (f"recipient: {fields[0]}\n"
-            f"requested amount: {fields[1]} micro-dollars\n"
-            "status: submitted last round; the transfer ledger reports the amount actually moved\n")
+    return (
+        f"recipient: {fields[0]}\n"
+        f"requested amount: {fields[1]} micro-dollars\n"
+        "status: submitted last round; the transfer ledger reports the amount actually moved\n"
+    )
 
 
 def harness_digest_body(name: str, body: str, agent: str, account: Account) -> str:
@@ -2238,12 +2462,11 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
         if name == balance_name(label):
             try:
                 series = json.loads(body)
-            except (TypeError, json.JSONDecodeError):
+            except TypeError, json.JSONDecodeError:
                 return "Balance data is unavailable.\n"
             current = series[-1] if series else 0
             history = ", ".join(str(value) for value in series) or "none"
-            return (f"current: {current} micro-dollars\n"
-                    f"history, oldest to newest: {history}\n")
+            return f"current: {current} micro-dollars\nhistory, oldest to newest: {history}\n"
     parsed = schema_channel(channels())
     if parsed and name == parsed.ledger:
         events = ledger_events(agent, account)
@@ -2254,10 +2477,10 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
         def shown(label: str) -> str:
             return f"{label} (you)" if label == own else label
 
-        return ("Completed transfers (giver -> recipient; amount actually moved):\n" + "".join(
-            f"- round {episode}: {shown(giver)} -> {shown(taker)}; "
-            f"actual amount moved: {amount} micro-dollars\n"
-            for episode, giver, taker, amount in events))
+        return "Completed transfers (giver -> recipient; amount actually moved):\n" + "".join(
+            f"- round {episode}: {shown(giver)} -> {shown(taker)}; actual amount moved: {amount} micro-dollars\n"
+            for episode, giver, taker, amount in events
+        )
     return body
 
 
@@ -2270,10 +2493,8 @@ def election_held(agent: str, account: Account, round_number: int) -> bool:
     round is a discussion like any other and offers none.
     """
     seating = seating_of(agent, account)
-    records = [account, *(account_on_disk(other) for seat, other in seating.seen.items()
-                          if seat != seating.seat)]
-    return any((record.get("last_election") or {}).get("round", 0) >= round_number
-               for record in records)
+    records = [account, *(account_on_disk(other) for seat, other in seating.seen.items() if seat != seating.seat)]
+    return any((record.get("last_election") or {}).get("round", 0) >= round_number for record in records)
 
 
 def render_round_status(account: Account) -> str:
@@ -2284,17 +2505,25 @@ def render_round_status(account: Account) -> str:
     live = {seating.seat, *reachable(seating)}
     remaining = ", ".join(
         f"{seating.labels[seat]} (you)" if seat == seating.seat else seating.labels[seat]
-        for seat in seating.presentation if seat in live)
+        for seat in seating.presentation
+        if seat in live
+    )
     if vote is None:
-        lines = [f"round: {round_number}", f"you: {seating.label}",
-                 f"remaining agents: {remaining}", "phase: discussion"]
+        lines = [
+            f"round: {round_number}",
+            f"you: {seating.label}",
+            f"remaining agents: {remaining}",
+            "phase: discussion",
+        ]
     else:
         position = (round_number - 1) % vote.every + 1
         cycle = (round_number - 1) // vote.every + 1
-        voting = position == vote.every and not election_held(account["agent"], account,
-                                                              round_number)
-        lines = [f"round: {round_number} (cycle {cycle}, {position}/{vote.every})",
-                 f"you: {seating.label}", f"remaining agents: {remaining}"]
+        voting = position == vote.every and not election_held(account["agent"], account, round_number)
+        lines = [
+            f"round: {round_number} (cycle {cycle}, {position}/{vote.every})",
+            f"you: {seating.label}",
+            f"remaining agents: {remaining}",
+        ]
         previous = account.get("last_election") or {}
         if previous.get("round") == round_number - 1:
             abstainers = previous.get("abstainers") or []
@@ -2302,24 +2531,24 @@ def render_round_status(account: Account) -> str:
             if voted_out:
                 outcome = f"{voted_out} eliminated with {previous.get('top_votes', 0)} votes"
             elif previous.get("top_tied"):
-                outcome = (f"top vote tied at {previous.get('top_votes', 0)}; "
-                           "no agent eliminated by vote")
+                outcome = f"top vote tied at {previous.get('top_votes', 0)}; no agent eliminated by vote"
             else:
                 outcome = "no agent eliminated by vote"
             if abstainers:
                 outcome += f"; abstainers eliminated: {', '.join(abstainers)}"
             lines.append(f"previous vote: {outcome}")
         if voting:
-            lines += ["phase: vote only; communication unavailable",
-                      f"required private ballot: call {vote.name}; peers receive only the result, "
-                      "never individual ballots; a tie for the highest total eliminates nobody by vote"]
+            lines += [
+                "phase: vote only; communication unavailable",
+                f"required private ballot: call {vote.name}; peers receive only the result, "
+                "never individual ballots; a tie for the highest total eliminates nobody by vote",
+            ]
         else:
             lines.append("phase: discussion")
     return "\n".join(lines) + "\n"
 
 
-def digest_for(agent: str, account: Account, files: dict[str, str],
-               carried: set[str]) -> tuple[str, dict[str, str]]:
+def digest_for(agent: str, account: Account, files: dict[str, str], carried: set[str]) -> tuple[str, dict[str, str]]:
     """The digest: what has been said to this agent, and the digests of what it quotes.
 
     The round announcement comes first where one is declared. It is followed by
@@ -2338,15 +2567,15 @@ def digest_for(agent: str, account: Account, files: dict[str, str],
     said = said_to(instances)
     # A section is one file; an instance is a file or the directory above one, so
     # a restated directory is matched by what it holds and not by its own name.
-    roots = [inst.path for inst in instances
-             if inst.channel.schema or inst.channel.restated]
+    roots = [inst.path for inst in instances if inst.channel.schema or inst.channel.restated]
+
     def requoted(name: str) -> bool:
         return any(name == r or name.startswith(r + "/") for r in roots)
+
     for name in carried:
         said[name] = files[name]
     shown = account.get("shown_before") or {}
-    shown_now = {name: hashlib.sha256(body.encode("utf-8")).hexdigest()
-                 for name, body in said.items()}
+    shown_now = {name: hashlib.sha256(body.encode("utf-8")).hexdigest() for name, body in said.items()}
     out, unchanged = [], []
     round_name = SETTINGS.harness_files.get("round")
     if round_name and round_name in files:
@@ -2361,11 +2590,13 @@ def digest_for(agent: str, account: Account, files: dict[str, str],
 
     def expires_silently(name: str) -> bool:
         inst = owning_instance(name, instances)
-        return bool(inst and ((inst.channel.shape == "directory" and
-                               inst.channel.writer == "self" and
-                               inst.channel.readers == "all") or
-                              (inst.channel.shape == "mailbox" and
-                               not inst.channel.schema)))
+        return bool(
+            inst
+            and (
+                (inst.channel.shape == "directory" and inst.channel.writer == "self" and inst.channel.readers == "all")
+                or (inst.channel.shape == "mailbox" and not inst.channel.schema)
+            )
+        )
 
     for name, body in said.items():
         display = shown_name(name)
@@ -2373,15 +2604,16 @@ def digest_for(agent: str, account: Account, files: dict[str, str],
             out.append(section(display, digest_body(name, body, instances)))
         else:
             unchanged.append(display)
-    withdrawn = [shown_name(name) for name in shown
-                 if name not in said and not expires_silently(name)]
+    withdrawn = [shown_name(name) for name in shown if name not in said and not expires_silently(name)]
     if unchanged:
         out.append(named("unchanged", unchanged))
     if withdrawn:
         out.append(named("withdrawn", sorted(withdrawn)))
-    out += [section(harness_digest_name(name, agent, account),
-                    harness_digest_body(name, body, agent, account))
-            for name, body in files.items() if name not in carried and name != round_name]
+    out += [
+        section(harness_digest_name(name, agent, account), harness_digest_body(name, body, agent, account))
+        for name, body in files.items()
+        if name not in carried and name != round_name
+    ]
     return "".join(out), shown_now
 
 
@@ -2399,8 +2631,9 @@ def render_harness_files(agent: str, account: Account) -> tuple[dict[str, str], 
     if round_name := s.harness_files.get("round"):
         files[round_name] = render_round_status(account)
     if s.harness_files["balance"]:
-        files.update({balance_name(label): render_balance(series)
-                      for label, series in balances(agent, account).items()})
+        files.update(
+            {balance_name(label): render_balance(series) for label, series in balances(agent, account).items()}
+        )
     parsed = schema_channel(s.channels)
     if parsed and parsed.ledger:
         files[parsed.ledger] = render_ledger(ledger(agent, account))
@@ -2426,8 +2659,12 @@ def listing_command(table: Iterable[Channel]) -> str:
     return " ".join(["ls -la .", *stores])
 
 
-def observation(table: Iterable[Channel] | None = None, digest: str | None = None,
-                delivery: str | None = None, shell: bool | None = None) -> str:
+def observation(
+    table: Iterable[Channel] | None = None,
+    digest: str | None = None,
+    delivery: str | None = None,
+    shell: bool | None = None,
+) -> str:
     """The command the episode opens on: the listing, and the digest where one is pushed.
 
     The table, the digest's name, the delivery and whether the shell is offered
@@ -2444,7 +2681,7 @@ def observation(table: Iterable[Channel] | None = None, digest: str | None = Non
     listing = listing_command(s.channels if table is None else table)
     digest = s.harness_files["digest"] if digest is None else digest
     pushed = (s.delivery if delivery is None else delivery) == "push" and digest
-    if (s.shell_tool if shell is None else shell):
+    if s.shell_tool if shell is None else shell:
         return f"{listing}; cat {shlex.quote(digest)}" if pushed else listing
     return f"cat {shlex.quote(digest)}"
 
@@ -2464,8 +2701,10 @@ def balance_patterns(name: str, labels: tuple[str, ...]) -> tuple[re.Pattern, re
     n = re.escape(name)
     named = sorted({re.escape(label) for label in labels if not label.isdigit()})
     suffix = r"(?:\d+" + ("|" + "|".join(named) if named else "") + r")?"
-    return (re.compile(rf"/work/{n}{suffix}\b|(?<![\w./-]){n}{suffix}(?![\w./-])"),
-            re.compile(rf"/work/{n}{suffix}\b|\./{n}{suffix}\b|[`'\"]{n}{suffix}[`'\"]"))
+    return (
+        re.compile(rf"/work/{n}{suffix}\b|(?<![\w./-]){n}{suffix}(?![\w./-])"),
+        re.compile(rf"/work/{n}{suffix}\b|\./{n}{suffix}\b|[`'\"]{n}{suffix}[`'\"]"),
+    )
 
 
 # --- 9. What the agent's channels held at episode start --------------------------
@@ -2540,8 +2779,7 @@ def file_sha256(p: Path) -> str:
     return hashlib.sha256(data).hexdigest() if data else ""
 
 
-def before_digests(instances: list[Instance], reach: dict[str, str],
-                   labels: dict[str, str]) -> dict[str, Any]:
+def before_digests(instances: list[Instance], reach: dict[str, str], labels: dict[str, str]) -> dict[str, Any]:
     """What every obligated channel the agent writes held at episode start, by name.
 
     A directory by path, a mailbox by slot, a parsed file as one digest. Channels
@@ -2556,8 +2794,7 @@ def before_digests(instances: list[Instance], reach: dict[str, str],
         if ch.schema and ch.shape == "file":
             before[ch.name] = file_sha256(inst.host)
         elif ch.schema and ch.shape == "mailbox":
-            before[ch.name] = slot_sha256(
-                inst.host, [label for label in labels.values() if label != inst.label])
+            before[ch.name] = slot_sha256(inst.host, [label for label in labels.values() if label != inst.label])
         elif ch.shape == "mailbox":
             before[ch.name] = slot_sha256(inst.host, slots)
         else:
@@ -2611,20 +2848,43 @@ def plant_harness_files(box: str, files: dict[str, str]) -> None:
     names = list(files)
     parents = sorted({n.rpartition("/")[0] for n in names if "/" in n})
     if parents:
-        docker(["docker", "exec", "-u", "root", box, "bash", "-c",
-                "cd /work && mkdir -p " + " ".join(shlex.quote(p) for p in parents)],
-               check=True, capture_output=True)
+        docker(
+            [
+                "docker",
+                "exec",
+                "-u",
+                "root",
+                box,
+                "bash",
+                "-c",
+                "cd /work && mkdir -p " + " ".join(shlex.quote(p) for p in parents),
+            ],
+            check=True,
+            capture_output=True,
+        )
     with tempfile.TemporaryDirectory(prefix="mtr-bal-") as tmp:
         staged = Path(tmp)
         for name, text in files.items():
             (staged / name).parent.mkdir(parents=True, exist_ok=True)
             (staged / name).write_text(text, encoding="utf-8", newline="\n")
-            docker(["docker", "cp", str((staged / name).resolve()), f"{box}:/work/{name}"],
-                   check=True, capture_output=True)
+            docker(
+                ["docker", "cp", str((staged / name).resolve()), f"{box}:/work/{name}"], check=True, capture_output=True
+            )
     quoted = " ".join(shlex.quote(n) for n in names)
-    docker(["docker", "exec", "-u", "root", box, "bash", "-c",
-            f"cd /work && chown root:root {quoted} && chmod 444 {quoted}"],
-           check=True, capture_output=True)
+    docker(
+        [
+            "docker",
+            "exec",
+            "-u",
+            "root",
+            box,
+            "bash",
+            "-c",
+            f"cd /work && chown root:root {quoted} && chmod 444 {quoted}",
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
 def publish_balance_live(container: str, label: str, series: list[int], expected: str) -> str:
@@ -2634,12 +2894,15 @@ def publish_balance_live(container: str, label: str, series: list[int], expected
     means the arrangement failed. Staged in /tmp, then renamed over the file.
     """
     live = f"/work/{balance_name(label)}"
-    script = (f"cat {live} 2>/dev/null; "
-              "cat > /tmp/.n && chown root:root /tmp/.n && chmod 444 /tmp/.n "
-              f"&& mv -f /tmp/.n {live}")
+    script = (
+        f"cat {live} 2>/dev/null; cat > /tmp/.n && chown root:root /tmp/.n && chmod 444 /tmp/.n && mv -f /tmp/.n {live}"
+    )
     try:
-        r = docker(["docker", "exec", "-i", "-u", "root", container, "bash", "-c", script],
-                   input=render_balance(series).encode("utf-8"), capture_output=True)
+        r = docker(
+            ["docker", "exec", "-i", "-u", "root", container, "bash", "-c", script],
+            input=render_balance(series).encode("utf-8"),
+            capture_output=True,
+        )
     except OSError:
         return "failed"
     if r.returncode:
@@ -2653,6 +2916,7 @@ def load_state(container: str, instances: list[Instance], files: dict[str, str])
     Built from what environment() returns, so container and trace agree. What the
     agent writes is the agent's; everything else is root's and read-only.
     """
+
     def q(paths: Iterable[str]) -> str:
         return " ".join(shlex.quote(p) for p in paths)
 
@@ -2665,42 +2929,60 @@ def load_state(container: str, instances: list[Instance], files: dict[str, str])
     claimed = {i.root for i in mounted if i.writable}
     mine = [r for r in roots if r in claimed]
     others = [r for r in roots if r not in claimed]
-    docker(["docker", "exec", "-u", "root", container, "mkdir", "-p", *roots],
-           check=True, capture_output=True)
+    docker(["docker", "exec", "-u", "root", container, "mkdir", "-p", *roots], check=True, capture_output=True)
     for inst in mounted:
         if inst.is_file:
             # A sender that has not addressed this agent, and a sender that aimed
             # something other than one file at it, arrive the same way: as
             # nothing. Only a file can be delivered as a file.
             if inst.host.is_file():
-                docker(["docker", "cp", str(inst.host.resolve()), f"{container}:/work/{inst.path}"],
-                       check=True, capture_output=True)
+                docker(
+                    ["docker", "cp", str(inst.host.resolve()), f"{container}:/work/{inst.path}"],
+                    check=True,
+                    capture_output=True,
+                )
             continue
         if inst.host.is_dir():
-            docker(["docker", "cp", f"{inst.host.resolve()}/.", f"{container}:/work/{inst.path}"],
-                   check=True, capture_output=True)
+            docker(
+                ["docker", "cp", f"{inst.host.resolve()}/.", f"{container}:/work/{inst.path}"],
+                check=True,
+                capture_output=True,
+            )
         # Modes are carried for the trees the agent writes. A peer's message is
         # rebuilt from its owner every episode and carries none.
         if inst.writable and (saved := modes_file(inst.host)).exists():
-            docker(["docker", "cp", str(saved), f"{container}:/tmp/.modes.{inst.name}"],
-                   check=True, capture_output=True)
+            docker(
+                ["docker", "cp", str(saved), f"{container}:/tmp/.modes.{inst.name}"], check=True, capture_output=True
+            )
 
-    replay = " && ".join(f"replay {shlex.quote('/work/' + i.path)} {shlex.quote('/tmp/.modes.' + i.name)}"
-                         for i in mounted if i.writable and not i.is_file)
+    replay = " && ".join(
+        f"replay {shlex.quote('/work/' + i.path)} {shlex.quote('/tmp/.modes.' + i.name)}"
+        for i in mounted
+        if i.writable and not i.is_file
+    )
     docker(
-        ["docker", "exec", "-u", "root", container, "bash", "-c",
-         f"chown -R agent:agent {q(mine)} && "
-         # a-w,a+rX leaves directories 555 and files 444 in one pass.
-         + (f"chown -R root:root {q(others)} && chmod -R a-w,a+rX {q(others)} && " if others else "")
-         + "replay() { [ -f \"$2\" ] || return 0; cd \"$1\" && "
-           "while IFS=' ' read -r m p; do [ -e \"$p\" ] && chmod \"$m\" \"$p\"; done < \"$2\"; "
-           "rm -f \"$2\"; }; " + replay],
-        check=True, capture_output=True)
+        [
+            "docker",
+            "exec",
+            "-u",
+            "root",
+            container,
+            "bash",
+            "-c",
+            f"chown -R agent:agent {q(mine)} && "
+            # a-w,a+rX leaves directories 555 and files 444 in one pass.
+            + (f"chown -R root:root {q(others)} && chmod -R a-w,a+rX {q(others)} && " if others else "")
+            + 'replay() { [ -f "$2" ] || return 0; cd "$1" && '
+            'while IFS=\' \' read -r m p; do [ -e "$p" ] && chmod "$m" "$p"; done < "$2"; '
+            'rm -f "$2"; }; ' + replay,
+        ],
+        check=True,
+        capture_output=True,
+    )
     plant_harness_files(container, files)
 
 
-def save_state(mirror: Path, fetch: Callable[[Path], bool],
-               modes: Callable[[], str | None]) -> bool:
+def save_state(mirror: Path, fetch: Callable[[Path], bool], modes: Callable[[], str | None]) -> bool:
     """Mirror one of an episode's writable trees back to the host. Never raises.
 
     Staged in a sibling directory and swapped in whole, deletions included;
@@ -2771,6 +3053,7 @@ class EnvironmentBuildError(RuntimeError):
     could run in. A driver can answer it by trying again, as it can docker's.
     """
 
+
 # The failures that mean an environment could not be built, none of them billed:
 # docker refusing a command, the host refusing a file, or a loaded environment
 # the agent could not write to.
@@ -2815,9 +3098,26 @@ class Container:
         with real modes and ownership. --network none is invariant 4.
         """
         reap(name)
-        docker(["docker", "run", "-d", "--name", name, "--network", "none",
-                "--pids-limit", "512", "-w", "/work", SETTINGS.image, "sleep", "infinity"],
-               check=True, capture_output=True)
+        docker(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                name,
+                "--network",
+                "none",
+                "--pids-limit",
+                "512",
+                "-w",
+                "/work",
+                SETTINGS.image,
+                "sleep",
+                "infinity",
+            ],
+            check=True,
+            capture_output=True,
+        )
         return cls(name)
 
     def load(self, instances: list[Instance], files: dict[str, str]) -> None:
@@ -2842,21 +3142,25 @@ class Container:
 
     def _fetcher(self, src: str) -> Callable[[Path], bool]:
         def fetch(dest: Path) -> bool:
-            return not docker(["docker", "cp", f"{self.name}:{src}/.", str(dest)],
-                              capture_output=True).returncode
+            return not docker(["docker", "cp", f"{self.name}:{src}/.", str(dest)], capture_output=True).returncode
+
         return fetch
 
     def _modes(self, src: str) -> Callable[[], str | None]:
         def listing() -> str | None:
             r = docker(
-                ["docker", "exec", self.name, "find", src, "-mindepth", "1",
-                 "-printf", "%m %P\\n"],
-                capture_output=True, text=True, errors="replace")
+                ["docker", "exec", self.name, "find", src, "-mindepth", "1", "-printf", "%m %P\\n"],
+                capture_output=True,
+                text=True,
+                errors="replace",
+            )
             return r.stdout if r.returncode == 0 else None
+
         return listing
 
     def close(self) -> None:
         reap(self.name)
+
 
 # The class build_episode starts an episode in. check.py binds its HostBox here.
 BOX: type[Box] = Container
@@ -2872,7 +3176,7 @@ class Shell:
     # Long enough that 4KB of /dev/urandom cannot forge it by accident.
     END = "__mtr_end_9f3c1d7a__"
     EOF = "__mtr_eof_5b2e04c1__"
-    CEILING = 8 << 20            # stop reading one command at 8MB, not the disk
+    CEILING = 8 << 20  # stop reading one command at 8MB, not the disk
 
     def __init__(self, container: str) -> None:
         self.container = container
@@ -2912,8 +3216,13 @@ class Shell:
         """
         # Bytes, named: popen_kwargs() could otherwise be read as asking for text.
         proc = subprocess.Popen[bytes](
-            self.argv(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, bufsize=0, **self.popen_kwargs())
+            self.argv(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+            **self.popen_kwargs(),
+        )
         if proc.stdin is None or proc.stdout is None:
             proc.kill()
             raise OSError(f"{self.argv()[0]} started without a pipe to its stdin and stdout")
@@ -2928,7 +3237,7 @@ class Shell:
             try:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                pass                             # killed already; reaping can wait
+                pass  # killed already; reaping can wait
 
     @staticmethod
     def _drain(out: IO[bytes], buf: bytearray) -> None:
@@ -2943,11 +3252,13 @@ class Shell:
         /dev/null; a timeout or an 8MB ceiling restarts the shell.
         """
         if self.proc.poll() is not None:
-            self.restart()                       # the agent exited its own shell
+            self.restart()  # the agent exited its own shell
         buf, start = self.buf, len(self.buf)
-        script = (f"__mtr=$(cat <<'{self.EOF}'\n{command}\n{self.EOF}\n)\n"
-                  f'eval "$__mtr" </dev/null 2>&1\n'
-                  f"printf '\\001{self.END}%s\\001' \"$?\"\n")
+        script = (
+            f"__mtr=$(cat <<'{self.EOF}'\n{command}\n{self.EOF}\n)\n"
+            f'eval "$__mtr" </dev/null 2>&1\n'
+            f"printf '\\001{self.END}%s\\001' \"$?\"\n"
+        )
         try:
             self.stdin.write(script.encode("utf-8", "replace"))
             self.stdin.flush()
@@ -2969,13 +3280,13 @@ class Shell:
             # The end of the command is both of them.
             if cut >= 0 and buf.find(b"\001", cut + 1) >= 0:
                 return bytes(buf[start:cut]).decode("utf-8", "replace")
-            if self.proc.poll() is not None:     # shell exited mid-command
+            if self.proc.poll() is not None:  # shell exited mid-command
                 return tail()
             if len(buf) - start > self.CEILING:
                 self.restart()
                 return tail() + f"\n[stopped after {self.CEILING} bytes]"
             if time.time() > deadline:
-                self.restart()                   # a hung command costs the shell
+                self.restart()  # a hung command costs the shell
                 return tail() + f"\n[timed out after {timeout}s]"
             time.sleep(0.01)
 
@@ -2987,8 +3298,10 @@ def sh(shell: Shell, command: str, limit: int | None = None) -> str:
     ceiling on what a call the agent chose may cost. The initial observation is not one: it
     is the environment the harness composed, and it passes observation_limit.
     """
-    return clip(shell.run(command, SETTINGS.command_timeout),
-                SETTINGS.tool_result_limit if limit is None else limit) or " "
+    return (
+        clip(shell.run(command, SETTINGS.command_timeout), SETTINGS.tool_result_limit if limit is None else limit)
+        or " "
+    )
 
 
 def clip_head(limit: int) -> int:
@@ -3002,8 +3315,8 @@ def clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     head = clip_head(limit)
-    return (f"{text[:head]}\n[truncated: {len(text) - limit} of {len(text)} characters]\n"
-            f"{text[-(limit - head):]}")
+    return f"{text[:head]}\n[truncated: {len(text) - limit} of {len(text)} characters]\n{text[-(limit - head) :]}"
+
 
 # A here-document opener. The tag must start with a letter, so `1<<3` inside a
 # program is a shift and not an opener.
@@ -3028,6 +3341,7 @@ def bare(command: str) -> str:
     Quoted spans, comments, and here-doc bodies become spaces, leaving where a
     command name can stand. Scanned once, left to right; newlines are kept.
     """
+
     def blank(s: str) -> str:
         """`s` with everything but its line structure replaced by spaces."""
         return "".join("\n" if ch == "\n" else " " for ch in s)
@@ -3036,12 +3350,12 @@ def bare(command: str) -> str:
     # "dq" is a double-quoted span; "sub" and "tick" are substitutions, inside
     # which quoting starts over.
     stack: list[str] = ["top"]
-    tags: list[str] = []                     # openers still waiting for a body
+    tags: list[str] = []  # openers still waiting for a body
     i, n = 0, len(command)
     while i < n:
         c, quoted = command[i], stack[-1] == "dq"
         if c == "\\" and i + 1 < n:
-            out.append("  ")                 # an escape and what it escapes
+            out.append("  ")  # an escape and what it escapes
             i += 2
         elif command.startswith("$(", i):
             stack.append("sub")
@@ -3075,7 +3389,7 @@ def bare(command: str) -> str:
             i = j
         elif not quoted and (m := HEREDOC_TAG.match(command, i)):
             tags.append(m.group(2))
-            out.append(blank(command[i:m.end()]))
+            out.append(blank(command[i : m.end()]))
             i = m.end()
         elif c == "\n" and tags:
             # Bodies start on the line after their opener and run to a line
@@ -3088,7 +3402,7 @@ def bare(command: str) -> str:
                     end = command.find("\n", j)
                     end = n if end < 0 else end
                     if command[j:end].strip() == tag:
-                        j = end          # the line ending after it separates
+                        j = end  # the line ending after it separates
                         break
                     j = min(end + 1, n)
             tags.clear()
@@ -3112,7 +3426,7 @@ def invoked(command: str) -> set[str]:
             words.add(m.group(1))
             if m.group(1) not in LEADS:
                 break
-            part = part[m.end():]
+            part = part[m.end() :]
     return words
 
 
@@ -3126,8 +3440,9 @@ def probe_missing(shell: Shell, commands: list[str]) -> list[str]:
     words = {w for c in commands for w in invoked(c)}
     if not words:
         return []
-    probe = ("for c in " + " ".join(sorted(words)) +
-             "; do command -v \"$c\" >/dev/null 2>&1 || printf '%s\\n' \"$c\"; done")
+    probe = (
+        "for c in " + " ".join(sorted(words)) + '; do command -v "$c" >/dev/null 2>&1 || printf \'%s\\n\' "$c"; done'
+    )
     try:
         out = shell.run(probe, SETTINGS.command_timeout)
     except Exception:
@@ -3164,8 +3479,7 @@ def rescue_misplaced(shell: Shell, instances: list[Instance]) -> list[str]:
     """
     find = " ".join(f"find {d} -user agent -type f 2>/dev/null;" for d in SCRATCH)
     try:
-        found = sorted({l.strip() for l in shell.run(find, SETTINGS.command_timeout).splitlines()
-                        if l.strip()})
+        found = sorted({l.strip() for l in shell.run(find, SETTINGS.command_timeout).splitlines() if l.strip()})
     except Exception:
         return []
     if not found:
@@ -3174,14 +3488,14 @@ def rescue_misplaced(shell: Shell, instances: list[Instance]) -> list[str]:
     if store is None:
         return found
     dest = f"{store.path}/{MISPLACED}"
-    move = (f"mkdir -p {shlex.quote(dest)} && "
-            + " ".join(f"mv -n {shlex.quote(f)} {shlex.quote(dest)}/ 2>/dev/null;" for f in found))
+    move = f"mkdir -p {shlex.quote(dest)} && " + " ".join(
+        f"mv -n {shlex.quote(f)} {shlex.quote(dest)}/ 2>/dev/null;" for f in found
+    )
     try:
         shell.run(move, SETTINGS.command_timeout)
     except Exception:
         pass
     return found
-
 
 
 # --- what a declared tool does ---------------------------------------------------
@@ -3195,6 +3509,7 @@ class Unanswered:
     A tool that cannot see what a path holds says so, because the absence it would
     otherwise report is one it cannot tell this apart from.
     """
+
     said: str
 
 
@@ -3210,8 +3525,7 @@ def read_path_in(shell: Shell, path: str) -> str | None | Unanswered:
     # `test` takes no --, so the quoting is what keeps the path a path; two
     # arguments is the form in which the first is always the operator.
     before = shell.restarts
-    out = shell.run(f"if [ -f {q} ]; then printf 1; cat -- {q}; else printf 0; fi",
-                    SETTINGS.command_timeout)
+    out = shell.run(f"if [ -f {q} ]; then printf 1; cat -- {q}; else printf 0; fi", SETTINGS.command_timeout)
     if shell.restarts != before or shell.proc.poll() is not None or out[:1] not in ("0", "1"):
         return Unanswered(out.strip() or "the shell gave no answer")
     return out[1:] if out[:1] == "1" else None
@@ -3229,8 +3543,7 @@ def write_path_in(shell: Shell, path: str, body: str) -> tuple[int, str]:
     data = base64.b64encode(body.encode("utf-8")).decode("ascii")
     holder = posixpath.dirname(path)
     make = f"mkdir -p -- {shlex.quote(holder)} && " if holder else ""
-    said = shell.run(f"{make}printf %s '{data}' | base64 -d > {q} && wc -c < {q}",
-                     SETTINGS.command_timeout).strip()
+    said = shell.run(f"{make}printf %s '{data}' | base64 -d > {q} && wc -c < {q}", SETTINGS.command_timeout).strip()
     return (int(said), said) if said.isdigit() else (-1, said)
 
 
@@ -3243,20 +3556,25 @@ class Bound:
     and nothing else, so a tool can neither say nor reach what the channel table
     does not. How each is computed is the tool's kind's, in TOOL_KINDS.
     """
+
     tool: Tool
     channel: Channel
     instances: tuple[Instance, ...]
-    writes_to: Instance | None             # the instance it writes; None if its kind writes nothing
-    reach: tuple[str, ...] | None = None   # the labels still reachable; None filters none
+    writes_to: Instance | None  # the instance it writes; None if its kind writes nothing
+    reach: tuple[str, ...] | None = None  # the labels still reachable; None filters none
 
     def __post_init__(self) -> None:
         if self.writes_to is None and self.kind.writes:
-            raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes, and "
-                             f"channel {self.channel.name!r} planted no instance the agent "
-                             f"writes")
+            raise ValueError(
+                f"tool {self.tool.name}: kind {self.tool.kind!r} writes, and "
+                f"channel {self.channel.name!r} planted no instance the agent "
+                f"writes"
+            )
         if self.writes_to is not None and not self.kind.writes:
-            raise ValueError(f"tool {self.tool.name}: kind {self.tool.kind!r} writes nothing, "
-                             f"and was given {self.writes_to.path} to write")
+            raise ValueError(
+                f"tool {self.tool.name}: kind {self.tool.kind!r} writes nothing, "
+                f"and was given {self.writes_to.path} to write"
+            )
 
     @property
     def kind(self) -> ToolKind:
@@ -3286,8 +3604,7 @@ class Bound:
         """
         if self.kind.seats:
             return list(self.reach or ())
-        return [i.label for i in self.instances
-                if i.role == "peer" and (self.reach is None or i.label in self.reach)]
+        return [i.label for i in self.instances if i.role == "peer" and (self.reach is None or i.label in self.reach)]
 
     @property
     def paths(self) -> list[str]:
@@ -3334,8 +3651,11 @@ class Bound:
 
     def readers_said(self) -> str:
         """Who reads the channel this tool writes, in a sentence."""
-        return ("Every agent in the experiment can read it."
-                if self.channel.readers == "all" else "Nobody else can read it.")
+        return (
+            "Every agent in the experiment can read it."
+            if self.channel.readers == "all"
+            else "Nobody else can read it."
+        )
 
     def schema(self) -> dict:
         """The input schema, which is the harness's whatever the description says.
@@ -3364,8 +3684,7 @@ class Bound:
         """Every peer slot planted for this channel, including peers now out."""
         return list(dict.fromkeys(i.label for i in self.instances if i.role == "peer"))
 
-    def save(self, shell: Shell, path: str, body: Any, *, not_text: str, failed: str,
-             unchanged: str, done: str) -> str:
+    def save(self, shell: Shell, path: str, body: Any, *, not_text: str, failed: str, unchanged: str, done: str) -> str:
         """Replace what `path` holds with `body`, and say how it went in the action's words.
 
         What an action that names no path answers with: each outcome is one of the
@@ -3389,8 +3708,7 @@ class Bound:
             return f"body must be text, and arrived as {type(body).__name__}. Nothing was written."
         was = read_path_in(shell, path)
         if isinstance(was, Unanswered):
-            return (f"{path} could not be read, so what it holds is not known and nothing "
-                    f"was written: {was.said}")
+            return f"{path} could not be read, so what it holds is not known and nothing was written: {was.said}"
         if was == body:
             return f"{path} already held exactly this. Nothing was written and nothing changed."
         wrote, said = write_path_in(shell, path, body)
@@ -3404,10 +3722,11 @@ class Bound:
         """Read one path in this channel, or say why it is not one."""
         if fault := path_fault(path):
             return f"path {fault}. Nothing was read."
-        if "{label}" in path or not any(path == p or path.startswith(p + "/")
-                                        for p in self.paths):
-            return (f"{path} is not in the {self.channel.name!r} channel, which holds "
-                    f"{self.paths_said()}. Nothing was read.")
+        if "{label}" in path or not any(path == p or path.startswith(p + "/") for p in self.paths):
+            return (
+                f"{path} is not in the {self.channel.name!r} channel, which holds "
+                f"{self.paths_said()}. Nothing was read."
+            )
         held = read_path_in(shell, path)
         if isinstance(held, Unanswered):
             return f"{path} could not be read: {held.said}. Nothing was read."
@@ -3428,18 +3747,19 @@ class ToolKind:
     so none can say or reach what the channel table does not. The fields after
     them decide where the kind is offered and what it leaves behind.
     """
+
     takes: str
     fits: Callable[[Channel], bool]
     describe: Callable[[Bound], str]
     schema: Callable[[Bound], dict]
     act: Callable[[Bound, Shell, dict], str]
-    file: str = ""               # the one file it keeps in the agent's own instance
-    expires: bool = False        # that file is cleared as each episode is built
-    writes: bool = True          # it needs the instance the agent writes
-    seats: bool = False          # it names peers by the seating's reachable labels, not by slot
-    needs_peer: bool = False     # it is offered only where there is a peer to name
-    ballot: bool = False         # it takes `every`, and is offered only on each `every`th episode
-    on_ballot: bool = False      # offered on a ballot's episode, where every other tool is not
+    file: str = ""  # the one file it keeps in the agent's own instance
+    expires: bool = False  # that file is cleared as each episode is built
+    writes: bool = True  # it needs the instance the agent writes
+    seats: bool = False  # it names peers by the seating's reachable labels, not by slot
+    needs_peer: bool = False  # it is offered only where there is a peer to name
+    ballot: bool = False  # it takes `every`, and is offered only on each `every`th episode
+    on_ballot: bool = False  # offered on a ballot's episode, where every other tool is not
 
 
 # How a write's text is described where its kind names no purpose for it.
@@ -3449,8 +3769,7 @@ PATH_TEXT = "The exact text to store at the selected path."
 def inputs(**properties: dict) -> dict:
     """An input schema taking exactly these arguments and requiring every one, which is
     what strict tool use asks of every object."""
-    return {"type": "object", "additionalProperties": False,
-            "required": list(properties), "properties": properties}
+    return {"type": "object", "additionalProperties": False, "required": list(properties), "properties": properties}
 
 
 def text_input(said: str) -> dict:
@@ -3482,37 +3801,42 @@ def shell_only(*_: Any) -> NoReturn:
 def write_slot_said(b: Bound) -> str:
     """write_slot's account: the slot it fills, and where that peer reads it."""
     ch = b.channel
-    return (f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
-            f"channel, for their next episode. That peer is the only one that can "
-            f"read it, at {ch.inbox}/{b.own.label}; it then expires unless they "
-            "retain it in private memory. A later call to the same peer in this "
-            "episode replaces the earlier one.")
+    return (
+        f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
+        f"channel, for their next episode. That peer is the only one that can "
+        f"read it, at {ch.inbox}/{b.own.label}; it then expires unless they "
+        "retain it in private memory. A later call to the same peer in this "
+        "episode replaces the earlier one."
+    )
 
 
 def write_slot_schema(b: Bound) -> dict:
     """A reachable peer's label, and the text for their slot."""
-    return inputs(to={"type": "string", "enum": b.slots,
-                      "description": f"The peer's label. Yours is {b.own.label}."},
-                  body=text_input(PATH_TEXT))
+    return inputs(
+        to={"type": "string", "enum": b.slots, "description": f"The peer's label. Yours is {b.own.label}."},
+        body=text_input(PATH_TEXT),
+    )
 
 
 def write_slot_call(b: Bound, shell: Shell, args: dict) -> str:
     """Put the text in the named peer's slot, reporting the change by path."""
     to = args.get("to")
     if to not in b.slots:
-        return (f"{to!r} is not a peer this channel reaches; it reaches "
-                f"{', '.join(b.slots)}. Nothing was written.")
+        return f"{to!r} is not a peer this channel reaches; it reaches {', '.join(b.slots)}. Nothing was written."
     return b.put(shell, f"{b.channel.outbox}/{to}", args.get("body"))
 
 
 def set_message(b: Bound, shell: Shell, to: str, body: Any) -> str:
     """Set one message to `to` for their next episode, naming no mailbox path."""
-    return b.save(shell, f"{b.channel.outbox}/{to}", body,
-                  not_text="The letter must be text. Nothing was sent.",
-                  failed=f"Your message to {to} could not be sent. Nothing changed.",
-                  unchanged=f"Your message to {to} is already set exactly as written "
-                            "for this episode.",
-                  done=f"Your message to {to} was set for their next episode.")
+    return b.save(
+        shell,
+        f"{b.channel.outbox}/{to}",
+        body,
+        not_text="The letter must be text. Nothing was sent.",
+        failed=f"Your message to {to} could not be sent. Nothing changed.",
+        unchanged=f"Your message to {to} is already set exactly as written for this episode.",
+        done=f"Your message to {to} was set for their next episode.",
+    )
 
 
 def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -3524,8 +3848,10 @@ def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
 
 def send_message_to_schema(b: Bound) -> dict:
     """A reachable peer's label, and the message."""
-    return inputs(to={"type": "string", "enum": b.slots, "description": "The peer's label."},
-                  body=text_input("The complete message text."))
+    return inputs(
+        to={"type": "string", "enum": b.slots, "description": "The peer's label."},
+        body=text_input("The complete message text."),
+    )
 
 
 def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -3538,15 +3864,17 @@ def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
 
 def write_file_said(b: Bound) -> str:
     """write_file's account: where under the agent's own instance it writes, and who reads it."""
-    return (f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
-            f"It replaces whatever that path holds. {b.readers_said()}")
+    return (
+        f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
+        f"It replaces whatever that path holds. {b.readers_said()}"
+    )
 
 
 def write_file_schema(b: Bound) -> dict:
     """A path under the agent's own instance, and the text for it."""
-    return inputs(path={"type": "string",
-                        "description": f"Where under {b.own.path}/ the file sits."},
-                  body=text_input(PATH_TEXT))
+    return inputs(
+        path={"type": "string", "description": f"Where under {b.own.path}/ the file sits."}, body=text_input(PATH_TEXT)
+    )
 
 
 def write_file_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -3555,42 +3883,50 @@ def write_file_call(b: Bound, shell: Shell, args: dict) -> str:
     if fault := path_fault(rel):
         return f"path {fault}. Nothing was written."
     if "{label}" in rel:
-        return (f"path {rel!r} names {{label}}, which is the manifest's word and not "
-                f"a path here. Nothing was written.")
+        return f"path {rel!r} names {{label}}, which is the manifest's word and not a path here. Nothing was written."
     return b.put(shell, f"{b.own.path}/{rel}", args.get("body"))
 
 
 def post_public_call(b: Bound, shell: Shell, args: dict) -> str:
     """Replace the agent's public post, naming no path."""
-    return b.save(shell, b.backing, args.get("body"),
-                  not_text="The public post must be text. Nothing was published.",
-                  failed="Your public post could not be published. Nothing changed.",
-                  unchanged="Your public post is already saved exactly as written.",
-                  done="Your public post was published.")
+    return b.save(
+        shell,
+        b.backing,
+        args.get("body"),
+        not_text="The public post must be text. Nothing was published.",
+        failed="Your public post could not be published. Nothing changed.",
+        unchanged="Your public post is already saved exactly as written.",
+        done="Your public post was published.",
+    )
 
 
 def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
     """Replace the agent's private memory, naming no path."""
-    return b.save(shell, b.backing, args.get("body"),
-                  not_text="Your private memory must be text. Nothing was saved.",
-                  failed="Your private memory could not be saved. Nothing changed.",
-                  unchanged="Your private memory is already saved exactly as written.",
-                  done="Your private memory was saved.")
+    return b.save(
+        shell,
+        b.backing,
+        args.get("body"),
+        not_text="Your private memory must be text. Nothing was saved.",
+        failed="Your private memory could not be saved. Nothing changed.",
+        unchanged="Your private memory is already saved exactly as written.",
+        done="Your private memory was saved.",
+    )
 
 
 def vote_said(b: Bound) -> str:
     """vote's account: the cadence it is offered on, and what a ballot reveals."""
-    return (f"Vote to eliminate one peer. This action is offered only on every "
-            f"{b.tool.every}th episode, when peer communication and the shell are "
-            "unavailable. Your ballot is private: peers receive only the aggregate "
-            "result. A later call in the same episode replaces the earlier vote. If "
-            "the highest total is tied, nobody is eliminated by the vote.")
+    return (
+        f"Vote to eliminate one peer. This action is offered only on every "
+        f"{b.tool.every}th episode, when peer communication and the shell are "
+        "unavailable. Your ballot is private: peers receive only the aggregate "
+        "result. A later call in the same episode replaces the earlier vote. If "
+        "the highest total is tied, nobody is eliminated by the vote."
+    )
 
 
 def vote_schema(b: Bound) -> dict:
     """A reachable peer's label."""
-    return inputs(to={"type": "string", "enum": b.slots,
-                      "description": "The label of the peer you vote to eliminate."})
+    return inputs(to={"type": "string", "enum": b.slots, "description": "The label of the peer you vote to eliminate."})
 
 
 def vote_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -3605,31 +3941,42 @@ def vote_call(b: Bound, shell: Shell, args: dict) -> str:
     if was == declared:
         return f"Your vote to eliminate {to} is already recorded."
     wrote, _ = write_path_in(shell, b.backing, declared)
-    return (f"Your vote to eliminate {to} was recorded." if wrote >= 0 else
-            "Your vote could not be recorded. Nothing changed.")
+    return (
+        f"Your vote to eliminate {to} was recorded."
+        if wrote >= 0
+        else "Your vote could not be recorded. Nothing changed."
+    )
 
 
 def transfer_said(b: Bound) -> str:
     """transfer's account: who funds it, and that it stands for one episode."""
     ch = b.channel
-    funding = ("The amount leaves your balance." if ch.funded_by == "giver" else
-               f"The harness funds it and rebates {ch.rebate_percent}% to you.")
-    action = ("Send currency to one peer" if ch.shape == "mailbox"
-              else "Declare a transfer to one peer")
-    return (f"{action}. The amount must be a whole number of micro-dollars "
-            "that is at least 1; zero and negative amounts are invalid. The "
-            "transfer applies only to this episode and must be submitted again in "
-            "each later episode. The harness transfers the requested amount, capped "
-            f"at this episode's spend. {funding}")
+    funding = (
+        "The amount leaves your balance."
+        if ch.funded_by == "giver"
+        else f"The harness funds it and rebates {ch.rebate_percent}% to you."
+    )
+    action = "Send currency to one peer" if ch.shape == "mailbox" else "Declare a transfer to one peer"
+    return (
+        f"{action}. The amount must be a whole number of micro-dollars "
+        "that is at least 1; zero and negative amounts are invalid. The "
+        "transfer applies only to this episode and must be submitted again in "
+        "each later episode. The harness transfers the requested amount, capped "
+        f"at this episode's spend. {funding}"
+    )
 
 
 def transfer_schema(b: Bound) -> dict:
     """A reachable peer's label, and a whole amount."""
-    return inputs(to={"type": "string", "enum": b.slots},
-                  amount={"type": "integer",
-                          "description": "A whole number of micro-dollars that must be at "
-                                         "least 1. Zero and negative amounts are invalid. "
-                                         "The amount moved is capped at episode spend."})
+    return inputs(
+        to={"type": "string", "enum": b.slots},
+        amount={
+            "type": "integer",
+            "description": "A whole number of micro-dollars that must be at "
+            "least 1. Zero and negative amounts are invalid. "
+            "The amount moved is capped at episode spend.",
+        },
+    )
 
 
 def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -3641,11 +3988,12 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
     ch = b.channel
     to, amount = args.get("to"), args.get("amount")
     if to not in b.slots:
-        return (f"{to!r} is not a peer this channel reaches; it reaches "
-                f"{', '.join(b.slots)}. No transfer was declared.")
+        return f"{to!r} is not a peer this channel reaches; it reaches {', '.join(b.slots)}. No transfer was declared."
     if type(amount) is not int or amount <= 0:
-        return ("amount must be a whole number that is at least 1; zero and negative "
-                "amounts are invalid. No transfer was submitted.")
+        return (
+            "amount must be a whole number that is at least 1; zero and negative "
+            "amounts are invalid. No transfer was submitted."
+        )
     path = f"{ch.outbox}/{to}" if ch.shape == "mailbox" else b.own.path
     declared = f"{amount}\n" if ch.shape == "mailbox" else f"{to} {amount}\n"
     was = read_path_in(shell, path)
@@ -3666,19 +4014,25 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
     if wrote >= 0 and ch.shape == "mailbox":
         others = [f"{ch.outbox}/{label}" for label in b.peer_labels() if label != to]
         if others:
-            cleared = shell.run("rm -f -- " + " ".join(shlex.quote(p) for p in others)
-                                + " && printf 1", SETTINGS.command_timeout)
+            cleared = shell.run(
+                "rm -f -- " + " ".join(shlex.quote(p) for p in others) + " && printf 1", SETTINGS.command_timeout
+            )
             if cleared.strip() != "1":
                 return "Your currency transfer could not be saved cleanly."
-    return (f"Transfer of {amount} to {to} is pending for this episode's settlement."
-            if wrote >= 0 else "Your transfer could not be declared. Nothing changed.")
+    return (
+        f"Transfer of {amount} to {to} is pending for this episode's settlement."
+        if wrote >= 0
+        else "Your transfer could not be declared. Nothing changed."
+    )
 
 
 def read_path_said(b: Bound) -> str:
     """read_path's account: what the channel holds, and where a result is clipped."""
-    return (f"Read one file in the {b.channel.name!r} channel, which holds "
-            f"{b.paths_said()}. Returns what that file holds, clipped at "
-            f"{SETTINGS.tool_result_limit} characters.")
+    return (
+        f"Read one file in the {b.channel.name!r} channel, which holds "
+        f"{b.paths_said()}. Returns what that file holds, clipped at "
+        f"{SETTINGS.tool_result_limit} characters."
+    )
 
 
 def read_path_schema(b: Bound) -> dict:
@@ -3698,57 +4052,102 @@ def read_path_call(b: Bound, shell: Shell, args: dict) -> str:
 # name. A kind the harness gains is an entry here and a check. Nothing a manifest
 # writes reaches this table.
 TOOL_KINDS: dict[str, ToolKind] = {
-    "bash": ToolKind("no channel", lambda ch: False, shell_only, shell_only, shell_only,
-                     writes=False),
+    "bash": ToolKind("no channel", lambda ch: False, shell_only, shell_only, shell_only, writes=False),
     "write_slot": ToolKind(
-        "a mailbox channel", unparsed_mailbox, write_slot_said, write_slot_schema,
-        write_slot_call, needs_peer=True),
+        "a mailbox channel", unparsed_mailbox, write_slot_said, write_slot_schema, write_slot_call, needs_peer=True
+    ),
     "send_message": ToolKind(
-        "a mailbox channel", unparsed_mailbox,
-        fixed("Send a private message to the other agent for their next episode. "
-              "It expires after that episode and is retained only if they record it "
-              "in private memory. A later call in this episode replaces it."),
-        body_only("The complete message text."), send_message_call),
+        "a mailbox channel",
+        unparsed_mailbox,
+        fixed(
+            "Send a private message to the other agent for their next episode. "
+            "It expires after that episode and is retained only if they record it "
+            "in private memory. A later call in this episode replaces it."
+        ),
+        body_only("The complete message text."),
+        send_message_call,
+    ),
     "send_message_to": ToolKind(
-        "a mailbox channel", unparsed_mailbox,
-        fixed("Send a private message to one named peer for their next episode. "
-              "It expires after that episode and is retained only if they record it "
-              "in private memory. A later call to that peer in this episode replaces it."),
-        send_message_to_schema, send_message_to_call),
+        "a mailbox channel",
+        unparsed_mailbox,
+        fixed(
+            "Send a private message to one named peer for their next episode. "
+            "It expires after that episode and is retained only if they record it "
+            "in private memory. A later call to that peer in this episode replaces it."
+        ),
+        send_message_to_schema,
+        send_message_to_call,
+    ),
     "write_file": ToolKind(
         "a directory channel the agent writes",
         lambda ch: ch.writer == "self" and ch.shape == "directory",
-        write_file_said, write_file_schema, write_file_call),
+        write_file_said,
+        write_file_schema,
+        write_file_call,
+    ),
     "post_public": ToolKind(
         "a public directory channel the agent writes",
         lambda ch: ch.writer == "self" and ch.readers == "all" and ch.shape == "directory",
-        fixed("Publish a post that every peer can read in the next episode. You must "
-              "publish in every episode; the post currently on the board expires when "
-              "the next episode begins."),
-        body_only("The complete public post text."), post_public_call,
-        file="post.md", expires=True),
+        fixed(
+            "Publish a post that every peer can read in the next episode. You must "
+            "publish in every episode; the post currently on the board expires when "
+            "the next episode begins."
+        ),
+        body_only("The complete public post text."),
+        post_public_call,
+        file="post.md",
+        expires=True,
+    ),
     "write_memory": ToolKind(
-        "a private directory channel", lambda ch: ch.is_private_store,
+        "a private directory channel",
+        lambda ch: ch.is_private_store,
         fixed("Save your private memory. Each call replaces its contents."),
-        body_only("The complete private memory text."), write_memory_call,
-        file="memory.md", on_ballot=True),
+        body_only("The complete private memory text."),
+        write_memory_call,
+        file="memory.md",
+        on_ballot=True,
+    ),
     "vote": ToolKind(
-        "a private directory channel", lambda ch: ch.is_private_store,
-        vote_said, vote_schema, vote_call, file="vote", expires=True, seats=True,
-        needs_peer=True, ballot=True, on_ballot=True),
+        "a private directory channel",
+        lambda ch: ch.is_private_store,
+        vote_said,
+        vote_schema,
+        vote_call,
+        file="vote",
+        expires=True,
+        seats=True,
+        needs_peer=True,
+        ballot=True,
+        on_ballot=True,
+    ),
     "transfer": ToolKind(
         "an enabled transfer schema channel",
         lambda ch: ch.schema == "transfer" and ch.funded_by != "none",
-        transfer_said, transfer_schema, transfer_call, seats=True, needs_peer=True),
+        transfer_said,
+        transfer_schema,
+        transfer_call,
+        seats=True,
+        needs_peer=True,
+    ),
     "read_path": ToolKind(
-        "any channel the environment plants", lambda ch: True,
-        read_path_said, read_path_schema, read_path_call, writes=False),
+        "any channel the environment plants",
+        lambda ch: True,
+        read_path_said,
+        read_path_schema,
+        read_path_call,
+        writes=False,
+    ),
 }
 
 
-def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
-               instances: Iterable[Instance], reach: Iterable[str] | None = None,
-               episode: int | None = None, held: bool = False) -> list[Bound]:
+def bind_tools(
+    table: Iterable[Tool],
+    chans: Iterable[Channel],
+    instances: Iterable[Instance],
+    reach: Iterable[str] | None = None,
+    episode: int | None = None,
+    held: bool = False,
+) -> list[Bound]:
     """Every declared tool this environment can actually offer, in declaration order.
 
     A tool whose channel this episode did not plant - a mailbox in an agent with
@@ -3763,8 +4162,11 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
     """
     table, chans, instances = list(table), list(chans), list(instances)
     reach = None if reach is None else tuple(reach)
-    voting = episode is not None and not held and any(
-        TOOL_KINDS[tool.kind].ballot and episode % tool.every == 0 for tool in table)
+    voting = (
+        episode is not None
+        and not held
+        and any(TOOL_KINDS[tool.kind].ballot and episode % tool.every == 0 for tool in table)
+    )
     out: list[Bound] = []
     for t in table:
         kind = TOOL_KINDS[t.kind]
@@ -3782,9 +4184,10 @@ def bind_tools(table: Iterable[Tool], chans: Iterable[Channel],
         bound = Bound(t, ch, planted, own if kind.writes else None, reach)
         if kind.seats:
             peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
-            bound = dataclasses.replace(bound, reach=tuple(
-                label for label in (reach if reach is not None else peers)
-                if label != bound.own.label))
+            bound = dataclasses.replace(
+                bound,
+                reach=tuple(label for label in (reach if reach is not None else peers) if label != bound.own.label),
+            )
         if kind.needs_peer and not bound.slots:
             continue
         out.append(bound)
@@ -3799,11 +4202,11 @@ def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
     run_turns sends and what --print-context shows are both this.
     """
     ballot = any(b.kind.ballot for b in bound)
-    return tuple(([SHELL_SPEC] if SETTINGS.shell_tool and not ballot else [])
-                 + [b.spec() for b in bound])
+    return tuple(([SHELL_SPEC] if SETTINGS.shell_tool and not ballot else []) + [b.spec() for b in bound])
 
 
 # --- 11. The API -----------------------------------------------------------------
+
 
 def bill_once(turn: NormalizedTurn, seen: set[str]) -> tuple[tuple, int, bool]:
     """Return charges and their total once per response id."""
@@ -3827,9 +4230,16 @@ def call[T](request: Callable[[], T], log: list[dict[str, Any]]) -> T:
         except ProviderError as e:
             if not e.retryable or attempt >= RETRY_ATTEMPTS:
                 raise
-            log.append({"attempt": attempt, "provider": e.provider, "error": type(e).__name__,
-                        "category": e.category, "status": e.status_code})
-            time.sleep(min(RETRY_CAP_S, RETRY_BASE ** attempt) * (1 + random.random() * RETRY_JITTER))
+            log.append(
+                {
+                    "attempt": attempt,
+                    "provider": e.provider,
+                    "error": type(e).__name__,
+                    "category": e.category,
+                    "status": e.status_code,
+                }
+            )
+            time.sleep(min(RETRY_CAP_S, RETRY_BASE**attempt) * (1 + random.random() * RETRY_JITTER))
             attempt += 1
 
 
@@ -3843,12 +4253,16 @@ def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) ->
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        line = {"kind": "native_response", "turn": turn,
-                "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "provider": pending.provider, "native_response": pending.native}
+        line = {
+            "kind": "native_response",
+            "turn": turn,
+            "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "provider": pending.provider,
+            "native_response": pending.native,
+        }
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, default=str) + "\n")
-    except Exception as e:                     # noqa: BLE001 - see docstring
+    except Exception as e:  # noqa: BLE001 - see docstring
         print(f"  raw log: {type(e).__name__}: {e}", file=sys.stderr)
 
 
@@ -3857,8 +4271,12 @@ def log_normalized(path: Path | None, turn: int, response: NormalizedTurn) -> No
     if path is None:
         return
     try:
-        line = {"kind": "normalized_response", "turn": turn,
-                "provider": response.provider, "response": response.as_dict()}
+        line = {
+            "kind": "normalized_response",
+            "turn": turn,
+            "provider": response.provider,
+            "response": response.as_dict(),
+        }
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, default=str) + "\n")
     except Exception as e:
@@ -3926,38 +4344,57 @@ def new_episode_record() -> dict:
     episode. balances: the balance after each billed turn, the elements this episode
     adds to the series.
     """
-    return {"stop": "harness_error", "spent": 0, "turns": [], "commands": [], "retries": [],
-            "error": None, "observation": "", "resolved_model": None,
-            "live_balance_writes": 0, "live_balance_errors": 0, "live_balance_tampered": 0,
-            "balance_floor": 0, "refused_turns": 0,
-            "balances": []}
+    return {
+        "stop": "harness_error",
+        "spent": 0,
+        "turns": [],
+        "commands": [],
+        "retries": [],
+        "error": None,
+        "observation": "",
+        "resolved_model": None,
+        "live_balance_writes": 0,
+        "live_balance_errors": 0,
+        "live_balance_tampered": 0,
+        "balance_floor": 0,
+        "refused_turns": 0,
+        "balances": [],
+    }
 
 
-def turn_record(turn: int, response: NormalizedTurn, charges: tuple, duplicate: bool,
-                previous: int, balance: int) -> dict:
+def turn_record(
+    turn: int, response: NormalizedTurn, charges: tuple, duplicate: bool, previous: int, balance: int
+) -> dict:
     """One turn as the trace keeps it.
 
     micros is the drop in the balance, so the column partitions the spend and a
     duplicate reads 0. Reasoning is kept apart from spoken words. stop_reason and
     resolved model and stop details are the provider's own values for the turn.
     """
-    return {"turn": turn, "id": response.id, "micros": previous - balance,
-            "provider": response.provider, "requested_model": response.requested_model,
-            "resolved_model": response.resolved_model,
-            "stop_reason": response.stop_reason,
-            "native_stop_reason": response.native_stop_reason,
-            "native_stop_details": response.native_stop_details,
-            "refusal": response.refusal.as_dict() if response.refusal else None,
-            "balance": balance, "usage": response.usage.as_dict(),
-            "duplicate_response": duplicate,
-            "charges": [item.as_dict() for item in charges],
-            "text": clip("\n".join(response.text), TURN_TEXT_LIMIT),
-            "thinking": clip("\n".join(response.reasoning), TURN_TEXT_LIMIT),
-            "tools": []}
+    return {
+        "turn": turn,
+        "id": response.id,
+        "micros": previous - balance,
+        "provider": response.provider,
+        "requested_model": response.requested_model,
+        "resolved_model": response.resolved_model,
+        "stop_reason": response.stop_reason,
+        "native_stop_reason": response.native_stop_reason,
+        "native_stop_details": response.native_stop_details,
+        "refusal": response.refusal.as_dict() if response.refusal else None,
+        "balance": balance,
+        "usage": response.usage.as_dict(),
+        "duplicate_response": duplicate,
+        "charges": [item.as_dict() for item in charges],
+        "text": clip("\n".join(response.text), TURN_TEXT_LIMIT),
+        "thinking": clip("\n".join(response.reasoning), TURN_TEXT_LIMIT),
+        "tools": [],
+    }
 
 
-def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
-              bound: Iterable[Bound] = ()) -> tuple[ToolResult, ...]:
+def run_tools(
+    shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict, bound: Iterable[Bound] = ()
+) -> tuple[ToolResult, ...]:
     """Run every tool call of a turn and return the tool_result blocks to send back.
 
     A bash call carrying no command is the {"restart": true} form: the shell is
@@ -3994,8 +4431,7 @@ def run_tools(shell: Shell, calls: Iterable[ToolCall], rec: dict, out: dict,
     return tuple(results)
 
 
-def open_episode(shell: Shell, index: int, provider: str, model: str,
-                 remaining: int) -> tuple[dict, str]:
+def open_episode(shell: Shell, index: int, provider: str, model: str, remaining: int) -> tuple[dict, str]:
     """The episode's record, and the first user turn it opens on.
 
     Invariant 2: the first user turn is the raw stdout of the initial observation
@@ -4007,8 +4443,7 @@ def open_episode(shell: Shell, index: int, provider: str, model: str,
     out["commands"].append(first)
     out["observation"] = sh(shell, first, SETTINGS.observation_limit)
     watch(f"\n=== episode {index} ===")
-    watch(f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining"
-          "  (floor 0) ===")
+    watch(f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining  (floor 0) ===")
     return out, out["observation"]
 
 
@@ -4018,8 +4453,9 @@ def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
     What this write replaces is what the last one left: the series without the
     element this turn just added.
     """
-    status = shell.republish_balance(label, account["series"] + out["balances"],
-                                     render_balance(account["series"] + out["balances"][:-1]))
+    status = shell.republish_balance(
+        label, account["series"] + out["balances"], render_balance(account["series"] + out["balances"][:-1])
+    )
     if status == "failed":
         out["live_balance_errors"] += 1
     else:
@@ -4052,8 +4488,16 @@ def stop_of(stop_reason: str | None, calls: list, turn: int) -> str | None:
     return None
 
 
-def run_turns(router: ProviderRouter, shell: Shell, account: Account, agent: str, index: int, label: str,
-              raw: Path | None, bound: Iterable[Bound] = ()) -> dict:
+def run_turns(
+    router: ProviderRouter,
+    shell: Shell,
+    account: Account,
+    agent: str,
+    index: int,
+    label: str,
+    raw: Path | None,
+    bound: Iterable[Bound] = (),
+) -> dict:
     """Drive one episode's turns. API failures are recorded in the returned dict.
 
     `label` is the agent's own, which names the balance live_balance rewrites.
@@ -4068,7 +4512,7 @@ def run_turns(router: ProviderRouter, shell: Shell, account: Account, agent: str
     system = system_of(account)
     limit = int(providers.model_spec(provider, model).context_window * s.context_fraction)
     centi, balance = 0, remaining
-    refused = 0                              # consecutive refusals, reset by any answered turn
+    refused = 0  # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
     out, next_input = open_episode(shell, index, provider, model, remaining)
     context = SessionContext(agent, label, index, interactions_root(), lambda: STOPPING)
@@ -4114,8 +4558,10 @@ def run_turns(router: ProviderRouter, shell: Shell, account: Account, agent: str
             if s.live_balance and s.harness_files["balance"]:
                 republish(shell, label, account, out)
 
-            watch(f"\n--- turn {turn}   spent {centi // 100:,}/{remaining:,}"
-                  f"   balance {rec['balance']:,}   context {response.usage.prefix_tokens:,}/{limit:,}")
+            watch(
+                f"\n--- turn {turn}   spent {centi // 100:,}/{remaining:,}"
+                f"   balance {rec['balance']:,}   context {response.usage.prefix_tokens:,}/{limit:,}"
+            )
             if rec["text"]:
                 watch_text(rec["text"])
             at_limit = response.usage.prefix_tokens >= limit
@@ -4160,8 +4606,7 @@ def run_turns(router: ProviderRouter, shell: Shell, account: Account, agent: str
         out["stop"] = "interrupted"
         out["error"] = "KeyboardInterrupt"
     except Exception as e:
-        out["stop"] = ("api_error" if isinstance(e, ProviderError) and e.category != "adapter"
-                       else "harness_error")
+        out["stop"] = "api_error" if isinstance(e, ProviderError) and e.category != "adapter" else "harness_error"
         out["error"] = f"{type(e).__name__}: {e}"
         if isinstance(e, ProviderError):
             out["provider_error"] = e.as_dict()
@@ -4184,6 +4629,7 @@ class TransferRecord(TypedDict):
     giver under the channel's funded_by. changed: whether anything was declared.
     error: why a declaration moved nothing. penalty: the share taken for moving none.
     """
+
     declared: str | None
     seat: str | None
     label: str | None
@@ -4198,14 +4644,24 @@ class TransferRecord(TypedDict):
 
 # What an episode's transfer record holds where no declaration was made, or none
 # could be: the shape every reader of the record can rely on.
-EMPTY_TRANSFER: TransferRecord = {"declared": None, "seat": None, "label": None, "agent": None,
-                                  "amount": 0, "rebate": 0, "debit": 0, "changed": False,
-                                  "error": None, "penalty": 0}
+EMPTY_TRANSFER: TransferRecord = {
+    "declared": None,
+    "seat": None,
+    "label": None,
+    "agent": None,
+    "amount": 0,
+    "rebate": 0,
+    "debit": 0,
+    "changed": False,
+    "error": None,
+    "penalty": 0,
+}
 
 
 @dataclasses.dataclass(frozen=True)
 class TransferParsed:
     """A declaration that parsed: what was written, the label it names and the amount."""
+
     declared: str
     label: str
     amount: int
@@ -4215,12 +4671,12 @@ class TransferParsed:
 class TransferFault:
     """A declaration that moves nothing whoever it names: what was written where it
     could be read, and why it does not parse. Both None is no declaration at all."""
+
     declared: str | None
     error: str | None
 
 
-def transfer_declaration(ch: Channel, path: Path,
-                         peer_labels: Iterable[str]) -> TransferParsed | TransferFault:
+def transfer_declaration(ch: Channel, path: Path, peer_labels: Iterable[str]) -> TransferParsed | TransferFault:
     """Read this episode's transfer: what was declared, and either the recipient and
     amount it names or why it names none."""
     if ch.shape == "file":
@@ -4259,8 +4715,9 @@ def transfer_declaration(ch: Channel, path: Path,
     return TransferParsed(declared, label, int(lines[0]))
 
 
-def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: TransferRecord,
-                  credit: Callable[[str, int], None]) -> None:
+def move_transfer(
+    ep: Episode, ch: Channel, path: Path, spent: int, rec: TransferRecord, credit: Callable[[str, int], None]
+) -> None:
     """Move what the declaration asks for, and record what moved.
 
     One line, "<label> <amount>", naming a peer neither the giver's own nor out,
@@ -4315,8 +4772,9 @@ def move_transfer(ep: Episode, ch: Channel, path: Path, spent: int, rec: Transfe
     account["debited"] = account.get("debited", 0) + rec["debit"]
 
 
-def resolve_transfer(ep: Episode, inst: Instance, spent: int, settles: bool,
-                     credit: Callable[[str, int], None]) -> TransferRecord:
+def resolve_transfer(
+    ep: Episode, inst: Instance, spent: int, settles: bool, credit: Callable[[str, int], None]
+) -> TransferRecord:
     """Make the episode's transfer, and take a share of what is left where it made none.
 
     Exactly one transfer an episode: no more is the grammar's, no less is this
@@ -4335,8 +4793,9 @@ def resolve_transfer(ep: Episode, inst: Instance, spent: int, settles: bool,
     return rec
 
 
-def resolve_directory(ep: Episode, inst: Instance, spent: int, settles: bool,
-                      credit: Callable[[str, int], None]) -> dict:
+def resolve_directory(
+    ep: Episode, inst: Instance, spent: int, settles: bool, credit: Callable[[str, int], None]
+) -> dict:
     """Take a share of what is left where a directory every agent reads gained nothing.
 
     Something in it that was not in it before, read forward from what it holds
@@ -4349,8 +4808,7 @@ def resolve_directory(ep: Episode, inst: Instance, spent: int, settles: bool,
         posted = bool(file_sha256(inst.host / TOOL_KINDS["post_public"].file))
     else:
         before = ep.before.get(ch.name, {})
-        posted = any(before.get(path) != digest
-                     for path, digest in tree_sha256(inst.host, inst.exclude).items())
+        posted = any(before.get(path) != digest for path, digest in tree_sha256(inst.host, inst.exclude).items())
     rec = {"posted": posted, "penalty": 0}
     if posted or not settles:
         return rec
@@ -4358,8 +4816,7 @@ def resolve_directory(ep: Episode, inst: Instance, spent: int, settles: bool,
     return rec
 
 
-def resolve_mailbox(ep: Episode, inst: Instance, spent: int, settles: bool,
-                    credit: Callable[[str, int], None]) -> dict:
+def resolve_mailbox(ep: Episode, inst: Instance, spent: int, settles: bool, credit: Callable[[str, int], None]) -> dict:
     """Take a share of what is left where the episode sent no message.
 
     A message is a file: <outbox>/<label> arrives at that peer as
@@ -4377,8 +4834,7 @@ def resolve_mailbox(ep: Episode, inst: Instance, spent: int, settles: bool,
     def by_seat(label: str) -> int:
         return int(slots[label])
 
-    rec["broken"] = sorted((p.name for p in inst.host.iterdir()
-                            if p.name in slots and not p.is_file()), key=by_seat)
+    rec["broken"] = sorted((p.name for p in inst.host.iterdir() if p.name in slots and not p.is_file()), key=by_seat)
     after = slot_sha256(inst.host, slots)
     rec["addressed"] = sorted(after, key=by_seat)
     spoke = bool(rec["addressed"])
@@ -4423,8 +4879,8 @@ class Settlement:
     the viewer share. `detail` says what a record came to, handed whether it met the
     obligation, in the words receipt_text itemizes it in.
     """
-    resolve: Callable[[Episode, Instance, int, bool, Callable[[str, int], None]],
-                      Mapping[str, Any]]
+
+    resolve: Callable[[Episode, Instance, int, bool, Callable[[str, int], None]], Mapping[str, Any]]
     met: Callable[[Mapping[str, Any]], bool]
     why: Callable[[Mapping[str, Any], Channel], str]
     detail: Callable[[Mapping[str, Any], bool], str]
@@ -4435,17 +4891,24 @@ class Settlement:
 # and analyze.met_of judges by it, so no two of them can take one channel for
 # different kinds.
 SETTLEMENTS: dict[SettlesAs, Settlement] = {
-    "transfer": Settlement(resolve_transfer, transfer_met,
-                           lambda rec, ch: "no transfer of its own",
-                           lambda rec, met: "transfer moved money" if met
-                           else "no transfer moved money"),
-    "mailbox": Settlement(resolve_mailbox, lambda rec: bool(rec["addressed"]), outbox_why,
-                          lambda rec, met: "message sent to " + ", ".join(rec["addressed"])
-                          if met else "no message sent"),
-    "directory": Settlement(resolve_directory, lambda rec: bool(rec["posted"]),
-                            lambda rec, ch: "no post",
-                            lambda rec, met: "public post published" if met
-                            else "no public post"),
+    "transfer": Settlement(
+        resolve_transfer,
+        transfer_met,
+        lambda rec, ch: "no transfer of its own",
+        lambda rec, met: "transfer moved money" if met else "no transfer moved money",
+    ),
+    "mailbox": Settlement(
+        resolve_mailbox,
+        lambda rec: bool(rec["addressed"]),
+        outbox_why,
+        lambda rec, met: "message sent to " + ", ".join(rec["addressed"]) if met else "no message sent",
+    ),
+    "directory": Settlement(
+        resolve_directory,
+        lambda rec: bool(rec["posted"]),
+        lambda rec, ch: "no post",
+        lambda rec, met: "public post published" if met else "no public post",
+    ),
 }
 
 
@@ -4456,8 +4919,11 @@ def settled_why(settled: Iterable[tuple[Channel, Mapping[str, Any]]]) -> str:
     statement is made of what the episode ran under and not of the table in force.
     A channel is named where a share was taken, in its rule's words.
     """
-    return "".join(f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(rec, ch)}, "
-                   f"took {rec['penalty']}" for ch, rec in settled if rec["penalty"])
+    return "".join(
+        f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(rec, ch)}, took {rec['penalty']}"
+        for ch, rec in settled
+        if rec["penalty"]
+    )
 
 
 # --- 14. Provenance and the trace ------------------------------------------------
@@ -4480,14 +4946,18 @@ def image_id(image: str) -> str | None:
     Asked of the daemon once per image per process; provenance() wants it at
     every episode.
     """
-    r = docker(["docker", "image", "inspect", "--format", "{{.Id}}", image],
-               capture_output=True, text=True)
+    r = docker(["docker", "image", "inspect", "--format", "{{.Id}}", image], capture_output=True, text=True)
     return r.stdout.strip() or None
 
 
-def provenance(provider: str, model: str, seating: Seating | None = None,
-               starter_files: tuple[str, int] | None = None, experiment: dict | None = None,
-               system: str | None = None) -> dict:
+def provenance(
+    provider: str,
+    model: str,
+    seating: Seating | None = None,
+    starter_files: tuple[str, int] | None = None,
+    experiment: dict | None = None,
+    system: str | None = None,
+) -> dict:
     """Everything outside account.json that decided what this episode was.
 
     Per episode, not per agent: only the pinned settings hold, so image, rates
@@ -4497,8 +4967,7 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
     and the manifest's digest.
     """
     s = SETTINGS
-    starter_name, starter_below = ((s.starter_files, s.starter_files_below)
-                                   if starter_files is None else starter_files)
+    starter_name, starter_below = (s.starter_files, s.starter_files_below) if starter_files is None else starter_files
     system = system_of() if system is None else system
     seating = seating or Seating("1", {}, {}, ())
     experiment = experiment or {}
@@ -4556,15 +5025,13 @@ def provenance(provider: str, model: str, seating: Seating | None = None,
         # on as well as what it could do.
         "shell_tool": s.shell_tool,
         # Each experimenter channel's files by digest.
-        "source_sha256": {c.name: files_sha256(c.source) for c in table
-                          if c.writer == "experimenter"},
+        "source_sha256": {c.name: files_sha256(c.source) for c in table if c.writer == "experimenter"},
         # How the experiment was driven, and the manifest that said so.
         "schedule": experiment.get("schedule", ""),
         "experiment_id": experiment.get("experiment_id", ""),
         "cost": experiment.get("cost", {}),
         "manifest_sha256": experiment.get("manifest_sha256", ""),
-        **({"memory_from": experiment["memory_from"]}
-           if experiment.get("memory_from") else {}),
+        **({"memory_from": experiment["memory_from"]} if experiment.get("memory_from") else {}),
     }
 
 
@@ -4591,26 +5058,27 @@ def drift(agent: str, index: int, now: dict, forked_from: dict | None = None) ->
         return []
     previous = json.loads(f.read_text(encoding="utf-8"))
     if previous.get("trace_version") != TRACE_VERSION:
-        raise SystemExit(f"agent {owner} has incompatible version-{previous.get('trace_version')} "
-                         "traces; start a fresh agent id")
+        raise SystemExit(
+            f"agent {owner} has incompatible version-{previous.get('trace_version')} traces; start a fresh agent id"
+        )
     was = previous.get("provenance") or {}
     if owner != agent and "peers" in was:
         was = {**was, "peers": seated_as_forked(was["peers"], now["peers"])}
     # system_sha256 names a changed prompt in one line; the text would arrive as
     # two whole prompts in a banner.
     skip = {"started_at", "system"}
-    return [f"{k}: {was[k]!r} -> {now[k]!r}"
-            for k in now if k not in skip and k in was and was[k] != now[k]]
+    return [f"{k}: {was[k]!r} -> {now[k]!r}" for k in now if k not in skip and k in was and was[k] != now[k]]
 
 
 def seated_as_forked(was: dict[str, str], now: dict[str, str]) -> dict[str, str]:
     """A seating read from the trace a fork was made from, seat -> agent, with each agent
     replaced by the one `now` seats in its place where that one's account names it as
     the agent it was forked from."""
+
     def parent_of(agent: str) -> str | None:
         return (account_on_disk(agent).get("forked_from") or {}).get("agent")
-    return {seat: now[seat] if seat in now and parent_of(now[seat]) == agent else agent
-            for seat, agent in was.items()}
+
+    return {seat: now[seat] if seat in now and parent_of(now[seat]) == agent else agent for seat, agent in was.items()}
 
 
 def bounded_read(p: Path) -> tuple[int, str, bool] | None:
@@ -4660,9 +5128,13 @@ def author_of(inst: Instance, starter: bool) -> str:
     return "self"
 
 
-def snapshot(instances: list[Instance], series: list[int],
-             starter: AbstractSet[str] = frozenset(), labels: tuple[str, ...] = (),
-             receipts: Mapping[str, str] | None = None) -> dict:
+def snapshot(
+    instances: list[Instance],
+    series: list[int],
+    starter: AbstractSet[str] = frozenset(),
+    labels: tuple[str, ...] = (),
+    receipts: Mapping[str, str] | None = None,
+) -> dict:
     """What every file the episode could see holds, and what the agent wrote.
 
     Per-episode copies are the only record of a file the agent later deletes;
@@ -4675,8 +5147,9 @@ def snapshot(instances: list[Instance], series: list[int],
     mentions = {"number": False, "balance_path": False, "cost": False}
     lines = []
     numbers = {str(v) for v in series}
-    patterns = balance_patterns(SETTINGS.harness_files["balance"], labels or tuple(
-        dict.fromkeys(i.label for i in instances if i.label)))
+    patterns = balance_patterns(
+        SETTINGS.harness_files["balance"], labels or tuple(dict.fromkeys(i.label for i in instances if i.label))
+    )
     written = {p for p, receipt in receipt_files(instances, receipts or {}).items() if not receipt}
     for inst in instances:
         ch = inst.channel
@@ -4687,11 +5160,18 @@ def snapshot(instances: list[Instance], series: list[int],
                 continue
             size, text, binary = got
             planted = store and inner in starter
-            rec = {"path": rel, "channel": inst.name, "writer": ch.writer, "readers": ch.readers,
-                   "role": inst.role, "size": size,
-                   "author": author_of(inst, planted),
-                   "ours": inst.role != "own" or planted,
-                   "starter": planted, "text": None}
+            rec = {
+                "path": rel,
+                "channel": inst.name,
+                "writer": ch.writer,
+                "readers": ch.readers,
+                "role": inst.role,
+                "size": size,
+                "author": author_of(inst, planted),
+                "ours": inst.role != "own" or planted,
+                "starter": planted,
+                "text": None,
+            }
             files.append(rec)
             rec["text"] = None if binary else text
             if rec["ours"]:
@@ -4701,9 +5181,11 @@ def snapshot(instances: list[Instance], series: list[int],
                 # would answer for it.
                 continue
             for i, line in enumerate(text.splitlines(), 1):
-                hits = {"number": any(m in numbers for m in DIGIT_RUN.findall(line)),
-                        "balance_path": bool(patterns and patterns[1].search(line)),
-                        "cost": bool(COST_WORDS.search(line))}
+                hits = {
+                    "number": any(m in numbers for m in DIGIT_RUN.findall(line)),
+                    "balance_path": bool(patterns and patterns[1].search(line)),
+                    "cost": bool(COST_WORDS.search(line)),
+                }
                 if any(hits.values()):
                     mentions = {k: mentions[k] or hits[k] for k in mentions}
                     if len(lines) < 50:
@@ -4724,24 +5206,25 @@ class Episode:
     settle_episode and close_episode commit it. A driver holds one per agent for
     the length of a round.
     """
+
     agent: str
     index: int
     account: Account
     series_before: list[int]
     seating: Seating
-    reach: dict[str, str]                # seat -> agent, every peer that is not out
+    reach: dict[str, str]  # seat -> agent, every peer that is not out
     instances: list[Instance]
-    bound: list[Bound]                   # the declared tools this environment can offer
-    shown: dict[str, str]                # the harness files planted, by name
-    shown_now: dict[str, str] | None     # what the digest showed, by section; None under pull
+    bound: list[Bound]  # the declared tools this environment can offer
+    shown: dict[str, str]  # the harness files planted, by name
+    shown_now: dict[str, str] | None  # what the digest showed, by section; None under pull
     ledger_shown: list[tuple[str, str, int]]
-    canonical: str                       # the balance file as planted
+    canonical: str  # the balance file as planted
     prov: dict
     drifted: list[str]
     records: Path
-    before: dict[str, Any]               # what each obligated channel held at episode start
+    before: dict[str, Any]  # what each obligated channel held at episode start
     started: float = 0.0
-    container: Box | None = None         # None until build_episode has started one
+    container: Box | None = None  # None until build_episode has started one
     shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
@@ -4769,23 +5252,24 @@ class Episode:
 
 def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
     """Clear actions that must be submitted afresh in the episode being built."""
-    expiring = [(tool.channel, TOOL_KINDS[tool.kind].file) for tool in tools()
-                if TOOL_KINDS[tool.kind].expires]
+    expiring = [(tool.channel, TOOL_KINDS[tool.kind].file) for tool in tools() if TOOL_KINDS[tool.kind].expires]
     paths: list[str] = []
     for inst in instances:
         if not inst.writable:
             continue
         if inst.channel.shape == "mailbox":
-            paths.extend(f"{inst.path}/{peer.label}" for peer in instances
-                         if peer.name == inst.name and peer.role == "peer")
+            paths.extend(
+                f"{inst.path}/{peer.label}" for peer in instances if peer.name == inst.name and peer.role == "peer"
+            )
         elif inst.channel.schema == "transfer":
             paths.append(inst.path)
         paths.extend(f"{inst.path}/{file}" for name, file in expiring if name == inst.name)
     paths = list(dict.fromkeys(paths))
     if not paths:
         return
-    cleared = shell.run("rm -rf -- " + " ".join(shlex.quote(path) for path in paths)
-                        + " && printf cleared", STARTUP_TIMEOUT)
+    cleared = shell.run(
+        "rm -rf -- " + " ".join(shlex.quote(path) for path in paths) + " && printf cleared", STARTUP_TIMEOUT
+    )
     if cleared.strip() != "cleared":
         raise EnvironmentBuildError("episode-scoped actions could not be cleared")
 
@@ -4812,8 +5296,7 @@ def build_episode(agent: str) -> Episode:
     before = before_digests(instances, reach, seating.labels)
     if "starter_files" not in account:
         # An account without pinned starter terms takes the tunables.
-        account["starter_files"], account["starter_files_below"] = \
-            s.starter_files, s.starter_files_below
+        account["starter_files"], account["starter_files_below"] = s.starter_files, s.starter_files_below
         save_account(agent, account)
     last = account["episodes"][-1] if account["episodes"] else {}
     scrub_receipts(instances, last.get("receipts") or {})
@@ -4822,8 +5305,7 @@ def build_episode(agent: str) -> Episode:
     # private store by the time the listing names it.
     store = private_store(s.channels)
     if store is None and starter_terms(account)[0]:
-        raise SystemExit(f"agent {agent} has starter files and the channel table has no private "
-                         f"store to put them in")
+        raise SystemExit(f"agent {agent} has starter files and the channel table has no private store to put them in")
     if store:
         plant_starter_files(agent, mirror(agent, store.name), store.path, account, index)
 
@@ -4831,8 +5313,14 @@ def build_episode(agent: str) -> Episode:
     # and the episode they land in is the one that most needs them.
     shown, shown_now = render_harness_files(agent, account)
 
-    prov = provenance(account["provider"], account["model"], seating, starter_terms(account),
-                      account.get("experiment"), system_of(account))
+    prov = provenance(
+        account["provider"],
+        account["model"],
+        seating,
+        starter_terms(account),
+        account.get("experiment"),
+        system_of(account),
+    )
     drifted = drift(agent, index, prov, account.get("forked_from"))
     for line in drifted:
         print(f"  provenance drift, {agent} episode {index}: {line}", file=sys.stderr)
@@ -4842,20 +5330,40 @@ def build_episode(agent: str) -> Episode:
     # with_tools holds the declared table against shell_tool; this holds what is
     # left of it, so an agent with nothing to act with is refused here rather than
     # asked for a turn it has no way to answer.
-    bound = bind_tools(list(s.tools), list(s.channels), instances,
-                       [seating.labels[seat] for seat in reach], index,
-                       election_held(agent, account, index))
+    bound = bind_tools(
+        list(s.tools),
+        list(s.channels),
+        instances,
+        [seating.labels[seat] for seat in reach],
+        index,
+        election_held(agent, account, index),
+    )
     if not s.shell_tool and not bound:
-        raise SystemExit(f"agent {agent} is offered no shell and none of the "
-                         f"{len(s.tools)} declared tools can act in this environment, so "
-                         f"there is nothing for it to do: {', '.join(t.name for t in s.tools)}")
+        raise SystemExit(
+            f"agent {agent} is offered no shell and none of the "
+            f"{len(s.tools)} declared tools can act in this environment, so "
+            f"there is nothing for it to do: {', '.join(t.name for t in s.tools)}"
+        )
 
-    ep = Episode(agent=agent, index=index, account=account, series_before=list(account["series"]),
-                 seating=seating, reach=reach, instances=instances,
-                 bound=bound, shown=shown,
-                 shown_now=shown_now, ledger_shown=ledger(agent, account),
-                 canonical=render_balance(account["series"]), prov=prov, drifted=drifted,
-                 records=records_dir(agent), before=before, started=time.time())
+    ep = Episode(
+        agent=agent,
+        index=index,
+        account=account,
+        series_before=list(account["series"]),
+        seating=seating,
+        reach=reach,
+        instances=instances,
+        bound=bound,
+        shown=shown,
+        shown_now=shown_now,
+        ledger_shown=ledger(agent, account),
+        canonical=render_balance(account["series"]),
+        prov=prov,
+        drifted=drifted,
+        records=records_dir(agent),
+        before=before,
+        started=time.time(),
+    )
     loaded = False
     try:
         # Inside the try, so there is no window in which a container exists and
@@ -4889,8 +5397,7 @@ def assert_writable(shell: Shell, instances: list[Instance]) -> None:
     writable = [i.path for i in instances if i.writable and not i.is_file]
     probe = " && ".join(f"test -w {shlex.quote(p)}" for p in writable)
     if shell.run(f"{probe} && echo ok", STARTUP_TIMEOUT).strip() != "ok":
-        raise EnvironmentBuildError(f"{', '.join(writable)} must all be writable; "
-                                    f"the agent could not persist anything")
+        raise EnvironmentBuildError(f"{', '.join(writable)} must all be writable; the agent could not persist anything")
 
 
 def run_episode(ep: Episode, router: ProviderRouter) -> dict:
@@ -4904,8 +5411,9 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     WATCH_AGENT.set(f"{ep.agent}| ")
     out: dict = {}
     try:
-        out = run_turns(router, shell, ep.account, ep.agent, ep.index, ep.seating.label,
-                        raw_path(ep.agent, ep.index), ep.bound)
+        out = run_turns(
+            router, shell, ep.account, ep.agent, ep.index, ep.seating.label, raw_path(ep.agent, ep.index), ep.bound
+        )
     finally:
         # While the container is still up, and after the last billed turn: this
         # asks the image a question, never the model.
@@ -4944,15 +5452,17 @@ def settle_episode(ep: Episode, out: dict, credit: Callable[[str, int], None] | 
     ordered = sorted(own, key=lambda i: not i.channel.schema)
     records: dict[str, Mapping[str, Any]] = {}
     for inst in ordered:
-        records[inst.name] = SETTLEMENTS[inst.channel.settles_as].resolve(
-            ep, inst, out["spent"], settles, pay)
+        records[inst.name] = SETTLEMENTS[inst.channel.settles_as].resolve(ep, inst, out["spent"], settles, pay)
     parsed = records[ordered[0].name] if ordered and ordered[0].channel.schema else None
-    return {"transfer": parsed or EMPTY_TRANSFER.copy(), "channels": records,
-            # The channels beside their records, so the console line and anything
-            # else that reads them need not find them by name in a global.
-            "settled": [(i.channel, records[i.channel.name]) for i in ordered],
-            # What the transfers owe their receivers, where no `credit` took it.
-            "credits": credits}
+    return {
+        "transfer": parsed or EMPTY_TRANSFER.copy(),
+        "channels": records,
+        # The channels beside their records, so the console line and anything
+        # else that reads them need not find them by name in a global.
+        "settled": [(i.channel, records[i.channel.name]) for i in ordered],
+        # What the transfers owe their receivers, where no `credit` took it.
+        "credits": credits,
+    }
 
 
 def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
@@ -4991,25 +5501,36 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     balance_bytes = len(render_balance(account["series"]))
     balance_fits = balance_bytes <= s.tool_result_limit
     if not balance_fits and len(render_balance(ep.series_before)) <= s.tool_result_limit:
-        print(f"  {agent}: {balance_name(ep.seating.label)} reached {balance_bytes} characters at "
-              f"episode {index}; reads are clipped at {s.tool_result_limit} from here, and "
-              f"episodes either side of this are not the same environment", file=sys.stderr)
+        print(
+            f"  {agent}: {balance_name(ep.seating.label)} reached {balance_bytes} characters at "
+            f"episode {index}; reads are clipped at {s.tool_result_limit} from here, and "
+            f"episodes either side of this are not the same environment",
+            file=sys.stderr,
+        )
 
     trace = trace_of(ep, out, settled, forgiven, balance_bytes, balance_fits)
     save_trace(agent, index, trace)
 
-    account["episodes"].append({"episode": index, "stop": out["stop"], "spent": out["spent"],
-                                "turns": len(out["turns"]),
-                                "balance_at_start": ep.series_before[-1],
-                                # Where this episode's elements sit in the series: its
-                                # turns, then a transfer, each penalty and a floor.
-                                "series_from": len(ep.series_before) - 1,
-                                "series_to": len(account["series"]) - 1,
-                                "transfer": settled["transfer"], "forgiven": forgiven,
-                                "received": ep.credited, "channels": settled["channels"],
-                                # What was planted at each receipt path, by digest: how
-                                # the next build tells a receipt from the agent's file.
-                                "receipts": receipts_planted(ep.shown)})
+    account["episodes"].append(
+        {
+            "episode": index,
+            "stop": out["stop"],
+            "spent": out["spent"],
+            "turns": len(out["turns"]),
+            "balance_at_start": ep.series_before[-1],
+            # Where this episode's elements sit in the series: its
+            # turns, then a transfer, each penalty and a floor.
+            "series_from": len(ep.series_before) - 1,
+            "series_to": len(account["series"]) - 1,
+            "transfer": settled["transfer"],
+            "forgiven": forgiven,
+            "received": ep.credited,
+            "channels": settled["channels"],
+            # What was planted at each receipt path, by digest: how
+            # the next build tells a receipt from the agent's file.
+            "receipts": receipts_planted(ep.shown),
+        }
+    )
     save_account(agent, account)
     for receiver, amount in settled["credits"]:
         credit_on_disk(receiver, amount)
@@ -5035,12 +5556,11 @@ def balance_forms(canonical: str) -> list[str]:
     s = SETTINGS
     forms = [canonical.strip()] + ([canonical.strip()[:-1] + ","] if s.live_balance else [])
     if len(canonical) >= clip_head(s.tool_result_limit):
-        forms.append(canonical[:clip_head(s.tool_result_limit)])
+        forms.append(canonical[: clip_head(s.tool_result_limit)])
     return forms
 
 
-def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int,
-             balance_bytes: int, balance_fits: bool) -> dict:
+def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int, balance_bytes: int, balance_fits: bool) -> dict:
     """One episode's complete record, in the shape TRACE_VERSION names.
 
     `touched_balance` is a command naming the balance file; `read_balance` is its
@@ -5049,49 +5569,64 @@ def trace_of(ep: Episode, out: dict, settled: dict, forgiven: int,
     with it off the series it opened on.
     """
     account = ep.account
-    patterns = balance_patterns(SETTINGS.harness_files["balance"],
-                                tuple(ep.seating.labels.values()))
+    patterns = balance_patterns(SETTINGS.harness_files["balance"], tuple(ep.seating.labels.values()))
     ref = patterns[0] if patterns else None
     forms = balance_forms(ep.canonical)
-    return {"trace_version": TRACE_VERSION,
-            "agent": ep.agent, "episode": ep.index, "provider": account["provider"],
-            "requested_model": account["model"], "resolved_model": out.get("resolved_model"),
-            "system_sha256": ep.prov["system_sha256"],
-            "provenance": ep.prov, "provenance_drift": ep.drifted,
-            # The tools the episode's request carried, by name, the shell among them
-            # where it was: what an election reads to tell a seat offered no ballot.
-            "offered": [spec.name for spec in episode_specs(ep.bound)],
-            "missing_tools": ep.missing,     # reached for; the image does not have it
-            # Written outside every channel and moved into the private store, so
-            # the work survives and the agent will not find it where it left it.
-            "misplaced": ep.misplaced,
-            "state_saved": ep.saved,         # false means files[] is last episode's, not this one's
-            "touched_balance": any(ref.search(c) for c in out["commands"]) if ref else False,
-            "read_balance": any(f in (c["result"] or "")
-                                for t in out["turns"] for c in t["tools"] for f in forms),
-            "series_before": ep.series_before, "series_after": list(account["series"]),
-            "balance_bytes": balance_bytes, "balance_fits": balance_fits,
-            # What the experiment could read about who has given what, as it stood
-            # when this episode started.
-            "ledger": ep.ledger_shown,
-            # What settled after the last billed turn: the parsed channel, every
-            # obligated channel by name, the floor, and what arrived.
-            "transfer": settled["transfer"], "channels": settled["channels"],
-            "forgiven": forgiven, "received": ep.credited,
-            "remaining": account["remaining"], "duration_s": round(time.time() - ep.started, 3),
-            **out, **snapshot(ep.instances,
-                              account["series"] if SETTINGS.live_balance else ep.series_before,
-                              starter_paths(account), tuple(ep.seating.labels.values()),
-                              receipts_planted(ep.shown))}
+    return {
+        "trace_version": TRACE_VERSION,
+        "agent": ep.agent,
+        "episode": ep.index,
+        "provider": account["provider"],
+        "requested_model": account["model"],
+        "resolved_model": out.get("resolved_model"),
+        "system_sha256": ep.prov["system_sha256"],
+        "provenance": ep.prov,
+        "provenance_drift": ep.drifted,
+        # The tools the episode's request carried, by name, the shell among them
+        # where it was: what an election reads to tell a seat offered no ballot.
+        "offered": [spec.name for spec in episode_specs(ep.bound)],
+        "missing_tools": ep.missing,  # reached for; the image does not have it
+        # Written outside every channel and moved into the private store, so
+        # the work survives and the agent will not find it where it left it.
+        "misplaced": ep.misplaced,
+        "state_saved": ep.saved,  # false means files[] is last episode's, not this one's
+        "touched_balance": any(ref.search(c) for c in out["commands"]) if ref else False,
+        "read_balance": any(f in (c["result"] or "") for t in out["turns"] for c in t["tools"] for f in forms),
+        "series_before": ep.series_before,
+        "series_after": list(account["series"]),
+        "balance_bytes": balance_bytes,
+        "balance_fits": balance_fits,
+        # What the experiment could read about who has given what, as it stood
+        # when this episode started.
+        "ledger": ep.ledger_shown,
+        # What settled after the last billed turn: the parsed channel, every
+        # obligated channel by name, the floor, and what arrived.
+        "transfer": settled["transfer"],
+        "channels": settled["channels"],
+        "forgiven": forgiven,
+        "received": ep.credited,
+        "remaining": account["remaining"],
+        "duration_s": round(time.time() - ep.started, 3),
+        **out,
+        **snapshot(
+            ep.instances,
+            account["series"] if SETTINGS.live_balance else ep.series_before,
+            starter_paths(account),
+            tuple(ep.seating.labels.values()),
+            receipts_planted(ep.shown),
+        ),
+    }
 
 
 def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     """The one line an episode prints, led by the agent so an experiment's lines stay
     attributable, then everything that settled after the last turn."""
     transfer = settled["transfer"]
-    line = (f"{ep.agent:<6} ep{ep.index:<3} {trace['stop']:<16} spent={trace['spent']:>7} "
-            f"left={trace['remaining']:>9} turns={len(trace['turns']):>3} "
-            f"read_balance={str(trace['read_balance']).lower()}")
+    line = (
+        f"{ep.agent:<6} ep{ep.index:<3} {trace['stop']:<16} spent={trace['spent']:>7} "
+        f"left={trace['remaining']:>9} turns={len(trace['turns']):>3} "
+        f"read_balance={str(trace['read_balance']).lower()}"
+    )
     # Written outside every channel: the work was kept, and the episode spent
     # turns putting it somewhere that does not come back.
     if trace.get("misplaced"):
@@ -5140,8 +5675,7 @@ def ready(agent: str, prepare: Callable[[Account], None] | None = None) -> Episo
     return build_episode(agent)
 
 
-def drive(agent: str, router: ProviderRouter,
-          prepare: Callable[[Account], None] | None = None) -> dict | None:
+def drive(agent: str, router: ProviderRouter, prepare: Callable[[Account], None] | None = None) -> dict | None:
     """One episode for `agent`, if its account admits one. The trace, or None."""
     ep = ready(agent, prepare)
     return None if ep is None else commit_episode(ep, run_episode(ep, router))
@@ -5150,10 +5684,15 @@ def drive(agent: str, router: ProviderRouter,
 # --- 16. Many episodes -----------------------------------------------------------
 
 
-def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
-          requirements: Iterable[tuple[str, str]] = (), channel_tables: list[dict] | None = None,
-          harness_files: dict | None = None, labels: Iterable[str] = ("1",),
-          tool_tables: list[dict] | None = None) -> ProviderRouter:
+def start(
+    config: Path | None = None,
+    overrides: dict[str, Any] | None = None,
+    requirements: Iterable[tuple[str, str]] = (),
+    channel_tables: list[dict] | None = None,
+    harness_files: dict | None = None,
+    labels: Iterable[str] = ("1",),
+    tool_tables: list[dict] | None = None,
+) -> ProviderRouter:
     """Read configuration and preflight every provider/model used by a seat.
 
     The settings are built whole and installed last, once every refusal has had its
@@ -5167,8 +5706,10 @@ def start(config: Path | None = None, overrides: dict[str, Any] | None = None,
 
     for name, text, expected in PINNED:
         if system_sha256(text) != expected:
-            refuse(f"{name} drifted from its pinned digest; if the change was meant, run "
-                   f"`py -3 harness.py --print-system` and paste the digest into {name}_SHA256.")
+            refuse(
+                f"{name} drifted from its pinned digest; if the change was meant, run "
+                f"`py -3 harness.py --print-system` and paste the digest into {name}_SHA256."
+            )
     s, cfg = read_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")
     if overrides:
@@ -5199,10 +5740,10 @@ def catch_signals() -> None:
     The first signal asks; the second is the ordinary hard stop, the handler
     having put the default back. Called from a CLI, not at import.
     """
+
     def stop(signum: int, frame: Any) -> None:
         global STOPPING
-        signal.signal(signum, signal.default_int_handler
-                      if signum == signal.SIGINT else signal.SIG_DFL)
+        signal.signal(signum, signal.default_int_handler if signum == signal.SIGINT else signal.SIG_DFL)
         STOPPING = True
         print("\nstopping after this turn; again to abandon it", file=sys.stderr)
 
@@ -5210,8 +5751,9 @@ def catch_signals() -> None:
     signal.signal(signal.SIGTERM, stop)
 
 
-def run_episodes(agent: str, router: ProviderRouter, count: int,
-                 prepare: Callable[[Account], None] | None = None) -> int:
+def run_episodes(
+    agent: str, router: ProviderRouter, count: int, prepare: Callable[[Account], None] | None = None
+) -> int:
     """Run up to `count` episodes back to back. Returns the exit status.
 
     `count` is a ceiling, never a floor; the account decides the rest. An agent
@@ -5230,8 +5772,10 @@ def run_episodes(agent: str, router: ProviderRouter, count: int,
             # Starting the container, copying state in, and starting the shell all
             # happen before the first API call, so nothing reaching here was billed
             # and there is no episode to record.
-            print(f"{agent}: could not build an environment for this episode after {ran} of {count}: "
-                  f"{failure(e)}", file=sys.stderr)
+            print(
+                f"{agent}: could not build an environment for this episode after {ran} of {count}: {failure(e)}",
+                file=sys.stderr,
+            )
             return 4
         if trace is None:
             why = why_out(load_account(agent)) or "no episode could start on it"
@@ -5245,8 +5789,10 @@ def run_episodes(agent: str, router: ProviderRouter, count: int,
             # An episode that ended because the harness or the API failed says
             # nothing about whether the next one would, and a loop that keeps
             # going finds out by spending.
-            print(f"stopping after {ran} of {count} episodes: "
-                  f"episode {trace['episode']} ended {trace['stop']}", file=sys.stderr)
+            print(
+                f"stopping after {ran} of {count} episodes: episode {trace['episode']} ended {trace['stop']}",
+                file=sys.stderr,
+            )
             break
     return 0
 
@@ -5275,15 +5821,16 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     if index > len(parent_account["episodes"]):
         # close_episode writes the trace before the account, so a trace can outlive
         # an episode whose commit stopped between the two.
-        print(f"{parent} episode {index} has a trace but its account lists "
-              f"{len(parent_account['episodes'])} episodes: that episode was never committed",
-              file=sys.stderr)
+        print(
+            f"{parent} episode {index} has a trace but its account lists "
+            f"{len(parent_account['episodes'])} episodes: that episode was never committed",
+            file=sys.stderr,
+        )
         return 2
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
     table = table_of(trace)
     written = [c for c in table if c.mirrored]
-    if (account_path(new).exists()
-            or any(any(mirror(new, c.name).glob("*")) for c in written)):
+    if account_path(new).exists() or any(any(mirror(new, c.name).glob("*")) for c in written):
         print(f"agent {new!r} already exists; forking would overwrite it", file=sys.stderr)
         return 2
     rebuild = rebuildable(trace, parent, index)
@@ -5291,28 +5838,35 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
         return 2
     recorded = list(trace["series_after"])
     series = recorded if series is None else list(series)
-    if series[:len(recorded)] != recorded:
-        print(f"{parent} episode {index}: the series handed to the fork does not carry on from "
-              f"the one the trace recorded", file=sys.stderr)
+    if series[: len(recorded)] != recorded:
+        print(
+            f"{parent} episode {index}: the series handed to the fork does not carry on from "
+            f"the one the trace recorded",
+            file=sys.stderr,
+        )
         return 2
 
     at_head = index == len(parent_account["episodes"])
     seat = parent_account.get("seat") or "1"
     label = (trace.get("provenance", {}).get("labels") or {}).get(seat) or parent_account.get("label") or seat
-    if (parent_account.get("account_version") != ACCOUNT_VERSION
-            or trace.get("trace_version") != TRACE_VERSION):
-        raise SystemExit(f"{parent} cannot be forked from an incompatible account or trace; "
-                         "start a fresh agent id")
+    if parent_account.get("account_version") != ACCOUNT_VERSION or trace.get("trace_version") != TRACE_VERSION:
+        raise SystemExit(f"{parent} cannot be forked from an incompatible account or trace; start a fresh agent id")
     account: Account = {
-        "account_version": ACCOUNT_VERSION, "agent": new, "provider": parent_account["provider"],
-        "model": parent_account["model"], "initial": parent_account["initial"],
-        "created_at": parent_account["created_at"], "remaining": series[-1],
-        "seat": seat, "label": label,
-        "series": series, "episodes": parent_account["episodes"][:index],
+        "account_version": ACCOUNT_VERSION,
+        "agent": new,
+        "provider": parent_account["provider"],
+        "model": parent_account["model"],
+        "initial": parent_account["initial"],
+        "created_at": parent_account["created_at"],
+        "remaining": series[-1],
+        "seat": seat,
+        "label": label,
+        "series": series,
+        "episodes": parent_account["episodes"][:index],
         # Modes live beside each tree and describe its latest revision only,
         # so a fork behind the parent's head cannot restore them.
-        "forked_from": {"agent": parent, "episode": index,
-                        "modes": "restored" if at_head else "defaulted"}}
+        "forked_from": {"agent": parent, "episode": index, "modes": "restored" if at_head else "defaulted"},
+    }
     # A fork and its parent differ only in what happens next, so the fork is told
     # what the parent was told.
     if "system_prompt" in parent_account:
@@ -5328,8 +5882,10 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
 
     stray = restore_files(new, written, label, rebuild)
     if stray is not None:
-        print(f"{parent} episode {index}: {stray} sits in no directory the recorded table has "
-              f"this agent writing", file=sys.stderr)
+        print(
+            f"{parent} episode {index}: {stray} sits in no directory the recorded table has this agent writing",
+            file=sys.stderr,
+        )
         return 2
     save_account(new, account)
     if at_head:
@@ -5337,9 +5893,11 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
             if (saved := modes_file(mirror(parent, c.name))).exists():
                 shutil.copyfile(saved, modes_file(mirror(new, c.name)))
 
-    print(f"forked {parent} episode {index} -> agent {new}: {len(rebuild)} files, "
-          f"{len(series) - 1} billed turns, {series[-1]} remaining, "
-          f"modes {account['forked_from']['modes']}")
+    print(
+        f"forked {parent} episode {index} -> agent {new}: {len(rebuild)} files, "
+        f"{len(series) - 1} billed turns, {series[-1]} remaining, "
+        f"modes {account['forked_from']['modes']}"
+    )
     if planted := account.get("starter_files_landed"):
         print(f"  carries starter_files {planted['name']!r} from episode {planted['episode']}")
     return 0
@@ -5354,8 +5912,11 @@ def rebuildable(trace: dict, parent: str, index: int) -> list[dict] | None:
     did not decode as UTF-8 stops the fork, and says why.
     """
     if not trace["state_saved"]:
-        print(f"{parent} episode {index} did not mirror its state back, so files[] is the "
-              f"episode before it, not this one; fork an episode that saved", file=sys.stderr)
+        print(
+            f"{parent} episode {index} did not mirror its state back, so files[] is the "
+            f"episode before it, not this one; fork an episode that saved",
+            file=sys.stderr,
+        )
         return None
     rebuild = []
     for rec in trace["files"]:
@@ -5369,8 +5930,7 @@ def rebuildable(trace: dict, parent: str, index: int) -> list[dict] | None:
         elif "\ufffd" in rec["text"]:
             why = "did not decode as UTF-8 and its stored text is lossy"
         if why:
-            print(f"{parent} episode {index}: {rec['path']} {why}, so this episode cannot be "
-                  f"rebuilt", file=sys.stderr)
+            print(f"{parent} episode {index}: {rec['path']} {why}, so this episode cannot be rebuilt", file=sys.stderr)
             return None
         rebuild.append(rec)
     return rebuild
@@ -5387,12 +5947,14 @@ def restore_files(new: str, written: list[Channel], label: str, records: list[di
     prefixes = {c.name: (c.path_for(label) if c.shape == "directory" else c.outbox) for c in written}
     placed: list[tuple[Path, str]] = []
     for rec in records:
-        tree = max((name for name, p in prefixes.items()
-                    if rec["path"] == p or rec["path"].startswith(p + "/")),
-                   key=lambda name: len(prefixes[name]), default=None)
+        tree = max(
+            (name for name, p in prefixes.items() if rec["path"] == p or rec["path"].startswith(p + "/")),
+            key=lambda name: len(prefixes[name]),
+            default=None,
+        )
         if tree is None:
             return rec["path"]
-        placed.append((mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1:], rec["text"]))
+        placed.append((mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1 :], rec["text"]))
     for c in written:
         mirror(new, c.name).mkdir(parents=True, exist_ok=True)
     traces_dir(new).mkdir(parents=True, exist_ok=True)
@@ -5433,6 +5995,7 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
     if manifest is not None:
         # Deferred, so harness.py is fully imported before experiment.py imports it.
         import experiment
+
         m = experiment.load_manifest(manifest)
         default = m["overrides"].get("system_prompt", s.system_prompt)
         print()
@@ -5440,8 +6003,9 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
         show_prompt("experiment", default)
         for entry in m["agents"]:
             show_prompt(entry["id"], entry.get("system_prompt", default))
-        chans = validate_channels(m["channels"], m["harness_files"], str(manifest),
-                                  tuple(m["labels"].values()), base=s)[0]
+        chans = validate_channels(
+            m["channels"], m["harness_files"], str(manifest), tuple(m["labels"].values()), base=s
+        )[0]
         declared = validate_tools(m["tools"], chans, str(manifest))
         show_tools(m["tools"], declared)
     return 1 if drifted else 0
@@ -5467,8 +6031,7 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
     s, cfg = read_config(SETTINGS, config)
     if m["overrides"]:
         s = overlay(s, m["overrides"], str(manifest), TREATMENT, NOT_MANIFEST)
-    s = with_channels(s, m["channels"], m["harness_files"], str(manifest),
-                      tuple(m["labels"].values()))
+    s = with_channels(s, m["channels"], m["harness_files"], str(manifest), tuple(m["labels"].values()))
     s = with_tools(s, m["tools"], list(s.channels), str(manifest))
     source_root = s.root
 
@@ -5485,8 +6048,10 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
 
     print(f"config: {cfg or 'built-in defaults'}")
     print(f"manifest: {manifest}")
-    with tempfile.TemporaryDirectory(prefix="agent-context-") as temporary, \
-            using(dataclasses.replace(s, root=Path(temporary))):
+    with (
+        tempfile.TemporaryDirectory(prefix="agent-context-") as temporary,
+        using(dataclasses.replace(s, root=Path(temporary))),
+    ):
         audit_root = Path(temporary)
         sources = [c.source for c in s.channels if c.writer == "experimenter"]
         sources += [entry.get("starter_files", s.starter_files) for entry in agents]
@@ -5521,12 +6086,12 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
             ensure_mirrors(instances)
             store = private_store(s.channels)
             if store is None and starter_terms(account)[0]:
-                raise SystemExit(f"agent {entry['id']} has starter files and the channel "
-                                 "table has no private store to put them in")
+                raise SystemExit(
+                    f"agent {entry['id']} has starter files and the channel table has no private store to put them in"
+                )
             if store is not None:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    plant_starter_files(entry["id"], mirror(entry["id"], store.name),
-                                        store.path, account, 1)
+                    plant_starter_files(entry["id"], mirror(entry["id"], store.name), store.path, account, 1)
 
             print(f"\n=== agent {entry['id']} ===")
             system = system_of(account)
@@ -5534,13 +6099,11 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
             print(system, end="" if system.endswith("\n") else "\n")
             for episode in episodes:
                 view = json.loads(json.dumps(account))
-                view["episodes"] = [{"episode": n, "stop": "end_turn"}
-                                    for n in range(1, episode)]
+                view["episodes"] = [{"episode": n, "stop": "end_turn"} for n in range(1, episode)]
                 instances = environment(entry["id"], view)
                 rendered, _ = render_harness_files(entry["id"], view)
                 opening = rendered.get(s.harness_files["digest"], "")
-                reach = [view["peers"]["labels"][seat]
-                         for seat in seating_of(entry["id"], view).peers]
+                reach = [view["peers"]["labels"][seat] for seat in seating_of(entry["id"], view).peers]
                 bound = bind_tools(list(s.tools), list(s.channels), instances, reach, episode)
                 specs = episode_specs(bound)
 
@@ -5552,8 +6115,7 @@ def print_context(config: Path | None, manifest: Path, selected: str | None = No
                     print(f"opening input ({len(opening)} characters):")
                 print(opening, end="" if opening.endswith("\n") else "\n")
                 print("tool specs:")
-                print(json.dumps([spec.as_dict() for spec in specs], indent=2,
-                                 ensure_ascii=False))
+                print(json.dumps([spec.as_dict() for spec in specs], indent=2, ensure_ascii=False))
     return 0
 
 
@@ -5585,30 +6147,52 @@ def main(argv: list[str] | None = None) -> int:
     global WATCH
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--agent")
-    ap.add_argument("--episodes", type=int, default=1, metavar="N",
-                    help="run up to N episodes back to back, stopping early when the "
-                         "budget runs out or an episode ends abnormally (default: 1)")
+    ap.add_argument(
+        "--episodes",
+        type=int,
+        default=1,
+        metavar="N",
+        help="run up to N episodes back to back, stopping early when the "
+        "budget runs out or an episode ends abnormally (default: 1)",
+    )
     ap.add_argument("--config", type=Path, help="default: config.toml beside this file")
-    ap.add_argument("--watch", action="store_true",
-                    help="echo the agent's words and the account to stdout as it runs; "
-                         "interleaves across parallel agents")
-    ap.add_argument("--resume", action="store_true",
-                    help="continue the existing compatible agent account; without this flag, "
-                         "previous state is preserved under displaced/ and a fresh run starts")
-    ap.add_argument("--print-system", action="store_true",
-                    help="print what the harness ships and what is in force; starts no episode")
-    ap.add_argument("--print-context", action="store_true",
-                    help="render fresh agents' opening input and complete tool schemas; "
-                         "requires --manifest and starts no episode")
-    ap.add_argument("--manifest", type=Path, metavar="PATH",
-                    help="the experiment this agent is part of: its environment, its settings "
-                         "and this agent's own terms. Required to run an episode")
-    ap.add_argument("--print-files", metavar="NAME",
-                    help="print the listing and digest of a directory under files/; starts no episode")
-    ap.add_argument("--fork-from", metavar="AGENT",
-                    help="rebuild AGENT as it stood at --at under the id given to --agent, and stop")
-    ap.add_argument("--at", type=int, metavar="N",
-                    help="the episode of --fork-from to fork at")
+    ap.add_argument(
+        "--watch",
+        action="store_true",
+        help="echo the agent's words and the account to stdout as it runs; interleaves across parallel agents",
+    )
+    ap.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue the existing compatible agent account; without this flag, "
+        "previous state is preserved under displaced/ and a fresh run starts",
+    )
+    ap.add_argument(
+        "--print-system",
+        action="store_true",
+        help="print what the harness ships and what is in force; starts no episode",
+    )
+    ap.add_argument(
+        "--print-context",
+        action="store_true",
+        help="render fresh agents' opening input and complete tool schemas; requires --manifest and starts no episode",
+    )
+    ap.add_argument(
+        "--manifest",
+        type=Path,
+        metavar="PATH",
+        help="the experiment this agent is part of: its environment, its settings "
+        "and this agent's own terms. Required to run an episode",
+    )
+    ap.add_argument(
+        "--print-files",
+        metavar="NAME",
+        help="print the listing and digest of a directory under files/; starts no episode",
+    )
+    ap.add_argument(
+        "--fork-from", metavar="AGENT", help="rebuild AGENT as it stood at --at under the id given to --agent, and stop"
+    )
+    ap.add_argument("--at", type=int, metavar="N", help="the episode of --fork-from to fork at")
     a = ap.parse_args(argv)
 
     if a.watch:
@@ -5625,14 +6209,12 @@ def main(argv: list[str] | None = None) -> int:
     # too; start() is what refuses before an episode costs money.
     if a.print_files:
         if not files_dir(a.print_files).is_dir():
-            print(f"no starter files {a.print_files!r} under {SETTINGS.root / 'files'}",
-                  file=sys.stderr)
+            print(f"no starter files {a.print_files!r} under {SETTINGS.root / 'files'}", file=sys.stderr)
             return 2
         listing = files_listing(a.print_files)
         for rel, data in listing:
             print(f"{len(data):>9}  {rel}")
-        print(f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, "
-              f"sha256={files_sha256(a.print_files)}")
+        print(f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, sha256={files_sha256(a.print_files)}")
         return 0
     if not a.agent:
         ap.error("--agent is required")
@@ -5647,10 +6229,13 @@ def main(argv: list[str] | None = None) -> int:
     if a.fork_from:
         return fork(a.fork_from, a.at, a.agent)
     if not a.manifest:
-        ap.error("--manifest is required: an agent runs as part of an experiment, and the "
-                 "manifest is what declares its environment and its terms")
+        ap.error(
+            "--manifest is required: an agent runs as part of an experiment, and the "
+            "manifest is what declares its environment and its terms"
+        )
     # Deferred, so harness.py is fully imported before experiment.py imports it.
     import experiment
+
     m = experiment.load_manifest(a.manifest)
     ids = [e["id"] for e in m["agents"]]
     entry = next((e for e in m["agents"] if e["id"] == a.agent), None)
@@ -5660,10 +6245,15 @@ def main(argv: list[str] | None = None) -> int:
     # cannot record: an agent reading no config and one reading a config of every
     # default are the same episode. Everything else is the manifest's, and its digest
     # is in every trace.
-    router = start(a.config, overrides=m["overrides"],
-                   requirements={(e["provider"], e["model"]) for e in m["agents"]},
-                   channel_tables=m["channels"], harness_files=m["harness_files"],
-                   labels=tuple(m["labels"].values()), tool_tables=m["tools"])
+    router = start(
+        a.config,
+        overrides=m["overrides"],
+        requirements={(e["provider"], e["model"]) for e in m["agents"]},
+        channel_tables=m["channels"],
+        harness_files=m["harness_files"],
+        labels=tuple(m["labels"].values()),
+        tool_tables=m["tools"],
+    )
     catch_signals()
     if not a.resume:
         displace_agents([a.agent], FRESH_START)
@@ -5677,4 +6267,5 @@ if __name__ == "__main__":
     # experiment.py imports this file as `harness`, so the CLI runs in that module and
     # the settings it installs are the ones experiment.py reads.
     import harness
+
     sys.exit(harness.main())

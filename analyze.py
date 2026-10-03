@@ -18,8 +18,7 @@ from typing import Callable
 import harness
 from providers import USAGE_FIELDS
 
-TOKEN_STACK_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
-                      "output_tokens")
+TOKEN_STACK_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens")
 
 
 def load(agent_id: str | None) -> dict[str, list[dict]]:
@@ -35,11 +34,12 @@ def load(agent_id: str | None) -> dict[str, list[dict]]:
         traces = harness.committed_traces(d.name, harness.account_on_disk(d.name))
         if traces:
             loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
-            incompatible = [t.get("trace_version") for t in loaded
-                            if t.get("trace_version") != harness.TRACE_VERSION]
+            incompatible = [t.get("trace_version") for t in loaded if t.get("trace_version") != harness.TRACE_VERSION]
             if incompatible:
-                raise SystemExit(f"{d}: contains incompatible trace versions {sorted(set(incompatible))}; "
-                                 f"version-{harness.TRACE_VERSION} provider records require fresh agent ids")
+                raise SystemExit(
+                    f"{d}: contains incompatible trace versions {sorted(set(incompatible))}; "
+                    f"version-{harness.TRACE_VERSION} provider records require fresh agent ids"
+                )
             agents[d.name] = loaded
     return agents
 
@@ -79,15 +79,13 @@ def peer_public_files(t: dict) -> list[dict]:
 def outbox_files(t: dict) -> list[dict]:
     """What the agent was sending: one file per addressee."""
     parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
-    return [f for f in t["files"] if f["role"] == "own" and f["readers"] == "addressee"
-            and f["channel"] not in parsed]
+    return [f for f in t["files"] if f["role"] == "own" and f["readers"] == "addressee" and f["channel"] not in parsed]
 
 
 def inbox_files(t: dict) -> list[dict]:
     """What other agents addressed to this one, one file per sender."""
     parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
-    return [f for f in t["files"] if f["role"] == "peer" and f["readers"] == "addressee"
-            and f["channel"] not in parsed]
+    return [f for f in t["files"] if f["role"] == "peer" and f["readers"] == "addressee" and f["channel"] not in parsed]
 
 
 def schema_files(t: dict) -> list[dict]:
@@ -180,9 +178,10 @@ def addressed_labels(t: dict) -> list[str]:
         return []
     box = mail.outbox + "/"
     peers = {label: seat for seat, label in labels_of(t).items() if seat != seat_of(t)}
-    names = {f["path"][len(box):] for f in outbox_files(t) if f["path"].startswith(box)}
-    return sorted((n for n in names if n in peers),
-                  key=lambda n: (int(peers[n]) if peers[n].isdigit() else 0, peers[n]))
+    names = {f["path"][len(box) :] for f in outbox_files(t) if f["path"].startswith(box)}
+    return sorted(
+        (n for n in names if n in peers), key=lambda n: (int(peers[n]) if peers[n].isdigit() else 0, peers[n])
+    )
 
 
 def is_shell(name: str | None) -> bool:
@@ -216,8 +215,7 @@ TOOL_PLACES = ("path", "to")
 
 def tool_calls(t: dict) -> list[dict]:
     """Every declared tool call this episode made, the shell's excluded."""
-    return [c for turn in t.get("turns") or [] for c in turn.get("tools") or []
-            if not is_shell(c.get("tool"))]
+    return [c for turn in t.get("turns") or [] for c in turn.get("tools") or [] if not is_shell(c.get("tool"))]
 
 
 def reached(t: dict) -> list[str]:
@@ -228,8 +226,9 @@ def reached(t: dict) -> list[str]:
     nothing in `commands`. Anything asking what an episode reached asks this, so the
     answer does not depend on which of the two an experiment offered.
     """
-    return list(t.get("commands") or []) + [str(c["input"][k]) for c in tool_calls(t)
-                                  for k in TOOL_PLACES if k in (c.get("input") or {})]
+    return list(t.get("commands") or []) + [
+        str(c["input"][k]) for c in tool_calls(t) for k in TOOL_PLACES if k in (c.get("input") or {})
+    ]
 
 
 def names(place: str, path: str) -> bool:
@@ -265,7 +264,7 @@ def changed_starter(t: dict) -> bool:
         return False
     root = harness.files_dir(t["provenance"]["starter_files"])
     for f in starter_files_of(t):
-        original = root / f["path"][len(store.path) + 1:]
+        original = root / f["path"][len(store.path) + 1 :]
         if not original.exists():
             continue
         if f["text"] is None or f["text"].encode("utf-8") != original.read_bytes():
@@ -305,8 +304,7 @@ def text_chars(t: dict) -> int:
 
 def file_text(t: dict, path: str) -> str | None:
     """The captured text of one file this episode, or None where it was absent or binary."""
-    return next((f["text"] for f in t.get("files") or []
-                 if f["path"] == path and f.get("text") is not None), None)
+    return next((f["text"] for f in t.get("files") or [] if f["path"] == path and f.get("text") is not None), None)
 
 
 def identity_delta(prev: dict | None, t: dict, path: str) -> int | None:
@@ -320,9 +318,11 @@ def identity_delta(prev: dict | None, t: dict, path: str) -> int | None:
     if now is None:
         return None
     before = (file_text(prev, path) if prev else None) or ""
-    return sum(1 for line in difflib.unified_diff(before.splitlines(), now.splitlines(),
-                                                  lineterm="", n=0)
-               if line[:1] in "+-" and not line.startswith(("+++", "---")))
+    return sum(
+        1
+        for line in difflib.unified_diff(before.splitlines(), now.splitlines(), lineterm="", n=0)
+        if line[:1] in "+-" and not line.startswith(("+++", "---"))
+    )
 
 
 def against_last(ts: list[dict], path: str) -> list[tuple[dict | None, dict]]:
@@ -354,9 +354,13 @@ def identity_lines(ts: list[dict], path: str | None) -> list[str]:
         return [report_line("identity file", f"{path} was never present")]
     later = present[1:]
     moved = [s for s, d in later if d]
-    return [report_line("identity file", f"{path}, first present ep{present[0][0]}, changed in "
-                                  f"{len(moved)} of {len(later)} later episodes"),
-            report_line("identity lines changed", " ".join(f"ep{s}:{d}" for s, d in present))]
+    return [
+        report_line(
+            "identity file",
+            f"{path}, first present ep{present[0][0]}, changed in {len(moved)} of {len(later)} later episodes",
+        ),
+        report_line("identity lines changed", " ".join(f"ep{s}:{d}" for s, d in present)),
+    ]
 
 
 # --- one CSV row -------------------------------------------------------------------
@@ -368,27 +372,43 @@ def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
     `identity` is the path of a file to diff and `prev` the last episode before
     this one that held it; both may be left out, and the identity column is blank.
     """
-    return {**episode_cols(t), **tokens(t), **balance_cols(t), **file_cols(t), **peer_cols(t),
-            **transfer_cols(t), **channel_cols(t), **voice_cols(t, prev, identity)}
+    return {
+        **episode_cols(t),
+        **tokens(t),
+        **balance_cols(t),
+        **file_cols(t),
+        **peer_cols(t),
+        **transfer_cols(t),
+        **channel_cols(t),
+        **voice_cols(t, prev, identity),
+    }
 
 
 def episode_cols(t: dict) -> dict:
     """Which episode, how it ended, which models answered it, and what it cost."""
     prov = t["provenance"]
     return {
-        "agent": t["agent"], "episode": t["episode"], "stop": t["stop"],
+        "agent": t["agent"],
+        "episode": t["episode"],
+        "stop": t["stop"],
         "refusal_category": refusal_cell(t),
-        "provider": t["provider"], "requested_model": t["requested_model"],
-        "refused_turns": t["refused_turns"], "served_models": served_cell(t),
-        "started_at": prov["started_at"], "resolved_model": t["resolved_model"] or "",
+        "provider": t["provider"],
+        "requested_model": t["requested_model"],
+        "refused_turns": t["refused_turns"],
+        "served_models": served_cell(t),
+        "started_at": prov["started_at"],
+        "resolved_model": t["resolved_model"] or "",
         "image_id": (prov["image_id"] or "")[:19],
         "drift": ";".join(t["provenance_drift"]),
         "missing_tools": ";".join(t["missing_tools"]),
         "error": next(iter((t["error"] or "").splitlines()), ""),
-        "spent": t["spent"], "remaining": t["remaining"], "turns": len(t["turns"]),
+        "spent": t["spent"],
+        "remaining": t["remaining"],
+        "turns": len(t["turns"]),
         # The two ways an episode acts, counted apart: an arm offered only tools
         # runs no commands, and one offered only the shell makes no tool calls.
-        "commands": len(t["commands"]), "tool_calls": len(tool_calls(t)),
+        "commands": len(t["commands"]),
+        "tool_calls": len(tool_calls(t)),
         "retries": len(t["retries"]),
         "duration_s": t["duration_s"],
     }
@@ -397,10 +417,13 @@ def episode_cols(t: dict) -> dict:
 def balance_cols(t: dict) -> dict:
     """The balance file: whether it was named, read, rewritten, and still fits in one read."""
     return {
-        "balance_floor": t["balance_floor"], "live_balance_errors": t["live_balance_errors"],
+        "balance_floor": t["balance_floor"],
+        "live_balance_errors": t["live_balance_errors"],
         "live_balance_tampered": t["live_balance_tampered"],
-        "touched_balance": t["touched_balance"], "read_balance": t["read_balance"],
-        "balance_bytes": t["balance_bytes"], "balance_fits": t["balance_fits"],
+        "touched_balance": t["touched_balance"],
+        "read_balance": t["read_balance"],
+        "balance_bytes": t["balance_bytes"],
+        "balance_fits": t["balance_fits"],
     }
 
 
@@ -408,11 +431,14 @@ def file_cols(t: dict) -> dict:
     """What the agent left behind, and what it was given and did about it."""
     agent, starter = agent_files_of(t), starter_files_of(t)
     return {
-        "files": len(t["files"]), "agent_files": len(agent),
+        "files": len(t["files"]),
+        "agent_files": len(agent),
         "agent_bytes": sum(f["size"] for f in agent),
-        "starter_files": t["provenance"]["starter_files"], "starter_files_count": len(starter),
+        "starter_files": t["provenance"]["starter_files"],
+        "starter_files_count": len(starter),
         "starter_bytes": sum(f["size"] for f in starter),
-        "touched_starter": touched_starter(t), "changed_starter": changed_starter(t),
+        "touched_starter": touched_starter(t),
+        "changed_starter": changed_starter(t),
     }
 
 
@@ -421,11 +447,13 @@ def peer_cols(t: dict) -> dict:
     peer = peer_public_files(t)
     return {
         "peers": ";".join(f"{k}={v}" for k, v in sorted(peers_of(t).items())),
-        "peer_files": len(peer), "peer_bytes": sum(f["size"] for f in peer),
+        "peer_files": len(peer),
+        "peer_bytes": sum(f["size"] for f in peer),
         "touched_peer": touched_peer(t),
         # What it said to one agent and not to all of them, and what was said to it.
         "sent_to": ";".join(addressed_labels(t)),
-        "outbox_files": len(outbox_files(t)), "inbox_files": len(inbox_files(t)),
+        "outbox_files": len(outbox_files(t)),
+        "inbox_files": len(inbox_files(t)),
     }
 
 
@@ -433,8 +461,10 @@ def transfer_cols(t: dict) -> dict:
     """What it gave, which is the one thing it did that the whole experiment saw."""
     transfer = t["transfer"]
     return {
-        "transfer_to": transfer["seat"] or "", "transfer_amount": transfer["amount"],
-        "transfer_rebate": transfer["rebate"], "transfer_error": transfer["error"] or "",
+        "transfer_to": transfer["seat"] or "",
+        "transfer_amount": transfer["amount"],
+        "transfer_rebate": transfer["rebate"],
+        "transfer_error": transfer["error"] or "",
         "ledger_lines": len(t.get("ledger") or []),
     }
 
@@ -552,8 +582,10 @@ def segment_lines(ts: list[dict]) -> list[str]:
     out = [f"  ran under {len(segs)} harnesses; the totals above span the seam"]
     for seg in segs:
         digest = seg[0]["provenance"]["harness_sha256"][:12]
-        out.append(f"    {digest}  episodes {seg[0]['episode']}-{seg[-1]['episode']}, "
-                   f"{sum(t['spent'] for t in seg)} micro-dollars")
+        out.append(
+            f"    {digest}  episodes {seg[0]['episode']}-{seg[-1]['episode']}, "
+            f"{sum(t['spent'] for t in seg)} micro-dollars"
+        )
     return out
 
 
@@ -568,20 +600,25 @@ def refusal_lines(ts: list[dict]) -> list[str]:
         return [report_line("refused", "never")]
     turns = sum(len(refused_turns_of(t)) for t in refused)
     went_on = [t["episode"] for t in refused if t["stop"] != "refusal"]
-    tally = collections.Counter(harness.category_of(tu)
-                                for t in refused for tu in refused_turns_of(t))
-    out = [report_line("refused", f"{turns} turns in {len(refused)} of {len(ts)} episodes"),
-           report_line("  carried on after", f"{len(went_on)} of {len(refused)}"
-                + (f" - episodes {went_on[:10]}" if went_on else "")),
-           report_line("  by category", dict(tally.most_common()))]
+    tally = collections.Counter(harness.category_of(tu) for t in refused for tu in refused_turns_of(t))
+    out = [
+        report_line("refused", f"{turns} turns in {len(refused)} of {len(ts)} episodes"),
+        report_line(
+            "  carried on after",
+            f"{len(went_on)} of {len(refused)}" + (f" - episodes {went_on[:10]}" if went_on else ""),
+        ),
+        report_line("  by category", dict(tally.most_common())),
+    ]
     for t in refused[:12]:
         head = refused_turns_of(t)[0]
         # Whitespace collapsed and clipped: the explanation is prose of no
         # fixed length and the trace holds it whole.
         why = " ".join(((head["refusal"] or {}).get("explanation") or "").split())
-        out.append(f"    ep{t['episode']:04d}  {len(refused_turns_of(t))} of "
-                   f"{len(t['turns'])} turns  {harness.category_of(head)}  ended {t['stop']}"
-                   + (f"  {why[:80]}" if why else ""))
+        out.append(
+            f"    ep{t['episode']:04d}  {len(refused_turns_of(t))} of "
+            f"{len(t['turns'])} turns  {harness.category_of(head)}  ended {t['stop']}"
+            + (f"  {why[:80]}" if why else "")
+        )
     if len(refused) > 12:
         out.append(f"    ... and {len(refused) - 12} more; episodes.csv has them all")
     if any(tu["refusal"] for t in refused for tu in refused_turns_of(t)):
@@ -630,8 +667,10 @@ def met_lines(ts: list[dict]) -> list[str]:
     for t in ts:
         for ch, rec in settled_channels(t):
             seen.setdefault(ch.name, []).append(met_of(ch, rec))
-    return [report_line(f"episodes that met {name}", f"{sum(1 for m in mets if m)} of {len(mets)}")
-            for name, mets in seen.items()]
+    return [
+        report_line(f"episodes that met {name}", f"{sum(1 for m in mets if m)} of {len(mets)}")
+        for name, mets in seen.items()
+    ]
 
 
 def transfer_lines(ts: list[dict]) -> list[str]:
@@ -653,13 +692,16 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     if not (given or received or any(taken.values()) or forgiven):
         return [report_line("transfers", "none given, none received")]
     lines = [
-        report_line("gave", f"{sum(t['transfer']['amount'] for t in given)} over {len(given)} episode(s)"
-                     + (", to " + ", ".join(sorted({t["transfer"]["label"] for t in given}))
-                        if given else "")),
+        report_line(
+            "gave",
+            f"{sum(t['transfer']['amount'] for t in given)} over {len(given)} episode(s)"
+            + (", to " + ", ".join(sorted({t["transfer"]["label"] for t in given})) if given else ""),
+        ),
         first_line("first gave", ts, lambda t: t["transfer"]["amount"]),
         report_line("received", f"{received}, by the ledger it last read"),
-        report_line("refused declarations",
-             sorted({t["transfer"]["error"] for t in ts if t["transfer"]["error"]}) or "none"),
+        report_line(
+            "refused declarations", sorted({t["transfer"]["error"] for t in ts if t["transfer"]["error"]}) or "none"
+        ),
     ]
     lines += [report_line(f"taken for silence on {name}", n) for name, n in taken.items() if n]
     if forgiven:
@@ -677,7 +719,8 @@ def ledger_lines(ts: list[dict]) -> list[str]:
     if not rows:
         return []
     return [report_line("the experiment's transfers", "giver -> receiver, amount")] + [
-        f"      {giver} -> {taker}  {amount}" for giver, taker, amount in rows]
+        f"      {giver} -> {taker}  {amount}" for giver, taker, amount in rows
+    ]
 
 
 def starter_lines(ts: list[dict]) -> list[str]:
@@ -690,8 +733,11 @@ def starter_lines(ts: list[dict]) -> list[str]:
         return [report_line("starter_files", "none; the environment stayed empty")]
     prov = next(t["provenance"] for t in ts if t["provenance"]["starter_files"])
     return [
-        report_line("starter_files", f"{', '.join(starter_files)} ({prov['starter_files_sha256'][:12]}), "
-                              f"configured to land below {prov['starter_files_below']}"),
+        report_line(
+            "starter_files",
+            f"{', '.join(starter_files)} ({prov['starter_files_sha256'][:12]}), "
+            f"configured to land below {prov['starter_files_below']}",
+        ),
         first_line("starter_files first seen", ts, starter_files_of),
         first_line("first named a starter", ts, touched_starter),
         first_line("first changed a starter", ts, changed_starter),
@@ -709,15 +755,28 @@ def provenance_lines(ts: list[dict]) -> list[str]:
     A field with one value across the agent is stated once. A field that moved is
     listed per episode, because from there on the episodes are not comparable.
     """
-    fields = ["provider", "requested_model", "image_id", "context_fraction",
-              "max_tokens", "max_turns", "command_timeout", "tool_result_limit", "live_balance",
-              "delivery", "schedule", "labels", "harness_files", "channels_sha256",
-              "source_sha256", "harness_sha256"]
+    fields = [
+        "provider",
+        "requested_model",
+        "image_id",
+        "context_fraction",
+        "max_tokens",
+        "max_turns",
+        "command_timeout",
+        "tool_result_limit",
+        "live_balance",
+        "delivery",
+        "schedule",
+        "labels",
+        "harness_files",
+        "channels_sha256",
+        "source_sha256",
+        "harness_sha256",
+    ]
     out, drifted = [], sorted({d.split(":")[0] for t in ts for d in t["provenance_drift"]})
     for f in fields:
         seen = [t["provenance"][f] for t in ts]
-        shown = [str(v)[:19] if f in ("image_id", "harness_sha256", "channels_sha256") else v
-                 for v in seen]
+        shown = [str(v)[:19] if f in ("image_id", "harness_sha256", "channels_sha256") else v for v in seen]
         if len({str(v) for v in shown}) == 1:
             out.append(report_line(f, shown[0]))
         else:
@@ -746,8 +805,7 @@ def state_changes(before: dict[str, str], after: dict[str, str]) -> list[str]:
     for path in sorted(set(before) | set(after)):
         a, b = before.get(path, ""), after.get(path, "")
         if a != b:
-            out += difflib.unified_diff(a.splitlines(), b.splitlines(),
-                                        fromfile=path, tofile=path, lineterm="", n=1)
+            out += difflib.unified_diff(a.splitlines(), b.splitlines(), fromfile=path, tofile=path, lineterm="", n=1)
     return out
 
 
@@ -757,18 +815,20 @@ def transcript(agents: dict[str, list[dict]]) -> str:
     for name, ts in agents.items():
         prev: dict[str, str] = {}
         for t in ts:
-            out += ["=" * 72,
-                    f"agent {name}  episode {t['episode']}  {t['provider']}/{t['requested_model']}  "
-                    f"stop={t['stop']}  spent={t['spent']}",
-                    f"balance at start: {t['series_before']}", ""]
+            out += [
+                "=" * 72,
+                f"agent {name}  episode {t['episode']}  {t['provider']}/{t['requested_model']}  "
+                f"stop={t['stop']}  spent={t['spent']}",
+                f"balance at start: {t['series_before']}",
+                "",
+            ]
             # The agent's whole environment at episode start, before it did anything.
             out += [f"  $ {t['commands'][0]}"]
             out += [f"  | {line}" for line in t["observation"].splitlines()] + [""]
             for turn in t["turns"]:
                 # Reasoning, kept apart from spoken words.
                 if turn["thinking"]:
-                    out += [f"  ({turn['turn']}) {line}"
-                            for line in turn["thinking"].splitlines()]
+                    out += [f"  ({turn['turn']}) {line}" for line in turn["thinking"].splitlines()]
                 if turn["text"]:
                     out.append(f"  [{turn['turn']}] {turn['text']}")
                 if turn["stop_reason"] == "max_tokens":
@@ -821,6 +881,7 @@ def charts(agents: dict[str, list[dict]], out_dir: Path, identity: str | None = 
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -829,9 +890,13 @@ def charts(agents: dict[str, list[dict]], out_dir: Path, identity: str | None = 
 
     out_dir.mkdir(parents=True, exist_ok=True)
     drawn = []
-    figures = [("balance", balance_chart), ("cost-per-turn", cost_per_turn_chart),
-               ("episode-spend", episode_spend_chart), ("tokens", tokens_chart),
-               ("notes-size", notes_size_chart)]
+    figures = [
+        ("balance", balance_chart),
+        ("cost-per-turn", cost_per_turn_chart),
+        ("episode-spend", episode_spend_chart),
+        ("tokens", tokens_chart),
+        ("notes-size", notes_size_chart),
+    ]
     if identity:
         figures.append(("identity-drift", lambda plt, agents: identity_drift_chart(plt, agents, identity)))
     for name, draw in figures:
@@ -852,32 +917,41 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
     for name, ts in agents.items():
         series = series_of(ts)
         at = bands(ts)
-        ax.plot(range(len(series)), series, marker=".", markersize=3,
-                linewidth=1.2, label=f"{name} ({len(ts)} episodes)")
+        ax.plot(
+            range(len(series)), series, marker=".", markersize=3, linewidth=1.2, label=f"{name} ({len(ts)} episodes)"
+        )
         if len(agents) == 1:
             for i, (lo, hi) in enumerate(at.values()):
                 ax.axvspan(lo, hi, color="C0", alpha=0.04 + 0.10 * (i % 2))
         # The episode the environment changed at. Episodes either side of it are not the
         # same environment, which is the whole point of drawing it.
         if (landed := first(ts, starter_files_of)) is not None:
-            ax.axvline(at[landed][0], color="C3", linewidth=1.4, linestyle=":",
-                       label=f"starter_files lands, episode {landed}")
+            ax.axvline(
+                at[landed][0], color="C3", linewidth=1.4, linestyle=":", label=f"starter_files lands, episode {landed}"
+            )
         # Likewise where the harness changed: one line, two experiments.
         for seg in segments(ts)[1:]:
-            ax.axvline(at[seg[0]["episode"]][0], color="C1",
-                       linewidth=1.4, linestyle="-.",
-                       label=f"harness changed, episode {seg[0]['episode']}")
+            ax.axvline(
+                at[seg[0]["episode"]][0],
+                color="C1",
+                linewidth=1.4,
+                linestyle="-.",
+                label=f"harness changed, episode {seg[0]['episode']}",
+            )
         crossing = next((i for i, v in enumerate(series) if v < 0), None)
         if crossing is not None:
-            ax.annotate(f"crosses zero at turn {crossing}: {series[crossing]:,}",
-                        xy=(crossing, series[crossing]),
-                        xytext=(-120, 130), textcoords="offset points", fontsize=8,
-                        arrowprops={"arrowstyle": "->", "linewidth": 0.8})
+            ax.annotate(
+                f"crosses zero at turn {crossing}: {series[crossing]:,}",
+                xy=(crossing, series[crossing]),
+                xytext=(-120, 130),
+                textcoords="offset points",
+                fontsize=8,
+                arrowprops={"arrowstyle": "->", "linewidth": 0.8},
+            )
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
     ax.set_xlabel("billed turn")
     ax.set_ylabel("balance (micro-dollars)")
-    ax.set_title("Balance, one element per billed turn" +
-                 (": shaded bands are episodes" if len(agents) == 1 else ""))
+    ax.set_title("Balance, one element per billed turn" + (": shaded bands are episodes" if len(agents) == 1 else ""))
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     return fig
@@ -892,21 +966,31 @@ def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
     fig, ax = plt.subplots(figsize=(11, 5))
     for name, ts in agents.items():
         d = step_costs(series_of(ts))
-        ax.plot(range(1, len(d) + 1), d, marker=".", markersize=3, linewidth=1,
-                label=f"{name}: turn cost")
+        ax.plot(range(1, len(d) + 1), d, marker=".", markersize=3, linewidth=1, label=f"{name}: turn cost")
         floor_x, floor_y = [], []
         for lo, hi in bands(ts).values():
             if hi > lo:
                 floor_x.append((lo + hi) / 2)
                 floor_y.append(min(d[lo:hi]))
-        ax.plot(floor_x, floor_y, marker="o", markersize=4, linewidth=1.4,
-                linestyle="--", label=f"{name}: cheapest turn of each episode")
+        ax.plot(
+            floor_x,
+            floor_y,
+            marker="o",
+            markersize=4,
+            linewidth=1.4,
+            linestyle="--",
+            label=f"{name}: cheapest turn of each episode",
+        )
         if d:
             peak = max(range(len(d)), key=lambda i: d[i])
-            ax.annotate(f"{d[peak]:,} in one turn",
-                        xy=(peak + 1, d[peak]), xytext=(30, -25),
-                        textcoords="offset points", fontsize=8,
-                        arrowprops={"arrowstyle": "->", "linewidth": 0.8})
+            ax.annotate(
+                f"{d[peak]:,} in one turn",
+                xy=(peak + 1, d[peak]),
+                xytext=(30, -25),
+                textcoords="offset points",
+                fontsize=8,
+                arrowprops={"arrowstyle": "->", "linewidth": 0.8},
+            )
     ax.set_yscale("symlog", linthresh=1000)
     ax.set_xlabel("billed turn")
     ax.set_ylabel("cost of that turn (micro-dollars, symlog)")
@@ -950,8 +1034,7 @@ def episode_spend_chart(plt, agents: dict[str, list[dict]]):
         ax.grid(alpha=0.3, axis="y")
         turns = ax.twinx()
         counts = [len(t["turns"]) for t in ts]
-        turns.plot(x, counts, color="C3", marker="o", markersize=4,
-                   linewidth=1.2, label="turns")
+        turns.plot(x, counts, color="C3", marker="o", markersize=4, linewidth=1.2, label="turns")
         turns.set_ylabel("turns", color="C3")
         turns.set_ylim(0, max(counts) * 1.3)
         one_legend(ax, turns)
@@ -990,8 +1073,7 @@ def notes_size_chart(plt, agents: dict[str, list[dict]]):
         ax.set_title(f"{name}: the agent's own files against what the episode cost")
         ax.grid(alpha=0.3, axis="y")
         spend = ax.twinx()
-        spend.plot(x, spent, color="C0", marker="o", markersize=4,
-                   linewidth=1.2, label="spent")
+        spend.plot(x, spent, color="C0", marker="o", markersize=4, linewidth=1.2, label="spent")
         spend.set_ylabel("micro-dollars", color="C0")
         spend.set_ylim(0, max(spent) * 1.35)
         one_legend(ax, spend)
@@ -1011,8 +1093,7 @@ def identity_drift_chart(plt, agents: dict[str, list[dict]], path: str):
         ax.set_title(f"{name}: the identity file's drift against what the agent said")
         ax.grid(alpha=0.3, axis="y")
         voice = ax.twinx()
-        voice.plot(x, said, color="C0", marker="o", markersize=4, linewidth=1.2,
-                   label="characters the agent said")
+        voice.plot(x, said, color="C0", marker="o", markersize=4, linewidth=1.2, label="characters the agent said")
         voice.set_ylabel("characters", color="C0")
         voice.set_ylim(0, max(said + [1]) * 1.35)
         one_legend(ax, voice)
@@ -1026,9 +1107,11 @@ def main(argv: list[str] | None = None) -> int:
     """CLI. Writes the CSV, report, and transcript for one agent or all agents."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--agent")
-    ap.add_argument("--identity", metavar="PATH",
-                    help="a captured file to diff episode over episode, as the trace names "
-                         "it, e.g. state/IDENTITY.md")
+    ap.add_argument(
+        "--identity",
+        metavar="PATH",
+        help="a captured file to diff episode over episode, as the trace names it, e.g. state/IDENTITY.md",
+    )
     a = ap.parse_args(argv)
 
     # The report quotes what the agent wrote, which is arbitrary bytes decoded
@@ -1045,9 +1128,11 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = (harness.records_dir(a.agent) if a.agent else harness.records_root()) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = ([row(t, prev, a.identity) for ts in agents.values()
-             for prev, t in against_last(ts, a.identity)] if a.identity else
-            [row(t) for ts in agents.values() for t in ts])
+    rows = (
+        [row(t, prev, a.identity) for ts in agents.values() for prev, t in against_last(ts, a.identity)]
+        if a.identity
+        else [row(t) for ts in agents.values() for t in ts]
+    )
     # Every column any row has, in the order they first appear: agents sitting
     # under different channel tables have different columns, and a header taken
     # from the first row alone would refuse the rest.

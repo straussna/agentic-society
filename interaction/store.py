@@ -47,8 +47,7 @@ class InteractionStore:
         self.root = Path(root)
 
     def _agent(self, agent: str) -> str:
-        if not agent or agent in (".", "..") or Path(agent).name != agent or \
-                "/" in agent or "\\" in agent:
+        if not agent or agent in (".", "..") or Path(agent).name != agent or "/" in agent or "\\" in agent:
             raise InteractionError("invalid agent identifier")
         return agent
 
@@ -79,7 +78,7 @@ class InteractionStore:
                 value = json.loads(path.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 return None
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 value = None
             if isinstance(value, dict):
                 return value
@@ -97,9 +96,16 @@ class InteractionStore:
         except (KeyError, TypeError, ValueError) as error:
             raise UnreadableRecord(f"{path} does not hold a complete record") from error
 
-    def publish(self, agent: str, label: str, episode: int, turn: int, system_prompt: str,
-                content: str | tuple[ToolResult, ...],
-                tools: tuple[ToolSpec, ...]) -> InteractionRequest:
+    def publish(
+        self,
+        agent: str,
+        label: str,
+        episode: int,
+        turn: int,
+        system_prompt: str,
+        content: str | tuple[ToolResult, ...],
+        tools: tuple[ToolSpec, ...],
+    ) -> InteractionRequest:
         """A new pending request for `agent`, which cancels the one it replaces.
 
         A pending pointer that does not read names nothing to cancel, and this one
@@ -112,11 +118,14 @@ class InteractionStore:
         if previous is not None:
             self.cancel(agent, previous.request_id)
         request_id = uuid.uuid4().hex
-        supplied = ({"kind": "initial_observation", "text": content}
-                    if isinstance(content, str) else
-                    {"kind": "tool_results", "results": [item.as_dict() for item in content]})
-        request = InteractionRequest(VERSION, request_id, agent, label, episode, turn,
-                                     now(), system_prompt, supplied, tools)
+        supplied = (
+            {"kind": "initial_observation", "text": content}
+            if isinstance(content, str)
+            else {"kind": "tool_results", "results": [item.as_dict() for item in content]}
+        )
+        request = InteractionRequest(
+            VERSION, request_id, agent, label, episode, turn, now(), system_prompt, supplied, tools
+        )
         atomic(self._request_path(agent, request_id), request.as_dict())
         atomic(self._pending_path(agent), {"request_id": request_id})
         return request
@@ -161,8 +170,7 @@ class InteractionStore:
         out = []
         for path in directory.glob("*.json"):
             try:
-                submission = self._load(self._submission_path(agent, path.stem),
-                                        Submission.from_dict)
+                submission = self._load(self._submission_path(agent, path.stem), Submission.from_dict)
                 request = None if submission is None else self.request(agent, path.stem)
             except UnreadableRecord:
                 continue
@@ -237,8 +245,7 @@ class InteractionStore:
             raise InteractionConflict("a different submission already won this request")
         return existing
 
-    def wait(self, request: InteractionRequest, cancelled: Callable[[], bool],
-             interval: float = 0.1) -> Submission:
+    def wait(self, request: InteractionRequest, cancelled: Callable[[], bool], interval: float = 0.1) -> Submission:
         """The submission that answers `request`, which it then completes.
 
         The request is cancelled instead when `cancelled` returns True, which raises
@@ -268,5 +275,7 @@ class InteractionStore:
         current = self.current(agent)
         if current is None or current.request_id != request_id:
             raise StaleRequest("the request is no longer pending")
-        atomic(self.root / "drafts" / self._agent(agent) / f"{request_id}.json",
-               {"version": VERSION, "request_id": request_id, "tool_calls": calls})
+        atomic(
+            self.root / "drafts" / self._agent(agent) / f"{request_id}.json",
+            {"version": VERSION, "request_id": request_id, "tool_calls": calls},
+        )

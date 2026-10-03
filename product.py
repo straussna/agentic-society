@@ -17,8 +17,17 @@ from typing import Any, Callable, Iterable, Mapping
 
 VERSION = 1
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
-PHASES = ("preparing_round", "waiting_autonomous", "waiting_player", "resolving_actions",
-          "settling_round", "round_completed", "completed", "interrupted", "cost_ceiling")
+PHASES = (
+    "preparing_round",
+    "waiting_autonomous",
+    "waiting_player",
+    "resolving_actions",
+    "settling_round",
+    "round_completed",
+    "completed",
+    "interrupted",
+    "cost_ceiling",
+)
 _LOCK = threading.Lock()
 
 # replace's retry policy for a rename that finds the target open.
@@ -92,8 +101,9 @@ def append(path: Path, values: Iterable[dict[str, Any]]) -> None:
     A crash can cut the last line short. The next append starts a line of its own, so
     the cut costs that one line and no other.
     """
-    data = b"".join(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-                    + b"\n" for value in values)
+    data = b"".join(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n" for value in values
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
         if end := handle.seek(0, os.SEEK_END):
@@ -118,8 +128,7 @@ def read(path: Path) -> dict[str, Any] | None:
     except (OSError, ValueError) as e:
         raise ValueError(f"{path} is not a readable JSON object: {e}") from e
     if not isinstance(value, dict):
-        raise ValueError(f"{path} is not a readable JSON object: it holds "
-                         f"{type(value).__name__}")
+        raise ValueError(f"{path} is not a readable JSON object: it holds {type(value).__name__}")
     return value
 
 
@@ -146,8 +155,9 @@ def logged(path: Path) -> list[dict[str, Any]]:
     return found
 
 
-def progress(runtime_root: Path, experiment_id: str, phase: str, round_number: int,
-             detail: dict[str, Any] | None = None) -> dict[str, Any]:
+def progress(
+    runtime_root: Path, experiment_id: str, phase: str, round_number: int, detail: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Record that the experiment has reached `phase`, and return the event.
 
     The event is appended to progress.jsonl, and progress.json is rewritten to hold the
@@ -164,13 +174,16 @@ def progress(runtime_root: Path, experiment_id: str, phase: str, round_number: i
         # A progress.json that holds its own events list starts the log with them.
         carried = [] if log.exists() else previous.get("events", [])
         append(log, [*carried, event])
-        atomic(base / "progress.json",
-               {"version": VERSION, "experiment_id": experiment_id, "latest": event})
+        atomic(base / "progress.json", {"version": VERSION, "experiment_id": experiment_id, "latest": event})
     return event
 
 
-def cost(agents: Iterable[str], load_account: Callable[[str], Mapping[str, Any]],
-         policy: dict[str, Any], interactive: Callable[[str | None], bool]) -> dict[str, Any]:
+def cost(
+    agents: Iterable[str],
+    load_account: Callable[[str], Mapping[str, Any]],
+    policy: dict[str, Any],
+    interactive: Callable[[str | None], bool],
+) -> dict[str, Any]:
     spent = 0
     tiers = {}
     for agent in agents:
@@ -181,11 +194,16 @@ def cost(agents: Iterable[str], load_account: Callable[[str], Mapping[str, Any]]
     maximum = policy.get("maximum")
     reserve = int(policy.get("reserved_completion", 0))
     warning = policy.get("warning")
-    return {"autonomous_spend": spent, "maximum": maximum,
-            "reserved_completion": reserve, "warning": warning,
-            "warning_reached": warning is not None and spent >= warning,
-            "ceiling_reached": maximum is not None and spent + reserve >= maximum,
-            "policy": policy.get("ceiling_policy", "stop"), "quality_tiers": tiers}
+    return {
+        "autonomous_spend": spent,
+        "maximum": maximum,
+        "reserved_completion": reserve,
+        "warning": warning,
+        "warning_reached": warning is not None and spent >= warning,
+        "ceiling_reached": maximum is not None and spent + reserve >= maximum,
+        "policy": policy.get("ceiling_policy", "stop"),
+        "quality_tiers": tiers,
+    }
 
 
 def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | None:
@@ -198,10 +216,17 @@ def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | Non
     return {"agent": agent, "episode": episode, "trace_sha256": hashlib.sha256(data).hexdigest()}
 
 
-def outcome(runtime_root: Path, experiment_id: str, agents: list[str], labels: dict[str, str],
-            remaining: set[str], reason: str, load_account: Callable[[str], Mapping[str, Any]],
-            trace_path: Callable[[str, int], Path],
-            reveal: dict[str, list[str]]) -> dict[str, Any]:
+def outcome(
+    runtime_root: Path,
+    experiment_id: str,
+    agents: list[str],
+    labels: dict[str, str],
+    remaining: set[str],
+    reason: str,
+    load_account: Callable[[str], Mapping[str, Any]],
+    trace_path: Callable[[str, int], Path],
+    reveal: dict[str, list[str]],
+) -> dict[str, Any]:
     """Write outcome.json: who won or survived, the elimination order, the balances, and
     the digest of each agent's last trace, which `trace_path` locates.
 
@@ -211,21 +236,30 @@ def outcome(runtime_root: Path, experiment_id: str, agents: list[str], labels: d
     label_by_agent = {agent: labels[str(index)] for index, agent in enumerate(agents, 1)}
     accounts = {agent: load_account(agent) for agent in agents}
     last = {agent: len(account.get("episodes", [])) for agent, account in accounts.items()}
-    eliminated = sorted((account["eliminated"]["round"], label_by_agent[agent],
-                         account["eliminated"].get("reason", ""))
-                        for agent, account in accounts.items() if account.get("eliminated"))
+    eliminated = sorted(
+        (account["eliminated"]["round"], label_by_agent[agent], account["eliminated"].get("reason", ""))
+        for agent, account in accounts.items()
+        if account.get("eliminated")
+    )
     survivors = [label_by_agent[agent] for agent in agents if agent in remaining]
     winners = survivors if reason in ("one_remains", "final_tie") else []
-    evidence = [item for agent, episode in last.items()
-                if (item := trace_evidence(agent, episode, trace_path(agent, episode)))]
-    record = {"version": VERSION, "experiment_id": experiment_id, "recorded_at": now(),
-              "termination_reason": reason, "winners": winners, "survivors": survivors,
-              "draw": reason == "final_tie", "elimination_order": [
-                  {"round": rnd, "seat": seat, "reason": why} for rnd, seat, why in eliminated],
-              "scores": {label_by_agent[a]: accounts[a].get("remaining", 0) for a in agents},
-              "resources": {label_by_agent[a]: {"micro_dollars": accounts[a].get("remaining", 0)}
-                            for a in agents},
-              "evidence": evidence, "reveal": reveal}
+    evidence = [
+        item for agent, episode in last.items() if (item := trace_evidence(agent, episode, trace_path(agent, episode)))
+    ]
+    record = {
+        "version": VERSION,
+        "experiment_id": experiment_id,
+        "recorded_at": now(),
+        "termination_reason": reason,
+        "winners": winners,
+        "survivors": survivors,
+        "draw": reason == "final_tie",
+        "elimination_order": [{"round": rnd, "seat": seat, "reason": why} for rnd, seat, why in eliminated],
+        "scores": {label_by_agent[a]: accounts[a].get("remaining", 0) for a in agents},
+        "resources": {label_by_agent[a]: {"micro_dollars": accounts[a].get("remaining", 0)} for a in agents},
+        "evidence": evidence,
+        "reveal": reveal,
+    }
     atomic(directory(runtime_root, experiment_id) / "outcome.json", record)
     return record
 
@@ -241,8 +275,7 @@ def revealed(record: dict[str, Any], phase: str, experimenter: bool = False) -> 
     if phase != "during_play":
         fields.update(policy.get(phase, []))
     public = {key: record[key] for key in fields if key in record}
-    return {"version": record.get("version"), "experiment_id": record.get("experiment_id"),
-            **public}
+    return {"version": record.get("version"), "experiment_id": record.get("experiment_id"), **public}
 
 
 def recorded_progress(base: Path) -> dict[str, Any] | None:
@@ -269,6 +302,8 @@ def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
         except ValueError:
             return None
 
-    return {"progress": shown(lambda: recorded_progress(base)),
-            "outcome": shown(lambda: read(base / "outcome.json")),
-            "lineage": shown(lambda: read(base / "lineage.json"))}
+    return {
+        "progress": shown(lambda: recorded_progress(base)),
+        "outcome": shown(lambda: read(base / "outcome.json")),
+        "lineage": shown(lambda: read(base / "lineage.json")),
+    }

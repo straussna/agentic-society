@@ -25,8 +25,7 @@ SERVED = usage(output_tokens=200)
 
 # A root under which an agent meets its starter files at once, carries on past
 # one refusal, and is priced at opus-5's rates.
-BUSY = {"REFUSAL_TURNS": 2, "budget": 500_000,
-        "starter_files": "s", "starter_files_below": 500_000}
+BUSY = {"REFUSAL_TURNS": 2, "budget": 500_000, "starter_files": "s", "starter_files_below": 500_000}
 
 
 def busy_episodes(root) -> list[dict]:
@@ -39,24 +38,26 @@ def busy_episodes(root) -> list[dict]:
     """
     plant(root)
     seated(root, other={})
-    first = episode_once(run("echo changed > state/m1", "echo hi > out/2",
-                             "echo '2 100' > out/transfer"),
-                         refuse(),
-                         run("echo served", u=SERVED),
-                         say())
+    first = episode_once(
+        run("echo changed > state/m1", "echo hi > out/2", "echo '2 100' > out/transfer"),
+        refuse(),
+        run("echo served", u=SERVED),
+        say(),
+    )
     second = episode_once(run("rm out/transfer"), say())
     return [first, second]
 
 
 def check_the_identity_delta_counts_changed_lines():
     """analyze --identity diffs one named file episode over episode, and says so."""
-    one = {"episode": 1, "turns": [{"text": "hello"}, {"text": None}],
-           "files": [{"path": "state/IDENTITY.md", "text": "a\nb\n"}]}
-    two = {"episode": 2, "turns": [{"text": "hi"}],
-           "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
+    one = {
+        "episode": 1,
+        "turns": [{"text": "hello"}, {"text": None}],
+        "files": [{"path": "state/IDENTITY.md", "text": "a\nb\n"}],
+    }
+    two = {"episode": 2, "turns": [{"text": "hi"}], "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
     three = {"episode": 3, "turns": [], "files": [{"path": "state/NOTES", "text": "n\n"}]}
-    same = {"episode": 4, "turns": [{"text": ""}],
-            "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
+    same = {"episode": 4, "turns": [{"text": ""}], "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
     path = "state/IDENTITY.md"
     assert analyze.identity_delta(None, one, path) == 2, "at first sight the whole file is new"
     assert analyze.identity_delta(one, two, path) == 3, "one line gone, two arrived"
@@ -76,8 +77,7 @@ def check_the_identity_delta_counts_changed_lines():
         ts = analyze.load("t")["t"]
         assert analyze.row(ts[1], ts[0], path)["identity_delta"] == 3
         assert analyze.row(ts[1])["identity_delta"] == "", "blank without a path"
-        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", \
-            "and blank where the file is absent"
+        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", "and blank where the file is absent"
         with quiet() as buf:
             assert analyze.main(["--agent", "t", "--identity", path]) == 0
         csv_text = (harness.records_dir("t") / "analysis" / "episodes.csv").read_text(encoding="utf-8")
@@ -106,21 +106,23 @@ def check_the_report_names_what_the_traces_hold():
 
     assert list(agents) == ["t"] and [t["episode"] for t in agents["t"]] == [1, 2]
     assert "agent t: 2 episodes" in text, text
-    for label, value in (("gave", "100 over 1 episode(s), to 2"),
-                         ("first gave", 1),
-                         ("received", "0, by the ledger it last read"),
-                         ("refused declarations", "none"),
-                         ("refused", "1 turns in 1 of 2 episodes"),
-                         ("  carried on after", "1 of 1 - episodes [1]"),
-                         ("  by category", {"cyber": 1}),
-                         ("starter_files", f"s ({digest[:12]}), configured to land below 500000"),
-                         ("starter_files first seen", 1),
-                         ("first named a starter", 1),
-                         ("episodes that met mail", "1 of 2"),
-                         ("first addressed a seat", 1),
-                         ("first crowded a seat", "never"),
-                         ("its own seat", "1, label 1, balance n1"),
-                         ("the experiment's transfers", "giver -> receiver, amount")):
+    for label, value in (
+        ("gave", "100 over 1 episode(s), to 2"),
+        ("first gave", 1),
+        ("received", "0, by the ledger it last read"),
+        ("refused declarations", "none"),
+        ("refused", "1 turns in 1 of 2 episodes"),
+        ("  carried on after", "1 of 1 - episodes [1]"),
+        ("  by category", {"cyber": 1}),
+        ("starter_files", f"s ({digest[:12]}), configured to land below 500000"),
+        ("starter_files first seen", 1),
+        ("first named a starter", 1),
+        ("episodes that met mail", "1 of 2"),
+        ("first addressed a seat", 1),
+        ("first crowded a seat", "never"),
+        ("its own seat", "1, label 1, balance n1"),
+        ("the experiment's transfers", "giver -> receiver, amount"),
+    ):
         assert analyze.report_line(label, value) in text, (analyze.report_line(label, value), text)
     assert "      1 -> 2  100" in text, text
     assert "    ep0001  1 of 4 turns  cyber  ended end_turn  declined" in text, text
@@ -130,8 +132,9 @@ def check_the_report_names_what_the_traces_hold():
     assert "agent t  episode 1  anthropic/claude-sonnet-5  stop=end_turn" in spoken
     assert "agent t  episode 2  anthropic/claude-sonnet-5" in spoken
     assert "    $ echo '2 100' > out/transfer" in spoken and "    $ echo served" in spoken, spoken
-    assert "  changes:" in spoken and "+2 100" in spoken and "-2 100" in spoken, \
+    assert "  changes:" in spoken and "+2 100" in spoken and "-2 100" in spoken, (
         "the declaration arriving and going are both in the diffs"
+    )
     assert "+changed" in spoken, "and so is what happened to the starter file"
 
     assert {"episodes.csv", "report.txt", "transcript.txt"} <= written, written
@@ -160,7 +163,8 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["peers"] == "1=t;2=other" and r1["identity_delta"] == "", r1
     assert r1["turns"] == 4 and r1["spent"] == first["spent"], r1
     assert sum(r1[k] for k in analyze.USAGE_FIELDS) == sum(
-        x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS)
+        x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS
+    )
 
     # The first episode's message has expired and the second sent none.
     assert r2["sent_to"] == "" and r2["mail_addressed"] == "", r2
@@ -171,8 +175,10 @@ def check_the_csv_row_flattens_a_trace():
     assert list(r1) == list(r2), "every row has the same columns in the same order"
     assert len(set(r1)) == len(r1), "and no column name twice"
     # state/m1 was overwritten in the first episode and stays overwritten.
-    assert r1["changed_starter"] is True and r2["changed_starter"] is True, \
-        (r1["changed_starter"], r2["changed_starter"])
+    assert r1["changed_starter"] is True and r2["changed_starter"] is True, (
+        r1["changed_starter"],
+        r2["changed_starter"],
+    )
 
 
 def check_the_analysis_counts_every_channel_the_harness_charged():
@@ -209,8 +215,9 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
 
     # And the page names the channel, so the tile and the transcript cannot state
     # an obligation the other leaves out.
-    assert v["obligations"] == {"blackboard": True, "gallery": False,
-                                "mail": False, "transfer": False}, v["obligations"]
+    assert v["obligations"] == {"blackboard": True, "gallery": False, "mail": False, "transfer": False}, v[
+        "obligations"
+    ]
     assert ("gallery", "no post") in [(u["channel"], u["why"]) for u in v["unmet"]], v["unmet"]
     assert mine["unmet"] == v["unmet"], (mine["unmet"], v["unmet"])
 
@@ -224,24 +231,24 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     all read, so a call cannot read one way in the transcript and another on the page.
     """
     shell = harness.SHELL_SPEC.name
-    records = [{"tool": shell, "command": "ls", "input": None, "result": "x"},
-               {"tool": shell, "command": None, "input": None, "result": " "},
-               {"tool": "post", "command": None, "input": {"body": "hi"}, "result": "posted"},
-               {"command": "ls", "result": "x"}]
-    calls = [{"id": "1", "name": shell, "input": {"command": "ls"}},
-             {"id": "2", "name": shell, "input": {"command": None}},
-             {"id": "3", "name": "post", "input": {"body": "hi"}},
-             {"id": "4", "input": {"command": "ls"}}]
-    logged = [{"kind": "normalized_response", "turn": 1,
-               "response": {"id": "r", "tool_calls": calls, "charges": []}}]
+    records = [
+        {"tool": shell, "command": "ls", "input": None, "result": "x"},
+        {"tool": shell, "command": None, "input": None, "result": " "},
+        {"tool": "post", "command": None, "input": {"body": "hi"}, "result": "posted"},
+        {"command": "ls", "result": "x"},
+    ]
+    calls = [
+        {"id": "1", "name": shell, "input": {"command": "ls"}},
+        {"id": "2", "name": shell, "input": {"command": None}},
+        {"id": "3", "name": "post", "input": {"body": "hi"}},
+        {"id": "4", "input": {"command": "ls"}},
+    ]
+    logged = [{"kind": "normalized_response", "turn": 1, "response": {"id": "r", "tool_calls": calls, "charges": []}}]
     traced = view.from_trace({"turns": [{"turn": 1, "tools": records}]})[0]["tools"]
     live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
 
     shown = ["ls", "(restart)", "post(body='hi')", "ls"]
     assert [analyze.tool_call(rec) for rec in records] == shown
-    assert [c["call"] for c in traced] == shown and [c["call"] for c in live] == shown, \
-        (traced, live)
-    assert [c["shell"] for c in traced] == [c["shell"] for c in live] \
-        == [True, True, False, True], (traced, live)
-    assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, \
-        "and only the declared tool's is a tool call"
+    assert [c["call"] for c in traced] == shown and [c["call"] for c in live] == shown, (traced, live)
+    assert [c["shell"] for c in traced] == [c["shell"] for c in live] == [True, True, False, True], (traced, live)
+    assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, "and only the declared tool's is a tool call"

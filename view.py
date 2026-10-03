@@ -28,8 +28,14 @@ import experiment
 import harness
 import product
 import providers
-from interaction import (InteractionConflict, InteractionError, InteractionStore,
-                         InvalidSubmission, StaleRequest, UnreadableRecord)
+from interaction import (
+    InteractionConflict,
+    InteractionError,
+    InteractionStore,
+    InvalidSubmission,
+    StaleRequest,
+    UnreadableRecord,
+)
 
 PORT = 8765
 MAX_INTERACTION_BODY = 64 * 1024
@@ -87,7 +93,7 @@ def read_json(path: Path) -> dict | None:
             return value if isinstance(value, dict) else None
         except FileNotFoundError:
             return None
-        except (PermissionError, OSError, ValueError):
+        except PermissionError, OSError, ValueError:
             if attempt == 2:
                 return None
             time.sleep(0.05)
@@ -136,8 +142,7 @@ def agent_names() -> list[str]:
     The account is what makes a directory an agent: records/analysis/ is where
     analyze.py writes when it was given no agent id, and it has none.
     """
-    return [d.name for d in sorted(harness.records_root().glob("*"))
-            if harness.account_path(d.name).exists()]
+    return [d.name for d in sorted(harness.records_root().glob("*")) if harness.account_path(d.name).exists()]
 
 
 def account_of(agent: str) -> Mapping[str, Any]:
@@ -150,8 +155,7 @@ def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
     global _MANIFESTS, _MANIFEST_STATE
     root = Path(__file__).with_name("experiments")
     paths = sorted(root.rglob("*.toml"))
-    state = tuple((str(path), stat.st_mtime_ns, stat.st_size)
-                  for path in paths if (stat := path.stat()))
+    state = tuple((str(path), stat.st_mtime_ns, stat.st_size) for path in paths if (stat := path.stat()))
     if _MANIFESTS is not None and state == _MANIFEST_STATE:
         return _MANIFESTS
     found: dict[str, tuple[experiment.Manifest, Path]] = {}
@@ -165,8 +169,7 @@ def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
     return found
 
 
-def manifest_of(agent: str,
-                account: Mapping[str, Any] | None = None) -> tuple[experiment.Manifest, Path] | None:
+def manifest_of(agent: str, account: Mapping[str, Any] | None = None) -> tuple[experiment.Manifest, Path] | None:
     """The shipped manifest stamped on an agent's account, where it is available.
 
     `account` is the account a caller has already read this poll; without it the
@@ -177,9 +180,9 @@ def manifest_of(agent: str,
     return manifests().get(digest) if digest else None
 
 
-def manifest_ahead_of(last: dict | None, agent: str,
-                      account: Mapping[str, Any] | None = None
-                      ) -> tuple[experiment.Manifest, Path] | None:
+def manifest_ahead_of(
+    last: dict | None, agent: str, account: Mapping[str, Any] | None = None
+) -> tuple[experiment.Manifest, Path] | None:
     """The stamped manifest when it is newer than the agent's last trace."""
     found = manifest_of(agent, account)
     if found is None:
@@ -259,9 +262,12 @@ def latest_attempt(lines: list[dict]) -> list[dict]:
     An episode that died without writing a trace leaves its index free for the next
     episode, which appends to the same log. Turn numbers restarting at 1 is the seam.
     """
-    starts = [i for i, line in enumerate(lines)
-              if line.get("turn") == 1 and line.get("kind", "native_response") == "native_response"]
-    return lines[starts[-1]:] if starts else lines
+    starts = [
+        i
+        for i, line in enumerate(lines)
+        if line.get("turn") == 1 and line.get("kind", "native_response") == "native_response"
+    ]
+    return lines[starts[-1] :] if starts else lines
 
 
 def raw_lines(path: Path) -> list[dict]:
@@ -280,7 +286,7 @@ def raw_lines(path: Path) -> list[dict]:
             continue
         try:
             out.append(json.loads(line.decode("utf-8")))
-        except (ValueError, UnicodeDecodeError):
+        except ValueError, UnicodeDecodeError:
             continue
     return out
 
@@ -317,10 +323,9 @@ def observation_split(text: str) -> tuple[str, list[dict]]:
         if harness.NAMED.match(m.group(0)):
             continue
         end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
-        body = text[m.end() + 1:end]
-        out.append({"path": m.group("path"), "text": body,
-                    "bytes": len(body.encode("utf-8"))})
-    return text[:marks[0].start()], out
+        body = text[m.end() + 1 : end]
+        out.append({"path": m.group("path"), "text": body, "bytes": len(body.encode("utf-8"))})
+    return text[: marks[0].start()], out
 
 
 def observation_clipped(t: dict) -> bool:
@@ -367,26 +372,32 @@ def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
 
 def from_trace(t: dict) -> list[dict]:
     """A finished episode's turns, with the command output they returned."""
-    return [{
-        "turn": turn.get("turn"),
-        "micros": turn.get("micros"),
-        "prefix": (turn.get("usage") or {}).get("prefix_tokens"),
-        "balance": turn.get("balance"),
-        "stop_reason": turn.get("stop_reason"),
-        "refusal": turn.get("refusal"),
-        "provider": turn.get("provider"),
-        "model": turn.get("resolved_model"),
-        "text": turn.get("text") or "",
-        "thinking": turn.get("thinking") or "",
-        "tools": [{"result": tool.get("result"),
-                   # A shell call run_tools answered as no tool carries its input and
-                   # is drawn as the call it was, as call_shown writes it.
-                   "shell": analyze.is_shell(tool.get("tool")) and tool.get("input") is None,
-                   "call": analyze.call_shown(tool.get("tool"), tool.get("command"),
-                                              tool.get("input"))}
-                  for tool in turn.get("tools") or []],
-        "tokens": turn.get("usage") or {},
-    } for turn in t.get("turns") or []]
+    return [
+        {
+            "turn": turn.get("turn"),
+            "micros": turn.get("micros"),
+            "prefix": (turn.get("usage") or {}).get("prefix_tokens"),
+            "balance": turn.get("balance"),
+            "stop_reason": turn.get("stop_reason"),
+            "refusal": turn.get("refusal"),
+            "provider": turn.get("provider"),
+            "model": turn.get("resolved_model"),
+            "text": turn.get("text") or "",
+            "thinking": turn.get("thinking") or "",
+            "tools": [
+                {
+                    "result": tool.get("result"),
+                    # A shell call run_tools answered as no tool carries its input and
+                    # is drawn as the call it was, as call_shown writes it.
+                    "shell": analyze.is_shell(tool.get("tool")) and tool.get("input") is None,
+                    "call": analyze.call_shown(tool.get("tool"), tool.get("command"), tool.get("input")),
+                }
+                for tool in turn.get("tools") or []
+            ],
+            "tokens": turn.get("usage") or {},
+        }
+        for turn in t.get("turns") or []
+    ]
 
 
 def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
@@ -413,26 +424,34 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
         centi += turn_centi
         balance = remaining - centi // 100
         calls = data.get("tool_calls") or []
-        out.append({
-            "turn": line.get("turn"),
-            "received": line.get("received"),
-            "micros": previous - balance,
-            "prefix": u.get("prefix_tokens", 0),
-            "balance": balance,
-            "stop_reason": data.get("stop_reason"),
-            "refusal": data.get("refusal"),
-            "provider": data.get("provider"),
-            "model": data.get("resolved_model"),
-            "text": "\n".join(data.get("text") or []),
-            "thinking": "\n".join(data.get("reasoning") or []),
-            "tools": [{"result": None,
-                       "shell": analyze.is_shell(call.get("name")),
-                       "call": analyze.call_shown(
-                           call.get("name"), (call.get("input") or {}).get("command"),
-                           None if analyze.is_shell(call.get("name")) else call.get("input"))}
-                      for call in calls],
-            "tokens": u,
-        })
+        out.append(
+            {
+                "turn": line.get("turn"),
+                "received": line.get("received"),
+                "micros": previous - balance,
+                "prefix": u.get("prefix_tokens", 0),
+                "balance": balance,
+                "stop_reason": data.get("stop_reason"),
+                "refusal": data.get("refusal"),
+                "provider": data.get("provider"),
+                "model": data.get("resolved_model"),
+                "text": "\n".join(data.get("text") or []),
+                "thinking": "\n".join(data.get("reasoning") or []),
+                "tools": [
+                    {
+                        "result": None,
+                        "shell": analyze.is_shell(call.get("name")),
+                        "call": analyze.call_shown(
+                            call.get("name"),
+                            (call.get("input") or {}).get("command"),
+                            None if analyze.is_shell(call.get("name")) else call.get("input"),
+                        ),
+                    }
+                    for call in calls
+                ],
+                "tokens": u,
+            }
+        )
     return out
 
 
@@ -451,9 +470,12 @@ def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dic
     """
     turns = live_turns(agent, index, account) if index is not None else []
     balance = turns[-1]["balance"] if turns else None
-    return {"turns": turns, "balance": balance,
-            "spent": account.get("remaining", 0) - balance if turns else 0,
-            "remaining": balance if turns else account.get("remaining")}
+    return {
+        "turns": turns,
+        "balance": balance,
+        "spent": account.get("remaining", 0) - balance if turns else 0,
+        "remaining": balance if turns else account.get("remaining"),
+    }
 
 
 # --- who is at the table ----------------------------------------------------
@@ -485,16 +507,16 @@ def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | Non
     return tuple(s.seen.values())
 
 
-def manifest_environment(manifest: experiment.Manifest,
-                         path: Path) -> tuple[list[harness.Channel], dict[str, str]]:
+def manifest_environment(manifest: experiment.Manifest, path: Path) -> tuple[list[harness.Channel], dict[str, str]]:
     """A shipped manifest's channel table and harness file names, validated together."""
-    return harness.validate_channels(manifest["channels"], manifest["harness_files"],
-                                     str(path), tuple(manifest["labels"].values()))
+    return harness.validate_channels(
+        manifest["channels"], manifest["harness_files"], str(path), tuple(manifest["labels"].values())
+    )
 
 
-def agent_environment(last: dict | None, agent: str,
-                      account: Mapping[str, Any] | None = None
-                      ) -> tuple[list[harness.Channel], dict[str, str]]:
+def agent_environment(
+    last: dict | None, agent: str, account: Mapping[str, Any] | None = None
+) -> tuple[list[harness.Channel], dict[str, str]]:
     """The channel table and harness file names an agent runs under.
 
     `last` is its latest trace and `account` its account, where a caller has read it
@@ -525,9 +547,9 @@ def named_group(members: list[str]) -> str:
     return group_of(members[0], {"peers": {"seen": seen}})
 
 
-def anchored_groups(accounts: Mapping[str, Mapping[str, Any]],
-                    catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None
-                    ) -> tuple[list[dict], set[str]]:
+def anchored_groups(
+    accounts: Mapping[str, Mapping[str, Any]], catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None
+) -> tuple[list[dict], set[str]]:
     """Experiments identified by a manifest stamp already written to one account.
 
     A simultaneous round prepares every environment before any episode starts. During
@@ -539,26 +561,34 @@ def anchored_groups(accounts: Mapping[str, Mapping[str, Any]],
     catalog = manifests() if catalog is None else catalog
     for digest, (manifest, path) in catalog.items():
         declared = [entry["id"] for entry in manifest["agents"]]
-        if not any(((accounts.get(agent, {}).get("experiment") or {}).get("manifest_sha256")
-                    == digest) for agent in declared):
+        if not any(
+            ((accounts.get(agent, {}).get("experiment") or {}).get("manifest_sha256") == digest) for agent in declared
+        ):
             continue
-        members = [agent for agent in declared if agent in accounts and
-                   ((accounts[agent].get("experiment") or {}).get("manifest_sha256")
-                    in (None, digest))]
+        members = [
+            agent
+            for agent in declared
+            if agent in accounts
+            and ((accounts[agent].get("experiment") or {}).get("manifest_sha256") in (None, digest))
+        ]
         if not members:
             continue
-        seats = {seat: agent for seat, agent in experiment.seats_of(declared).items()
-                 if agent in members}
+        seats = {seat: agent for seat, agent in experiment.seats_of(declared).items() if agent in members}
         labels = {seat: manifest["labels"][seat] for seat in seats}
         table, _ = manifest_environment(manifest, path)
-        out.append({
-            "name": named_group(declared), "seated": True, "seats": seats,
-            "experiment_id": manifest.get("experiment_id", path.stem),
-            "members": members, "posts": bool(harness.mailbox_channel(table)
-                                                or harness.schema_channel(table)),
-            "channels": [ch.as_table() for ch in table], "labels": labels,
-            "tools": manifest["tools"] or [],
-        })
+        out.append(
+            {
+                "name": named_group(declared),
+                "seated": True,
+                "seats": seats,
+                "experiment_id": manifest.get("experiment_id", path.stem),
+                "members": members,
+                "posts": bool(harness.mailbox_channel(table) or harness.schema_channel(table)),
+                "channels": [ch.as_table() for ch in table],
+                "labels": labels,
+                "tools": manifest["tools"] or [],
+            }
+        )
         claimed.update(members)
     return out, claimed
 
@@ -610,8 +640,7 @@ def read_experiments() -> tuple[list[dict], bool]:
     is read once: what an experiment shows of its members comes from that read.
     """
     listed = agent_names()
-    accounts = {agent: account for agent in listed
-                if (account := read_json(harness.account_path(agent))) is not None}
+    accounts = {agent: account for agent in listed if (account := read_json(harness.account_path(agent))) is not None}
     anchored, claimed = anchored_groups(accounts)
     groups: dict[tuple, dict] = {}
     for agent, account in accounts.items():
@@ -623,16 +652,16 @@ def read_experiments() -> tuple[list[dict], bool]:
         exp: dict[str, Any] | None = groups.get(ident)
         if exp is None:
             exp = groups[ident] = {
-                "name": group_of(agent, account), "seated": key is not None,
-                "experiment_id": (account.get("experiment") or {}).get("experiment_id")
-                                 or group_of(agent, account),
-                "seats": dict(seen) if key else {}, "members": [],
+                "name": group_of(agent, account),
+                "seated": key is not None,
+                "experiment_id": (account.get("experiment") or {}).get("experiment_id") or group_of(agent, account),
+                "seats": dict(seen) if key else {},
+                "members": [],
                 "posts": False,
             }
         exp["members"].append(agent)
 
-    out = sorted([*anchored, *groups.values()],
-                 key=lambda exp: (not exp["seated"], exp["name"]))
+    out = sorted([*anchored, *groups.values()], key=lambda exp: (not exp["seated"], exp["name"]))
     # Two sets can arrive at one name: a seated experiment and a leftover agent whose
     # id starts with the same letters. The seated one is sorted first and keeps
     # the short name, so what the other is called says what it is.
@@ -656,8 +685,9 @@ def read_experiments() -> tuple[list[dict], bool]:
             schema = harness.schema_channel(table)
             exp["posts"] = bool(mail or schema)
             found = manifest_of(first, account)
-            exp["tools"] = ((found[0]["tools"] or []) if found else
-                            (last["provenance"].get("tools") if last else []) or [])
+            exp["tools"] = (
+                (found[0]["tools"] or []) if found else (last["provenance"].get("tools") if last else []) or []
+            )
     return out, len(accounts) == len(listed)
 
 
@@ -696,10 +726,14 @@ def experiment_episodes(exp: dict) -> list[dict]:
     One episode per agent per round is what sequential_round holds to, so the round is
     read out of start order, cut where an agent would take a second turn.
     """
-    rows = sorted(({"seat": seat, "agent": agent, "episode": t["episode"], "at": started_at(t),
-                    "trace": t}
-                   for seat, agent in places_of(exp) for t in traces_of(agent)),
-                  key=lambda s: (s["at"], s["agent"], s["episode"]))
+    rows = sorted(
+        (
+            {"seat": seat, "agent": agent, "episode": t["episode"], "at": started_at(t), "trace": t}
+            for seat, agent in places_of(exp)
+            for t in traces_of(agent)
+        ),
+        key=lambda s: (s["at"], s["agent"], s["episode"]),
+    )
     rnd, acted = 0, set()
     for s in rows:
         if not rnd or s["agent"] in acted:
@@ -722,8 +756,17 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
         if live is None:
             continue
         mine = [r["round"] for r in rows if r["agent"] == agent]
-        out.append({"seat": seat, "agent": agent, "episode": live, "at": None, "trace": None,
-                    "round": (mine[-1] if mine else 0) + 1, "live": True})
+        out.append(
+            {
+                "seat": seat,
+                "agent": agent,
+                "episode": live,
+                "at": None,
+                "trace": None,
+                "round": (mine[-1] if mine else 0) + 1,
+                "live": True,
+            }
+        )
     return out
 
 
@@ -745,8 +788,11 @@ def latest_transfer(latest: dict, table: list[harness.Channel]) -> dict | None:
     return {
         "declared": resolved.get("declared"),
         "submitted": True,
-        "seat": resolved.get("seat"), "label": resolved.get("label"), "agent": resolved.get("agent"),
-        "amount": resolved.get("amount") or 0, "rebate": resolved.get("rebate") or 0,
+        "seat": resolved.get("seat"),
+        "label": resolved.get("label"),
+        "agent": resolved.get("agent"),
+        "amount": resolved.get("amount") or 0,
+        "rebate": resolved.get("rebate") or 0,
         "error": resolved.get("error"),
     }
 
@@ -807,19 +853,26 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
     # simply not been reached.
-    pending = (live is None and not account.get("eliminated")
-               and latest.get("stop") not in harness.STOPS_THE_AGENT
-               and (mine[-1]["round"] if mine else 0) == rnd - 1)
+    pending = (
+        live is None
+        and not account.get("eliminated")
+        and latest.get("stop") not in harness.STOPS_THE_AGENT
+        and (mine[-1]["round"] if mine else 0) == rnd - 1
+    )
     return {
-        "seat": seat, "agent": agent, "label": account.get("label") or seat,
-        "provider": account.get("provider"), "model": account.get("model"),
-        "starter_files": (account.get("starter_files_landed") or {}).get("name")
-                         or account.get("starter_files") or "",
-        "n": account.get("remaining"), "initial": account.get("initial"),
+        "seat": seat,
+        "agent": agent,
+        "label": account.get("label") or seat,
+        "provider": account.get("provider"),
+        "model": account.get("model"),
+        "starter_files": (account.get("starter_files_landed") or {}).get("name") or account.get("starter_files") or "",
+        "n": account.get("remaining"),
+        "initial": account.get("initial"),
         "series": thin(account.get("series") or []),
         # Derived from the raw log until the trace lands, which is what the
         # header labels it as: the arithmetic is the account's, the commit is not.
-        "live": live, "live_age": live_age(agent, live),
+        "live": live,
+        "live_age": live_age(agent, live),
         "pending_human": interaction.as_dict() if interaction else None,
         "live_turns": len(going["turns"]),
         "live_balance": going["balance"],
@@ -827,17 +880,18 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         "round": mine[-1]["round"] if mine else 0,
         "acted": bool(mine and mine[-1]["round"] == rnd) or live is not None,
         "pending": pending,
-        "preparing": bool(account and not episodes and live is None and
-                          (account.get("experiment") or {}).get("manifest_sha256")),
-        "out_reason": out_reason, "eliminated": account.get("eliminated"),
+        "preparing": bool(
+            account and not episodes and live is None and (account.get("experiment") or {}).get("manifest_sha256")
+        ),
+        "out_reason": out_reason,
+        "eliminated": account.get("eliminated"),
         "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
         # in flight. A transfer, a share taken and a floor all move the balance
         # without being spend, so the drop from initial is a different number,
         # which the bar above draws.
         "spent": sum(s["spent"] for s in episodes) + going["spent"],
-        "spent_this_round": sum(r["trace"]["spent"] for r in mine if r["round"] == rnd)
-                            + going["spent"],
+        "spent_this_round": sum(r["trace"]["spent"] for r in mine if r["round"] == rnd) + going["spent"],
         "stop": last["stop"] if last else None,
         "halted": bool(last and last["stop"] in harness.STOPS_THE_AGENT),
         # What the last committed episode owed and left undone, one entry a
@@ -848,7 +902,8 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # Everything that moved the balance without being a turn. Read off the
         # account, not summed from the traces: these are cumulative there, and
         # an agent can be credited between its own starts.
-        "sent": account.get("sent", 0), "received": account.get("received", 0),
+        "sent": account.get("sent", 0),
+        "received": account.get("received", 0),
         "rebated": account.get("rebated", 0),
         # What each channel's silence has cost, by channel name.
         "penalised": account.get("penalised") or {},
@@ -882,34 +937,38 @@ def header(exp: dict) -> dict:
         if isinstance(election.get("round"), int):
             elections[election["round"]] = election
     every = vote.get("every") if vote else None
-    phase = ("vote complete" if rnd in elections else
-             "vote" if every and rnd and rnd % every == 0 else "discussion")
+    phase = "vote complete" if rnd in elections else "vote" if every and rnd and rnd % every == 0 else "discussion"
     experiment_id = exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
     records = product.records(harness.SETTINGS.root, experiment_id)
     cost = product.cost(exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive)
     try:
         ledger = [list(g) for g in harness.ledger(first, account)] if exp["seated"] else []
-    except (OSError, ValueError):
+    except OSError, ValueError:
         ledger = []
     return {
-        "experiment": exp["name"], "experiment_id": experiment_id,
-        "seated": exp["seated"], "posts": exp["posts"],
-        "members": exp["members"], "tabs": tabs(exp), "labels": exp["labels"],
+        "experiment": exp["name"],
+        "experiment_id": experiment_id,
+        "seated": exp["seated"],
+        "posts": exp["posts"],
+        "members": exp["members"],
+        "tabs": tabs(exp),
+        "labels": exp["labels"],
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
         "seats": seats,
         "ledger": ledger,
         "round": rnd,
-        "schedule": (last["provenance"].get("schedule") if last else None)
-                    or stamp.get("schedule") or "",
+        "schedule": (last["provenance"].get("schedule") if last else None) or stamp.get("schedule") or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
         "active": sum(seat["out_reason"] is None for seat in seats),
         "vote_every": every,
         "phase": phase,
         "cycle": ((rnd - 1) // every + 1) if every and rnd else None,
         "elections": [elections[r] for r in sorted(elections)],
-        "progress": records["progress"], "outcome": records["outcome"],
-        "lineage": records["lineage"], "cost": cost,
+        "progress": records["progress"],
+        "outcome": records["outcome"],
+        "lineage": records["lineage"],
+        "cost": cost,
     }
 
 
@@ -918,6 +977,7 @@ def header(exp: dict) -> dict:
 
 class Mailroom(NamedTuple):
     """The experiment's mailbox and schema channel, read once for a whole log."""
+
     exp: dict
     mail: harness.Channel | None
     schema: harness.Channel | None
@@ -959,8 +1019,14 @@ def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
                 out[path] = got[1]
     if room.schema:
         account = account_of(agent)
-        inst = next((i for i in harness.environment(agent, account, experiment_table(room.exp))
-                     if i.writable and i.channel.name == room.schema.name), None)
+        inst = next(
+            (
+                i
+                for i in harness.environment(agent, account, experiment_table(room.exp))
+                if i.writable and i.channel.name == room.schema.name
+            ),
+            None,
+        )
         if inst and room.schema.shape == "mailbox":
             root = inst.host
             for p in sorted(root.iterdir()) if root.is_dir() else []:
@@ -985,10 +1051,10 @@ def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
         if room.schema.shape == "file" and path == room.schema.path:
             return None, None
         if room.schema.shape == "mailbox" and path.startswith(room.schema.outbox + "/"):
-            label = path[len(room.schema.outbox) + 1:]
+            label = path[len(room.schema.outbox) + 1 :]
             return seat_of_label(room.exp, label), label
     if room.mail and path.startswith(room.mail.outbox + "/"):
-        label = path[len(room.mail.outbox) + 1:]
+        label = path[len(room.mail.outbox) + 1 :]
         return seat_of_label(room.exp, label), label
     return None, None
 
@@ -1004,14 +1070,13 @@ def change_of(before: Any, after: Any) -> str:
 
 def transfer_path(room: Mailroom, path: str) -> bool:
     """Whether a path is the current episode's transfer declaration."""
-    return bool(room.schema and
-                (path == room.schema.path or
-                 (room.schema.shape == "mailbox" and
-                  path.startswith(room.schema.outbox + "/"))))
+    return bool(
+        room.schema
+        and (path == room.schema.path or (room.schema.shape == "mailbox" and path.startswith(room.schema.outbox + "/")))
+    )
 
 
-def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
-                  tip: bool = False) -> dict:
+def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any, tip: bool = False) -> dict:
     """One movement of one path in one outbox."""
     exp = room.exp
     change = change_of(before, after)
@@ -1019,22 +1084,35 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
     seat, label = addressed_to(path, room)
     from_seat = row["seat"]
     ev = {
-        "round": None if tip else row["round"], "at": row["at"], "episode": row["episode"],
-        "from_seat": from_seat, "from_label": exp["labels"].get(from_seat or "", from_seat),
+        "round": None if tip else row["round"],
+        "at": row["at"],
+        "episode": row["episode"],
+        "from_seat": from_seat,
+        "from_label": exp["labels"].get(from_seat or "", from_seat),
         "from_agent": row["agent"],
-        "to_seat": seat, "to_label": label, "to_agent": exp["seats"].get(seat) if seat else None,
-        "path": path, "kind": "transfer" if transfer_path(room, path) else "message",
+        "to_seat": seat,
+        "to_label": label,
+        "to_agent": exp["seats"].get(seat) if seat else None,
+        "path": path,
+        "kind": "transfer" if transfer_path(room, path) else "message",
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
-        "text": text, "binary": after is not ABSENT and after is None,
-        "diff": [], "transfer": None, "delivered": None, "tip": tip,
+        "text": text,
+        "binary": after is not ABSENT and after is None,
+        "diff": [],
+        "transfer": None,
+        "delivered": None,
+        "tip": tip,
     }
     if change == "edited" and isinstance(before, str) and isinstance(after, str):
         ev["diff"] = analyze.state_changes({path: before}, {path: after})
     if ev["kind"] == "transfer":
         resolved = (row["trace"] or {}).get("transfer") or {}
-        raw = ((f"{ev['to_label']} {(text or '').strip()}")
-               if room.schema and room.schema.shape == "mailbox" else (text or "").strip())
+        raw = (
+            (f"{ev['to_label']} {(text or '').strip()}")
+            if room.schema and room.schema.shape == "mailbox"
+            else (text or "").strip()
+        )
         line = harness.TRANSFER_LINE.match(raw)
         ev["transfer"] = resolved
         ev["to_label"] = resolved.get("label") or (line.group("label") if line else None)
@@ -1043,8 +1121,7 @@ def message_event(room: Mailroom, row: dict, path: str, before: Any, after: Any,
     return ev
 
 
-def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None],
-                room: Mailroom) -> dict | None:
+def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] | None], room: Mailroom) -> dict | None:
     """The addressee's next episode after the message was written, and what it held.
 
     Delivery is the addressee's first episode to start after this one. `shown_before` is
@@ -1063,12 +1140,16 @@ def delivery_of(ev: dict, rows: list[dict], carried_paths: dict[tuple, set[str] 
     box = f"{room.mail.inbox}/{ev['from_label']}"
     shown_box = digest_name(nxt["agent"], nxt["trace"], box)
     paths = carried_paths.get((nxt["agent"], nxt["episode"]))
-    return {"round": nxt["round"], "episode": nxt["episode"], "box": box,
-            "shown_as": shown_box,
-            "shown_before": None if paths is None else shown_box in paths,
-            "environment": any(f["path"] == box for f in analyze.inbox_files(nxt["trace"])),
-            "named": any(analyze.names(s, box) for s in analyze.reached(nxt["trace"])),
-            "clipped": observation_clipped(nxt["trace"])}
+    return {
+        "round": nxt["round"],
+        "episode": nxt["episode"],
+        "box": box,
+        "shown_as": shown_box,
+        "shown_before": None if paths is None else shown_box in paths,
+        "environment": any(f["path"] == box for f in analyze.inbox_files(nxt["trace"])),
+        "named": any(analyze.names(s, box) for s in analyze.reached(nxt["trace"])),
+        "clipped": observation_clipped(nxt["trace"]),
+    }
 
 
 def messages(exp: dict, since: int = 0) -> dict:
@@ -1098,11 +1179,9 @@ def messages(exp: dict, since: int = 0) -> dict:
                     if path in now:
                         events.append(message_event(room, row, path, ABSENT, now[path]))
                 else:
-                    events.append(message_event(room, row, path,
-                                                prev.get(path, ABSENT), now.get(path, ABSENT)))
+                    events.append(message_event(room, row, path, prev.get(path, ABSENT), now.get(path, ABSENT)))
             prev, last = now, row
-        head = last or {"round": None, "at": None, "episode": None, "seat": seat,
-                        "agent": agent, "trace": None}
+        head = last or {"round": None, "at": None, "episode": None, "seat": seat, "agent": agent, "trace": None}
         tip = outbox_now(agent, room)
         for path in sorted(set(prev) | set(tip)):
             if transfer_path(room, path):
@@ -1117,8 +1196,14 @@ def messages(exp: dict, since: int = 0) -> dict:
     carried_paths = {(r["agent"], r["episode"]): message_paths(r["trace"]) for r in rows}
     for ev in events:
         ev["delivered"] = delivery_of(ev, rows, carried_paths, room)
-    return {"experiment": exp["name"], "posts": exp["posts"], "seats": len(places_of(exp)),
-            "committed": len(events), "events": events[since:], "tip": tips}
+    return {
+        "experiment": exp["name"],
+        "posts": exp["posts"],
+        "seats": len(places_of(exp)),
+        "committed": len(events),
+        "events": events[since:],
+        "tip": tips,
+    }
 
 
 def player_history(exp: dict, agent: str) -> dict:
@@ -1133,10 +1218,8 @@ def player_history(exp: dict, agent: str) -> dict:
     """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
-    post_tool = next((tool for tool in exp.get("tools") or []
-                      if tool.get("kind") == "post_public"), None)
-    post_channel = next((ch for ch in table
-                         if post_tool and ch.name == post_tool.get("channel")), None)
+    post_tool = next((tool for tool in exp.get("tools") or [] if tool.get("kind") == "post_public"), None)
+    post_channel = next((ch for ch in table if post_tool and ch.name == post_tool.get("channel")), None)
     public = []
     if post_channel:
         for row in rows:
@@ -1154,23 +1237,31 @@ def player_history(exp: dict, agent: str) -> dict:
                     continue
                 text = rec.get("text")
                 if isinstance(text, str) and text:
-                    public.append({"episode": row["round"], "agent_episode": row["episode"],
-                                   "from_agent": row["agent"], "from_label": label,
-                                   "text": text})
-    private = [event for event in messages(exp)["events"]
-               if event["kind"] == "message"
-               and event["change"] not in ("withdrawn", "standing")
-               and agent in (event["from_agent"], event["to_agent"])
-               and isinstance(event.get("text"), str) and event["text"]]
+                    public.append(
+                        {
+                            "episode": row["round"],
+                            "agent_episode": row["episode"],
+                            "from_agent": row["agent"],
+                            "from_label": label,
+                            "text": text,
+                        }
+                    )
+    private = [
+        event
+        for event in messages(exp)["events"]
+        if event["kind"] == "message"
+        and event["change"] not in ("withdrawn", "standing")
+        and agent in (event["from_agent"], event["to_agent"])
+        and isinstance(event.get("text"), str)
+        and event["text"]
+    ]
 
     player_seat = next((seat for seat, member in places_of(exp) if member == agent), None)
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
     rounds = {row["episode"]: row["round"] for row in rows if row["agent"] == agent}
     ahead = max(rounds.values(), default=0) + 1
-    public_keys = {(event["agent_episode"], event["from_agent"], event["text"])
-                   for event in public}
-    private_keys = {(event["episode"], event["from_agent"], event["to_label"], event["text"])
-                    for event in private}
+    public_keys = {(event["agent_episode"], event["from_agent"], event["text"]) for event in public}
+    private_keys = {(event["episode"], event["from_agent"], event["to_label"], event["text"]) for event in private}
     for request, submission in InteractionStore(harness.interactions_root()).history(agent):
         episode = request.episode
         rnd = rounds.get(episode, ahead)
@@ -1182,26 +1273,39 @@ def player_history(exp: dict, agent: str) -> dict:
             if kind == "post_public":
                 key = (episode, agent, text)
                 if key not in public_keys:
-                    public.append({"episode": rnd, "agent_episode": episode,
-                                   "from_agent": agent, "from_label": request.label,
-                                   "text": text, "accepted": True})
+                    public.append(
+                        {
+                            "episode": rnd,
+                            "agent_episode": episode,
+                            "from_agent": agent,
+                            "from_label": request.label,
+                            "text": text,
+                            "accepted": True,
+                        }
+                    )
                     public_keys.add(key)
             elif kind == "send_message_to":
                 label = call.input.get("to")
                 seat = seat_of_label(exp, label)
                 key = (episode, agent, label, text)
                 if isinstance(label, str) and key not in private_keys:
-                    private.append({"round": rnd, "episode": episode,
-                                    "from_seat": player_seat,
-                                    "from_label": request.label,
-                                    "from_agent": agent, "to_seat": seat, "to_label": label,
-                                    "to_agent": exp["seats"].get(seat) if seat else None,
-                                    "text": text, "accepted": True})
+                    private.append(
+                        {
+                            "round": rnd,
+                            "episode": episode,
+                            "from_seat": player_seat,
+                            "from_label": request.label,
+                            "from_agent": agent,
+                            "to_seat": seat,
+                            "to_label": label,
+                            "to_agent": exp["seats"].get(seat) if seat else None,
+                            "text": text,
+                            "accepted": True,
+                        }
+                    )
                     private_keys.add(key)
-    public.sort(key=lambda event: (event["episode"], event.get("agent_episode", 0),
-                                   event["from_agent"], event["text"]))
-    private.sort(key=lambda event: (event["round"], event["episode"],
-                                    event["from_agent"], event.get("to_label") or ""))
+    public.sort(key=lambda event: (event["episode"], event.get("agent_episode", 0), event["from_agent"], event["text"]))
+    private.sort(key=lambda event: (event["round"], event["episode"], event["from_agent"], event.get("to_label") or ""))
     return {"experiment": exp["name"], "agent": agent, "public": public, "private": private}
 
 
@@ -1249,10 +1353,16 @@ def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
             st = p.stat()
         except OSError:
             continue
-        out.append({"path": inner, "channel": channel, "size": st.st_size,
-                    "mode": modes.get(inner),
-                    "starter": inner in given,
-                    "stamp": [st.st_mtime_ns, st.st_size]})
+        out.append(
+            {
+                "path": inner,
+                "channel": channel,
+                "size": st.st_size,
+                "mode": modes.get(inner),
+                "starter": inner in given,
+                "stamp": [st.st_mtime_ns, st.st_size],
+            }
+        )
     return out
 
 
@@ -1263,9 +1373,14 @@ def given_in(ch: harness.Channel, account: Mapping[str, Any]) -> set[str]:
 
 def ephemeral_tool(exp: dict, kind: str) -> dict | None:
     """The tool whose channel is cleared around each episode, if this is one."""
-    return next((tool for tool in exp.get("tools") or []
-                 if tool.get("channel") == kind
-                 and tool.get("kind") in ("post_public", "vote")), None)
+    return next(
+        (
+            tool
+            for tool in exp.get("tools") or []
+            if tool.get("channel") == kind and tool.get("kind") in ("post_public", "vote")
+        ),
+        None,
+    )
 
 
 def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
@@ -1277,8 +1392,9 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
     if live_rows(exp, rows):
         return rounds[:-1]
     # A seat whose account this poll cannot read is still to act, so its round stays open.
-    active = {agent for _, agent in places_of(exp)
-              if not (account := account_of(agent)) or harness.why_out(account) is None}
+    active = {
+        agent for _, agent in places_of(exp) if not (account := account_of(agent)) or harness.why_out(account) is None
+    }
     acted = {row["agent"] for row in rows if row["round"] == latest}
     return rounds if not active or active <= acted else rounds[:-1]
 
@@ -1289,14 +1405,11 @@ def channel_history(exp: dict, kind: str, rows: list[dict] | None = None) -> dic
     if tool is None:
         return None
     every = int(tool.get("every") or 1) if tool.get("kind") == "vote" else 1
-    available = [rnd for rnd in completed_rounds(exp, rows or experiment_episodes(exp))
-                 if rnd % every == 0]
-    return {"kind": "vote" if tool.get("kind") == "vote" else "round",
-            "every": every, "rounds": available}
+    available = [rnd for rnd in completed_rounds(exp, rows or experiment_episodes(exp)) if rnd % every == 0]
+    return {"kind": "vote" if tool.get("kind") == "vote" else "round", "every": every, "rounds": available}
 
 
-def historical_listing(row: dict | None, ch: harness.Channel, kind: str,
-                       label: str) -> list[dict]:
+def historical_listing(row: dict | None, ch: harness.Channel, kind: str, label: str) -> list[dict]:
     """The files this seat owned when its episode in a round committed."""
     if row is None or not row["trace"].get("state_saved"):
         return []
@@ -1309,12 +1422,19 @@ def historical_listing(row: dict | None, ch: harness.Channel, kind: str,
         if prefix:
             if not path.startswith(prefix + "/"):
                 continue
-            path = path[len(prefix) + 1:]
+            path = path[len(prefix) + 1 :]
         if not path:
             continue
-        out.append({"path": path, "channel": kind, "size": rec.get("size") or 0,
-                    "mode": None, "starter": bool(rec.get("starter")),
-                    "stamp": ["round", row["round"], row["episode"], rec.get("size") or 0]})
+        out.append(
+            {
+                "path": path,
+                "channel": kind,
+                "size": rec.get("size") or 0,
+                "mode": None,
+                "starter": bool(rec.get("starter")),
+                "stamp": ["round", row["round"], row["episode"], rec.get("size") or 0],
+            }
+        )
     return sorted(out, key=lambda rec: rec["path"])
 
 
@@ -1333,42 +1453,73 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
         columns = []
         for seat, agent in places_of(exp):
             account = account_of(agent)
-            row = next((item for item in rows
-                        if item["agent"] == agent and item["round"] == round_at), None)
+            row = next((item for item in rows if item["agent"] == agent and item["round"] == round_at), None)
             label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
-            columns.append({
-                "seat": seat, "agent": agent, "label": account.get("label") or seat,
-                "committed": row["episode"] if row else None, "live": None, "live_age": None,
-                "saved": bool(row and row["trace"].get("state_saved")),
-                "files": historical_listing(row, ch, kind, label),
-            })
-        return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
-                "static": False, "history": {**history, "selected": round_at},
-                "columns": columns}
+            columns.append(
+                {
+                    "seat": seat,
+                    "agent": agent,
+                    "label": account.get("label") or seat,
+                    "committed": row["episode"] if row else None,
+                    "live": None,
+                    "live_age": None,
+                    "saved": bool(row and row["trace"].get("state_saved")),
+                    "files": historical_listing(row, ch, kind, label),
+                }
+            )
+        return {
+            "experiment": exp["name"],
+            "kind": kind,
+            "what": what_of(ch),
+            "static": False,
+            "history": {**history, "selected": round_at},
+            "columns": columns,
+        }
     if ch.writer == "experimenter":
         files = listing(harness.files_dir(ch.source), kind, set())
-        return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
-                "static": True,
-                "columns": [{"seat": None, "agent": "experimenter", "label": "experimenter",
-                             "committed": None, "live": None, "live_age": None,
-                             "files": files}]}
+        return {
+            "experiment": exp["name"],
+            "kind": kind,
+            "what": what_of(ch),
+            "static": True,
+            "columns": [
+                {
+                    "seat": None,
+                    "agent": "experimenter",
+                    "label": "experimenter",
+                    "committed": None,
+                    "live": None,
+                    "live_age": None,
+                    "files": files,
+                }
+            ],
+        }
     columns = []
     for seat, agent in places_of(exp):
         account = account_of(agent)
         live = live_index(agent, account)
-        columns.append({
-            "seat": seat, "agent": agent, "label": account.get("label") or seat,
-            "committed": len(account.get("episodes") or []),
-            "live": live, "live_age": live_age(agent, live),
-            "files": listing(harness.mirror(agent, kind), kind, given_in(ch, account)),
-        })
-    return {"experiment": exp["name"], "kind": kind, "what": what_of(ch),
-            "static": False, "history": ({**history, "selected": None} if history else None),
-            "columns": columns}
+        columns.append(
+            {
+                "seat": seat,
+                "agent": agent,
+                "label": account.get("label") or seat,
+                "committed": len(account.get("episodes") or []),
+                "live": live,
+                "live_age": live_age(agent, live),
+                "files": listing(harness.mirror(agent, kind), kind, given_in(ch, account)),
+            }
+        )
+    return {
+        "experiment": exp["name"],
+        "kind": kind,
+        "what": what_of(ch),
+        "static": False,
+        "history": ({**history, "selected": None} if history else None),
+        "columns": columns,
+    }
 
 
-def file_view(exp: dict, agent: str, kind: str, inner: str,
-              round_at: int | None = None) -> dict | None:
+def file_view(exp: dict, agent: str, kind: str, inner: str, round_at: int | None = None) -> dict | None:
     """One file of one tree of one member of `exp`, found in a listing and never
     joined onto a root.
 
@@ -1377,32 +1528,41 @@ def file_view(exp: dict, agent: str, kind: str, inner: str,
     """
     ch = trees(exp).get(kind)
     source = bool(ch and ch.writer == "experimenter")
-    if (ch is None or (source and agent != "experimenter")
-            or (not source and agent not in exp["members"])):
+    if ch is None or (source and agent != "experimenter") or (not source and agent not in exp["members"]):
         return None
     if round_at is not None:
         rows = experiment_episodes(exp)
         history = channel_history(exp, kind, rows)
         if history is None or round_at not in history["rounds"]:
             return None
-        row = next((item for item in rows
-                    if item["agent"] == agent and item["round"] == round_at), None)
+        row = next((item for item in rows if item["agent"] == agent and item["round"] == round_at), None)
         seat = next((place for place, member in places_of(exp) if member == agent), None)
         account = account_of(agent)
         label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
-        rec = next((item for item in historical_listing(row, ch, kind, label)
-                    if item["path"] == inner), None)
+        rec = next((item for item in historical_listing(row, ch, kind, label) if item["path"] == inner), None)
         if rec is None or row is None:
             return None
         prefix = ch.path_for(label).strip("/")
         full = f"{prefix}/{inner}" if prefix else inner
-        source_rec = next((item for item in row["trace"].get("files") or []
-                           if item.get("channel") == kind and item.get("role") == "own"
-                           and str(item.get("path") or "").strip("/") == full), None)
+        source_rec = next(
+            (
+                item
+                for item in row["trace"].get("files") or []
+                if item.get("channel") == kind
+                and item.get("role") == "own"
+                and str(item.get("path") or "").strip("/") == full
+            ),
+            None,
+        )
         if source_rec is None:
             return None
-        return {**rec, "agent": agent, "kind": kind,
-                "size": source_rec.get("size") or 0, "text": source_rec.get("text")}
+        return {
+            **rec,
+            "agent": agent,
+            "kind": kind,
+            "size": source_rec.get("size") or 0,
+            "text": source_rec.get("text"),
+        }
     root = harness.files_dir(ch.source) if source else harness.mirror(agent, kind)
     given = set() if source else given_in(ch, account_of(agent))
     rec = next((f for f in listing(root, kind, given) if f["path"] == inner), None)
@@ -1425,38 +1585,62 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     rnd = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
     ts = traces_of(agent, account)
     live = live_index(agent, account)
-    episodes = [{
-        "episode": t["episode"], "round": rnd.get(t["episode"]),
-        "stop": t["stop"], "spent": t["spent"], "turns": len(t["turns"]),
-        "remaining": t["remaining"], "duration_s": t.get("duration_s"),
-        "refused": len(analyze.refused_turns_of(t)),
-        "transfer": t.get("transfer") or {}, "channels": analyze.channel_records(t),
-        "forgiven": t.get("forgiven") or 0,
-        "provenance": t["provenance"],
-        "drift": t.get("provenance_drift") or [],
-        "halted": t["stop"] in harness.STOPS_THE_AGENT,
-        "live": False,
-    } for t in ts]
+    episodes = [
+        {
+            "episode": t["episode"],
+            "round": rnd.get(t["episode"]),
+            "stop": t["stop"],
+            "spent": t["spent"],
+            "turns": len(t["turns"]),
+            "remaining": t["remaining"],
+            "duration_s": t.get("duration_s"),
+            "refused": len(analyze.refused_turns_of(t)),
+            "transfer": t.get("transfer") or {},
+            "channels": analyze.channel_records(t),
+            "forgiven": t.get("forgiven") or 0,
+            "provenance": t["provenance"],
+            "drift": t.get("provenance_drift") or [],
+            "halted": t["stop"] in harness.STOPS_THE_AGENT,
+            "live": False,
+        }
+        for t in ts
+    ]
     if live is not None:
         going = live_state(agent, live, account)
-        episodes.append({
-            "episode": live, "round": max(rnd.values(), default=0) + 1,
-            "stop": None, "spent": going["spent"], "turns": len(going["turns"]),
-            "remaining": going["remaining"], "duration_s": None,
-            "refused": len([t for t in going["turns"] if t.get("refusal")]),
-            "transfer": {}, "channels": {}, "forgiven": 0,
-            "provenance": {}, "drift": [], "halted": False, "live": True,
-        })
+        episodes.append(
+            {
+                "episode": live,
+                "round": max(rnd.values(), default=0) + 1,
+                "stop": None,
+                "spent": going["spent"],
+                "turns": len(going["turns"]),
+                "remaining": going["remaining"],
+                "duration_s": None,
+                "refused": len([t for t in going["turns"] if t.get("refusal")]),
+                "transfer": {},
+                "channels": {},
+                "forgiven": 0,
+                "provenance": {},
+                "drift": [],
+                "halted": False,
+                "live": True,
+            }
+        )
     seating = harness.seating_of(agent, account)
     return {
-        "agent": agent, "experiment": exp["name"] if exp else "",
-        "provider": account.get("provider"), "model": account.get("model"),
-        "initial": account.get("initial"), "remaining": account.get("remaining"),
+        "agent": agent,
+        "experiment": exp["name"] if exp else "",
+        "provider": account.get("provider"),
+        "model": account.get("model"),
+        "initial": account.get("initial"),
+        "remaining": account.get("remaining"),
         "episodes": episodes,
-        "live": live, "live_age": live_age(agent, live),
+        "live": live,
+        "live_age": live_age(agent, live),
         # The mapping has no gap and holds every seat, this agent's among them, so
         # which one is its own has to be said: absence cannot say it.
-        "seat": seating.seat, "peers": seating.seen,
+        "seat": seating.seat,
+        "peers": seating.seen,
         "starter_files": account.get("starter_files_landed") or {},
         "out_reason": harness.why_out(account) if account else None,
         "eliminated": account.get("eliminated"),
@@ -1486,16 +1670,25 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
     table = harness.table_of(trace)
     mail = harness.mailbox_channel(table)
     out = {
-        "source": "trace", "live": False, "age": None, "episode": index,
-        "stop": trace["stop"], "spent": trace["spent"], "remaining": trace["remaining"],
-        "duration_s": trace.get("duration_s"), "error": trace.get("error"),
+        "source": "trace",
+        "live": False,
+        "age": None,
+        "episode": index,
+        "stop": trace["stop"],
+        "spent": trace["spent"],
+        "remaining": trace["remaining"],
+        "duration_s": trace.get("duration_s"),
+        "error": trace.get("error"),
         "series_before": trace.get("series_before") or [],
         "series_after": trace.get("series_after") or [],
         "missing_tools": trace.get("missing_tools") or [],
-        "balance_fits": trace.get("balance_fits"), "read_balance": trace.get("read_balance"),
-        "transfer": trace.get("transfer") or {}, "channels": analyze.channel_records(trace),
+        "balance_fits": trace.get("balance_fits"),
+        "read_balance": trace.get("read_balance"),
+        "transfer": trace.get("transfer") or {},
+        "channels": analyze.channel_records(trace),
         "forgiven": trace.get("forgiven") or 0,
-        "obligations": obligations(trace), "unmet": unmet(trace),
+        "obligations": obligations(trace),
+        "unmet": unmet(trace),
         "turns": from_trace(trace),
     }
     if since == 0:
@@ -1509,7 +1702,8 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
             "name": analyze.harness_files_of(trace)["digest"],
             "inbox": mail.inbox if mail else None,
             "inbox_prefix": inbox_prefix(mail),
-            "listing": listing, "shown_before": sections,
+            "listing": listing,
+            "shown_before": sections,
             "clipped": observation_clipped(trace),
         }
         out["changes"] = episode_changes(agent, index)
@@ -1529,28 +1723,51 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     last = latest_trace(agent, account)
     table, hf = agent_environment(last, agent, account)
     found = manifest_ahead_of(last, agent, account)
-    delivery = (found[0]["overrides"].get("delivery", harness.SETTINGS.delivery) if found else
-                (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery))
-    shell = (any(t.get("kind") == "bash" for t in found[0]["tools"] or []) if found else
-             (last["provenance"].get("shell_tool", True) if last else harness.SETTINGS.shell_tool))
+    delivery = (
+        found[0]["overrides"].get("delivery", harness.SETTINGS.delivery)
+        if found
+        else (last["provenance"]["delivery"] if last else harness.SETTINGS.delivery)
+    )
+    shell = (
+        any(t.get("kind") == "bash" for t in found[0]["tools"] or [])
+        if found
+        else (last["provenance"].get("shell_tool", True) if last else harness.SETTINGS.shell_tool)
+    )
     mail = harness.mailbox_channel(table)
     out = {
-        "source": "raw", "live": True, "age": live_age(agent, index), "episode": index,
-        "stop": None, "spent": going["spent"], "remaining": going["remaining"],
-        "duration_s": None, "error": None,
-        "series_before": account.get("series") or [], "series_after": [],
-        "missing_tools": [], "balance_fits": None, "read_balance": None,
-        "transfer": {}, "channels": {}, "forgiven": 0,
-        "obligations": obligations(None), "unmet": unmet(None),
+        "source": "raw",
+        "live": True,
+        "age": live_age(agent, index),
+        "episode": index,
+        "stop": None,
+        "spent": going["spent"],
+        "remaining": going["remaining"],
+        "duration_s": None,
+        "error": None,
+        "series_before": account.get("series") or [],
+        "series_after": [],
+        "missing_tools": [],
+        "balance_fits": None,
+        "read_balance": None,
+        "transfer": {},
+        "channels": {},
+        "forgiven": 0,
+        "obligations": obligations(None),
+        "unmet": unmet(None),
         "turns": going["turns"],
     }
     if since == 0:
-        out["observation"] = {"command": harness.observation(table, hf["digest"], delivery, shell),
-                              "shell": shell,
-                              "result": None, "name": hf["digest"],
-                              "inbox": mail.inbox if mail else None,
-                              "inbox_prefix": inbox_prefix(mail), "listing": None,
-                              "shown_before": [], "clipped": False}
+        out["observation"] = {
+            "command": harness.observation(table, hf["digest"], delivery, shell),
+            "shell": shell,
+            "result": None,
+            "name": hf["digest"],
+            "inbox": mail.inbox if mail else None,
+            "inbox_prefix": inbox_prefix(mail),
+            "listing": None,
+            "shown_before": [],
+            "clipped": False,
+        }
     return out
 
 
@@ -1562,9 +1779,13 @@ def episode_changes(agent: str, index: int) -> list[dict]:
     where every other agent reads it, what it addressed to one of them, and what
     it declared to the harness.
     """
+
     def files(t: dict | None, name: str) -> dict[str, str]:
-        return {f["path"]: f["text"] for f in (t or {}).get("files") or []
-                if f["channel"] == name and f["role"] == "own" and f["text"] is not None}
+        return {
+            f["path"]: f["text"]
+            for f in (t or {}).get("files") or []
+            if f["channel"] == name and f["role"] == "own" and f["text"] is not None
+        }
 
     this = load_trace(harness.trace_path(agent, index))
     if this is None:
@@ -1583,8 +1804,13 @@ def episode_changes(agent: str, index: int) -> list[dict]:
             what = f"{ch.path}/ · nobody else reads this"
         else:
             what = f"{ch.path_for(label)}/ · every agent reads this"
-        out.append({"channel": ch.name, "what": what,
-                    "lines": analyze.state_changes(files(before, ch.name), files(this, ch.name))})
+        out.append(
+            {
+                "channel": ch.name,
+                "what": what,
+                "lines": analyze.state_changes(files(before, ch.name), files(this, ch.name)),
+            }
+        )
     return out
 
 
@@ -1596,18 +1822,18 @@ class View(http.server.BaseHTTPRequestHandler):
 
     server_version = "view.py"
 
-    def do_GET(self) -> None:                    # noqa: N802 - BaseHTTPRequestHandler's name
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
         url = urllib.parse.urlsplit(self.path)
         parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         query = urllib.parse.parse_qs(url.query)
         try:
             self.route(parts, query)
-        except ConnectionError:                  # the page navigated away mid-answer
+        except ConnectionError:  # the page navigated away mid-answer
             pass
-        except Exception as e:                   # noqa: BLE001 - a viewer never takes the page down
+        except Exception as e:  # noqa: BLE001 - a viewer never takes the page down
             self.send_json({"error": f"{type(e).__name__}: {e}"}, status=500)
 
-    def do_POST(self) -> None:                   # noqa: N802 - BaseHTTPRequestHandler's name
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
         url = urllib.parse.urlsplit(self.path)
         parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         if len(parts) != 4 or parts[:2] != ["api", "interaction"]:
@@ -1655,9 +1881,15 @@ class View(http.server.BaseHTTPRequestHandler):
         if not parts:
             return self.send_page()
         if parts == ["api", "experiments"]:
-            return self.send_json({"experiments": experiments(), "focus": self.view_server.focus,
-                                   "poll": POLL_MS, "stale": STALE_AFTER,
-                                   "root": str(harness.SETTINGS.root)})
+            return self.send_json(
+                {
+                    "experiments": experiments(),
+                    "focus": self.view_server.focus,
+                    "poll": POLL_MS,
+                    "stale": STALE_AFTER,
+                    "root": str(harness.SETTINGS.root),
+                }
+            )
         if parts == ["api", "interaction"]:
             pending = self.interactions().pending()
             return self.send_json({"requests": [request.as_dict() for request in pending]})
@@ -1689,8 +1921,7 @@ class View(http.server.BaseHTTPRequestHandler):
                     return self.send_json({"error": f"invalid round {selected}"}, status=404)
                 got = tree_view(exp, rest[1], int(selected) if selected else None)
                 if got is None:
-                    return self.send_json({"error": f"no round {selected} snapshot for {rest[1]}"},
-                                          status=404)
+                    return self.send_json({"error": f"no round {selected} snapshot for {rest[1]}"}, status=404)
                 return self.send_json(got)
             if rest == ["file"]:
                 agent = query.get("agent", [""])[0]
@@ -1719,8 +1950,7 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.send_json({"error": "no such route"}, status=404)
 
     def send_page(self) -> None:
-        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__",
-                            self.view_server.control_token).encode("utf-8")
+        body = PAGE.replace("__INTERACTION_CONTROL_TOKEN__", self.view_server.control_token).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1783,8 +2013,7 @@ def serve(port: int = PORT, focus: str | None = None) -> ViewServer:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI. Serves the page until interrupted."""
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=PORT, help=f"default {PORT}; 0 picks a free one")
     ap.add_argument("--experiment", help="open on this set of agents")
     ap.add_argument("--agent", help="open on the experiment this agent sits in")

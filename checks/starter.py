@@ -42,7 +42,9 @@ def check_manifest_relative_starter_documents_include_empty_files():
             'system_prompt = ""\nstarter_files = "./placeholder.md"\n'
             'starter_files_below = 1000\n[[tool]]\nname = "bash"\nkind = "bash"\n'
             '[[agent]]\nid = "a"\nstarter_files = "./placeholder.md"\n'
-            'starter_files_below = 1000\n', encoding="utf-8")
+            "starter_files_below = 1000\n",
+            encoding="utf-8",
+        )
         loaded = experiment.load_manifest(manifest)
         source = str(doc.resolve())
         assert loaded["overrides"]["starter_files"] == source
@@ -95,11 +97,13 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
             landed[name] = account["starter_files_landed"]
 
     assert landed["cheap"]["episode"] > landed["dear"]["episode"], landed
-    assert all(r["episode"] < 4 for r in landed.values()), \
+    assert all(r["episode"] < 4 for r in landed.values()), (
         f"both must land inside the episodes run, with headroom to spare: {landed}"
+    )
     assert all(r["remaining"] <= below for r in landed.values()), landed
-    assert all(r["sha256"] == landed["cheap"]["sha256"] for r in landed.values()), \
+    assert all(r["sha256"] == landed["cheap"]["sha256"] for r in landed.values()), (
         "the same starter files, whenever they happened to land"
+    )
 
 
 def check_starter_files_are_recorded_and_idempotent():
@@ -108,7 +112,7 @@ def check_starter_files_are_recorded_and_idempotent():
     # always there, not material that appeared.
     with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
         plant(root)
-        episode_once(run("echo mine > state/m1"), say())     # the agent overwrites it
+        episode_once(run("echo mine > state/m1"), say())  # the agent overwrites it
         after = episode_once(say())
         record = ground_truth()["starter_files_landed"]
 
@@ -116,8 +120,7 @@ def check_starter_files_are_recorded_and_idempotent():
     assert record["remaining"] == 500_000, "and the balance it landed on"
     assert sorted(record["paths"]) == ["d/m2", "m1"], record
     kept = files_by_path(after)["state/m1"]
-    assert kept["text"].strip() == "mine", \
-        "a second episode must not restore what the agent changed"
+    assert kept["text"].strip() == "mine", "a second episode must not restore what the agent changed"
     assert kept["starter"], "and it is still one of the files the agent was given"
 
 
@@ -129,13 +132,16 @@ def check_starter_files_are_not_the_agents():
 
     by = files_by_path(t)
     assert by["state/m1"]["ours"] and by["state/m1"]["starter"], by["state/m1"]
-    assert by["state/m1"]["text"].strip() == "alpha", \
+    assert by["state/m1"]["text"].strip() == "alpha", (
         "a starter file's contents are captured, so an edit to it is legible"
+    )
     assert not by["state/NOTES.md"]["ours"], "the agent's own file stays the agent's"
-    assert [f["path"] for f in t["files"] if not f["ours"]] == ["state/NOTES.md"], \
+    assert [f["path"] for f in t["files"] if not f["ours"]] == ["state/NOTES.md"], (
         "everything the agent did not invent is out of what analyze.py counts as its own"
-    assert not [f for f in t["files"] if f["channel"] != "notes"], \
+    )
+    assert not [f for f in t["files"] if f["channel"] != "notes"], (
         "an agent on its own has a blackboard and nothing on it"
+    )
 
 
 def check_starter_files_refuse_to_overwrite_the_agents_work():
@@ -145,8 +151,7 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
     with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())
-        refused(lambda: episode_once(say()), "m1",
-                because="the starter files overwrote a file the agent had made")
+        refused(lambda: episode_once(say()), "m1", because="the starter files overwrote a file the agent had made")
         assert (harness.mirror("t", "notes") / "m1").read_text().strip() == "mine", "and left it alone"
 
 
@@ -169,16 +174,21 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         amend(starter_files="other", starter_files_below=500_000)
         second = episode_once(say())
         assert second["provenance"]["starter_files"] == "s" and second["provenance"]["starter_files_below"] == 499_000
-        assert ground_truth()["starter_files_landed"]["name"] == "s", \
+        assert ground_truth()["starter_files_landed"]["name"] == "s", (
             "the starter files that landed are the pinned ones"
+        )
         assert not (harness.mirror("t", "notes") / "m9").exists()
         assert second["provenance_drift"] == [], "nothing about this agent changed"
 
         # Asking the agent to be something it was not created as is refused.
-        refused(lambda: harness.load_account("t", starter_files="other"), "starter_files",
-                because="an agent was re-created on different terms")
-        assert harness.load_account("t", starter_files="s", starter_files_below=499_000)["starter_files"] == "s", \
+        refused(
+            lambda: harness.load_account("t", starter_files="other"),
+            "starter_files",
+            because="an agent was re-created on different terms",
+        )
+        assert harness.load_account("t", starter_files="s", starter_files_below=499_000)["starter_files"] == "s", (
             "the terms it was created on are accepted"
+        )
 
         # An account from before the terms were pinned adopts the config at its next episode.
         m = ground_truth()
@@ -224,19 +234,20 @@ def check_starter_files_config_is_validated():
             """Starter file terms as a manifest states them; config.toml refuses them."""
             harness.apply_config(values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST)
 
-        for bad in ({"starter_files": "ok"}, {"starter_files_below": 3},
-                    {"starter_files": "ok", "starter_files_below": 0},
-                    {"starter_files": "nope", "starter_files_below": 2},
-                    {"starter_files": "ok", "starter_files_below": -1},
-                    {"starter_files": 5, "starter_files_below": 2}):
+        for bad in (
+            {"starter_files": "ok"},
+            {"starter_files_below": 3},
+            {"starter_files": "ok", "starter_files_below": 0},
+            {"starter_files": "nope", "starter_files_below": 2},
+            {"starter_files": "ok", "starter_files_below": -1},
+            {"starter_files": 5, "starter_files_below": 2},
+        ):
             with pinned():
-                refused(lambda: declared(**bad), "starter_files",
-                        because=f"accepted bad starter_files terms: {bad!r}")
+                refused(lambda: declared(**bad), "starter_files", because=f"accepted bad starter_files terms: {bad!r}")
 
         with pinned():
             declared(starter_files="ok", starter_files_below=400_000)
-            assert (harness.SETTINGS.starter_files, harness.SETTINGS.starter_files_below) == \
-                ("ok", 400_000)
+            assert (harness.SETTINGS.starter_files, harness.SETTINGS.starter_files_below) == ("ok", 400_000)
         # The digest covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")
@@ -260,8 +271,9 @@ def check_fork_reproduces_state_and_account():
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
         assert forked["series"] == trace["series_after"], "invariant 8: the series is what carries"
-        assert not any(harness.mirror("f", "blackboard").rglob("*")), \
+        assert not any(harness.mirror("f", "blackboard").rglob("*")), (
             "the parent's blackboard was empty, so the fork's is"
+        )
         assert forked["remaining"] == trace["series_after"][-1]
         assert len(forked["episodes"]) == 1, "the episodes after the fork point are dropped"
         assert forked["initial"] == parent["initial"] and forked["model"] == parent["model"]
@@ -284,22 +296,32 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
     """
     with temp_root() as root:
         seated(root, other={"group/theirs": "not mine\n", "out/1": "for you\n"})
-        episode_once(run("echo mine > state/NOTES.md",
-                      "echo posted > 1/RESULT",
-                      "echo psst > out/2 && echo '2 50' > out/transfer"), say())
+        episode_once(
+            run(
+                "echo mine > state/NOTES.md",
+                "echo posted > 1/RESULT",
+                "echo psst > out/2 && echo '2 50' > out/transfer",
+            ),
+            say(),
+        )
         with quiet():
             assert harness.fork("t", 1, "f") == 0
 
         assert (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8") == "mine\n"
         assert (harness.mirror("f", "blackboard") / "RESULT").read_text(encoding="utf-8") == "posted\n"
-        assert (harness.mirror("f", "mail") / "2").read_text(encoding="utf-8") == "psst\n", \
+        assert (harness.mirror("f", "mail") / "2").read_text(encoding="utf-8") == "psst\n", (
             "a message is one file, and the fork rebuilds it as one"
-        assert (harness.mirror("f", "mail") / "transfer").read_text(encoding="utf-8") == "2 50\n", \
+        )
+        assert (harness.mirror("f", "mail") / "transfer").read_text(encoding="utf-8") == "2 50\n", (
             "the resolved episode state is rebuilt exactly; the next episode clears the transfer"
+        )
         # And nothing that belonged to the neighbour: its blackboard, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
-        rebuilt = {p.name for tree in (harness.mirror("f", "notes"), harness.mirror("f", "blackboard"),
-                                       harness.mirror("f", "mail")) for p in tree.rglob("*")}
+        rebuilt = {
+            p.name
+            for tree in (harness.mirror("f", "notes"), harness.mirror("f", "blackboard"), harness.mirror("f", "mail"))
+            for p in tree.rglob("*")
+        }
         assert rebuilt == {"NOTES.md", "RESULT", "2", "transfer"}, sorted(rebuilt)
         assert "theirs" not in rebuilt, sorted(rebuilt)
 
@@ -309,26 +331,56 @@ def check_fork_refuses_what_it_cannot_rebuild():
     with rooted(HostBox):
         priv = harness.records_dir("p") / "traces"
         priv.mkdir(parents=True)
-        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
-                                   "provider": "anthropic",
-                                   "model": "claude-opus-5", "initial": 10,
-                                   "created_at": "now", "remaining": 9, "series": [10, 9],
-                                   "episodes": [{"episode": 1, "stop": "end_turn",
-                                                 "spent": 1, "turns": 1}]})
+        harness.save_account(
+            "p",
+            {
+                "account_version": harness.ACCOUNT_VERSION,
+                "agent": "p",
+                "provider": "anthropic",
+                "model": "claude-opus-5",
+                "initial": 10,
+                "created_at": "now",
+                "remaining": 9,
+                "series": [10, 9],
+                "episodes": [{"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}],
+            },
+        )
 
         def trace(**over):
             # A peer's blackboard is skipped and not rebuilt, so an entry that
             # could never be stored does not stop a fork if it is one.
-            t = {"trace_version": harness.TRACE_VERSION, "episode": 1, "state_saved": True,
-                 "series_after": [10, 9],
-                 "files": [{"path": "2/theirs", "channel": "blackboard", "writer": "self",
-                            "readers": "all", "role": "peer", "size": 5,
-                            "author": "peer:2", "ours": True, "starter": False,
-                            "text": None},
-                           {"path": "state/a.txt", "channel": "notes", "writer": "self",
-                            "readers": "self", "role": "own", "size": 3,
-                            "author": "self", "ours": False, "starter": False,
-                            "text": "hi\n"}]}
+            t = {
+                "trace_version": harness.TRACE_VERSION,
+                "episode": 1,
+                "state_saved": True,
+                "series_after": [10, 9],
+                "files": [
+                    {
+                        "path": "2/theirs",
+                        "channel": "blackboard",
+                        "writer": "self",
+                        "readers": "all",
+                        "role": "peer",
+                        "size": 5,
+                        "author": "peer:2",
+                        "ours": True,
+                        "starter": False,
+                        "text": None,
+                    },
+                    {
+                        "path": "state/a.txt",
+                        "channel": "notes",
+                        "writer": "self",
+                        "readers": "self",
+                        "role": "own",
+                        "size": 3,
+                        "author": "self",
+                        "ours": False,
+                        "starter": False,
+                        "text": "hi\n",
+                    },
+                ],
+            }
             return {**t, **over}
 
         binary = trace()
@@ -337,18 +389,22 @@ def check_fork_refuses_what_it_cannot_rebuild():
         big["files"][1]["size"] = harness.FILE_CONTENT_LIMIT + 1
         lossy = trace()
         lossy["files"][1]["text"] = "h�\n"
-        for name, bad in [("binary", binary), ("truncated", big), ("lossy", lossy),
-                          ("unmirrored", trace(state_saved=False))]:
+        for name, bad in [
+            ("binary", binary),
+            ("truncated", big),
+            ("lossy", lossy),
+            ("unmirrored", trace(state_saved=False)),
+        ]:
             harness.trace_path("p", 1).write_text(json.dumps(bad), encoding="utf-8")
             with quiet():
                 assert harness.fork("p", 1, f"x-{name}") != 0, f"forked a {name} episode"
-            assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), \
+            assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), (
                 f"a refused fork left a {name} agent behind"
+            )
 
         # A trace whose episode the account never came to list: the commit stopped
         # between writing the one and saving the other.
-        harness.trace_path("p", 2).write_text(
-            json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8")
+        harness.trace_path("p", 2).write_text(json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8")
         with quiet() as said:
             assert harness.fork("p", 2, "x-orphan") == 2, "forked an episode its account never listed"
         assert "never committed" in said.getvalue(), said.getvalue()
@@ -369,23 +425,46 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
     """
     with rooted(HostBox):
         (harness.records_dir("p") / "traces").mkdir(parents=True)
-        harness.save_account("p", {"account_version": harness.ACCOUNT_VERSION, "agent": "p",
-                                   "provider": "anthropic", "model": "claude-opus-5",
-                                   "initial": 10, "created_at": "now", "remaining": 9,
-                                   "series": [10, 9],
-                                   "episodes": [{"episode": 1, "stop": "end_turn",
-                                                 "spent": 1, "turns": 1}]})
-        mine = {"path": "state/a.txt", "channel": "notes", "writer": "self", "readers": "self",
-                "role": "own", "size": 3, "author": "self", "ours": False, "starter": False,
-                "text": "hi\n"}
-        trace = {"trace_version": harness.TRACE_VERSION, "episode": 1, "state_saved": True,
-                 "series_after": [10, 9], "files": [mine, {**mine, "path": "elsewhere/b.txt"}]}
+        harness.save_account(
+            "p",
+            {
+                "account_version": harness.ACCOUNT_VERSION,
+                "agent": "p",
+                "provider": "anthropic",
+                "model": "claude-opus-5",
+                "initial": 10,
+                "created_at": "now",
+                "remaining": 9,
+                "series": [10, 9],
+                "episodes": [{"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}],
+            },
+        )
+        mine = {
+            "path": "state/a.txt",
+            "channel": "notes",
+            "writer": "self",
+            "readers": "self",
+            "role": "own",
+            "size": 3,
+            "author": "self",
+            "ours": False,
+            "starter": False,
+            "text": "hi\n",
+        }
+        trace = {
+            "trace_version": harness.TRACE_VERSION,
+            "episode": 1,
+            "state_saved": True,
+            "series_after": [10, 9],
+            "files": [mine, {**mine, "path": "elsewhere/b.txt"}],
+        }
         harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
         with quiet() as said:
             assert harness.fork("p", 1, "f") == 2, "forked a record no tree holds"
         assert "elsewhere/b.txt" in said.getvalue(), said.getvalue()
-        assert not harness.environment_dir("f").exists(), \
+        assert not harness.environment_dir("f").exists(), (
             f"a refused fork left mirrors behind: {sorted(harness.environment_dir('f').rglob('*'))}"
+        )
         assert not harness.records_dir("f").exists(), "and records"
 
         trace["files"] = [mine]
@@ -433,14 +512,16 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
         path = seats_manifest(root, ids)
         source = experiment.load_manifest(path)
         with quiet():
-            experiment.sequential_round(ids, set(ids), 0, fake(say(), say()),
-                                        experiment.stamp_of(source), source["labels"])
-            branch = experiment.load_manifest(
-                experiment.branch_experiment(path, 1, "br", "2", root / "br.toml"))
-            experiment.sequential_round(["br-01", "br-02"], {"br-01"}, 1, fake(say()),
-                                        experiment.stamp_of(branch), branch["labels"])
+            experiment.sequential_round(
+                ids, set(ids), 0, fake(say(), say()), experiment.stamp_of(source), source["labels"]
+            )
+            branch = experiment.load_manifest(experiment.branch_experiment(path, 1, "br", "2", root / "br.toml"))
+            experiment.sequential_round(
+                ["br-01", "br-02"], {"br-01"}, 1, fake(say()), experiment.stamp_of(branch), branch["labels"]
+            )
         was, t = trace_on_disk("g01", 1)["provenance"], trace_on_disk("br-01", 2)
     assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"]["peers"]
     assert t["provenance_drift"] == [
         f"experiment_id: {was['experiment_id']!r} -> 'br'",
-        f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}"], t["provenance_drift"]
+        f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}",
+    ], t["provenance_drift"]

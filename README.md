@@ -59,8 +59,9 @@ intended. The full statement of each is in [docs/design.md](docs/design.md).
 
 ## Quickstart
 
-Requires Python 3.14+ and Docker. Use `py -3`, not `python`, on Windows, where a
-bare `python` hits the Store alias.
+Requires Python 3.14+ and Docker. `py -3` runs the Windows launcher's newest
+Python 3, never an activated virtual environment, so install `requirements.txt`
+into that interpreter; inside a virtual environment, use its `python`.
 
 ```bash
 pip install -r requirements.txt

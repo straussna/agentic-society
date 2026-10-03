@@ -149,8 +149,15 @@ class ModelSpec:
 class ProviderError(RuntimeError):
     """A provider failure classified without exposing SDK exception types."""
 
-    def __init__(self, message: str, *, category: FailureCategory, provider: str,
-                 status_code: int | None = None, native_type: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: FailureCategory,
+        provider: str,
+        status_code: int | None = None,
+        native_type: str | None = None,
+    ):
         super().__init__(message)
         self.category: FailureCategory = category
         self.provider = provider
@@ -162,8 +169,13 @@ class ProviderError(RuntimeError):
         return self.category == "retryable_api"
 
     def as_dict(self) -> dict[str, Any]:
-        return {"category": self.category, "provider": self.provider, "message": str(self),
-                "status_code": self.status_code, "native_type": self.native_type}
+        return {
+            "category": self.category,
+            "provider": self.provider,
+            "message": str(self),
+            "status_code": self.status_code,
+            "native_type": self.native_type,
+        }
 
 
 class ProviderConfigurationError(ProviderError):
@@ -171,8 +183,7 @@ class ProviderConfigurationError(ProviderError):
         super().__init__(message, category="adapter", provider=provider)
 
 
-def classify_error(error: Exception, provider: str,
-                   key_variable: str | None = None) -> ProviderError:
+def classify_error(error: Exception, provider: str, key_variable: str | None = None) -> ProviderError:
     """Classify an SDK exception by its status code and the names of its classes.
 
     401 and 403, or a class named for authentication or a denied permission, are
@@ -199,16 +210,15 @@ def classify_error(error: Exception, provider: str,
     message = f"{name}: {error}"
     if key_variable and (status == 401 or "Authentication" in name):
         message = f"{message} {where_key_goes(key_variable)}"
-    return ProviderError(message, category=category, provider=provider,
-                         status_code=status, native_type=name)
+    return ProviderError(message, category=category, provider=provider, status_code=status, native_type=name)
 
 
 def refuse_custom_endpoint(variable: str, provider: str) -> None:
     """Refuse an endpoint redirected through `variable`: the adapters speak first-party only."""
     if os.environ.get(variable):
         raise ProviderConfigurationError(
-            f"{variable} is not supported; provider adapters use first-party endpoints",
-            provider=provider)
+            f"{variable} is not supported; provider adapters use first-party endpoints", provider=provider
+        )
 
 
 def where_key_goes(variable: str) -> str:
@@ -218,15 +228,15 @@ def where_key_goes(variable: str) -> str:
 def require_key(variable: str, provider: str) -> None:
     """Refuse a provider whose API key is not in the environment, saying where it goes."""
     if not os.environ.get(variable):
-        raise ProviderError(f"{variable} is not set. {where_key_goes(variable)}",
-                            category="authentication", provider=provider)
+        raise ProviderError(
+            f"{variable} is not set. {where_key_goes(variable)}", category="authentication", provider=provider
+        )
 
 
 class PendingResponse:
     """A native response whose canonical form is produced only after raw logging."""
 
-    def __init__(self, provider: str, native: dict[str, Any],
-                 normalize: Callable[[], NormalizedTurn]):
+    def __init__(self, provider: str, native: dict[str, Any], normalize: Callable[[], NormalizedTurn]):
         self.provider = provider
         self.native = native
         self._normalize = normalize
@@ -269,16 +279,23 @@ class ModelProvider(Protocol):
     def provenance_facts(self) -> Mapping[str, Any]: ...
 
     def preflight(self, models: Iterable[str]) -> None: ...
-    def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int, context: SessionContext) -> ModelSession: ...
+    def open_session(
+        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+    ) -> ModelSession: ...
 
 
 @runtime_checkable
 class ProviderRouter(Protocol):
     def preflight(self) -> None: ...
-    def open_session(self, provider: str, model: str, system: str,
-                     tools: tuple[ToolSpec, ...], max_tokens: int,
-                     context: SessionContext) -> ModelSession: ...
+    def open_session(
+        self,
+        provider: str,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+        context: SessionContext,
+    ) -> ModelSession: ...
 
 
 def native_dict(value: Any) -> dict[str, Any]:
@@ -302,5 +319,4 @@ def field(value: Any, name: str, default: Any = None) -> Any:
 
 def charge(kind: str, tokens: int, rate: int, multiplier: tuple[int, int] = (1, 1)) -> Charge:
     numerator, denominator = multiplier
-    return Charge(kind, tokens, rate, tokens * rate * numerator // denominator,
-                  numerator, denominator)
+    return Charge(kind, tokens, rate, tokens * rate * numerator // denominator, numerator, denominator)

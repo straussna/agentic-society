@@ -33,12 +33,22 @@ class InteractionRequest:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "InteractionRequest":
-        return cls(int(value["version"]), str(value["request_id"]), str(value["agent"]),
-                   str(value["label"]), int(value["episode"]), int(value["turn"]),
-                   str(value["created_at"]), str(value.get("system_prompt", "")),
-                   dict(value["input"]), tuple(ToolSpec(str(tool["name"]),
-                   str(tool.get("description", "")), dict(tool["input_schema"]))
-                   for tool in value["available_tools"]), str(value["status"]))
+        return cls(
+            int(value["version"]),
+            str(value["request_id"]),
+            str(value["agent"]),
+            str(value["label"]),
+            int(value["episode"]),
+            int(value["turn"]),
+            str(value["created_at"]),
+            str(value.get("system_prompt", "")),
+            dict(value["input"]),
+            tuple(
+                ToolSpec(str(tool["name"]), str(tool.get("description", "")), dict(tool["input_schema"]))
+                for tool in value["available_tools"]
+            ),
+            str(value["status"]),
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,11 +67,17 @@ class Submission:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "Submission":
-        return cls(int(value["version"]), str(value["request_id"]),
-                   str(value["submission_id"]), str(value["action"]),
-                   tuple(ToolCall(str(call["id"]), str(call["name"]), dict(call["input"]))
-                         for call in value.get("tool_calls", [])),
-                   str(value["submitted_at"]))
+        return cls(
+            int(value["version"]),
+            str(value["request_id"]),
+            str(value["submission_id"]),
+            str(value["action"]),
+            tuple(
+                ToolCall(str(call["id"]), str(call["name"]), dict(call["input"]))
+                for call in value.get("tool_calls", [])
+            ),
+            str(value["submitted_at"]),
+        )
 
     @classmethod
     def parse(cls, value: dict[str, Any], request: InteractionRequest) -> "Submission":
@@ -88,8 +104,12 @@ class Submission:
             raise ValueError("action must be tool_calls or end_turn")
         calls = []
         for call in raw_calls:
-            if not isinstance(call, dict) or not isinstance(call.get("id"), str) or \
-                    not isinstance(call.get("name"), str) or not isinstance(call.get("input"), dict):
+            if (
+                not isinstance(call, dict)
+                or not isinstance(call.get("id"), str)
+                or not isinstance(call.get("name"), str)
+                or not isinstance(call.get("input"), dict)
+            ):
                 raise ValueError("tool calls require string id/name and object input")
             calls.append(ToolCall(call["id"], call["name"], call["input"]))
         if action == "end_turn" and calls:
@@ -103,5 +123,8 @@ class Submission:
 
     def same_as(self, other: "Submission") -> bool:
         """Whether `other` is this submission sent again: the same id, action and calls."""
-        return (self.submission_id, self.action, self.tool_calls) == \
-            (other.submission_id, other.action, other.tool_calls)
+        return (self.submission_id, self.action, self.tool_calls) == (
+            other.submission_id,
+            other.action,
+            other.tool_calls,
+        )

@@ -23,10 +23,10 @@ collect_ignore = ["checks/fake.py", "checks/lanes.py"]
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("checks")
-    group.addoption("--docker", action="store_true",
-                    help="run the checks that need a container")
-    group.addoption("--real", action="store_true",
-                    help="run every check in a container, including the ones that need not be")
+    group.addoption("--docker", action="store_true", help="run the checks that need a container")
+    group.addoption(
+        "--real", action="store_true", help="run every check in a container, including the ones that need not be"
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:

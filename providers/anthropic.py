@@ -5,19 +5,43 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from .base import (Charge, ModelSpec, NormalizedTurn, PendingResponse, Refusal, SessionContext,
-                   StopReason, ToolCall, ToolResult, ToolSpec, Usage, charge, classify_error, field,
-                   native_dict, refuse_custom_endpoint, require_key)
+from .base import (
+    Charge,
+    ModelSpec,
+    NormalizedTurn,
+    PendingResponse,
+    Refusal,
+    SessionContext,
+    StopReason,
+    ToolCall,
+    ToolResult,
+    ToolSpec,
+    Usage,
+    charge,
+    classify_error,
+    field,
+    native_dict,
+    refuse_custom_endpoint,
+    require_key,
+)
 
 
 MODELS = {
-    name: ModelSpec("anthropic", name, window,
-                    (("uncached_input", input_rate), ("cache_read", input_rate // 10),
-                     ("cache_write_5m", input_rate * 5 // 4),
-                     ("cache_write_1h", input_rate * 2), ("output", output_rate)),
-                    long_context_threshold=200_000 if window > 200_000 else None,
-                    long_context_input_multiplier=(2, 1) if window > 200_000 else (1, 1),
-                    long_context_output_multiplier=(3, 2) if window > 200_000 else (1, 1))
+    name: ModelSpec(
+        "anthropic",
+        name,
+        window,
+        (
+            ("uncached_input", input_rate),
+            ("cache_read", input_rate // 10),
+            ("cache_write_5m", input_rate * 5 // 4),
+            ("cache_write_1h", input_rate * 2),
+            ("output", output_rate),
+        ),
+        long_context_threshold=200_000 if window > 200_000 else None,
+        long_context_input_multiplier=(2, 1) if window > 200_000 else (1, 1),
+        long_context_output_multiplier=(3, 2) if window > 200_000 else (1, 1),
+    )
     for name, input_rate, output_rate, window in (
         ("claude-fable-5", 1000, 5000, 1_000_000),
         ("claude-mythos-5", 1000, 5000, 1_000_000),
@@ -31,8 +55,12 @@ MODELS = {
 
 
 # The native stop reasons with a canonical namesake; any other is "other".
-STOPS: dict[str, StopReason] = {"end_turn": "end_turn", "tool_use": "tool_use",
-                                "max_tokens": "max_tokens", "refusal": "refusal"}
+STOPS: dict[str, StopReason] = {
+    "end_turn": "end_turn",
+    "tool_use": "tool_use",
+    "max_tokens": "max_tokens",
+    "refusal": "refusal",
+}
 
 
 def normalize(native: Any, requested_model: str) -> NormalizedTurn:
@@ -47,8 +75,11 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
             if text:
                 reasoning.append(str(text))
         elif kind == "tool_use":
-            calls.append(ToolCall(str(field(block, "id", "")), str(field(block, "name", "")),
-                                  dict(field(block, "input", {}) or {})))
+            calls.append(
+                ToolCall(
+                    str(field(block, "id", "")), str(field(block, "name", "")), dict(field(block, "input", {}) or {})
+                )
+            )
 
     raw_usage = field(native, "usage", {}) or {}
     uncached = int(field(raw_usage, "input_tokens", 0) or 0)
@@ -61,8 +92,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     else:
         cache_1h = 0
     output = int(field(raw_usage, "output_tokens", 0) or 0)
-    usage = Usage(uncached + cache_read + cache_5m + cache_1h, uncached, cache_read,
-                  cache_5m + cache_1h, output, 0)
+    usage = Usage(uncached + cache_read + cache_5m + cache_1h, uncached, cache_read, cache_5m + cache_1h, output, 0)
     spec = MODELS[requested_model]
     long = usage.prefix_tokens > (spec.long_context_threshold or spec.context_window)
     input_multiplier = spec.long_context_input_multiplier if long else (1, 1)
@@ -82,20 +112,33 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     refusal = None
     if native_stop == "refusal" or field(native, "refusal"):
         details = field(native, "refusal") or stop_details or {}
-        refusal = Refusal(str(field(details, "type", "refusal")),
-                          field(details, "explanation"), field(details, "recommended_model"),
-                          native_dict(details) if details else None)
-    return NormalizedTurn(str(field(native, "id", "")), "anthropic", requested_model,
-                          str(field(native, "model", requested_model)), stop,
-                          str(native_stop) if native_stop is not None else None, tuple(texts),
-                          tuple(reasoning), tuple(calls), usage, charges, refusal, stop_details)
+        refusal = Refusal(
+            str(field(details, "type", "refusal")),
+            field(details, "explanation"),
+            field(details, "recommended_model"),
+            native_dict(details) if details else None,
+        )
+    return NormalizedTurn(
+        str(field(native, "id", "")),
+        "anthropic",
+        requested_model,
+        str(field(native, "model", requested_model)),
+        stop,
+        str(native_stop) if native_stop is not None else None,
+        tuple(texts),
+        tuple(reasoning),
+        tuple(calls),
+        usage,
+        charges,
+        refusal,
+        stop_details,
+    )
 
 
 class AnthropicSession:
     provider = "anthropic"
 
-    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...],
-                 max_tokens: int):
+    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int):
         self.client = client
         self.requested_model = model
         self.system = system
@@ -107,18 +150,27 @@ class AnthropicSession:
         if isinstance(content, str):
             user = {"role": "user", "content": content}
         else:
-            user = {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": result.tool_call_id,
-                 "content": result.content, "is_error": result.is_error}
-                for result in content]}
+            user = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": result.tool_call_id,
+                        "content": result.content,
+                        "is_error": result.is_error,
+                    }
+                    for result in content
+                ],
+            }
         messages = [*self.messages, user]
         params: dict[str, Any] = {
             "model": self.requested_model,
             "max_tokens": self.max_tokens,
             "messages": messages,
-            "tools": [{"name": tool.name, "description": tool.description,
-                       "input_schema": tool.input_schema, "strict": True}
-                      for tool in self.tools],
+            "tools": [
+                {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema, "strict": True}
+                for tool in self.tools
+            ],
             "cache_control": {"type": "ephemeral"},
         }
         if self.system:
@@ -136,6 +188,7 @@ class AnthropicSession:
             if response_content:
                 self.messages.append({"role": "assistant", "content": response_content})
             return turn
+
         return PendingResponse(self.provider, raw, finish)
 
 
@@ -154,6 +207,7 @@ class AnthropicProvider:
             require_key(self.key_variable, self.name)
             try:
                 import anthropic
+
                 client = anthropic.Anthropic(max_retries=0)
             except Exception as error:
                 raise classify_error(error, self.name, self.key_variable) from error
@@ -167,6 +221,7 @@ class AnthropicProvider:
             except Exception as error:
                 raise classify_error(error, self.name, self.key_variable) from error
 
-    def open_session(self, model: str, system: str, tools: tuple[ToolSpec, ...],
-                     max_tokens: int, context: SessionContext) -> AnthropicSession:
+    def open_session(
+        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+    ) -> AnthropicSession:
         return AnthropicSession(self.client, model, system, tools, max_tokens)

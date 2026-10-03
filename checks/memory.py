@@ -24,15 +24,17 @@ def source_trace(agent: str, episode: int, body: str) -> None:
             "channels": [channel.as_table() for channel in harness.channels()],
             "tools": [tool.as_table() for tool in harness.tools()],
         },
-        "files": [{
-            "path": "state/memory.md",
-            "channel": "notes",
-            "writer": "self",
-            "readers": "self",
-            "role": "own",
-            "size": len(data),
-            "text": body,
-        }],
+        "files": [
+            {
+                "path": "state/memory.md",
+                "channel": "notes",
+                "writer": "self",
+                "readers": "self",
+                "role": "own",
+                "size": len(data),
+                "text": body,
+            }
+        ],
     }
     path = harness.trace_path(agent, episode)
     path.parent.mkdir(parents=True)
@@ -59,11 +61,9 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         assert record["memories"][0]["sha256"] == hashlib.sha256(body.encode("utf-8")).hexdigest()
         assert not harness.mirror("new", "blackboard").joinpath("post.md").exists()
 
-        prepare = experiment.preparer("new", {"1": "new"},
-                                      {"schedule": "simultaneous", "manifest_sha256": "m"})
+        prepare = experiment.preparer("new", {"1": "new"}, {"schedule": "simultaneous", "manifest_sha256": "m"})
         prepare(inherited)
-        provenance = harness.provenance(inherited["provider"], inherited["model"],
-                                        experiment=inherited["experiment"])
+        provenance = harness.provenance(inherited["provider"], inherited["model"], experiment=inherited["experiment"])
         assert provenance["memory_from"] == record
 
         experiment.inherit_memory(entry, inherited)
@@ -86,6 +86,7 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
             trace = json.loads(path.read_text(encoding="utf-8"))
             change(trace)
             path.write_text(json.dumps(trace), encoding="utf-8")
+
         return source
 
     def pinned_elsewhere():
@@ -116,8 +117,11 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
             destination = harness.mirror("new", "notes") / "memory.md"
             held = destination.read_bytes() if destination.exists() else None
             entry = {"id": "new", "memory_from": {"agent": "old", "episode": 7}}
-            refused(lambda: experiment.inherit_memory(entry, harness.load_account("new")), why,
-                    because=f"inherited from a source it should refuse: {why}")
+            refused(
+                lambda: experiment.inherit_memory(entry, harness.load_account("new")),
+                why,
+                because=f"inherited from a source it should refuse: {why}",
+            )
             now = destination.read_bytes() if destination.exists() else None
             recorded = harness.account_on_disk("new")
         assert now == held, f"{why}: the memory changed from {held!r} to {now!r}"
@@ -153,14 +157,13 @@ def check_memory_from_is_strict_agent_grammar():
     with rooted(HostBox) as root:
         good = manifest_file(
             root,
-            'system_prompt = ""\n[[agent]]\nid = "new"\n'
-            'memory_from = { agent = "old", episode = 7 }\n',
+            'system_prompt = ""\n[[agent]]\nid = "new"\nmemory_from = { agent = "old", episode = 7 }\n',
         )
         loaded = experiment.load_manifest(good)
         assert loaded["agents"][0]["memory_from"] == {"agent": "old", "episode": 7}
 
         bad = (
-            'memory_from = {}',
+            "memory_from = {}",
             'memory_from = { agent = "old", episode = 0 }',
             'memory_from = { agent = "old", episode = true }',
             'memory_from = { agent = "new", episode = 1 }',

@@ -37,8 +37,7 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
     print(f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}")
 
 
-def waiting(store: InteractionStore,
-            agent: str) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
+def waiting(store: InteractionStore, agent: str) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
     """The request pending for `agent` and its draft.
 
     A pending pointer or request that does not read is reported and reads as none; a
@@ -65,12 +64,11 @@ def run(agent: str, root: Path) -> int:
         describe(request, draft)
     else:
         print(f"No pending interaction for {agent}.")
-    print("\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, "
-          "submit, done, refresh, quit")
+    print("\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, submit, done, refresh, quit")
     while True:
         try:
             line = input("human> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             print()
             return 0
         command, _, rest = line.partition(" ")
@@ -116,10 +114,13 @@ def run(agent: str, root: Path) -> int:
                 if command == "submit" and not draft:
                     print("draft is empty; use done to finish without calls")
                     continue
-                payload = {"version": VERSION, "request_id": request.request_id,
-                           "submission_id": f"human-{uuid.uuid4().hex}",
-                           "action": "tool_calls" if command == "submit" else "end_turn",
-                           "tool_calls": draft if command == "submit" else []}
+                payload = {
+                    "version": VERSION,
+                    "request_id": request.request_id,
+                    "submission_id": f"human-{uuid.uuid4().hex}",
+                    "action": "tool_calls" if command == "submit" else "end_turn",
+                    "tool_calls": draft if command == "submit" else [],
+                }
                 won = store.submit(agent, request.request_id, payload)
                 print(f"submitted {won.action}; use refresh for the next turn")
                 request = None
@@ -143,9 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent", required=True, help="agent identifier to control")
     # harness.interactions_root() for this repository, spelled out because the
     # interaction package sits below harness and does not import it.
-    parser.add_argument("--root", type=Path,
-                        default=Path(__file__).resolve().parents[1] / "interactions",
-                        help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--root", type=Path, default=Path(__file__).resolve().parents[1] / "interactions", help=argparse.SUPPRESS
+    )
     args = parser.parse_args(argv)
     return run(args.agent, args.root)
 

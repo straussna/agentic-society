@@ -26,8 +26,9 @@ def check_the_sweep_only_takes_this_suites_containers():
 
     mine = sweep_filter()
     assert mine in f"mtr-w{SUITE}-{os.getpid()}-t-0001", mine
-    assert mine not in f"mtr-w{SUITE + 1}-{os.getpid()}-t-0001", \
+    assert mine not in f"mtr-w{SUITE + 1}-{os.getpid()}-t-0001", (
         "another suite's containers are live, and not this one's to remove"
+    )
     for theirs in ("mtr-w01-0001", "mtr-warm-0003", "mtr-d04-0006"):
         assert mine not in theirs, f"{theirs} is a real agent: {mine}"
 
@@ -38,8 +39,7 @@ def check_the_sweep_only_takes_this_suites_containers():
     assert wide.search("mtr-w999999-1234-t-0002"), "including a suite that is gone"
     for theirs in ("mtr-w01-0001", "mtr-warm-0003", "mtr-d04-0006"):
         assert not wide.search(theirs), f"the wide sweep must not reach {theirs}"
-    assert check.parser().parse_args([]).sweep_all is False, \
-        "the wide sweep is reached by a flag, never by default"
+    assert check.parser().parse_args([]).sweep_all is False, "the wide sweep is reached by a flag, never by default"
     assert check.parser().parse_args(["--sweep-all"]).sweep_all is True
 
 
@@ -56,21 +56,22 @@ def check_the_docs_state_the_suite_size():
     readme = (root / "README.md").read_text(encoding="utf-8")
     claude = (root / "CLAUDE.md").read_text(encoding="utf-8")
     stated = {int(n) for n in re.findall(r"\b(\d+) checks\b", readme + claude)}
-    assert stated == {len(table)}, \
+    assert stated == {len(table)}, (
         f"the docs say {sorted(stated)} checks; there are {len(table)}, {docker} of them needing Docker"
+    )
     lanes = re.findall(r"runs (\d+) of (\d+)", claude)
     assert lanes, "CLAUDE.md says how many checks --no-docker still runs"
     for host, total in lanes:
         assert int(total) == len(table), f"CLAUDE.md says {total} checks; there are {len(table)}"
-        assert int(total) - int(host) == docker, \
+        assert int(total) - int(host) == docker, (
             f"CLAUDE.md says {int(total) - int(host)} need Docker; {docker} open a container"
+        )
 
 
 def check_agents_md_mirrors_claude_md():
     """AGENTS.md is CLAUDE.md, byte for byte."""
     root = Path(harness.__file__).parent
-    assert (root / "AGENTS.md").read_bytes() == (root / "CLAUDE.md").read_bytes(), \
-        "AGENTS.md and CLAUDE.md differ"
+    assert (root / "AGENTS.md").read_bytes() == (root / "CLAUDE.md").read_bytes(), "AGENTS.md and CLAUDE.md differ"
 
 
 def check_every_harness_global_a_check_moves_is_restored():
@@ -83,15 +84,17 @@ def check_every_harness_global_a_check_moves_is_restored():
     tree, so one target of several and a setattr naming it are found too. A
     setting is a field of harness.SETTINGS, moved by amend().
     """
-    probe = ast.parse("harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\n"
-                      "setattr(harness, 'd', 4)\nharness.e == 5\n")
-    assert sorted(assigned_on(probe, "harness")) == ["a", "b", "c", "d"], \
+    probe = ast.parse(
+        "harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\nsetattr(harness, 'd', 4)\nharness.e == 5\n"
+    )
+    assert sorted(assigned_on(probe, "harness")) == ["a", "b", "c", "d"], (
         "the scan reads every form an assignment takes, and a comparison is none"
+    )
     moved: dict[str, set[str]] = {}
     for label, fn in checks().items():
         try:
             tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
-        except (OSError, TypeError):
+        except OSError, TypeError:
             continue
         for name in assigned_on(tree, "harness"):
             moved.setdefault(name, set()).add(label)
@@ -105,19 +108,29 @@ def assigned_on(tree: ast.AST, module: str) -> list[str]:
     of several unpacked at once, an augmented one, or one a setattr names."""
     names = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and \
-                node.func.id == "setattr" and len(node.args) == 3 and \
-                isinstance(node.args[0], ast.Name) and node.args[0].id == module and \
-                isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "setattr"
+            and len(node.args) == 3
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == module
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
             names.append(node.args[1].value)
-        targets = (list(node.targets) if isinstance(node, ast.Assign) else
-                   [node.target] if isinstance(node, (ast.AugAssign, ast.AnnAssign)) else [])
+        targets = (
+            list(node.targets)
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, (ast.AugAssign, ast.AnnAssign))
+            else []
+        )
         while targets:
             target = targets.pop()
             if isinstance(target, (ast.Tuple, ast.List)):
                 targets.extend(target.elts)
-            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and \
-                    target.value.id == module:
+            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == module:
                 names.append(target.attr)
     return names
 
@@ -140,10 +153,10 @@ def check_no_setting_is_given_in_two_places():
 
     tunables = {t.lower() for t in harness.TUNABLES}
     fields = {f.name for f in dataclasses.fields(harness.Settings)}
-    assert tunables == fields - {"root", "channels", "harness_files", "tools"}, \
+    assert tunables == fields - {"root", "channels", "harness_files", "tools"}, (
         f"a tunable is the field of its lowercased name: {sorted(tunables ^ fields)}"
-    held = fields | {name for name, value in vars(harness.Settings).items()
-                     if isinstance(value, property)}
+    )
+    held = fields | {name for name, value in vars(harness.Settings).items() if isinstance(value, property)}
     shadowing = sorted(name.upper() for name in held if hasattr(harness, name.upper()))
     assert not shadowing, f"a module global beside harness.SETTINGS configures nothing: {shadowing}"
     try:
@@ -158,15 +171,21 @@ def check_no_setting_is_given_in_two_places():
     assert not unstated and "system" in prov, f"provenance omits {unstated}"
 
     root = Path(harness.__file__).parent
-    for p in [*root.glob("*.py"), *(root / "checks").glob("*.py"),
-              *(root / "providers").glob("*.py"), *(root / "interaction").glob("*.py")]:
+    for p in [
+        *root.glob("*.py"),
+        *(root / "checks").glob("*.py"),
+        *(root / "providers").glob("*.py"),
+        *(root / "interaction").glob("*.py"),
+    ]:
         for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.module == "harness":
-                assert "SETTINGS" not in {alias.name for alias in node.names}, \
+                assert "SETTINGS" not in {alias.name for alias in node.names}, (
                     f"{p.name} imports SETTINGS by name; read harness.SETTINGS"
+                )
     cfg = tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
-    assert set(cfg) == {p.lower() for p in harness.PROCESS}, \
+    assert set(cfg) == {p.lower() for p in harness.PROCESS}, (
         f"config.toml states the process parameters and only those: {sorted(cfg)}"
+    )
 
     manifests = sorted((root / "experiments").rglob("*.toml"))
     assert manifests, "the repo ships manifests"
@@ -174,12 +193,27 @@ def check_no_setting_is_given_in_two_places():
     for m in manifests:
         top = tomllib.loads(m.read_text(encoding="utf-8"))
         assert top.get("agent"), f"{m.name}: an experiment seats agents"
-        stray = sorted(set(top) - {"schedule", "stop_when_one_remains",
-                                  "stop_when_two_remain_after_tie", "provider", "model",
-                                  "experiment_id", "cost", "reveal", "agent", "channel",
-                                  "harness_files", "tool"}
-                       - treatment)
+        stray = sorted(
+            set(top)
+            - {
+                "schedule",
+                "stop_when_one_remains",
+                "stop_when_two_remain_after_tie",
+                "provider",
+                "model",
+                "experiment_id",
+                "cost",
+                "reveal",
+                "agent",
+                "channel",
+                "harness_files",
+                "tool",
+            }
+            - treatment
+        )
         assert not stray, f"{m.name} sets {stray}, which config.toml owns"
         told = "system_prompt" in top or all("system_prompt" in a for a in top["agent"])
-        assert told, (f"{m.name}: declare system_prompt, at the top level or on every "
-                      f"[[agent]]; what an agent is told is never inherited")
+        assert told, (
+            f"{m.name}: declare system_prompt, at the top level or on every "
+            f"[[agent]]; what an agent is told is never inherited"
+        )

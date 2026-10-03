@@ -12,33 +12,43 @@ from providers.base import classify_error
 
 
 def usage(**kw):
-    return NS(**{"input_tokens": 100, "output_tokens": 50, "cache_creation_input_tokens": 0,
-                 "cache_read_input_tokens": 0, "cache_creation": None, "iterations": None, **kw})
+    return NS(
+        **{
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": None,
+            "iterations": None,
+            **kw,
+        }
+    )
 
 
 def attempt(model, output_tokens, kind="message", **kw):
-    return NS(**{"type": kind, "model": model, "input_tokens": 100,
-                 "output_tokens": output_tokens, **kw})
+    return NS(**{"type": kind, "model": model, "input_tokens": 100, "output_tokens": output_tokens, **kw})
 
 
 def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None):
-    return {"kind": "say", "text": text, "u": u, "id": id, "stop": stop,
-            "details": details, "model": model}
+    return {"kind": "say", "text": text, "u": u, "id": id, "stop": stop, "details": details, "model": model}
 
 
 def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
-    return {"kind": "agent", "cmds": list(cmds), "u": u, "id": id, "stop": stop,
-            "details": details, "model": model}
+    return {"kind": "agent", "cmds": list(cmds), "u": u, "id": id, "stop": stop, "details": details, "model": model}
 
 
 def use(name, u=None, id=None, stop="tool_use", **args):
-    return {"kind": "call", "name": name, "args": args, "u": u, "id": id,
-            "stop": stop, "details": None, "model": None}
+    return {"kind": "call", "name": name, "args": args, "u": u, "id": id, "stop": stop, "details": None, "model": None}
 
 
 def refuse(*cmds, category="cyber", u=None, id=None, **detail):
-    return run(*cmds, u=u, id=id, stop="refusal",
-               details=NS(type="refusal", category=category, explanation="declined", **detail))
+    return run(
+        *cmds,
+        u=u,
+        id=id,
+        stop="refusal",
+        details=NS(type="refusal", category=category, explanation="declined", **detail),
+    )
 
 
 def restart(u=None, id=None):
@@ -46,8 +56,7 @@ def restart(u=None, id=None):
 
 
 def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
-    return {"kind": "think", "thinking": thinking, "text": text, "u": u,
-            "id": id, "stop": stop}
+    return {"kind": "think", "thinking": thinking, "text": text, "u": u, "id": id, "stop": stop}
 
 
 class FakeError(Exception):
@@ -62,9 +71,13 @@ class Err(providers.ProviderError):
     """A failed request with `status`, classified the way an adapter classifies one."""
 
     def __init__(self, status):
-        super().__init__(f"status {status}",
-                         category=classify_error(FakeError(status), "anthropic").category,
-                         provider="anthropic", status_code=status, native_type="FakeError")
+        super().__init__(
+            f"status {status}",
+            category=classify_error(FakeError(status), "anthropic").category,
+            provider="anthropic",
+            status_code=status,
+            native_type="FakeError",
+        )
 
 
 def _usage(raw, provider, model):
@@ -99,8 +112,9 @@ class FakeSession:
         if self.on_request:
             self.on_request(self.n)
         if self.seen is not None:
-            self.seen.append({"kind": "request", "provider": self.provider,
-                              "model": self.requested_model, "input": content})
+            self.seen.append(
+                {"kind": "request", "provider": self.provider, "model": self.requested_model, "input": content}
+            )
         step = self.steps.pop(0) if self.steps else say()
         if isinstance(step, BaseException):
             raise step
@@ -108,8 +122,9 @@ class FakeSession:
         resolved = step.get("model") or f"{self.requested_model}-20990101"
         normalized_usage, charges = _usage(step.get("u"), self.provider, self.requested_model)
         if step["kind"] == "agent":
-            calls = tuple(ToolCall(f"t{self.n}_{i}", "bash", {"command": command})
-                          for i, command in enumerate(step["cmds"]))
+            calls = tuple(
+                ToolCall(f"t{self.n}_{i}", "bash", {"command": command}) for i, command in enumerate(step["cmds"])
+            )
             texts, reasoning = (), ()
         elif step["kind"] == "call":
             calls = (ToolCall(f"t{self.n}_0", step["name"], dict(step["args"])),)
@@ -119,22 +134,45 @@ class FakeSession:
             texts = (step["text"],)
             reasoning = (step["thinking"],) if step["kind"] == "think" else ()
         detail = step.get("details")
-        refusal = None if step["stop"] != "refusal" else Refusal(
-            getattr(detail, "type", "refusal"), getattr(detail, "explanation", None),
-            getattr(detail, "recommended_model", None), getattr(detail, "__dict__", None))
+        refusal = (
+            None
+            if step["stop"] != "refusal"
+            else Refusal(
+                getattr(detail, "type", "refusal"),
+                getattr(detail, "explanation", None),
+                getattr(detail, "recommended_model", None),
+                getattr(detail, "__dict__", None),
+            )
+        )
         if step["stop"] == "refusal" and not calls:
             charges = ()
-        turn = NormalizedTurn(rid, self.provider, self.requested_model, resolved, step["stop"],
-                              step["stop"], texts, reasoning, calls, normalized_usage,
-                              charges, refusal, getattr(detail, "__dict__", None))
-        native = {"id": rid, "model": resolved, "stop_reason": step["stop"],
-                  "content": [call.as_dict() for call in calls], "usage": normalized_usage.as_dict()}
+        turn = NormalizedTurn(
+            rid,
+            self.provider,
+            self.requested_model,
+            resolved,
+            step["stop"],
+            step["stop"],
+            texts,
+            reasoning,
+            calls,
+            normalized_usage,
+            charges,
+            refusal,
+            getattr(detail, "__dict__", None),
+        )
+        native = {
+            "id": rid,
+            "model": resolved,
+            "stop_reason": step["stop"],
+            "content": [call.as_dict() for call in calls],
+            "usage": normalized_usage.as_dict(),
+        }
         return PendingResponse(self.provider, native, lambda: turn)
 
 
 class FakeRouter:
-    def __init__(self, steps=(), seen=None, scripts=None, default=(), on_request=None,
-                 on_open=None):
+    def __init__(self, steps=(), seen=None, scripts=None, default=(), on_request=None, on_open=None):
         self.steps = list(steps)
         self.seen = seen
         self.scripts = {name: list(values) for name, values in (scripts or {}).items()}
@@ -149,13 +187,23 @@ class FakeRouter:
         if self.on_open:
             self.on_open()
         if self.seen is not None:
-            self.seen.append({"kind": "session", "provider": provider, "model": model,
-                              "system": system, "tools": [tool.as_dict() for tool in tools],
-                              "max_tokens": max_tokens,
-                              "context": {"agent": context.agent, "label": context.label,
-                                          "episode": context.episode,
-                                          "interaction_root": context.interaction_root.name,
-                                          "cancellable": context.cancelled is not None}})
+            self.seen.append(
+                {
+                    "kind": "session",
+                    "provider": provider,
+                    "model": model,
+                    "system": system,
+                    "tools": [tool.as_dict() for tool in tools],
+                    "max_tokens": max_tokens,
+                    "context": {
+                        "agent": context.agent,
+                        "label": context.label,
+                        "episode": context.episode,
+                        "interaction_root": context.interaction_root.name,
+                        "cancellable": context.cancelled is not None,
+                    },
+                }
+            )
         name = threading.current_thread().name
         steps = self.scripts.get(name)
         if steps is None:
@@ -170,14 +218,14 @@ def fake(*steps, seen=None):
 
 
 def per_agent(default=(), on_request=None, on_open=None, **scripts):
-    return FakeRouter(scripts=scripts, default=default, on_request=on_request,
-                      on_open=on_open)
+    return FakeRouter(scripts=scripts, default=default, on_request=on_request, on_open=on_open)
 
 
 def stopping_at(turn: int, *steps):
     def stop(n):
         if n == turn:
             harness.STOPPING = True
+
     return FakeRouter(steps, on_request=stop)
 
 

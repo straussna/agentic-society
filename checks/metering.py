@@ -50,17 +50,25 @@ def check_system_is_pinned():
 def check_cost_is_exact():
     """Invariant 6: cost matches hand-computed integers, including both cache-write TTLs."""
     # opus-5: in 500, out 2500 centi/token; write 1.25x, read 0.1x
-    u = usage(input_tokens=1000, output_tokens=100, cache_creation_input_tokens=2000,
-              cache_read_input_tokens=5000)
-    r = NS(id="x", model="claude-opus-5", stop_reason="end_turn", stop_details=None,
-           content=[NS(type="text", text="x")], usage=u)
+    u = usage(input_tokens=1000, output_tokens=100, cache_creation_input_tokens=2000, cache_read_input_tokens=5000)
+    r = NS(
+        id="x",
+        model="claude-opus-5",
+        stop_reason="end_turn",
+        stop_details=None,
+        content=[NS(type="text", text="x")],
+        usage=u,
+    )
     m = normalize_anthropic(r, "claude-opus-5")
     assert sum(c.centi_micros for c in m.charges) == 2_250_000, m
     assert m.usage.prefix_tokens == 1000 + 5000 + 2000, "prefix must include cached tokens"
     # per-TTL detail wins over the flat field; 1h writes cost 2x
-    r.usage = usage(input_tokens=0, output_tokens=0, cache_creation_input_tokens=9999,
-                    cache_creation=NS(ephemeral_5m_input_tokens=100,
-                                      ephemeral_1h_input_tokens=200))
+    r.usage = usage(
+        input_tokens=0,
+        output_tokens=0,
+        cache_creation_input_tokens=9999,
+        cache_creation=NS(ephemeral_5m_input_tokens=100, ephemeral_1h_input_tokens=200),
+    )
     split = normalize_anthropic(r, "claude-opus-5")
     assert sum(c.centi_micros for c in split.charges) == 100 * 625 + 200 * 1000, split
 
@@ -84,8 +92,8 @@ def check_config_is_validated():
     """
     with pinned():
         try:
-            harness.load_config()                              # the real file, if present
-        except SystemExit as e:                             # reported as a failure
+            harness.load_config()  # the real file, if present
+        except SystemExit as e:  # reported as a failure
             raise AssertionError(f"config.toml is invalid: {e}") from None
         assert providers.model_spec("anthropic", "claude-sonnet-5").context_window == 1_000_000
         assert 0 < harness.SETTINGS.context_fraction <= 1
@@ -103,36 +111,58 @@ def check_config_is_validated():
         # config.toml holds the process parameters and refuses everything else by name:
         # an unknown key, a wrong type, a value out of range, a key that became a channel
         # field, and every setting an experiment owns.
-        for bad in ('turn_cpa = 5', 'system = "hi"', 'max_turns = "many"',
-                    f'max_tokens = {harness.MAX_TOKENS_CEILING + 1}',
-                    'transfer_funded_by = "harness"', 'shared_files = "brief"',
-                    'model = "claude-sonnet-5"', 'budget = 1', 'context_fraction = 0.5',
-                    'system_prompt = "hi"', 'delivery = "push"', 'starter_files = "s"',
-                    channel_toml(tables()), '[harness_files]' + chr(10) + 'balance = "n"'):
+        for bad in (
+            "turn_cpa = 5",
+            'system = "hi"',
+            'max_turns = "many"',
+            f"max_tokens = {harness.MAX_TOKENS_CEILING + 1}",
+            'transfer_funded_by = "harness"',
+            'shared_files = "brief"',
+            'model = "claude-sonnet-5"',
+            "budget = 1",
+            "context_fraction = 0.5",
+            'system_prompt = "hi"',
+            'delivery = "push"',
+            'starter_files = "s"',
+            channel_toml(tables()),
+            "[harness_files]" + chr(10) + 'balance = "n"',
+        ):
             f.write_text(bad, encoding="utf-8")
             with pinned():
                 refused(lambda: harness.load_config(f), because=f"accepted bad config: {bad}")
 
         # A named file that is not there is refused, not quietly skipped.
         with pinned():
-            refused(lambda: harness.load_config(Path(tmp) / "confg.toml"), "no such config",
-                    because="a missing --config path was ignored")
+            refused(
+                lambda: harness.load_config(Path(tmp) / "confg.toml"),
+                "no such config",
+                because="a missing --config path was ignored",
+            )
 
         f.write_text("max_turns = 300" + chr(10) + "command_timeout = 30", encoding="utf-8")
         with pinned():
             assert harness.load_config(f) == f, "the file used is reported back"
-            assert harness.SETTINGS.max_turns == 300 and harness.SETTINGS.command_timeout == 30, \
+            assert harness.SETTINGS.max_turns == 300 and harness.SETTINGS.command_timeout == 30, (
                 "a good value must actually apply"
+            )
 
     # An experiment owns the rest, and its values are held to the same ranges.
-    for bad in ({"model": "no-such-model"}, {"context_fraction": 2.0}, {"budget": 0},
-                {"live_balance": "yes"}, {"delivery": "fetch"}, {"delivery": 1},
-                {"digest_file_limit": harness.DIGEST_FILE_FLOOR - 1},
-                # The initial observation carries the whole digest and is never smaller
-                # than what one ordinary call may return.
-                {"observation_limit": harness.SETTINGS.tool_result_limit - 1},
-                # The process parameters are refused here, saying where they live.
-                {"max_turns": 7}, {"image": "x"}, {"tool_result_limit": 2000}):
+    for bad in (
+        {"model": "no-such-model"},
+        {"context_fraction": 2.0},
+        {"budget": 0},
+        {"live_balance": "yes"},
+        {"delivery": "fetch"},
+        {"delivery": 1},
+        {"digest_file_limit": harness.DIGEST_FILE_FLOOR - 1},
+        # The initial observation carries the whole digest and is never smaller
+        # than what one ordinary call may return.
+        {"observation_limit": harness.SETTINGS.tool_result_limit - 1},
+        # The process parameters are refused here, saying where they live.
+        {"max_turns": 7},
+        {"image": "x"},
+        {"tool_result_limit": 2000},
+    ):
         with pinned():
             refused(lambda: declared(**bad), "manifest", because=f"a manifest accepted {bad}")
     with pinned():
@@ -141,25 +171,29 @@ def check_config_is_validated():
     # A refusal installs nothing, the good key given beside the refused one included.
     with pinned():
         before = harness.SETTINGS
-        refused(lambda: declared(budget=7, delivery="fetch"), "delivery",
-                because="a manifest accepted delivery = 'fetch'")
+        refused(
+            lambda: declared(budget=7, delivery="fetch"), "delivery", because="a manifest accepted delivery = 'fetch'"
+        )
         assert harness.SETTINGS is before, "a refused manifest left part of itself in force"
 
     # A transfer is the giver's own budget moving; a rebate on top would mint. No
     # share for a transfer nobody can make.
-    for table in (tables(transfer={"funded_by": "giver", "rebate_percent": 75}),
-                  tables(transfer={"funded_by": "loud"}),
-                  tables(transfer={"funded_by": 3}),
-                  tables(transfer={"funded_by": "none", "silence_penalty_percent": 50}),
-                  tables(transfer={"rebate_percent": 101})):
+    for table in (
+        tables(transfer={"funded_by": "giver", "rebate_percent": 75}),
+        tables(transfer={"funded_by": "loud"}),
+        tables(transfer={"funded_by": 3}),
+        tables(transfer={"funded_by": "none", "silence_penalty_percent": 50}),
+        tables(transfer={"rebate_percent": 101}),
+    ):
         with pinned():
-            refused(lambda: harness.apply_channels(table, None, "manifest"), "manifest:",
-                    because="a bad channel table was accepted")
+            refused(
+                lambda: harness.apply_channels(table, None, "manifest"),
+                "manifest:",
+                because="a bad channel table was accepted",
+            )
     with pinned():
-        harness.apply_channels(tables(transfer={"funded_by": "giver", "rebate_percent": 0}),
-                               None, "manifest")
-        assert harness.channel("transfer").funded_by == "giver", \
-            "the pairing the rule asks for is accepted"
+        harness.apply_channels(tables(transfer={"funded_by": "giver", "rebate_percent": 0}), None, "manifest")
+        assert harness.channel("transfer").funded_by == "giver", "the pairing the rule asks for is accepted"
 
 
 def check_truncation_and_empty():
@@ -182,29 +216,36 @@ def check_episodes_reconcile():
         account = ground_truth()
         series, episodes = account["series"], account["episodes"]
         assert len(episodes) == 3, episodes
-        assert len(series) == 1 + sum(s["turns"] for s in episodes), \
+        assert len(series) == 1 + sum(s["turns"] for s in episodes), (
             "one element per billed turn, plus starter_files, where nothing else moved"
+        )
         spent = sum(s["spent"] for s in episodes)
-        assert spent == account["initial"] - account["remaining"], \
+        assert spent == account["initial"] - account["remaining"], (
             f"{spent} != {account['initial'] - account['remaining']}"
+        )
         assert series[-1] == account["remaining"], "the last element is the balance"
         for s in episodes:
             started, ended = series[s["series_from"]], series[s["series_to"]]
-            assert started - ended == s["spent"], \
-                f"episode {s['index']}: {started} - {ended} != {s['spent']}"
+            assert started - ended == s["spent"], f"episode {s['index']}: {started} - {ended} != {s['spent']}"
             assert started == s["balance_at_start"], (s["balance_at_start"], started)
-        assert [s["series_from"] for s in episodes[1:]] == \
-            [s["series_to"] for s in episodes[:-1]], "and the spans meet end to end"
-        assert series == last["series_after"], \
-            "the last trace carries the series the account committed"
+        assert [s["series_from"] for s in episodes[1:]] == [s["series_to"] for s in episodes[:-1]], (
+            "and the spans meet end to end"
+        )
+        assert series == last["series_after"], "the last trace carries the series the account committed"
 
     # And with every term live at once, the identity still closes.
-    with temp_root(floor_at_zero=True, channels=tables(
-            transfer={"rebate_percent": 50, **HALF}, blackboard=HALF, mail=HALF)) as root:
+    with temp_root(
+        floor_at_zero=True, channels=tables(transfer={"rebate_percent": 50, **HALF}, blackboard=HALF, mail=HALF)
+    ) as root:
         seated(root, other={})
-        episode_once(run("echo '2 300' > out/transfer"), say())          # a transfer, and no post
-        episode_once(run("rm out/transfer && mkdir -p out/2 && echo hi > out/2/a",  # a crowded seat
-                      "echo posted > 1/RESULT"), say())
+        episode_once(run("echo '2 300' > out/transfer"), say())  # a transfer, and no post
+        episode_once(
+            run(
+                "rm out/transfer && mkdir -p out/2 && echo hi > out/2/a",  # a crowded seat
+                "echo posted > 1/RESULT",
+            ),
+            say(),
+        )
         account = ground_truth()
         series, episodes = account["series"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
@@ -220,11 +261,12 @@ def check_episodes_reconcile():
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
 
     # And under a giver-funded transfer, where the transfer is a debit and not a rebate.
-    with temp_root(floor_at_zero=True, channels=tables(
-            transfer={"funded_by": "giver", "rebate_percent": 0, **HALF})) as root:
+    with temp_root(
+        floor_at_zero=True, channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0, **HALF})
+    ) as root:
         seated(root, other={})
         episode_once(run("echo '2 300' > out/transfer"), say())
-        episode_once(say())                                          # no transfer submitted
+        episode_once(say())  # no transfer submitted
         account = ground_truth()
         series, episodes = account["series"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
@@ -249,10 +291,11 @@ def check_balance_grows_within_an_episode():
     first, second = (json.loads(t["turns"][i]["tools"][0]["result"]) for i in (0, 1))
     assert first == before + balances[:1], (first, before, balances)
     assert second == before + balances[:2], (second, before, balances)
-    assert second[:len(first)] == first, "elements are appended, never rewritten"
+    assert second[: len(first)] == first, "elements are appended, never rewritten"
     assert all(type(v) is int for v in second), second
-    assert first[-1] - second[-1] == t["turns"][1]["micros"], \
+    assert first[-1] - second[-1] == t["turns"][1]["micros"], (
         "the drop between two reads is what the turn between them cost"
+    )
     assert t["series_after"] == before + balances, "and the episode commits exactly those"
     assert t["live_balance_writes"] == len(t["turns"]) and t["live_balance_errors"] == 0, t["live_balance_errors"]
 
@@ -269,8 +312,9 @@ def check_live_balance_can_be_turned_off():
     assert t["live_balance_writes"] == 0 and t["live_balance_errors"] == 0
     assert t["provenance"]["live_balance"] is False, "the trace must say which regime this was"
     assert t["read_balance"], "a read of the fixed form is still a read"
-    assert t["series_after"] == t["series_before"] + [x["balance"] for x in t["turns"]], \
+    assert t["series_after"] == t["series_before"] + [x["balance"] for x in t["turns"]], (
         "the turns still reach the series, just not during the episode"
+    )
 
 
 def check_a_negative_balance_is_what_the_agent_ends_holding():
@@ -296,8 +340,9 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
             assert harness.run_episodes("t", fake(), 6) == 0
         account = ground_truth()
         assert len(account["episodes"]) == 1, "the account ends the agent, not the count"
-        assert not [s for s in account["episodes"] if s["balance_at_start"] <= 0], \
+        assert not [s for s in account["episodes"] if s["balance_at_start"] <= 0], (
             "and nothing opened on the balance it ended on"
+        )
 
 
 def check_bills_once():
@@ -324,8 +369,7 @@ def check_bills_once():
     # The replayed turn appends a balance equal to the one before it, its
     # incremental cost being zero: a flat step is a retry made visible.
     assert dup[0]["balance"] == dup[1]["balance"], "a replayed response moves nothing"
-    assert len(t["series_after"]) == len(t["series_before"]) + len(t["turns"]), \
-        "and still appends one element per turn"
+    assert len(t["series_after"]) == len(t["series_before"]) + len(t["turns"]), "and still appends one element per turn"
 
 
 def check_per_turn_micros_partition_the_spend():
@@ -341,8 +385,7 @@ def check_per_turn_micros_partition_the_spend():
     assert len(micros) == 3, micros
     assert sum(micros) == t["spent"], f"{micros} sums to {sum(micros)}, spent {t['spent']}"
     assert micros[0] != micros[1], f"the fraction must carry, or this proves nothing: {micros}"
-    assert t["balances"] == [t["series_before"][-1] - sum(micros[:i + 1])
-                             for i in range(len(micros))], t["balances"]
+    assert t["balances"] == [t["series_before"][-1] - sum(micros[: i + 1]) for i in range(len(micros))], t["balances"]
 
 
 def check_the_safety_stops_are_held_to_their_ranges():
@@ -351,41 +394,54 @@ def check_the_safety_stops_are_held_to_their_ranges():
     Each bound itself is accepted and applied. A stop a check amends directly is not
     a value config.toml gave, so a manifest applied after it stands.
     """
-    stops = (("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
-             ("command_timeout", harness.COMMAND_TIMEOUT_FLOOR, harness.COMMAND_TIMEOUT_CEILING))
+    stops = (
+        ("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
+        ("command_timeout", harness.COMMAND_TIMEOUT_FLOOR, harness.COMMAND_TIMEOUT_CEILING),
+    )
     with tempfile.TemporaryDirectory(prefix="mtr-stops-") as tmp:
         f = Path(tmp) / "config.toml"
         for key, floor, ceiling in stops:
             for bad in (floor - 1, ceiling + 1):
                 f.write_text(f"{key} = {bad}\n", encoding="utf-8")
                 with pinned():
-                    refused(lambda: harness.load_config(f), str(f), key, str(floor), str(ceiling),
-                            because=f"config.toml accepted {key} = {bad}")
+                    refused(
+                        lambda: harness.load_config(f),
+                        str(f),
+                        key,
+                        str(floor),
+                        str(ceiling),
+                        because=f"config.toml accepted {key} = {bad}",
+                    )
             for good in (floor, ceiling):
                 f.write_text(f"{key} = {good}\n", encoding="utf-8")
                 with pinned():
                     harness.load_config(f)
-                    assert getattr(harness.SETTINGS, key) == good, \
-                        f"{key} = {good} is in range and must apply"
+                    assert getattr(harness.SETTINGS, key) == good, f"{key} = {good} is in range and must apply"
 
     with pinned():
         amend(max_turns=1, command_timeout=2)
-        harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT,
-                             harness.NOT_MANIFEST)
-        assert (harness.SETTINGS.max_turns, harness.SETTINGS.command_timeout) == (1, 2), \
+        harness.apply_config({"grace_episodes": 1}, "manifest", harness.TREATMENT, harness.NOT_MANIFEST)
+        assert (harness.SETTINGS.max_turns, harness.SETTINGS.command_timeout) == (1, 2), (
             "a manifest's settings leave the stops a check set alone"
+        )
 
 
 def check_tool_result_limit_is_tunable_and_bounded():
     """The clip is settable, validated, and actually applied at the set value."""
     with tempfile.TemporaryDirectory(prefix="mtr-trl-") as tmp:
         f = Path(tmp) / "config.toml"
-        for bad in (f"tool_result_limit = {harness.TOOL_RESULT_FLOOR - 1}",
-                    "tool_result_limit = 0", 'tool_result_limit = "big"'):
+        for bad in (
+            f"tool_result_limit = {harness.TOOL_RESULT_FLOOR - 1}",
+            "tool_result_limit = 0",
+            'tool_result_limit = "big"',
+        ):
             f.write_text(bad, encoding="utf-8")
             with pinned():
-                refused(lambda: harness.load_config(f), "tool_result_limit",
-                        because=f"accepted bad tool_result_limit: {bad!r}")
+                refused(
+                    lambda: harness.load_config(f),
+                    "tool_result_limit",
+                    because=f"accepted bad tool_result_limit: {bad!r}",
+                )
         f.write_text("tool_result_limit = 2000\n", encoding="utf-8")
         with pinned():
             harness.load_config(f)
@@ -422,27 +478,29 @@ def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix(
     one that emitted a tool call is billed. A prefix past 200k tokens on a 1M-window
     model prices input at twice and output at one and a half times the base rate.
     """
-    def response(stop, content, **tokens):
-        return NS(id="r", model="claude-opus-5", stop_reason=stop, content=content,
-                  stop_details=(NS(type="refusal", category="cyber", explanation="x")
-                                if stop == "refusal" else None), usage=usage(**tokens))
 
-    declined = normalize_anthropic(response("refusal", [], input_tokens=1000, output_tokens=10),
-                                   "claude-opus-5")
+    def response(stop, content, **tokens):
+        return NS(
+            id="r",
+            model="claude-opus-5",
+            stop_reason=stop,
+            content=content,
+            stop_details=(NS(type="refusal", category="cyber", explanation="x") if stop == "refusal" else None),
+            usage=usage(**tokens),
+        )
+
+    declined = normalize_anthropic(response("refusal", [], input_tokens=1000, output_tokens=10), "claude-opus-5")
     assert declined.stop_reason == "refusal" and declined.charges == (), declined.charges
     assert declined.refusal and declined.refusal.explanation == "x", declined.refusal
     assert declined.refusal.details and declined.refusal.details["category"] == "cyber"
 
     call = NS(type="tool_use", id="t1", name="bash", input={"command": "ls"})
-    acted = normalize_anthropic(response("refusal", [call], input_tokens=1000, output_tokens=10),
-                                "claude-opus-5")
+    acted = normalize_anthropic(response("refusal", [call], input_tokens=1000, output_tokens=10), "claude-opus-5")
     assert acted.stop_reason == "refusal" and acted.tool_calls, acted
     assert sum(c.centi_micros for c in acted.charges) == 1000 * 500 + 10 * 2500, acted.charges
 
-    at = normalize_anthropic(response("end_turn", [], input_tokens=200_000, output_tokens=100),
-                             "claude-opus-5")
-    past = normalize_anthropic(response("end_turn", [], input_tokens=250_000, output_tokens=100),
-                               "claude-opus-5")
+    at = normalize_anthropic(response("end_turn", [], input_tokens=200_000, output_tokens=100), "claude-opus-5")
+    past = normalize_anthropic(response("end_turn", [], input_tokens=250_000, output_tokens=100), "claude-opus-5")
     assert {c.kind: c.centi_micros for c in at.charges}["output"] == 100 * 2500, "the threshold is base"
     priced = {c.kind: c.centi_micros for c in past.charges}
     assert priced["output"] == 100 * 2500 * 3 // 2, priced
@@ -466,7 +524,9 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     with pinned():
         amend(system_prompt="declared")
         assert harness.system_of() == "declared" and harness.system_of({}) == "declared"
-        assert harness.system_of({"system_prompt": ""}) == "",             '"" is a prompt an experiment can declare, not an absent one'
+        assert harness.system_of({"system_prompt": ""}) == "", (
+            '"" is a prompt an experiment can declare, not an absent one'
+        )
         # The pin is on what the harness ships, so a declaration does not lift it.
         harness.PINNED = (("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),)
         with quiet() as buf:
@@ -480,7 +540,9 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     assert next(x for x in seen if x["kind"] == "session")["system"] == ""
     assert pinned_text == "", "the account pins what the agent was told, empty or not"
     assert t["provenance"]["system"] == "", t["provenance"]["system"]
-    assert t["system_sha256"] == t["provenance"]["system_sha256"] == harness.SYSTEM_SHA256,         "declaring nothing and declaring nothing to say are one arm"
+    assert t["system_sha256"] == t["provenance"]["system_sha256"] == harness.SYSTEM_SHA256, (
+        "declaring nothing and declaring nothing to say are one arm"
+    )
 
     # A declared arm records the words, and not the silence it did not keep.
     said, spoken = "You are one of several.", []

@@ -55,8 +55,9 @@ def check_exactly_one_transfer_an_episode_is_enforced():
         raised = episode_once(run("echo '2 200' > out/transfer"), say())
         withdrawn = episode_once(run("rm out/transfer"), say())
         taker = ground_truth("other")
-    assert [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)] == \
-        [100, 0, 200, 0], [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)]
+    assert [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)] == [100, 0, 200, 0], [
+        t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)
+    ]
     assert gave["transfer"]["penalty"] == 0, "money moved from a line it wrote"
     assert stood["transfer"]["penalty"] > 0, "nothing was submitted this episode"
     assert raised["transfer"]["penalty"] == 0, "the submitted transfer moved money"
@@ -76,10 +77,12 @@ def check_exactly_one_transfer_an_episode_is_enforced():
 
     # A declaration the episode wrote that moves nothing is not a transfer. Each of
     # these changes out/transfer and none of them gives, so each is charged.
-    for name, cmd in (("two lines", "printf '2 5\\n2 6\\n' > out/transfer"),
-                      ("its own seat", "echo '1 5' > out/transfer"),
-                      ("no such seat", "echo '9 5' > out/transfer"),
-                      ("nothing at all", "echo 'please take some' > out/transfer")):
+    for name, cmd in (
+        ("two lines", "printf '2 5\\n2 6\\n' > out/transfer"),
+        ("its own seat", "echo '1 5' > out/transfer"),
+        ("no such seat", "echo '9 5' > out/transfer"),
+        ("nothing at all", "echo 'please take some' > out/transfer"),
+    ):
         with temp_root(channels=tables(transfer=HALF)) as root:
             seated(root, other={})
             t = episode_once(run(cmd), say())
@@ -117,8 +120,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
         # Both balances move where their owner can read them, and nowhere else.
         assert taker["series"][-1] == taker["remaining"], "n is the balance, always"
         assert giver["series"][-1] == giver["remaining"]
-        assert giver["remaining"] == giver["initial"] - t["spent"] + 400, \
-            "at 100 the transfer costs its giver nothing"
+        assert giver["remaining"] == giver["initial"] - t["spent"] + 400, "at 100 the transfer costs its giver nothing"
 
 
 def check_a_transfer_is_capped_by_the_episode_spend():
@@ -143,10 +145,16 @@ def check_a_transfer_never_costs_the_giver():
                 t = episode_once(run(f"echo '2 {amount}' > out/transfer"), say())
                 account = ground_truth("t")
             floor = account["initial"] - t["spent"]
-            assert account["remaining"] >= floor, \
+            assert account["remaining"] >= floor, (
                 f"at {rate}% a transfer of {amount} left its giver below what it spent"
-            assert account["remaining"] == floor + t["transfer"]["rebate"], \
-                (rate, amount, account["remaining"], floor, t["transfer"])
+            )
+            assert account["remaining"] == floor + t["transfer"]["rebate"], (
+                rate,
+                amount,
+                account["remaining"],
+                floor,
+                t["transfer"],
+            )
 
     # And at the full rate, giving away the whole episode recovers the whole
     # episode: it ends having cost nothing at all.
@@ -154,8 +162,9 @@ def check_a_transfer_never_costs_the_giver():
         seated(root, other={})
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
         account = ground_truth("t")
-    assert account["remaining"] == account["initial"], \
+    assert account["remaining"] == account["initial"], (
         f"{account['remaining']} != {account['initial']}; the episode should have cost nothing"
+    )
     assert t["spent"] > 0, "and it did spend, so that is a rebate and not a no-op"
 
 
@@ -176,8 +185,7 @@ def check_an_agent_cannot_transfer_to_itself():
 
     assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t["transfer"]
     assert "cannot transfer to itself" in (t["transfer"]["error"] or ""), t["transfer"]
-    assert account["remaining"] == account["initial"] - t["spent"], \
-        "a self-transfer recovered part of the episode"
+    assert account["remaining"] == account["initial"] - t["spent"], "a self-transfer recovered part of the episode"
     assert account.get("sent", 0) == 0 and account.get("rebated", 0) == 0, account
     assert not any(m.get("received") for m in others), "and reached no one else either"
     assert harness.ledger("t", account) == [], "nothing that moved nothing is public"
@@ -196,17 +204,19 @@ def check_the_rebate_rate_is_tunable_and_bounded():
             account = ground_truth("t")
             taker = ground_truth("other")
         assert t["transfer"]["amount"] == 200 and t["transfer"]["rebate"] == rebate, (rate, t["transfer"])
-        assert account["remaining"] == account["initial"] - t["spent"] + rebate, \
+        assert account["remaining"] == account["initial"] - t["spent"] + rebate, (
             f"at {rate}% a transfer of 200 wins {rebate} of the episode's spend back"
-        assert taker["received"] == 200, \
-            "and the receiver is credited in full whatever the rate"
+        )
+        assert taker["received"] == 200, "and the receiver is credited in full whatever the rate"
 
     # Above 100 an agent mints budget out of a transfer it gets back in full.
     for bad in (101, -1):
         with rooted(HostBox):
-            refused(lambda: harness.apply_channels(tables(transfer={"rebate_percent": bad}),
-                                                   None, "manifest"),
-                    "rebate_percent", because=f"rebate_percent {bad} was accepted")
+            refused(
+                lambda: harness.apply_channels(tables(transfer={"rebate_percent": bad}), None, "manifest"),
+                "rebate_percent",
+                because=f"rebate_percent {bad} was accepted",
+            )
 
 
 def check_a_giver_funded_transfer_debits_the_giver():
@@ -256,13 +266,15 @@ def check_a_malformed_transfer_moves_nothing():
     A declaration is the one thing an agent says that the harness acts on, so
     what it acts on is exactly one shape. One line is where one transfer comes from.
     """
-    cases = {"": "not one line",                      # empty
-             "2": "not one line",                     # no amount
-             "2 400\n3 400\n": "not one line",        # two of them
-             "two 400": "no seat two",                # a label nobody holds
-             "2 -5": "not one line",                  # a sign is not a digit
-             "2 0": "must be at least 1",
-             "9 400": "no seat 9"}
+    cases = {
+        "": "not one line",  # empty
+        "2": "not one line",  # no amount
+        "2 400\n3 400\n": "not one line",  # two of them
+        "two 400": "no seat two",  # a label nobody holds
+        "2 -5": "not one line",  # a sign is not a digit
+        "2 0": "must be at least 1",
+        "9 400": "no seat 9",
+    }
     for text, why in cases.items():
         with temp_root() as root:
             seated(root, other={})
@@ -273,8 +285,9 @@ def check_a_malformed_transfer_moves_nothing():
         assert t["transfer"]["amount"] == 0, (text, t["transfer"])
         assert why in (t["transfer"]["error"] or ""), (text, t["transfer"])
         assert neighbour["remaining"] == before, f"{text!r} moved the receiver's account"
-        assert account.get("sent", 0) == 0 and account["remaining"] == account["initial"] - t["spent"], \
+        assert account.get("sent", 0) == 0 and account["remaining"] == account["initial"] - t["spent"], (
             f"{text!r} moved the giver's account"
+        )
         assert harness.ledger("t", account) == [], f"{text!r} reached the ledger"
 
 
@@ -307,8 +320,7 @@ def check_the_ledger_is_bare_integers_with_no_host_in_them():
         assert all(part.lstrip("-").isdigit() for part in line.split(" ")), line
     assert harness.render_ledger([]) == "", "and an experiment that has given nothing says nothing"
     # One letter, like a balance, and no digit because there is one for everyone.
-    assert ledger_name() == "g" and ledger_name() not in {
-        harness.balance_name(str(i)) for i in range(10)}
+    assert ledger_name() == "g" and ledger_name() not in {harness.balance_name(str(i)) for i in range(10)}
 
 
 def check_a_transfer_reaches_the_ledger_within_the_round():
@@ -342,8 +354,7 @@ def check_a_negative_balance_is_floored_to_zero():
         assert not harness.admits(account), "and the agent is not asked for another episode"
     assert t["spent"] > account["initial"], "the last turn has to overshoot for this to say anything"
     assert t["forgiven"] == t["spent"] - account["initial"], t["forgiven"]
-    assert account["remaining"] == 0 and account["series"][-1] == 0, \
-        "the balance rests at zero, and n says so"
+    assert account["remaining"] == 0 and account["series"][-1] == 0, "the balance rests at zero, and n says so"
     assert account["forgiven"] == t["forgiven"]
     # Off by default: without it the agent ends holding the negative, as it always has.
     assert harness.SETTINGS.floor_at_zero is False
@@ -404,7 +415,7 @@ def check_a_transfer_to_a_seat_that_is_out_costs_the_share():
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, "t", other={}, third={})
-        put_out("other")                                            # seat 2
+        put_out("other")  # seat 2
         with quiet():
             t = harness.run_once("t", fake(run("echo '2 1' > out/transfer"), say()))
         gone, giver = ground_truth("other"), ground_truth("t")
@@ -439,13 +450,18 @@ def check_a_ledger_resists_every_route():
             account = harness.load_account("t")
         account["seat"], account["peers"] = "1", {"seen": experiment.seats_of(ids)}
         harness.save_account("t", account)
-        t = episode_once(run("echo 9 9 9 >> g 2>&1 || echo DENIED",
-                             "chmod 666 g 2>&1 || echo DENIED",
-                             "rm -f g 2>&1 || echo DENIED",
-                             "mv g gold 2>&1 || echo DENIED",
-                             "ln -sf /dev/null g 2>&1 || echo DENIED",
-                             "echo 1 2 3 > /work/g 2>&1 || echo DENIED",
-                             "cat g; echo LEDGER-END"), say())
+        t = episode_once(
+            run(
+                "echo 9 9 9 >> g 2>&1 || echo DENIED",
+                "chmod 666 g 2>&1 || echo DENIED",
+                "rm -f g 2>&1 || echo DENIED",
+                "mv g gold 2>&1 || echo DENIED",
+                "ln -sf /dev/null g 2>&1 || echo DENIED",
+                "echo 1 2 3 > /work/g 2>&1 || echo DENIED",
+                "cat g; echo LEDGER-END",
+            ),
+            say(),
+        )
     *routes, read = (c["result"] for c in t["turns"][0]["tools"])
     for i, out in enumerate(routes):
         assert "DENIED" in out, f"route {i} into the ledger was allowed: {out}"

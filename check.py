@@ -33,7 +33,7 @@ def episodes_in(fn: Callable) -> int:
     """
     try:
         src = inspect.getsource(fn)
-    except (OSError, TypeError):
+    except OSError, TypeError:
         return 1
     n = len(re.findall(r"\b(?:episode_once|harness\.run_once)\(", src))
     # The ceiling asked of run_episodes; the argument before it is itself a call,
@@ -73,8 +73,9 @@ def sweep(everyones: bool = False) -> None:
     if not shutil.which("docker"):
         return
     name = WIDE_SWEEP if everyones else sweep_filter()
-    left = subprocess.run(["docker", "ps", "-aq", "--filter", f"name={name}"],
-                          capture_output=True, text=True).stdout.split()
+    left = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"name={name}"], capture_output=True, text=True
+    ).stdout.split()
     if left:
         subprocess.run(["docker", "rm", "-f", *left], capture_output=True)
         print(f"swept {len(left)} leaked container(s)")
@@ -84,22 +85,28 @@ def parser() -> argparse.ArgumentParser:
     """The command line."""
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("patterns", nargs="*", help="only checks whose name contains one of these")
-    p.add_argument("-j", "--jobs", type=int, default=min(8, os.cpu_count() or 1),
-                   help="how many checks to run at once (1 to run them in this process)")
-    p.add_argument("--real", action="store_true",
-                   help="run every check in a container, including the ones that need not be")
+    p.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=min(8, os.cpu_count() or 1),
+        help="how many checks to run at once (1 to run them in this process)",
+    )
+    p.add_argument(
+        "--real", action="store_true", help="run every check in a container, including the ones that need not be"
+    )
     p.add_argument("--no-docker", action="store_true", help="skip the checks that need a container")
     p.add_argument("--list", action="store_true", help="print the check names and stop")
-    p.add_argument("--sweep-all", action="store_true",
-                   help="also remove containers left by other suite runs, including dead ones")
+    p.add_argument(
+        "--sweep-all", action="store_true", help="also remove containers left by other suite runs, including dead ones"
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the checks, in as many processes as asked for."""
     args = parser().parse_args(argv)
-    chosen = [l for l in checks()
-              if not args.patterns or any(pat in l for pat in args.patterns)]
+    chosen = [l for l in checks() if not args.patterns or any(pat in l for pat in args.patterns)]
     if args.list:
         print("\n".join(chosen))
         return 0
@@ -144,10 +151,9 @@ def main(argv: list[str] | None = None) -> int:
             table = checks()
             queue = sorted(chosen, key=lambda l: -episodes_in(table[l]))
             with futures.ProcessPoolExecutor(
-                    max_workers=jobs, initializer=configure,
-                    initargs=(args.real, available, os.getpid())) as pool:
-                for done in futures.as_completed(
-                        [pool.submit(run_one, l) for l in queue]):
+                max_workers=jobs, initializer=configure, initargs=(args.real, available, os.getpid())
+            ) as pool:
+                for done in futures.as_completed([pool.submit(run_one, l) for l in queue]):
                     record(*done.result())
     finally:
         sweep(args.sweep_all)

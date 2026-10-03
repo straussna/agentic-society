@@ -35,6 +35,7 @@ harness.RETRY_BASE = 0
 class Skip(Exception):
     """This check needs something this machine cannot give it."""
 
+
 # Set by --real: every check takes a container, including the ones that would
 # otherwise run on the host box. What proves the two lanes still agree.
 REAL_ONLY = False
@@ -86,11 +87,11 @@ def _ask_docker() -> bool:
     """Put the question to the daemon. Says so once if the image is not built."""
     if not shutil.which("docker") or subprocess.run(["docker", "info"], capture_output=True).returncode:
         return False
-    if subprocess.run(["docker", "image", "inspect", harness.SETTINGS.image],
-                      capture_output=True).returncode:
+    if subprocess.run(["docker", "image", "inspect", harness.SETTINGS.image], capture_output=True).returncode:
         print(f"image {harness.SETTINGS.image} not built\n")
         return False
     return True
+
 
 #
 # Arithmetic checks - what a turn cost, what reached the series, which stop an
@@ -127,10 +128,12 @@ class HostShell(harness.Shell):
     def popen_kwargs(self) -> dict:
         # DETACHED from the base class, so the two lanes agree about which
         # processes a signal aimed at the harness reaches.
-        return {**super().popen_kwargs(),
-                "cwd": str(self.box.work),
-                # Stop MSYS rewriting paths inside the agent's own commands.
-                "env": {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"}}
+        return {
+            **super().popen_kwargs(),
+            "cwd": str(self.box.work),
+            # Stop MSYS rewriting paths inside the agent's own commands.
+            "env": {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"},
+        }
 
     def republish_balance(self, label: str, series: list[int], expected: str) -> str:
         n = self.box.work / harness.balance_name(label)
@@ -158,7 +161,7 @@ class HostBox:
     def load(self, instances: list[harness.Instance], files: dict[str, str]) -> None:
         for inst in instances:
             if inst.nested:
-                continue                    # rides in with the tree above it
+                continue  # rides in with the tree above it
             dest = self.work / inst.path
             if inst.is_file:
                 # A sender that has not addressed this agent, and a sender that
@@ -182,8 +185,7 @@ class HostBox:
         kept = True
         for inst in instances:
             if inst.writable and not inst.nested and not inst.is_file:
-                kept = harness.save_state(
-                    inst.host, self._fetcher(self.work / inst.path), lambda: None) and kept
+                kept = harness.save_state(inst.host, self._fetcher(self.work / inst.path), lambda: None) and kept
         return kept
 
     def _fetcher(self, src: Path) -> Callable[[Path], bool]:
@@ -192,6 +194,7 @@ class HostBox:
                 return False
             shutil.copytree(src, dest, dirs_exist_ok=True)
             return True
+
         return fetch
 
     def close(self) -> None:
@@ -203,6 +206,7 @@ class RecordingBox(HostBox):
 
     `events` is bound by recording(), which a check holds for its duration.
     """
+
     events: list[tuple[str, str]] = []
     lock = threading.Lock()
 
@@ -250,14 +254,16 @@ def never_start(*args, **kwargs) -> Callable:
 
 def agent_of(container: str) -> str:
     """The agent a container name belongs to: the prefix and the episode index removed."""
-    return container[len(harness.CONTAINER_PREFIX):].rsplit("-", 1)[0]
+    return container[len(harness.CONTAINER_PREFIX) :].rsplit("-", 1)[0]
 
 
 def leaked_containers() -> str:
     """The names of every container this worker's episodes of agent t left behind."""
-    return subprocess.run(["docker", "ps", "-a", "--filter", f"name={harness.CONTAINER_PREFIX}t-",
-                           "--format", "{{.Names}}"],
-                          capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"name={harness.CONTAINER_PREFIX}t-", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
@@ -298,6 +304,7 @@ def tables(*extra: dict, **per_name: dict) -> list[dict]:
         by[name].update(fields)
     return declared + list(extra)
 
+
 # The obligation at half of what is left, on one channel or on all three, and
 # the transfer channel at its full rebate.
 HALF = {"silence_penalty_percent": 50}
@@ -315,8 +322,7 @@ def offers(*declared: dict) -> list[dict]:
     """
     out = []
     for d in declared:
-        out.append(d if isinstance(d, dict) else
-                   dict(zip(("kind", "channel"), d.split(":")), name=d.split(":")[0]))
+        out.append(d if isinstance(d, dict) else dict(zip(("kind", "channel"), d.split(":")), name=d.split(":")[0]))
     return out
 
 
@@ -333,10 +339,12 @@ def ledger_name() -> str:
 
 def channel_toml(declared: list[dict], harness_files: dict | None = None) -> str:
     """Render channel tables (and harness file names) as the TOML a config file holds."""
+
     def value(v) -> str:
         if isinstance(v, bool):
             return "true" if v else "false"
         return repr(v) if isinstance(v, int) else '"' + v.replace('"', '\\"') + '"'
+
     out = []
     if harness_files:
         out.append("[harness_files]\n" + "".join(f"{k} = {value(v)}\n" for k, v in harness_files.items()))
@@ -351,18 +359,31 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
     Inside a root's block, since pinned() puts the table back when the block ends.
     """
     planted = plant(root, name, **files)
-    harness.apply_channels(tables({"name": path, "writer": "experimenter", "source": name,
-                                   "path": path}), None, "check")
+    harness.apply_channels(
+        tables({"name": path, "writer": "experimenter", "source": name, "path": path}), None, "check"
+    )
     return planted
+
 
 # Every harness name a check is allowed to move, and therefore every one pinned()
 # puts back: the settings, the seams a check stands a double in, and the constants
 # and flags it sets. temp_root refuses any other.
-SEAMS = {"SETTINGS", "BOX", "ready", "start", "load_account", "replace_file", "console_line",
-         "PINNED", "WATCH", "REFUSAL_TURNS",
-         # Set per check and put back by pinned(), so no check carries into the
-         # next in the same worker.
-         "STOPPING", "catch_signals"}
+SEAMS = {
+    "SETTINGS",
+    "BOX",
+    "ready",
+    "start",
+    "load_account",
+    "replace_file",
+    "console_line",
+    "PINNED",
+    "WATCH",
+    "REFUSAL_TURNS",
+    # Set per check and put back by pinned(), so no check carries into the
+    # next in the same worker.
+    "STOPPING",
+    "catch_signals",
+}
 
 # What a check may amend: every tunable, and the root. The tables are
 # apply_channels' and apply_tools', which hold them to their rules.
@@ -417,8 +438,7 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     seams = {k: v for k, v in overrides.items() if k not in fields}
     unknown = set(seams) - (SEAMS - {"SETTINGS"})
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
-    with pinned(), tempfile.TemporaryDirectory(
-            prefix="mtr-check-", ignore_cleanup_errors=True) as d:
+    with pinned(), tempfile.TemporaryDirectory(prefix="mtr-check-", ignore_cleanup_errors=True) as d:
         # Before the tables: a tool table is refused or not by the delivery and the
         # digest in force.
         amend(root=Path(d), **fields)
@@ -536,24 +556,36 @@ def files_by_path(t: dict) -> dict[str, dict]:
 
 def reconciled(account: dict, spent: int) -> int:
     """What an account must hold: every term of the identity, each one series element."""
-    return (account["initial"] - spent + account.get("rebated", 0) + account.get("received", 0)
-            - account.get("debited", 0) - sum((account.get("penalised") or {}).values())
-            + account.get("forgiven", 0))
+    return (
+        account["initial"]
+        - spent
+        + account.get("rebated", 0)
+        + account.get("received", 0)
+        - account.get("debited", 0)
+        - sum((account.get("penalised") or {}).values())
+        + account.get("forgiven", 0)
+    )
 
 
 def span_of(series: list[int], s: dict) -> list[int]:
     """The elements of the series one episode's record spans, harness included."""
-    return series[s["series_from"]:s["series_to"] + 1]
+    return series[s["series_from"] : s["series_to"] + 1]
 
 
 def elements_of(s: dict) -> int:
     """How many series elements an episode's record says it appended, plus the entry at its start."""
-    return (s["turns"] + 1 + bool(s["transfer"]["rebate"] or s["transfer"].get("debit"))
-            + bool(s["transfer"]["penalty"]) + bool(s["channels"]["blackboard"]["penalty"])
-            + bool(s["channels"]["mail"]["penalty"]) + bool(s["forgiven"])
-            # A credit from a peer settling in the same simultaneous round lands
-            # inside the receiver's span; sequentially it lands between spans.
-            + bool(s.get("received")))
+    return (
+        s["turns"]
+        + 1
+        + bool(s["transfer"]["rebate"] or s["transfer"].get("debit"))
+        + bool(s["transfer"]["penalty"])
+        + bool(s["channels"]["blackboard"]["penalty"])
+        + bool(s["channels"]["mail"]["penalty"])
+        + bool(s["forgiven"])
+        # A credit from a peer settling in the same simultaneous round lands
+        # inside the receiver's span; sequentially it lands between spans.
+        + bool(s.get("received"))
+    )
 
 
 def without_listing_drift(x):
@@ -576,11 +608,16 @@ def without_listing_drift(x):
 
 def differs(a, b) -> str:
     """The first few lines on which two request records disagree."""
+
     def lines(x) -> list[str]:
         return json.dumps(x, indent=1, default=str, sort_keys=True).splitlines()
-    delta = [d for d in difflib.unified_diff(lines(a), lines(b), lineterm='')
-             if d.startswith(('+', '-')) and not d.startswith(('+++', '---'))]
-    return ' | '.join(d[:300] for d in delta[:6]) or '(equal)'
+
+    delta = [
+        d
+        for d in difflib.unified_diff(lines(a), lines(b), lineterm="")
+        if d.startswith(("+", "-")) and not d.startswith(("+++", "---"))
+    ]
+    return " | ".join(d[:300] for d in delta[:6]) or "(equal)"
 
 
 def plant(root: Path, name: str = "s", **files: str) -> Path:
@@ -622,8 +659,7 @@ def environment_of(agent: str, ids: list[str]) -> list[harness.Instance]:
     return harness.environment(agent, {"seat": seat, "peers": {"seen": seats}})
 
 
-def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None,
-           **agents: dict[str, str]) -> list[str]:
+def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None, **agents: dict[str, str]) -> list[str]:
     """Lay out an experiment, create every account, and seat every agent in it.
 
     What experiment.py's prepare() does before each episode of a round: a seat, the
@@ -649,8 +685,7 @@ def turn_cost() -> int:
     """What one scripted turn costs, in micro-dollars."""
     raw = usage()
     spec = providers.model_spec("anthropic", "claude-sonnet-5")
-    return (raw.input_tokens * spec.rate("uncached_input") +
-            raw.output_tokens * spec.rate("output")) // 100
+    return (raw.input_tokens * spec.rate("uncached_input") + raw.output_tokens * spec.rate("output")) // 100
 
 
 def put_out(agent: str) -> None:
@@ -670,7 +705,7 @@ def unfinished() -> None:
     raw log a running one leaves and the account as it stood when the episode started."""
     harness.trace_path("t", 1).unlink()
     account = ground_truth()
-    account["series"] = account["series"][:account["episodes"][0]["series_from"] + 1]
+    account["series"] = account["series"][: account["episodes"][0]["series_from"] + 1]
     account["remaining"], account["episodes"] = account["series"][-1], []
     harness.save_account("t", account)
 
@@ -679,9 +714,12 @@ def unfinished() -> None:
 def two_seats():
     """An experiment of two, laid out and seated, with a blackboard and a store each."""
     with rooted(HostBox) as root:
-        ids = seated(root, "g01",
-                     g01={"NOTES.md": "given\n", "secret.md": "mine\n", "group/msg": "hello 2\n"},
-                     g02={"secret.md": "theirs\n", "group/msg": "hello 1\n"})
+        ids = seated(
+            root,
+            "g01",
+            g01={"NOTES.md": "given\n", "secret.md": "mine\n", "group/msg": "hello 2\n"},
+            g02={"secret.md": "theirs\n", "group/msg": "hello 1\n"},
+        )
         for agent, series in (("g01", [1000, 900]), ("g02", [1000, 800])):
             account = harness.load_account(agent)
             account["series"], account["remaining"] = series, series[-1]
@@ -690,8 +728,12 @@ def two_seats():
         yield view.experiment_of("g01"), experiment.seats_of(ids)
 
 
-def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
-                    agents: tuple[str, ...] = ("g01", "g02", "g03"), **trace_fields) -> dict:
+def fake_experiment(
+    acted: list[tuple],
+    series: tuple[int, ...] = (1000,),
+    agents: tuple[str, ...] = ("g01", "g02", "g03"),
+    **trace_fields,
+) -> dict:
     """An experiment written straight to disk: one trace per episode taken, one account per
     seat, which lists every episode it took as committed.
 
@@ -704,35 +746,68 @@ def fake_experiment(acted: list[tuple], series: tuple[int, ...] = (1000,),
     for agent, at, *more in acted:
         episodes = taken.setdefault(agent, [])
         trace = {
-            "agent": agent, "episode": len(episodes) + 1, "stop": "end_turn", "spent": 1,
-            "turns": [], "remaining": 0, "files": [], "state_saved": True,
-            "provenance": {"started_at": f"2026-01-01T{at}:00Z", "peers": seats,
-                           "harness_files": dict(harness.SETTINGS.harness_files),
-                           "message_delivery": "episode"},
-            **trace_fields, **(more[0] if more else {})}
+            "agent": agent,
+            "episode": len(episodes) + 1,
+            "stop": "end_turn",
+            "spent": 1,
+            "turns": [],
+            "remaining": 0,
+            "files": [],
+            "state_saved": True,
+            "provenance": {
+                "started_at": f"2026-01-01T{at}:00Z",
+                "peers": seats,
+                "harness_files": dict(harness.SETTINGS.harness_files),
+                "message_delivery": "episode",
+            },
+            **trace_fields,
+            **(more[0] if more else {}),
+        }
         episodes.append({key: trace[key] for key in ("episode", "stop", "spent")})
         p = harness.trace_path(agent, len(episodes))
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(trace), encoding="utf-8")
     for seat, agent in seats.items():
         harness.records_dir(agent).mkdir(parents=True, exist_ok=True)
-        harness.account_path(agent).write_text(json.dumps({
-            "agent": agent, "seat": seat, "peers": {"seen": seats},
-            "series": list(series), "remaining": series[-1], "initial": 1000,
-            "episodes": taken.get(agent, []),
-        }), encoding="utf-8")
+        harness.account_path(agent).write_text(
+            json.dumps(
+                {
+                    "agent": agent,
+                    "seat": seat,
+                    "peers": {"seen": seats},
+                    "series": list(series),
+                    "remaining": series[-1],
+                    "initial": 1000,
+                    "episodes": taken.get(agent, []),
+                }
+            ),
+            encoding="utf-8",
+        )
     return view.experiment_named("g")
+
 
 # A persona channel table without a brief: a journal with an identity file inside
 # it, a noticeboard per label, letters, and no transfer channel.
 PERSONA = [
     {"name": "journal", "writer": "self", "readers": "self", "shape": "directory", "path": "journal"},
-    {"name": "identity", "writer": "self", "readers": "self", "shape": "file",
-     "path": "journal/IDENTITY.md"},
-    {"name": "noticeboard", "writer": "self", "readers": "all", "shape": "directory",
-     "path": "from-{label}", "measured": True},
-    {"name": "letters", "writer": "self", "readers": "addressee", "shape": "mailbox",
-     "outbox": "to", "inbox": "from", "measured": True},
+    {"name": "identity", "writer": "self", "readers": "self", "shape": "file", "path": "journal/IDENTITY.md"},
+    {
+        "name": "noticeboard",
+        "writer": "self",
+        "readers": "all",
+        "shape": "directory",
+        "path": "from-{label}",
+        "measured": True,
+    },
+    {
+        "name": "letters",
+        "writer": "self",
+        "readers": "addressee",
+        "shape": "mailbox",
+        "outbox": "to",
+        "inbox": "from",
+        "measured": True,
+    },
 ]
 
 PERSONA_FILES = {"balance": "balance", "digest": "digest"}
@@ -740,8 +815,9 @@ PERSONA_FILES = {"balance": "balance", "digest": "digest"}
 PERSONA_LABELS = {"1": "Studio", "2": "Game"}
 
 
-def refused(call, *words: str, because: str = "accepted what should have been refused",
-            code: int | None = None) -> None:
+def refused(
+    call, *words: str, because: str = "accepted what should have been refused", code: int | None = None
+) -> None:
     """Run `call`, which must exit naming every word given, and with `code` where one is given."""
     try:
         call()

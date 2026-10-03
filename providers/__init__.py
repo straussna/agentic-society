@@ -8,10 +8,26 @@ from collections.abc import Iterable
 from typing import Any
 
 from .anthropic import AnthropicProvider
-from .base import (Charge, FailureCategory, ModelProvider, ModelSession, ModelSpec, NormalizedTurn,
-                   PendingResponse, ProviderConfigurationError, ProviderError, ProviderRouter,
-                   Refusal, SessionContext, StopReason, ToolCall, ToolResult, ToolSpec, USAGE_FIELDS,
-                   Usage)
+from .base import (
+    Charge,
+    FailureCategory,
+    ModelProvider,
+    ModelSession,
+    ModelSpec,
+    NormalizedTurn,
+    PendingResponse,
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderRouter,
+    Refusal,
+    SessionContext,
+    StopReason,
+    ToolCall,
+    ToolResult,
+    ToolSpec,
+    USAGE_FIELDS,
+    Usage,
+)
 from .human import HumanProvider
 from .openai import OpenAIProvider
 
@@ -35,12 +51,12 @@ def is_interactive(provider: str | None) -> bool:
 def model_spec(provider: str, model: str) -> ModelSpec:
     if provider not in CATALOGS:
         raise ProviderConfigurationError(
-            f"unknown provider {provider!r}; choose one of {list(provider_names())}",
-            provider=provider)
+            f"unknown provider {provider!r}; choose one of {list(provider_names())}", provider=provider
+        )
     if model not in CATALOGS[provider]:
         raise ProviderConfigurationError(
-            f"unknown {provider} model {model!r}; choose one of {list(CATALOGS[provider])}",
-            provider=provider)
+            f"unknown {provider} model {model!r}; choose one of {list(CATALOGS[provider])}", provider=provider
+        )
     return CATALOGS[provider][model]
 
 
@@ -56,14 +72,15 @@ def lapsed_prices(requirements: Iterable[tuple[str, str]], today: dt.date | None
     for provider, model in sorted(set(requirements)):
         spec = model_spec(provider, model)
         if spec.price_valid_through and today > dt.date.fromisoformat(spec.price_valid_through):
-            lapsed.append(f"{provider}/{model}: rates expired after {spec.price_valid_through}. "
-                          f"{spec.price_replacement or 'Update the provider catalog.'}")
+            lapsed.append(
+                f"{provider}/{model}: rates expired after {spec.price_valid_through}. "
+                f"{spec.price_replacement or 'Update the provider catalog.'}"
+            )
     return lapsed
 
 
 class DirectProviderRouter:
-    def __init__(self, requirements: Iterable[tuple[str, str]],
-                 instances: dict[str, ModelProvider] | None = None):
+    def __init__(self, requirements: Iterable[tuple[str, str]], instances: dict[str, ModelProvider] | None = None):
         grouped: dict[str, set[str]] = defaultdict(set)
         for provider, model in requirements:
             model_spec(provider, model)
@@ -78,15 +95,42 @@ class DirectProviderRouter:
         for name, models in self.requirements.items():
             self.providers[name].preflight(models)
 
-    def open_session(self, provider: str, model: str, system: str,
-                     tools: tuple[ToolSpec, ...], max_tokens: int,
-                     context: SessionContext) -> ModelSession:
+    def open_session(
+        self,
+        provider: str,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+        context: SessionContext,
+    ) -> ModelSession:
         model_spec(provider, model)
         return self.providers[provider].open_session(model, system, tools, max_tokens, context)
 
 
-__all__ = ["Charge", "DirectProviderRouter", "FailureCategory", "ModelProvider", "ModelSession",
-           "ModelSpec", "NormalizedTurn", "PendingResponse", "ProviderConfigurationError",
-           "ProviderError", "ProviderRouter", "Refusal", "SessionContext", "StopReason", "ToolCall",
-           "ToolResult", "ToolSpec", "USAGE_FIELDS", "Usage", "is_interactive", "lapsed_prices",
-           "model_spec", "provenance", "provider_names"]
+__all__ = [
+    "Charge",
+    "DirectProviderRouter",
+    "FailureCategory",
+    "ModelProvider",
+    "ModelSession",
+    "ModelSpec",
+    "NormalizedTurn",
+    "PendingResponse",
+    "ProviderConfigurationError",
+    "ProviderError",
+    "ProviderRouter",
+    "Refusal",
+    "SessionContext",
+    "StopReason",
+    "ToolCall",
+    "ToolResult",
+    "ToolSpec",
+    "USAGE_FIELDS",
+    "Usage",
+    "is_interactive",
+    "lapsed_prices",
+    "model_spec",
+    "provenance",
+    "provider_names",
+]

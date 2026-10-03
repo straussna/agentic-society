@@ -19,9 +19,16 @@ from typing import Any, Callable, Iterable
 import harness
 import product
 import view
-from interaction import (InteractionCancelled, InteractionConflict, InteractionError,
-                         InteractionStore, InvalidSubmission, StaleRequest, Submission,
-                         UnreadableRecord)
+from interaction import (
+    InteractionCancelled,
+    InteractionConflict,
+    InteractionError,
+    InteractionStore,
+    InvalidSubmission,
+    StaleRequest,
+    Submission,
+    UnreadableRecord,
+)
 from interaction import cli
 from providers import SessionContext, ToolResult, ToolSpec, Usage
 from providers.human import HumanProvider, HumanSession
@@ -29,20 +36,38 @@ from providers.human import HumanProvider, HumanSession
 from checks.lanes import episode_once, temp_root
 
 
-TOOLS = (ToolSpec("remember", "Keep private memory", {
-    "type": "object", "properties": {"body": {"type": "string"}},
-    "required": ["body"], "additionalProperties": False}),)
+TOOLS = (
+    ToolSpec(
+        "remember",
+        "Keep private memory",
+        {
+            "type": "object",
+            "properties": {"body": {"type": "string"}},
+            "required": ["body"],
+            "additionalProperties": False,
+        },
+    ),
+)
 
 
 def submission(request, body="hello"):
-    return {"version": 1, "request_id": request.request_id, "submission_id": "human-call-1",
-            "action": "tool_calls",
-            "tool_calls": [{"id": "call-1", "name": "remember", "input": {"body": body}}]}
+    return {
+        "version": 1,
+        "request_id": request.request_id,
+        "submission_id": "human-call-1",
+        "action": "tool_calls",
+        "tool_calls": [{"id": "call-1", "name": "remember", "input": {"body": body}}],
+    }
 
 
 def end_submission(request):
-    return {"version": 1, "request_id": request.request_id, "submission_id": "human-end-1",
-            "action": "end_turn", "tool_calls": []}
+    return {
+        "version": 1,
+        "request_id": request.request_id,
+        "submission_id": "human-end-1",
+        "action": "end_turn",
+        "tool_calls": [],
+    }
 
 
 def raised(error: type[BaseException], call: Callable[[], Any], because: str) -> BaseException:
@@ -74,11 +99,11 @@ def check_interaction_store_preserves_requests_and_first_submission():
         else:
             raise AssertionError("an undeclared tool entered the interaction store")
         won = store.submit("a", request.request_id, submission(request))
-        assert store.submit("a", request.request_id, submission(request)) == won, \
+        assert store.submit("a", request.request_id, submission(request)) == won, (
             "a repeated submission id returns the winner"
+        )
         try:
-            store.submit("a", request.request_id,
-                         {**submission(request, "different"), "submission_id": "other"})
+            store.submit("a", request.request_id, {**submission(request, "different"), "submission_id": "other"})
         except InteractionConflict:
             pass
         else:
@@ -131,12 +156,14 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
         assert store.current("a") == request, "the write landed once the reader let go"
         os.replace = never
         try:
-            raised(PermissionError, lambda: store.publish("a", "A", 1, 2, "", "again", TOOLS),
-                   "a rename refused on every attempt was taken for a write")
+            raised(
+                PermissionError,
+                lambda: store.publish("a", "A", 1, 2, "", "again", TOOLS),
+                "a rename refused on every attempt was taken for a write",
+            )
         finally:
             os.replace = real
-        assert not list((root / "interactions").rglob("*.tmp")), \
-            "a write that failed left its temporary file behind"
+        assert not list((root / "interactions").rglob("*.tmp")), "a write that failed left its temporary file behind"
         assert store.current("a") == request, "and what was there before is still there"
 
 
@@ -171,13 +198,12 @@ def check_every_malformed_submission_envelope_is_refused_and_the_request_stays_p
             "tool_calls without a call": {**good, "tool_calls": []},
         }
         for case, value in malformed.items():
-            raised(InvalidSubmission, lambda: store.submit("a", request.request_id, value),
-                   f"{case} was accepted")
+            raised(InvalidSubmission, lambda: store.submit("a", request.request_id, value), f"{case} was accepted")
             assert store.current("a") == request, f"{case} moved the request on"
-        assert not (root / "interactions" / "submissions").exists(), \
-            "a refused envelope left a submission behind"
-        assert store.submit("a", request.request_id, good).submission_id == "human-call-1", \
+        assert not (root / "interactions" / "submissions").exists(), "a refused envelope left a submission behind"
+        assert store.submit("a", request.request_id, good).submission_id == "human-call-1", (
             "and the request still takes a well-formed one"
+        )
 
 
 class HeldBeforeTheLink(InteractionStore):
@@ -195,8 +221,7 @@ class HeldBeforeTheLink(InteractionStore):
         return super().current(agent)
 
 
-def race(store: HeldBeforeTheLink, request_id: str,
-         payloads: dict[str, dict]) -> dict[str, Submission | BaseException]:
+def race(store: HeldBeforeTheLink, request_id: str, payloads: dict[str, dict]) -> dict[str, Submission | BaseException]:
     """Every payload submitted at once, one thread each: what each client got back."""
     store.gate = threading.Barrier(len(payloads), timeout=10)
     got: dict[str, Submission | BaseException] = {}
@@ -207,8 +232,7 @@ def race(store: HeldBeforeTheLink, request_id: str,
         except Exception as error:
             got[name] = error
 
-    threads = [threading.Thread(target=client, args=item, daemon=True)
-               for item in payloads.items()]
+    threads = [threading.Thread(target=client, args=item, daemon=True) for item in payloads.items()]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -223,9 +247,11 @@ def check_two_clients_racing_one_request_leave_one_winner_and_one_conflict():
     with temp_root() as root:
         store = HeldBeforeTheLink(root / "interactions")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
-        got = race(store, request.request_id, {
-            name: {**submission(request, name), "submission_id": name}
-            for name in ("browser", "terminal")})
+        got = race(
+            store,
+            request.request_id,
+            {name: {**submission(request, name), "submission_id": name} for name in ("browser", "terminal")},
+        )
         won = [name for name, outcome in got.items() if isinstance(outcome, Submission)]
         lost = [name for name, outcome in got.items() if isinstance(outcome, InteractionConflict)]
         assert len(won) == 1 and len(lost) == 1, got
@@ -239,8 +265,7 @@ def check_one_submission_sent_twice_at_once_returns_the_winner_to_both():
     with temp_root() as root:
         store = HeldBeforeTheLink(root / "interactions")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
-        got = race(store, request.request_id,
-                   {"first": submission(request), "again": submission(request)})
+        got = race(store, request.request_id, {"first": submission(request), "again": submission(request)})
         assert all(isinstance(outcome, Submission) for outcome in got.values()), got
         assert got["first"] == got["again"], "both copies return the one that won"
 
@@ -258,8 +283,11 @@ def check_the_winners_submission_id_on_other_calls_or_another_action_is_a_confli
         }
         for case, value in reused.items():
             assert value["submission_id"] == won.submission_id, case
-            raised(InteractionConflict, lambda: store.submit("a", request.request_id, value),
-                   f"the winner's submission_id with {case} was answered as the winner")
+            raised(
+                InteractionConflict,
+                lambda: store.submit("a", request.request_id, value),
+                f"the winner's submission_id with {case} was answered as the winner",
+            )
         assert store.wait(request, lambda: False, 0) == won, "and the winner is the turn"
 
 
@@ -280,11 +308,15 @@ def check_an_unreadable_submission_ends_the_wait_instead_of_polling_forever():
                 raise AssertionError("wait polled an unreadable submission as if it were absent")
             return False
 
-        error = raised(UnreadableRecord, lambda: store.wait(request, cancelled, 0),
-                       "wait returned a turn from an unreadable submission")
+        error = raised(
+            UnreadableRecord,
+            lambda: store.wait(request, cancelled, 0),
+            "wait returned a turn from an unreadable submission",
+        )
         assert str(path) in str(error), f"the error names the file: {error}"
-        assert store.request("a", request.request_id).status == "cancelled", \
+        assert store.request("a", request.request_id).status == "cancelled", (
             "and the request it gave up on is no longer pending"
+        )
         assert store.current("a") is None
 
 
@@ -297,9 +329,11 @@ def check_an_unreadable_submission_is_reported_and_never_taken_for_a_winner():
         path.parent.mkdir(parents=True)
         for written in ("[]", "{not json", '{"version": 1}'):
             path.write_text(written, encoding="utf-8")
-            raised(UnreadableRecord,
-                   lambda: store.submit("a", request.request_id, submission(request)),
-                   f"a submission holding {written} was answered as if it had won or lost")
+            raised(
+                UnreadableRecord,
+                lambda: store.submit("a", request.request_id, submission(request)),
+                f"a submission holding {written} was answered as if it had won or lost",
+            )
             assert path.read_text(encoding="utf-8") == written, "and it is left as it was"
 
 
@@ -313,22 +347,30 @@ def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent
         for written in ("[]", '{"request_id": 5}', "{not json"):
             pointer.parent.mkdir(parents=True, exist_ok=True)
             pointer.write_text(written, encoding="utf-8")
-            error = raised(UnreadableRecord, lambda: store.current("a"),
-                           f"a pending pointer holding {written} read as no request")
+            error = raised(
+                UnreadableRecord, lambda: store.current("a"), f"a pending pointer holding {written} read as no request"
+            )
             assert str(pointer) in str(error), error
         pointer.unlink()
 
         request = store.publish("b", "B", 1, 1, "", "observation", TOOLS)
         assert [r.agent for r in store.pending()] == ["b"]
         pointer.write_text("[]", encoding="utf-8")
-        assert [r.agent for r in store.pending()] == ["b"], \
+        assert [r.agent for r in store.pending()] == ["b"], (
             "the list of pending requests leaves out the seat it cannot read, and only that one"
+        )
         request_file = root / "interactions" / "requests" / "b" / f"{request.request_id}.json"
         request_file.write_text('{"version": 1}', encoding="utf-8")
-        raised(UnreadableRecord, lambda: store.request("b", request.request_id),
-               "a request missing its fields read as no request")
-        raised(UnreadableRecord, lambda: store.current("b"),
-               "a pending pointer to an incomplete request read as nothing pending")
+        raised(
+            UnreadableRecord,
+            lambda: store.request("b", request.request_id),
+            "a request missing its fields read as no request",
+        )
+        raised(
+            UnreadableRecord,
+            lambda: store.current("b"),
+            "a pending pointer to an incomplete request read as nothing pending",
+        )
 
 
 def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_wait():
@@ -344,23 +386,30 @@ def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_
         assert store.current("a") == stopped, "the request's own pointer replaced the broken one"
 
         pointer.write_text("[]", encoding="utf-8")
-        raised(InteractionCancelled, lambda: store.wait(stopped, lambda: True, 0),
-               "a stopped wait over an unreadable pointer ended some other way")
+        raised(
+            InteractionCancelled,
+            lambda: store.wait(stopped, lambda: True, 0),
+            "a stopped wait over an unreadable pointer ended some other way",
+        )
         assert store.request("a", stopped.request_id).status == "cancelled"
         assert pointer.read_text(encoding="utf-8") == "[]", "the pointer is left as it was"
 
         taken = store.publish("a", "A", 1, 2, "", (ToolResult("call-1", "ok"),), TOOLS)
         store.submit("a", taken.request_id, submission(taken))
         pointer.write_text("[]", encoding="utf-8")
-        assert store.wait(taken, lambda: False, 0).tool_calls[0].input == {"body": "hello"}, \
+        assert store.wait(taken, lambda: False, 0).tool_calls[0].input == {"body": "hello"}, (
             "the submission that landed is the turn"
+        )
         assert store.request("a", taken.request_id).status == "completed"
 
         broken = store.publish("a", "A", 2, 1, "", "observation", TOOLS)
         request_file = root / "interactions" / "requests" / "a" / f"{broken.request_id}.json"
         request_file.write_text('{"version": 1}', encoding="utf-8")
-        raised(InteractionCancelled, lambda: store.wait(broken, lambda: True, 0),
-               "a stopped wait on a request that no longer reads ended some other way")
+        raised(
+            InteractionCancelled,
+            lambda: store.wait(broken, lambda: True, 0),
+            "a stopped wait on a request that no longer reads ended some other way",
+        )
         assert not pointer.exists(), "the pointer to the request it stopped is taken down"
         pointer.write_text(json.dumps({"request_id": broken.request_id}), encoding="utf-8")
         after = store.publish("a", "A", 3, 1, "", "observation", TOOLS)
@@ -370,8 +419,7 @@ def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_
 def answered(store: InteractionStore, episode: int, turn: int, end: bool = False):
     """Seat a's request for one turn, published, answered and taken, as a human provider's is."""
     request = store.publish("a", "A", episode, turn, "", "observation", TOOLS)
-    store.submit("a", request.request_id,
-                 end_submission(request) if end else submission(request, f"{episode}.{turn}"))
+    store.submit("a", request.request_id, end_submission(request) if end else submission(request, f"{episode}.{turn}"))
     store.wait(request, lambda: False, 0)
     return request
 
@@ -386,15 +434,16 @@ def check_history_pairs_each_answered_request_with_its_submission_in_turn_order(
             answered(store, episode, turn, end=turn == 2)
         store.publish("a", "A", 4, 1, "", "observation", TOOLS)
         history = store.history("a")
-        assert [(r.episode, r.turn) for r, _ in history] == turns, \
+        assert [(r.episode, r.turn) for r, _ in history] == turns, (
             "every answered turn in order, and the request nobody answered left out"
+        )
         assert all(r.request_id == s.request_id for r, s in history), "each with its own submission"
         assert [s.action for _, s in history] == ["tool_calls", "end_turn"] * 3
-        assert [s.tool_calls[0].input for _, s in history if s.tool_calls] == \
-            [{"body": f"{episode}.1"} for episode in (1, 2, 3)]
+        assert [s.tool_calls[0].input for _, s in history if s.tool_calls] == [
+            {"body": f"{episode}.1"} for episode in (1, 2, 3)
+        ]
         assert store.history("b") == []
-        raised(InteractionError, lambda: store.history("../a"),
-               "an agent name walked out of the store")
+        raised(InteractionError, lambda: store.history("../a"), "an agent name walked out of the store")
 
 
 def check_history_leaves_out_a_turn_whose_request_or_submission_does_not_read():
@@ -459,15 +508,39 @@ def check_human_cli_refuses_what_it_cannot_send_and_ends_a_turn_without_calls():
     with temp_root() as root:
         store = InteractionStore(root / "interactions")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
-        with terminal(["call nope {}", "call remember [1]", "call remember", "call remember {bad",
-                       'call remember {"body":"x"}', "remove 2", "remove 1", "draft", "submit",
-                       "bogus", "done", 'call remember {"body":"late"}', "quit"]) as out:
+        with terminal(
+            [
+                "call nope {}",
+                "call remember [1]",
+                "call remember",
+                "call remember {bad",
+                'call remember {"body":"x"}',
+                "remove 2",
+                "remove 1",
+                "draft",
+                "submit",
+                "bogus",
+                "done",
+                'call remember {"body":"late"}',
+                "quit",
+            ]
+        ) as out:
             assert cli.run("a", root / "interactions") == 0
-        said_in_order(out, "unknown tool 'nope'", "tool input must be a JSON object",
-                      "usage: call <tool-name> <JSON-object>", "invalid value:",
-                      "drafted call 1", "no such draft call", "removed", "empty",
-                      "draft is empty; use done to finish without calls", "unknown command",
-                      "submitted end_turn", "No pending interaction; use refresh")
+        said_in_order(
+            out,
+            "unknown tool 'nope'",
+            "tool input must be a JSON object",
+            "usage: call <tool-name> <JSON-object>",
+            "invalid value:",
+            "drafted call 1",
+            "no such draft call",
+            "removed",
+            "empty",
+            "draft is empty; use done to finish without calls",
+            "unknown command",
+            "submitted end_turn",
+            "No pending interaction; use refresh",
+        )
         assert store.load_draft("a", request.request_id) == [], "the removed call left the draft"
         ended = store.wait(request, lambda: False, 0)
         assert ended.action == "end_turn" and ended.tool_calls == (), ended
@@ -498,15 +571,18 @@ def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
 
         with terminal(session()) as out:
             assert cli.run("a", root / "interactions") == 0, "end of input leaves the terminal"
-        said_in_order(out, "No pending interaction for a.",
-                      "No pending interaction; use refresh after the episode starts.",
-                      "A · a · episode 1 · turn 1",
-                      "request changed: the request is no longer pending",
-                      "submitted end_turn",
-                      "A · a · episode 2 · turn 1",
-                      "not submitted: a different submission already won this request",
-                      "A · a · episode 3 · turn 1",
-                      "unreadable:")
+        said_in_order(
+            out,
+            "No pending interaction for a.",
+            "No pending interaction; use refresh after the episode starts.",
+            "A · a · episode 1 · turn 1",
+            "request changed: the request is no longer pending",
+            "submitted end_turn",
+            "A · a · episode 2 · turn 1",
+            "not submitted: a different submission already won this request",
+            "A · a · episode 3 · turn 1",
+            "unreadable:",
+        )
         second = store.wait(turns["second"], lambda: False, 0)
         assert second.action == "end_turn", "the turn that moved on took the terminal's answer"
         third = store.wait(turns["third"], lambda: False, 0)
@@ -528,8 +604,7 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
             yield "refresh"
             turns["first"] = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
             yield "refresh"
-            turns["second"] = second = store.publish("a", "A", 1, 2, "",
-                                                     (ToolResult("call-1", "ok"),), TOOLS)
+            turns["second"] = second = store.publish("a", "A", 1, 2, "", (ToolResult("call-1", "ok"),), TOOLS)
             drafts.mkdir(parents=True, exist_ok=True)
             (drafts / f"{second.request_id}.json").write_text("{cut", encoding="utf-8")
             yield "done"
@@ -538,18 +613,25 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
 
         with terminal(session()) as out:
             assert cli.run("a", root / "interactions") == 0, "end of input leaves the terminal"
-        said_in_order(out, f"unreadable: {pointer}", "No pending interaction for a.",
-                      f"unreadable: {pointer}", "No pending interaction.",
-                      "A · a · episode 1 · turn 1",
-                      "request changed: the request is no longer pending",
-                      f"unreadable: {drafts / turns['second'].request_id}.json", "empty",
-                      "submitted end_turn")
+        said_in_order(
+            out,
+            f"unreadable: {pointer}",
+            "No pending interaction for a.",
+            f"unreadable: {pointer}",
+            "No pending interaction.",
+            "A · a · episode 1 · turn 1",
+            "request changed: the request is no longer pending",
+            f"unreadable: {drafts / turns['second'].request_id}.json",
+            "empty",
+            "submitted end_turn",
+        )
         ended = store.wait(turns["second"], lambda: False, 0)
         assert ended.action == "end_turn", "the request after the broken files took the answer"
 
 
-def human_session(root: Path, agent: str,
-                  stopping: threading.Event | None = None) -> tuple[HumanSession, threading.Event]:
+def human_session(
+    root: Path, agent: str, stopping: threading.Event | None = None
+) -> tuple[HumanSession, threading.Event]:
     """A human provider session, and an event set each time it waits on a published request.
 
     The provider asks whether it is cancelled on every poll of its wait, and the wait
@@ -562,8 +644,8 @@ def human_session(root: Path, agent: str,
         return stopping is not None and stopping.is_set()
 
     return HumanProvider().open_session(
-        "interactive", "system", TOOLS, 100,
-        SessionContext(agent, f"Seat {agent}", 4, root / "interactions", cancelled)), published
+        "interactive", "system", TOOLS, 100, SessionContext(agent, f"Seat {agent}", 4, root / "interactions", cancelled)
+    ), published
 
 
 def requesting(session: HumanSession, content) -> tuple[threading.Thread, dict[str, Any]]:
@@ -648,9 +730,12 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
             with urllib.request.urlopen(base + "/api/interaction/t") as response:
                 assert json.loads(response.read().decode("utf-8"))["request"]["request_id"] == pending.request_id
             data = json.dumps(submission(pending)).encode("utf-8")
-            refused = urllib.request.Request(base + f"/api/interaction/t/{pending.request_id}",
-                                             data=data, method="POST",
-                                             headers={"Content-Type": "application/json"})
+            refused = urllib.request.Request(
+                base + f"/api/interaction/t/{pending.request_id}",
+                data=data,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
             try:
                 urllib.request.urlopen(refused)
             except urllib.error.HTTPError as error:
@@ -658,9 +743,15 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
             else:
                 raise AssertionError("a POST without origin and token was accepted")
             wrong_origin = urllib.request.Request(
-                base + f"/api/interaction/t/{pending.request_id}", data=data, method="POST",
-                headers={"Content-Type": "application/json", "Origin": "http://example.invalid",
-                         "X-Interaction-Token": httpd.control_token})
+                base + f"/api/interaction/t/{pending.request_id}",
+                data=data,
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "http://example.invalid",
+                    "X-Interaction-Token": httpd.control_token,
+                },
+            )
             try:
                 urllib.request.urlopen(wrong_origin)
             except urllib.error.HTTPError as error:
@@ -669,9 +760,14 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
                 raise AssertionError("a cross-origin POST was accepted")
             oversized = urllib.request.Request(
                 base + f"/api/interaction/t/{pending.request_id}",
-                data=b" " * (view.MAX_INTERACTION_BODY + 1), method="POST",
-                headers={"Content-Type": "application/json", "Origin": httpd.origin,
-                         "X-Interaction-Token": httpd.control_token})
+                data=b" " * (view.MAX_INTERACTION_BODY + 1),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": httpd.origin,
+                    "X-Interaction-Token": httpd.control_token,
+                },
+            )
             try:
                 urllib.request.urlopen(oversized)
             except urllib.error.HTTPError as error:
@@ -679,9 +775,15 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
             else:
                 raise AssertionError("an oversized POST was accepted")
             accepted = urllib.request.Request(
-                base + f"/api/interaction/t/{pending.request_id}", data=data, method="POST",
-                headers={"Content-Type": "application/json", "Origin": httpd.origin,
-                         "X-Interaction-Token": httpd.control_token})
+                base + f"/api/interaction/t/{pending.request_id}",
+                data=data,
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": httpd.origin,
+                    "X-Interaction-Token": httpd.control_token,
+                },
+            )
             with urllib.request.urlopen(accepted) as response:
                 assert response.status == 201
         finally:
@@ -709,8 +811,11 @@ def check_view_interaction_route_answers_each_refusal_with_its_own_status():
         httpd = view.serve(0)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{httpd.server_address[1]}"
-        allowed = {"Content-Type": "application/json", "Origin": httpd.origin,
-                   "X-Interaction-Token": httpd.control_token}
+        allowed = {
+            "Content-Type": "application/json",
+            "Origin": httpd.origin,
+            "X-Interaction-Token": httpd.control_token,
+        }
 
         def to(path: str, value: Any, *without: str, **headers: str) -> int:
             sent = {k: v for k, v in {**allowed, **headers}.items() if k not in without}
@@ -721,37 +826,41 @@ def check_view_interaction_route_answers_each_refusal_with_its_own_status():
         try:
             statuses = {
                 "a route with no request id": (to("t", submission(pending)), 404),
-                "an agent the view does not know": (
-                    to(f"nobody/{pending.request_id}", submission(pending)), 404),
+                "an agent the view does not know": (to(f"nobody/{pending.request_id}", submission(pending)), 404),
                 "the token without an origin": (to(answer, submission(pending), "Origin"), 403),
-                "the origin without a token": (
-                    to(answer, submission(pending), "X-Interaction-Token"), 403),
+                "the origin without a token": (to(answer, submission(pending), "X-Interaction-Token"), 403),
                 "a body that is not JSON by its type": (
-                    to(answer, submission(pending), **{"Content-Type": "text/plain"}), 415),
+                    to(answer, submission(pending), **{"Content-Type": "text/plain"}),
+                    415,
+                ),
                 "a body that does not parse": (to(answer, b"{not json"), 400),
                 "a body that is not an object": (to(answer, [submission(pending)]), 400),
                 "an envelope without a submission_id": (
-                    to(answer, {k: v for k, v in submission(pending).items()
-                                if k != "submission_id"}), 400),
-                "a request a newer one cancelled": (
-                    to(f"t/{old.request_id}", submission(old)), 409),
+                    to(answer, {k: v for k, v in submission(pending).items() if k != "submission_id"}),
+                    400,
+                ),
+                "a request a newer one cancelled": (to(f"t/{old.request_id}", submission(old)), 409),
                 "a request id that is not a file name": (to("t/a%2Fb", submission(pending)), 404),
                 "the first submission": (to(answer, submission(pending)), 201),
                 "the same submission again": (to(answer, submission(pending)), 201),
                 "a different submission after it": (
-                    to(answer, {**submission(pending, "other"), "submission_id": "other"}), 409),
-                "the winner's submission_id on other calls": (
-                    to(answer, submission(pending, "other")), 409),
+                    to(answer, {**submission(pending, "other"), "submission_id": "other"}),
+                    409,
+                ),
+                "the winner's submission_id on other calls": (to(answer, submission(pending, "other")), 409),
                 "the winner's submission_id on another action": (
-                    to(answer, {**end_submission(pending),
-                                "submission_id": submission(pending)["submission_id"]}), 409),
+                    to(answer, {**end_submission(pending), "submission_id": submission(pending)["submission_id"]}),
+                    409,
+                ),
             }
             unread = store.publish("t", "1", 3, 1, "system", "observation", TOOLS)
             path = submission_file(root, "t", unread.request_id)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("[]", encoding="utf-8")
             statuses["a submission on disk that does not read"] = (
-                to(f"t/{unread.request_id}", submission(unread)), 500)
+                to(f"t/{unread.request_id}", submission(unread)),
+                500,
+            )
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -799,8 +908,7 @@ def check_the_view_handler_answers_only_for_the_server_serve_builds():
         httpd.server_close()
     handler = object.__new__(view.View)
     handler.server = object.__new__(http.server.ThreadingHTTPServer)
-    raised(TypeError, lambda: handler.view_server,
-           "a handler read its token and origin off a server that has neither")
+    raised(TypeError, lambda: handler.view_server, "a handler read its token and origin off a server that has neither")
 
 
 def check_the_human_cli_answers_the_store_the_harness_publishes_to():
