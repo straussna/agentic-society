@@ -57,6 +57,16 @@ activated venv. No linter is configured. From the Bash tool:
 ```bash
 /c/source/repos/agentic-society/.venv/Scripts/python.exe /c/source/repos/agentic-society/check.py --no-docker
 /c/source/repos/agentic-society/.venv/Scripts/python.exe -m pytest /c/source/repos/agentic-society/checks
+/c/source/repos/agentic-society/.venv/Scripts/python.exe /c/source/repos/agentic-society/harness.py --print-system
+```
+
+The commands [docs/operating.md](docs/operating.md) lists run under the same interpreter, from
+the repo root, where their relative paths start; `--print-system` bills nothing:
+
+```powershell
+Set-Location "C:\source\repos\agentic-society"
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --print-system
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r 20
 ```
 
 A worktree has no `.venv`: run the main checkout's interpreter on the worktree's
@@ -107,9 +117,9 @@ turn loop reads where it reads the account floor, so the episode ends the way an
 exhausted budget ends it — the turn in flight finishes, its spend is committed,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
-`.venv\Scripts\python.exe experiment.py <name> -r N --resume` continues it from where it stopped, finishing
+`& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
 the round the stop landed in before the next begins, as
-`.venv\Scripts\python.exe harness.py --agent <id> --manifest <path> --resume` continues one agent. The same
+`& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
 command without `--resume` moves what the stopped run left under `displaced/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
