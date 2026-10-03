@@ -77,7 +77,9 @@ in [human.md](human.md).
 
 ## Commands
 
-`py -3`, not `python`: a bare `python` hits the Windows Store alias here.
+`py -3` runs the Windows launcher's newest Python 3, never an activated virtual environment,
+so `requirements.txt` must be installed into that interpreter; inside a virtual environment,
+run the same commands with its `python`.
 
 | | |
 |---|---|

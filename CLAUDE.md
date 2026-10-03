@@ -15,20 +15,20 @@ Available verification commands:
 
 ```powershell
 # One behaviour, by name fragment; fragments match anywhere and several can be given
-py -3 "C:\source\repos\agentic-society\check.py" refusal fallback
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" refusal fallback
 # Every check that needs no container: pricing, metering, refusals, traces, the declared
 # system prompt, starter files, forks, experiments, manifests, the channel table, the tool
 # table and what a tool call does, labels, receipts, harness file names, simultaneous
 # rounds, experimenter channels, transfer funding, push and pull delivery, author labels,
 # transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial
 # observation, the silence penalties, the grace, the floor
-py -3 "C:\source\repos\agentic-society\check.py" --no-docker
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --no-docker
 # Full verification suite
-py -3 "C:\source\repos\agentic-society\check.py"
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py"
 # harness.py's episode path: the container, the shell, load_state/save_state, run_once
-py -3 "C:\source\repos\agentic-society\check.py" --real
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --real
 # Print every check name
-py -3 "C:\source\repos\agentic-society\check.py" --list
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --list
 ```
 
 Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
@@ -43,10 +43,24 @@ run one at a time in one process. Without a flag the container checks skip, as u
 `--no-docker`; `--docker` runs them and `--real` matches `check.py --real`.
 
 ```powershell
-py -3 -m pip install pytest coverage
-py -3 -m pytest "C:\source\repos\agentic-society\checks"
-py -3 -m pytest "C:\source\repos\agentic-society\checks" --docker
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "C:\source\repos\agentic-society\checks"
+& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "C:\source\repos\agentic-society\checks" --docker
 ```
+
+## Interpreter
+
+The repo's `.venv` (CPython 3.14.7 with `requirements.txt`, pytest and coverage.py) runs
+every command here. `python3` does not exist. Bare `python` is the global 3.14.7, which
+has no `openai` or coverage.py, and `py -3` runs that same interpreter even inside an
+activated venv. No linter is configured. From the Bash tool:
+
+```bash
+/c/source/repos/agentic-society/.venv/Scripts/python.exe /c/source/repos/agentic-society/check.py --no-docker
+/c/source/repos/agentic-society/.venv/Scripts/python.exe -m pytest /c/source/repos/agentic-society/checks
+```
+
+A worktree has no `.venv`: run the main checkout's interpreter on the worktree's
+`check.py` or `checks`, which import the worktree's modules.
 
 ## Lanes
 
@@ -93,9 +107,9 @@ turn loop reads where it reads the account floor, so the episode ends the way an
 exhausted budget ends it — the turn in flight finishes, its spend is committed,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
-`py -3 experiment.py <name> -r N --resume` continues it from where it stopped, finishing
+`.venv\Scripts\python.exe experiment.py <name> -r N --resume` continues it from where it stopped, finishing
 the round the stop landed in before the next begins, as
-`py -3 harness.py --agent <id> --manifest <path> --resume` continues one agent. The same
+`.venv\Scripts\python.exe harness.py --agent <id> --manifest <path> --resume` continues one agent. The same
 command without `--resume` moves what the stopped run left under `displaced/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
