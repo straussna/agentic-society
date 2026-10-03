@@ -32,7 +32,12 @@ MODELS = {
         "openai",
         "gpt-5.6-sol",
         1_050_000,
-        (("uncached_input", 400), ("cache_read", 40), ("cache_write", 500), ("output", 2000)),
+        (
+            ("uncached_input", 400),
+            ("cache_read", 40),
+            ("cache_write", 500),
+            ("output", 2000),
+        ),
         128_000,
         272_000,
         (2, 1),
@@ -44,7 +49,12 @@ MODELS = {
         "openai",
         "gpt-5.6-terra",
         1_050_000,
-        (("uncached_input", 200), ("cache_read", 20), ("cache_write", 250), ("output", 1200)),
+        (
+            ("uncached_input", 200),
+            ("cache_read", 20),
+            ("cache_write", 250),
+            ("output", 1200),
+        ),
         128_000,
         272_000,
         (2, 1),
@@ -54,7 +64,12 @@ MODELS = {
         "openai",
         "gpt-5.6-luna",
         1_050_000,
-        (("uncached_input", 20), ("cache_read", 2), ("cache_write", 25), ("output", 120)),
+        (
+            ("uncached_input", 20),
+            ("cache_read", 2),
+            ("cache_write", 25),
+            ("output", 120),
+        ),
         128_000,
         272_000,
         (2, 1),
@@ -83,7 +98,11 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
         if kind == "function_call":
             arguments = field(item, "arguments", "{}") or "{}"
             try:
-                parsed = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
+                parsed = (
+                    json.loads(arguments)
+                    if isinstance(arguments, str)
+                    else dict(arguments)
+                )
             except (json.JSONDecodeError, TypeError, ValueError) as error:
                 raise ProviderError(
                     f"invalid function arguments: {error}",
@@ -92,9 +111,17 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
                     native_type=type(error).__name__,
                 ) from error
             if not isinstance(parsed, dict):
-                raise ProviderError("function arguments are not a JSON object", category="adapter", provider="openai")
+                raise ProviderError(
+                    "function arguments are not a JSON object",
+                    category="adapter",
+                    provider="openai",
+                )
             calls.append(
-                ToolCall(str(field(item, "call_id", field(item, "id", ""))), str(field(item, "name", "")), parsed)
+                ToolCall(
+                    str(field(item, "call_id", field(item, "id", ""))),
+                    str(field(item, "name", "")),
+                    parsed,
+                )
             )
         elif kind == "reasoning":
             for summary in field(item, "summary", []) or []:
@@ -123,7 +150,9 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     input_multiplier = spec.long_context_input_multiplier if long else (1, 1)
     output_multiplier = spec.long_context_output_multiplier if long else (1, 1)
     charges = (
-        charge("uncached_input", uncached, spec.rate("uncached_input"), input_multiplier),
+        charge(
+            "uncached_input", uncached, spec.rate("uncached_input"), input_multiplier
+        ),
         charge("cache_read", cached, spec.rate("cache_read"), input_multiplier),
         charge("cache_write", cache_write, spec.rate("cache_write"), input_multiplier),
         charge("output", output, spec.rate("output"), output_multiplier),
@@ -164,7 +193,14 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
 class OpenAISession:
     provider = "openai"
 
-    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int):
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+    ):
         self.client = client
         self.requested_model = model
         self.system = system
@@ -174,10 +210,16 @@ class OpenAISession:
 
     def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse:
         if isinstance(content, str):
-            additions = [{"role": "user", "content": [{"type": "input_text", "text": content}]}]
+            additions = [
+                {"role": "user", "content": [{"type": "input_text", "text": content}]}
+            ]
         else:
             additions = [
-                {"type": "function_call_output", "call_id": result.tool_call_id, "output": result.content}
+                {
+                    "type": "function_call_output",
+                    "call_id": result.tool_call_id,
+                    "output": result.content,
+                }
                 for result in content
             ]
         items = [*self.items, *additions]
@@ -208,7 +250,10 @@ class OpenAISession:
 
         def finish() -> NormalizedTurn:
             turn = normalize(response, self.requested_model)
-            self.items = [*items, *[_input_item(item) for item in field(response, "output", []) or []]]
+            self.items = [
+                *items,
+                *[_input_item(item) for item in field(response, "output", []) or []],
+            ]
             return turn
 
         return PendingResponse(self.provider, raw, finish)
@@ -249,6 +294,11 @@ class OpenAIProvider:
                 raise classify_error(error, self.name, self.key_variable) from error
 
     def open_session(
-        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+        self,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+        context: SessionContext,
     ) -> OpenAISession:
         return OpenAISession(self.client, model, system, tools, max_tokens)

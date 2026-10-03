@@ -49,7 +49,9 @@ def directory(runtime_root: Path, experiment_id: str) -> Path:
     return root(runtime_root) / experiment_id
 
 
-def displace(runtime_root: Path, experiment_id: str, bundle: Path | None = None) -> Path | None:
+def displace(
+    runtime_root: Path, experiment_id: str, bundle: Path | None = None
+) -> Path | None:
     """Preserve an existing experiment record before a fresh run reuses its identity."""
     source = directory(runtime_root, experiment_id)
     if not source.exists():
@@ -102,7 +104,9 @@ def append(path: Path, values: Iterable[dict[str, Any]]) -> None:
     the cut costs that one line and no other.
     """
     data = b"".join(
-        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n" for value in values
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+        for value in values
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
@@ -128,7 +132,9 @@ def read(path: Path) -> dict[str, Any] | None:
     except (OSError, ValueError) as e:
         raise ValueError(f"{path} is not a readable JSON object: {e}") from e
     if not isinstance(value, dict):
-        raise ValueError(f"{path} is not a readable JSON object: it holds {type(value).__name__}")
+        raise ValueError(
+            f"{path} is not a readable JSON object: it holds {type(value).__name__}"
+        )
     return value
 
 
@@ -156,7 +162,11 @@ def logged(path: Path) -> list[dict[str, Any]]:
 
 
 def progress(
-    runtime_root: Path, experiment_id: str, phase: str, round_number: int, detail: dict[str, Any] | None = None
+    runtime_root: Path,
+    experiment_id: str,
+    phase: str,
+    round_number: int,
+    detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record that the experiment has reached `phase`, and return the event.
 
@@ -174,7 +184,10 @@ def progress(
         # A progress.json that holds its own events list starts the log with them.
         carried = [] if log.exists() else previous.get("events", [])
         append(log, [*carried, event])
-        atomic(base / "progress.json", {"version": VERSION, "experiment_id": experiment_id, "latest": event})
+        atomic(
+            base / "progress.json",
+            {"version": VERSION, "experiment_id": experiment_id, "latest": event},
+        )
     return event
 
 
@@ -189,7 +202,9 @@ def cost(
     for agent in agents:
         account = load_account(agent)
         if not interactive(account.get("provider")):
-            spent += sum(int(episode.get("spent", 0)) for episode in account.get("episodes", []))
+            spent += sum(
+                int(episode.get("spent", 0)) for episode in account.get("episodes", [])
+            )
         tiers[agent] = (account.get("product") or {}).get("quality_tier", "standard")
     maximum = policy.get("maximum")
     reserve = int(policy.get("reserved_completion", 0))
@@ -213,7 +228,11 @@ def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | Non
         data = path.read_bytes()
     except OSError:
         return None
-    return {"agent": agent, "episode": episode, "trace_sha256": hashlib.sha256(data).hexdigest()}
+    return {
+        "agent": agent,
+        "episode": episode,
+        "trace_sha256": hashlib.sha256(data).hexdigest(),
+    }
 
 
 def outcome(
@@ -233,18 +252,28 @@ def outcome(
     The survivors are `remaining`, the agents still in the competition whether or not
     the run that ended had them at its table; the winners are the survivors where
     `reason` is a stop that names them."""
-    label_by_agent = {agent: labels[str(index)] for index, agent in enumerate(agents, 1)}
+    label_by_agent = {
+        agent: labels[str(index)] for index, agent in enumerate(agents, 1)
+    }
     accounts = {agent: load_account(agent) for agent in agents}
-    last = {agent: len(account.get("episodes", [])) for agent, account in accounts.items()}
+    last = {
+        agent: len(account.get("episodes", [])) for agent, account in accounts.items()
+    }
     eliminated = sorted(
-        (account["eliminated"]["round"], label_by_agent[agent], account["eliminated"].get("reason", ""))
+        (
+            account["eliminated"]["round"],
+            label_by_agent[agent],
+            account["eliminated"].get("reason", ""),
+        )
         for agent, account in accounts.items()
         if account.get("eliminated")
     )
     survivors = [label_by_agent[agent] for agent in agents if agent in remaining]
     winners = survivors if reason in ("one_remains", "final_tie") else []
     evidence = [
-        item for agent, episode in last.items() if (item := trace_evidence(agent, episode, trace_path(agent, episode)))
+        item
+        for agent, episode in last.items()
+        if (item := trace_evidence(agent, episode, trace_path(agent, episode)))
     ]
     record = {
         "version": VERSION,
@@ -254,9 +283,14 @@ def outcome(
         "winners": winners,
         "survivors": survivors,
         "draw": reason == "final_tie",
-        "elimination_order": [{"round": rnd, "seat": seat, "reason": why} for rnd, seat, why in eliminated],
+        "elimination_order": [
+            {"round": rnd, "seat": seat, "reason": why} for rnd, seat, why in eliminated
+        ],
         "scores": {label_by_agent[a]: accounts[a].get("remaining", 0) for a in agents},
-        "resources": {label_by_agent[a]: {"micro_dollars": accounts[a].get("remaining", 0)} for a in agents},
+        "resources": {
+            label_by_agent[a]: {"micro_dollars": accounts[a].get("remaining", 0)}
+            for a in agents
+        },
         "evidence": evidence,
         "reveal": reveal,
     }
@@ -264,7 +298,9 @@ def outcome(
     return record
 
 
-def revealed(record: dict[str, Any], phase: str, experimenter: bool = False) -> dict[str, Any]:
+def revealed(
+    record: dict[str, Any], phase: str, experimenter: bool = False
+) -> dict[str, Any]:
     """Project an outcome through its declared audience and lifecycle policy."""
     if experimenter:
         return dict(record)
@@ -275,7 +311,11 @@ def revealed(record: dict[str, Any], phase: str, experimenter: bool = False) -> 
     if phase != "during_play":
         fields.update(policy.get(phase, []))
     public = {key: record[key] for key in fields if key in record}
-    return {"version": record.get("version"), "experiment_id": record.get("experiment_id"), **public}
+    return {
+        "version": record.get("version"),
+        "experiment_id": record.get("experiment_id"),
+        **public,
+    }
 
 
 def recorded_progress(base: Path) -> dict[str, Any] | None:
@@ -285,7 +325,10 @@ def recorded_progress(base: Path) -> dict[str, Any] | None:
     if record is None:
         return None
     log = base / "progress.jsonl"
-    return {**record, "events": logged(log) if log.exists() else record.get("events", [])}
+    return {
+        **record,
+        "events": logged(log) if log.exists() else record.get("events", []),
+    }
 
 
 def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:

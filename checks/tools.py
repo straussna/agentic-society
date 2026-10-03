@@ -55,7 +55,9 @@ class BrokenShell:
 
     @staticmethod
     def run(command, timeout):
-        return "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+        return (
+            "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+        )
 
 
 def check_semantic_summaries_and_failures_expose_no_storage_details():
@@ -64,14 +66,22 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
     assert summary == "=== unchanged ===\n- Private memory\n- Letter to 2\n", summary
     assert harness.NAMED.match(summary.splitlines()[0])
 
-    declared = offers("write_memory:notes", "send_message_to:mail", "post_public:blackboard", "transfer:transfer")
+    declared = offers(
+        "write_memory:notes",
+        "send_message_to:mail",
+        "post_public:blackboard",
+        "transfer:transfer",
+    )
     with temp_root(tools=declared) as root:
         seated(root, "t", other={})
         account = ground_truth("t")
         actions = {
             item.tool.kind: item
             for item in harness.bind_tools(
-                harness.tools(), harness.channels(), harness.environment("t", account), ["2"]
+                harness.tools(),
+                harness.channels(),
+                harness.environment("t", account),
+                ["2"],
             )
         }
         shell = BrokenShell()
@@ -84,8 +94,14 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
         ]
 
     joined = "\n".join(results)
-    assert "out/" not in joined and "state/" not in joined and "permission denied" not in joined, joined
-    assert "Nothing was written" not in joined and "No transfer was submitted" in joined, joined
+    assert (
+        "out/" not in joined
+        and "state/" not in joined
+        and "permission denied" not in joined
+    ), joined
+    assert (
+        "Nothing was written" not in joined and "No transfer was submitted" in joined
+    ), joined
 
 
 def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
@@ -96,7 +112,12 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         mail={"restated": True, "agent_view": "letters"},
         transfer={"agent_view": "transfer"},
     )
-    declared = offers("write_memory:notes", "send_message_to:mail", "post_public:blackboard", "transfer:transfer")
+    declared = offers(
+        "write_memory:notes",
+        "send_message_to:mail",
+        "post_public:blackboard",
+        "transfer:transfer",
+    )
     with temp_root(channels=channels, tools=declared) as root:
         seated(
             root,
@@ -131,19 +152,24 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         assert path not in observation, (path, observation)
     request = next(item for item in seen if item["kind"] == "session")
     descriptions = "\n".join(tool["description"] for tool in request["tools"])
-    assert "out/transfer" not in descriptions and " n1" not in descriptions, descriptions
+    assert "out/transfer" not in descriptions and " n1" not in descriptions, (
+        descriptions
+    )
     body_descriptions = [
         tool["input_schema"]["properties"]["body"]["description"]
         for tool in request["tools"]
         if "body" in tool["input_schema"]["properties"]
     ]
-    assert body_descriptions and not any("file" in text or "bytes" in text for text in body_descriptions), (
-        body_descriptions
-    )
+    assert body_descriptions and not any(
+        "file" in text or "bytes" in text for text in body_descriptions
+    ), body_descriptions
     assert "current: 1499000 micro-dollars" in observation, observation
     assert "history, oldest to newest: 1500000, 1499000" in observation, observation
     assert "No completed transfers." in observation, observation
-    assert "recipient: 2" in observation and "requested amount: 1 micro-dollars" in observation
+    assert (
+        "recipient: 2" in observation
+        and "requested amount: 1 micro-dollars" in observation
+    )
     for text in ("rules\n", "remembered\n", "public\n", "private\n"):
         assert text in again["observation"], (text, again["observation"])
 
@@ -153,7 +179,12 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     channels = tables(
         blackboard={"restated": True, "agent_view": "board"},
         mail={"restated": True, "agent_view": "letters"},
-        transfer={"agent_view": "transfer", "funded_by": "giver", "rebate_percent": 0, "receipt": "r"},
+        transfer={
+            "agent_view": "transfer",
+            "funded_by": "giver",
+            "rebate_percent": 0,
+            "receipt": "r",
+        },
     )
     declared = [
         {"name": "send_message", "kind": "send_message_to", "channel": "mail"},
@@ -184,15 +215,32 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
         "reconciliation:",
     ):
         assert item in observation, (item, observation)
-    assert "Completed transfers (giver -> recipient; amount actually moved):" in observation
-    assert "- round 1: 1 (you) -> 2; actual amount moved: 1 micro-dollars" in observation
-    assert "=== r ===" not in observation and "=== g ===" not in observation, observation
+    assert (
+        "Completed transfers (giver -> recipient; amount actually moved):"
+        in observation
+    )
+    assert (
+        "- round 1: 1 (you) -> 2; actual amount moved: 1 micro-dollars" in observation
+    )
+    assert "=== r ===" not in observation and "=== g ===" not in observation, (
+        observation
+    )
 
 
 def check_a_public_post_lasts_one_round_and_must_be_published_again():
     """A same-text repost counts, while an omitted post leaves the next board empty."""
-    channels = tables(blackboard={"restated": True, "agent_view": "board", "silence_penalty_percent": 50})
-    post = {"name": "post_to_blackboard", "kind": "post_public", "channel": "blackboard"}
+    channels = tables(
+        blackboard={
+            "restated": True,
+            "agent_view": "board",
+            "silence_penalty_percent": 50,
+        }
+    )
+    post = {
+        "name": "post_to_blackboard",
+        "kind": "post_public",
+        "channel": "blackboard",
+    }
     with temp_root(channels=channels, tools=[post]) as root:
         seated(root, "t", other={})
         first = episode_once(use("post_to_blackboard", body="same"), say())
@@ -204,7 +252,9 @@ def check_a_public_post_lasts_one_round_and_must_be_published_again():
         remains = (harness.mirror("t", "blackboard") / "post.md").exists()
 
     assert first["channels"]["blackboard"]["posted"]
-    assert again["channels"]["blackboard"]["posted"], "the repeated text is a new round's post"
+    assert again["channels"]["blackboard"]["posted"], (
+        "the repeated text is a new round's post"
+    )
     assert not first["channels"]["blackboard"]["penalty"]
     assert not again["channels"]["blackboard"]["penalty"]
     assert not omitted["channels"]["blackboard"]["posted"]
@@ -218,7 +268,8 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
     """A transfer action replaces one declaration and settles through the ledger."""
     transfer = {"name": "transfer_balance", "kind": "transfer", "channel": "transfer"}
     with temp_root(
-        channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0}), tools=[BASH, transfer]
+        channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0}),
+        tools=[BASH, transfer],
     ) as root:
         seated(root, "t", t={}, o={}, d={})
         put_out("d")
@@ -255,13 +306,23 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
 
     chans = list(harness.DEFAULT_CHANNELS)
     refused(
-        lambda: harness.validate_tools([transfer | {"channel": "notes"}], chans, "check"),
+        lambda: harness.validate_tools(
+            [transfer | {"channel": "notes"}], chans, "check"
+        ),
         "enabled transfer schema channel",
     )
     with temp_root(tools=[BASH, transfer]) as root:
         with quiet():
             account = harness.load_account("t")
-        assert harness.bind_tools(harness.tools(), harness.channels(), harness.environment("t", account), []) == []
+        assert (
+            harness.bind_tools(
+                harness.tools(),
+                harness.channels(),
+                harness.environment("t", account),
+                [],
+            )
+            == []
+        )
 
 
 def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
@@ -282,16 +343,23 @@ def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
     with temp_root(channels=channels, tools=[transfer]) as root:
         seated(root, "t", t={}, o={}, d={})
         first = episode_once(
-            use("send_currency", to="2", amount=10), use("send_currency", to="3", amount=1_000_000), say()
+            use("send_currency", to="2", amount=10),
+            use("send_currency", to="3", amount=1_000_000),
+            say(),
         )
         received = harness.run_once("d", fake(say()))
 
     files = files_by_path(first)
     assert "currency/outbox/2" not in files, files
     assert files["currency/outbox/3"]["text"] == "1000000\n", files
-    assert first["transfer"]["label"] == "3" and first["transfer"]["amount"] > 0, first["transfer"]
+    assert first["transfer"]["label"] == "3" and first["transfer"]["amount"] > 0, first[
+        "transfer"
+    ]
     assert first["transfer"]["amount"] < 1_000_000, first["transfer"]
-    assert "=== Currency transfer received from 1 last round ===" in received["observation"], received["observation"]
+    assert (
+        "=== Currency transfer received from 1 last round ==="
+        in received["observation"]
+    ), received["observation"]
     assert "requested amount: 1000000 micro-dollars" in received["observation"]
     assert "1 -> 3 (you); actual amount moved:" in received["observation"]
     assert "actual amount moved: 1000000 micro-dollars" not in received["observation"]
@@ -315,8 +383,14 @@ def check_bash_requires_an_explicit_declaration():
         harness.apply_tools([POST], chans, "manifest")
         assert harness.SETTINGS.shell_tool is False
         assert harness.validate_tools(None, chans, "manifest") == []
-        refused(lambda: harness.apply_tools(None, chans, "manifest"), "no [[tool]] is declared")
-        refused(lambda: harness.apply_tools([], chans, "manifest"), "no [[tool]] is declared")
+        refused(
+            lambda: harness.apply_tools(None, chans, "manifest"),
+            "no [[tool]] is declared",
+        )
+        refused(
+            lambda: harness.apply_tools([], chans, "manifest"),
+            "no [[tool]] is declared",
+        )
 
 
 def check_declared_bash_and_channel_tools_are_offered_together():
@@ -330,13 +404,29 @@ def check_declared_bash_and_channel_tools_are_offered_together():
         assert [t["name"] for t in params["tools"]] == ["bash", "post"]
     refused(
         lambda: harness.validate_tools(
-            [BASH | {"kind": "read_path", "channel": "notes"}], list(harness.DEFAULT_CHANNELS), "check"
+            [BASH | {"kind": "read_path", "channel": "notes"}],
+            list(harness.DEFAULT_CHANNELS),
+            "check",
         ),
         "requires kind",
     )
-    for raw in (BASH | {"name": "shell"}, BASH | {"channel": "notes"}, BASH | {"description": "commands"}):
-        refused(lambda: harness.validate_tools([raw], list(harness.DEFAULT_CHANNELS), "check"), "bash requires")
-    refused(lambda: harness.validate_tools([BASH, BASH], list(harness.DEFAULT_CHANNELS), "check"), "declared twice")
+    for raw in (
+        BASH | {"name": "shell"},
+        BASH | {"channel": "notes"},
+        BASH | {"description": "commands"},
+    ):
+        refused(
+            lambda: harness.validate_tools(
+                [raw], list(harness.DEFAULT_CHANNELS), "check"
+            ),
+            "bash requires",
+        )
+    refused(
+        lambda: harness.validate_tools(
+            [BASH, BASH], list(harness.DEFAULT_CHANNELS), "check"
+        ),
+        "declared twice",
+    )
 
 
 def check_a_tool_table_is_validated():
@@ -374,7 +464,9 @@ def check_a_tool_table_is_validated():
             ["at most one vote tool"],
         ),
     ):
-        refused(lambda: harness.validate_tools(declared, chans, "check"), "check:", *words)
+        refused(
+            lambda: harness.validate_tools(declared, chans, "check"), "check:", *words
+        )
 
     # A good table comes back in declaration order and sets nothing.
     table = harness.validate_tools([SEND, POST, LOOK], chans, "check")
@@ -402,17 +494,28 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
     try:
         table = harness.validate_tools([poll(every=3)], chans, "check")
         assert [(t.kind, t.every) for t in table] == [("poll", 3)], table
-        refused(lambda: harness.validate_tools([poll()], chans, "check"), "check:", "kind 'poll' requires every")
+        refused(
+            lambda: harness.validate_tools([poll()], chans, "check"),
+            "check:",
+            "kind 'poll' requires every",
+        )
         refused(
             lambda: harness.validate_tools(
-                [{"name": "x", "kind": "read_path", "channel": "notes", "every": 5}], chans, "check"
+                [{"name": "x", "kind": "read_path", "channel": "notes", "every": 5}],
+                chans,
+                "check",
             ),
             "check:",
             "every belongs to kind 'vote' or 'poll'",
         )
         refused(
             lambda: harness.validate_tools(
-                [{"name": "v", "kind": "vote", "channel": "notes", "every": 5}, poll(every=3)], chans, "check"
+                [
+                    {"name": "v", "kind": "vote", "channel": "notes", "every": 5},
+                    poll(every=3),
+                ],
+                chans,
+                "check",
             ),
             "check:",
             "at most one vote tool",
@@ -427,7 +530,10 @@ def tool_toml(*declared: dict) -> str:
     def value(v) -> str:
         return str(v) if isinstance(v, int) else f'"{v}"'
 
-    return "".join("[[tool]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in t.items()) + "\n" for t in declared)
+    return "".join(
+        "[[tool]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in t.items()) + "\n"
+        for t in declared
+    )
 
 
 def check_a_manifest_declares_tools_and_config_toml_may_not():
@@ -439,13 +545,25 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
     seats = 'system_prompt = ""\n[[agent]]\nid = "a"\n\n[[agent]]\nid = "b"\n\n'
     with temp_root() as root:
         good = manifest_file(root, seats + tool_toml(SEND))
-        assert experiment.load_manifest(good)["tools"] == [SEND], "the raw table, as declared"
+        assert experiment.load_manifest(good)["tools"] == [SEND], (
+            "the raw table, as declared"
+        )
 
         # Held against the channel table this manifest declares, not the one in
         # force, so a tool pointing at a channel it dropped is refused here.
-        without = [c.declared() for c in harness.DEFAULT_CHANNELS if c.name in ("notes", "blackboard")]
-        bad = manifest_file(root, seats + channel_toml(without) + "\n" + tool_toml(SEND), "bad.toml")
-        refused(lambda: experiment.load_manifest(bad), "bad.toml", "is not in the channel table")
+        without = [
+            c.declared()
+            for c in harness.DEFAULT_CHANNELS
+            if c.name in ("notes", "blackboard")
+        ]
+        bad = manifest_file(
+            root, seats + channel_toml(without) + "\n" + tool_toml(SEND), "bad.toml"
+        )
+        refused(
+            lambda: experiment.load_manifest(bad),
+            "bad.toml",
+            "is not in the channel table",
+        )
 
         cfg = root / "config.toml"
         cfg.write_text(tool_toml(SEND), encoding="utf-8", newline="\n")
@@ -463,12 +581,16 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
     assert "description" in harness.TOOL_KEYS, "the words are the experimenter's"
     for held in ("input_schema", "schema", "properties", "required"):
         refused(
-            lambda: harness.validate_tools([SEND | {held: {}}], list(harness.DEFAULT_CHANNELS), "check"),
+            lambda: harness.validate_tools(
+                [SEND | {held: {}}], list(harness.DEFAULT_CHANNELS), "check"
+            ),
             "check:",
             f"{held} is the harness's",
         )
     refused(
-        lambda: harness.validate_tools([SEND | {"description": 3}], list(harness.DEFAULT_CHANNELS), "check"),
+        lambda: harness.validate_tools(
+            [SEND | {"description": 3}], list(harness.DEFAULT_CHANNELS), "check"
+        ),
         "check:",
         "description must be str",
     )
@@ -484,13 +606,16 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         assert spec["description"] == said, spec["description"]
         assert "channel" not in spec["description"], "the harness adds nothing to them"
         # The schema is still the harness's, whatever the words say.
-        assert spec["input_schema"]["properties"]["to"]["enum"] == ["2"], spec["input_schema"]
+        assert spec["input_schema"]["properties"]["to"]["enum"] == ["2"], spec[
+            "input_schema"
+        ]
         prov = trace_on_disk("t", 1)["provenance"]
         assert prov["tools"][0]["description"] == said, "recorded whole"
         assert prov["tools_sha256"] == harness.tools_sha256(harness.tools())
-        assert harness.tools_sha256([harness.Tool("send", "write_slot", "mail")]) != prov["tools_sha256"], (
-            "and by digest, so two wordings are two arms"
-        )
+        assert (
+            harness.tools_sha256([harness.Tool("send", "write_slot", "mail")])
+            != prov["tools_sha256"]
+        ), "and by digest, so two wordings are two arms"
 
     # Declared none: the harness's own account of the channel, which cannot say
     # what the channel does not.
@@ -498,7 +623,12 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         seated(root, "t", t={}, o={})
         with quiet():
             account = harness.load_account("t")
-        bound = harness.bind_tools(harness.tools(), harness.channels(), harness.environment("t", account), ["2"])
+        bound = harness.bind_tools(
+            harness.tools(),
+            harness.channels(),
+            harness.environment("t", account),
+            ["2"],
+        )
         said = {b.tool.name: b.spec().as_dict() for b in bound}
         assert set(said) == {"send", "post", "look"}, sorted(said)
         assert all(b.description() == b.generated() for b in bound), (
@@ -518,11 +648,14 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         # A directory is named with its slash, so a path the tool cannot fetch does
         # not read as one it can.
         assert "1/, 2/" in said["look"]["description"], said["look"]["description"]
-        assert said["send"]["input_schema"]["properties"]["to"]["description"] == "The peer's label. Yours is 1.", (
-            "the agent is told which label is its own"
-        )
+        assert (
+            said["send"]["input_schema"]["properties"]["to"]["description"]
+            == "The peer's label. Yours is 1."
+        ), "the agent is told which label is its own"
 
-        assert [b.spec().as_dict() for b in bound] == [said[n] for n in ("send", "post", "look")]
+        assert [b.spec().as_dict() for b in bound] == [
+            said[n] for n in ("send", "post", "look")
+        ]
 
 
 def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
@@ -532,25 +665,40 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
     agent's file, mirrors back with the tree, and meets the obligation exactly as
     a bash write of the same bytes would.
     """
-    with temp_root(channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND, POST]) as root:
+    with temp_root(
+        channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND, POST]
+    ) as root:
         seated(root, "t", t={}, o={})
         with quiet():
             harness.run_once(
-                "t", fake(use("send", to="2", body="hello\n"), use("post", path="plan.md", body="mine\n"), say())
+                "t",
+                fake(
+                    use("send", to="2", body="hello\n"),
+                    use("post", path="plan.md", body="mine\n"),
+                    say(),
+                ),
             )
         t = trace_on_disk("t", 1)
         files = files_by_path(t)
         assert files["out/2"]["text"] == "hello\n", files["out/2"]
         assert files["1/plan.md"]["text"] == "mine\n", sorted(files)
-        assert files["out/2"]["author"] == "self" and files["1/plan.md"]["author"] == "self", (
-            "invariant 1: a tool's write is the agent's, not the harness's"
-        )
+        assert (
+            files["out/2"]["author"] == "self"
+            and files["1/plan.md"]["author"] == "self"
+        ), "invariant 1: a tool's write is the agent's, not the harness's"
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
-        assert t["channels"]["mail"]["penalty"] == 0, "one new slot is the obligation met"
-        assert t["channels"]["blackboard"]["posted"] is True, t["channels"]["blackboard"]
+        assert t["channels"]["mail"]["penalty"] == 0, (
+            "one new slot is the obligation met"
+        )
+        assert t["channels"]["blackboard"]["posted"] is True, t["channels"][
+            "blackboard"
+        ]
         # The episode ran no command of its own, and the tool's calls are not commands.
         assert t["commands"] == [harness.observation()], t["commands"]
-        assert [c["tool"] for turn in t["turns"] for c in turn["tools"]] == ["send", "post"]
+        assert [c["tool"] for turn in t["turns"] for c in turn["tools"]] == [
+            "send",
+            "post",
+        ]
         assert [c["input"] for turn in t["turns"] for c in turn["tools"]] == [
             {"to": "2", "body": "hello\n"},
             {"path": "plan.md", "body": "mine\n"},
@@ -579,12 +727,21 @@ def check_a_tool_result_says_what_actually_happened():
                     say(),
                 ),
             )
-        said = [c["result"] for turn in trace_on_disk("t", 1)["turns"] for c in turn["tools"]]
+        said = [
+            c["result"]
+            for turn in trace_on_disk("t", 1)["turns"]
+            for c in turn["tools"]
+        ]
     new, same, replaced, nobody, escape, read, outside = said
     assert new == "wrote 4 bytes to out/2, which held nothing before.", new
-    assert same == "out/2 already held exactly this. Nothing was written and nothing changed.", same
+    assert (
+        same
+        == "out/2 already held exactly this. Nothing was written and nothing changed."
+    ), same
     assert replaced == "replaced the 4 bytes out/2 held with 4.", replaced
-    assert "'9' is not a peer this channel reaches" in nobody and "reaches 2" in nobody, nobody
+    assert (
+        "'9' is not a peer this channel reaches" in nobody and "reaches 2" in nobody
+    ), nobody
     assert "no '..'" in escape and "Nothing was written" in escape, escape
     assert read == "theirs\n", read
     assert "state/secret is not in the 'blackboard' channel" in outside, outside
@@ -595,7 +752,9 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
     sentences of its own: done, already so where the body is what is held, refused where
     the body is not text, and not done where the write did not land. What is already so
     is said as such, and not as a second success."""
-    declared = offers("send_message_to:mail", "post_public:blackboard", "write_memory:notes")
+    declared = offers(
+        "send_message_to:mail", "post_public:blackboard", "write_memory:notes"
+    )
     with temp_root(tools=declared) as root:
         seated(root, "t", other={})
         with quiet():
@@ -614,11 +773,18 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
                     say(),
                 ),
             )
-        said = [c["result"] for turn in trace_on_disk("t", 1)["turns"] for c in turn["tools"]]
+        said = [
+            c["result"]
+            for turn in trace_on_disk("t", 1)["turns"]
+            for c in turn["tools"]
+        ]
         actions = {
             item.tool.kind: item
             for item in harness.bind_tools(
-                harness.tools(), harness.channels(), harness.environment("t", ground_truth("t")), ["2"]
+                harness.tools(),
+                harness.channels(),
+                harness.environment("t", ground_truth("t")),
+                ["2"],
             )
         }
         not_landed = [
@@ -665,7 +831,9 @@ def check_the_tools_offered_reach_provenance():
             harness.run_once("t", fake(say()))
         second = trace_on_disk("t", 2)
         assert second["provenance"]["tools_sha256"] != first["tools_sha256"]
-        assert any(line.startswith("tools") for line in second["provenance_drift"]), second["provenance_drift"]
+        assert any(line.startswith("tools") for line in second["provenance_drift"]), (
+            second["provenance_drift"]
+        )
 
     # A trace from before the tool table reads as the bare arm.
     assert harness.tools_from(None) == [] and harness.tools_from([]) == []
@@ -707,14 +875,18 @@ def check_a_tool_never_offers_a_seat_that_is_out():
     offered the slot would report the write and leave the episode charged for
     having said nothing - the false success the result wording exists to avoid.
     """
-    with temp_root(channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND]) as root:
+    with temp_root(
+        channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND]
+    ) as root:
         seated(root, "t", t={}, o={}, d={})
         put_out("d")
         with quiet():
             harness.run_once("t", fake(use("send", to="3", body="hello\n"), say()))
         t = trace_on_disk("t", 1)
         said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
-        assert said == ["'3' is not a peer this channel reaches; it reaches 2. Nothing was written."], said
+        assert said == [
+            "'3' is not a peer this channel reaches; it reaches 2. Nothing was written."
+        ], said
         assert t["channels"]["mail"]["addressed"] == [], t["channels"]["mail"]
         assert "out/3" not in {f["path"] for f in t["files"]}, "and nothing was written"
 
@@ -725,13 +897,15 @@ def check_a_tool_never_offers_a_seat_that_is_out():
         with quiet():
             account = harness.load_account("t")
         instances = harness.environment("t", account)
-        both = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2", "3"])
+        both = harness.bind_tools(
+            harness.tools(), harness.channels(), instances, ["2", "3"]
+        )
         assert both[0].spec().input_schema["properties"]["to"]["enum"] == ["2", "3"]
         one = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
         assert one[0].spec().input_schema["properties"]["to"]["enum"] == ["2"]
-        assert harness.bind_tools(harness.tools(), harness.channels(), instances, []) == [], (
-            "a mailbox with nobody left to reach is not an affordance"
-        )
+        assert (
+            harness.bind_tools(harness.tools(), harness.channels(), instances, []) == []
+        ), "a mailbox with nobody left to reach is not an affordance"
 
 
 def check_every_provider_receives_a_strict_compatible_tool():
@@ -740,7 +914,12 @@ def check_every_provider_receives_a_strict_compatible_tool():
         seated(root, "t", t={}, o={})
         with quiet():
             account = harness.load_account("t")
-        for b in harness.bind_tools(harness.tools(), harness.channels(), harness.environment("t", account), ["2"]):
+        for b in harness.bind_tools(
+            harness.tools(),
+            harness.channels(),
+            harness.environment("t", account),
+            ["2"],
+        ):
             spec = b.spec()
             schema = spec.input_schema
             assert schema["additionalProperties"] is False, schema
@@ -752,10 +931,19 @@ def check_every_provider_receives_a_strict_compatible_tool():
     with temp_root(tools=[SEND]) as root:
         seated(root, "t", t={}, o={})
         with quiet():
-            harness.run_once("t", fake(use("send", to="9", body="x"), use("send", to="2"), say()))
-        said = [c["result"] for turn in trace_on_disk("t", 1)["turns"] for c in turn["tools"]]
+            harness.run_once(
+                "t", fake(use("send", to="9", body="x"), use("send", to="2"), say())
+            )
+        said = [
+            c["result"]
+            for turn in trace_on_disk("t", 1)["turns"]
+            for c in turn["tools"]
+        ]
         assert "is not a peer this channel reaches" in said[0], said[0]
-        assert said[1] == "body must be text, and arrived as NoneType. Nothing was written.", said[1]
+        assert (
+            said[1]
+            == "body must be text, and arrived as NoneType. Nothing was written."
+        ), said[1]
 
 
 def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
@@ -772,14 +960,21 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
     remember = {"name": "remember", "kind": "write_memory", "channel": "notes"}
     send = {"name": "send", "kind": "send_message_to", "channel": "mail"}
     post = {"name": "post", "kind": "post_public", "channel": "blackboard"}
-    with temp_root(channels=tables(ballot), tools=[BASH, remember, send, post, vote]) as root:
+    with temp_root(
+        channels=tables(ballot), tools=[BASH, remember, send, post, vote]
+    ) as root:
         seated(root, "t", o={})
         account = harness.load_account("t")
         instances = harness.environment("t", account)
         assert [
-            tool.tool.kind for tool in harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"], 4)
+            tool.tool.kind
+            for tool in harness.bind_tools(
+                harness.tools(), harness.channels(), instances, ["2"], 4
+            )
         ] == ["write_memory", "send_message_to", "post_public"]
-        table = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"], 5)
+        table = harness.bind_tools(
+            harness.tools(), harness.channels(), instances, ["2"], 5
+        )
         assert [tool.tool.kind for tool in table] == ["write_memory", "vote"]
         spec = next(tool for tool in table if tool.tool.kind == "vote").spec()
         assert spec.input_schema["required"] == ["to"]
@@ -787,7 +982,9 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
         assert "ballot is private" in spec.description
         assert "aggregate result" in spec.description
         assert "highest total is tied" in spec.description
-        account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 5)]
+        account["episodes"] = [
+            {"episode": i, "stop": "no_tool_call"} for i in range(1, 5)
+        ]
         harness.save_account("t", account)
 
         seen = []
@@ -795,7 +992,9 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
             harness.run_once("t", fake(use("vote", to="2"), say(), seen=seen))
         offered = next(item["tools"] for item in seen if item.get("kind") == "session")
         assert [tool["name"] for tool in offered] == ["remember", "vote"]
-        assert (harness.mirror("t", "ballot") / "vote").read_text(encoding="utf-8") == "2\n"
+        assert (harness.mirror("t", "ballot") / "vote").read_text(
+            encoding="utf-8"
+        ) == "2\n"
         with quiet():
             harness.run_once("t", fake(say()))
         assert not (harness.mirror("t", "ballot") / "vote").exists(), (
@@ -824,7 +1023,12 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
         harness.save_account("t", account)
         seen = []
         with quiet():
-            t = harness.run_once("t", fake(run("echo ran > state/ran"), use("vote", to="2"), say(), seen=seen))
+            t = harness.run_once(
+                "t",
+                fake(
+                    run("echo ran > state/ran"), use("vote", to="2"), say(), seen=seen
+                ),
+            )
         offered = next(item["tools"] for item in seen if item.get("kind") == "session")
         ran = (harness.mirror("t", "notes") / "ran").exists()
 
@@ -862,9 +1066,16 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
     ]
     seats = '[[agent]]\nid = "t"\n\n[[agent]]\nid = "o"\n'
     with temp_root(channels=tables(ballot), tools=declared) as root:
-        (root / "config.toml").write_text("tool_result_limit = 1500\n", encoding="utf-8")
+        (root / "config.toml").write_text(
+            "tool_result_limit = 1500\n", encoding="utf-8"
+        )
         path = manifest_file(
-            root, 'system_prompt = ""\n' + channel_toml(tables(ballot)) + "\n" + tool_toml(*declared) + seats
+            root,
+            'system_prompt = ""\n'
+            + channel_toml(tables(ballot))
+            + "\n"
+            + tool_toml(*declared)
+            + seats,
         )
         with quiet() as buf:
             assert harness.print_context(None, path, "t") == 0
@@ -879,7 +1090,9 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
             seen = []
             with quiet():
                 harness.run_once("t", fake(say(), seen=seen))
-            sent.append(next(item["tools"] for item in seen if item["kind"] == "session"))
+            sent.append(
+                next(item["tools"] for item in seen if item["kind"] == "session")
+            )
 
     audited = []
     for episode in (1, 2):
@@ -989,11 +1202,19 @@ def check_building_an_episode_clears_what_one_episode_submits():
         with temp_root(channels=channels, tools=declared) as root:
             seated(root, "t", t={}, o={}, d={})
             shell = Recorder()
-            harness.clear_episode_actions(shell, harness.environment("t", ground_truth("t")))
+            harness.clear_episode_actions(
+                shell, harness.environment("t", ground_truth("t"))
+            )
             assert len(shell.commands) == 1, shell.commands
             cleared[arm] = shlex.split(shell.commands[0])[3:-3]
 
-    assert cleared["file"] == ["1/post.md", "out/2", "out/3", "out/transfer", "ballot/vote"], cleared["file"]
+    assert cleared["file"] == [
+        "1/post.md",
+        "out/2",
+        "out/3",
+        "out/transfer",
+        "ballot/vote",
+    ], cleared["file"]
     assert cleared["mailbox"] == [
         "1/post.md",
         "out/2",
@@ -1003,9 +1224,9 @@ def check_building_an_episode_clears_what_one_episode_submits():
         "ballot/vote",
     ], cleared["mailbox"]
     memory = harness.TOOL_KINDS["write_memory"].file
-    assert not any(path.endswith(memory) for paths in cleared.values() for path in paths), (
-        "private memory carries into the next episode"
-    )
+    assert not any(
+        path.endswith(memory) for paths in cleared.values() for path in paths
+    ), "private memory carries into the next episode"
 
 
 def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
@@ -1019,7 +1240,9 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
     with temp_root(tools=[POST, LOOK]) as root:
         seated(root, "t", t={}, o={})
         instances = harness.environment("t", ground_truth("t"))
-        post, look = harness.bind_tools(harness.tools(), harness.channels(), instances, ["2"])
+        post, look = harness.bind_tools(
+            harness.tools(), harness.channels(), instances, ["2"]
+        )
         assert post.own.path == "1" and post.own.writable, post.own
         assert look.writes_to is None, look.writes_to
         try:
@@ -1029,7 +1252,9 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
         else:
             raise AssertionError("a read_path tool was built with an instance to write")
 
-        theirs = tuple(i for i in instances if i.name == "blackboard" and not i.writable)
+        theirs = tuple(
+            i for i in instances if i.name == "blackboard" and not i.writable
+        )
         try:
             harness.Bound(post.tool, post.channel, theirs, None)
         except ValueError as e:
@@ -1043,10 +1268,16 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
         except ValueError as e:
             assert "writes nothing" in str(e), e
         else:
-            raise AssertionError("read_path answered with an instance it does not write")
+            raise AssertionError(
+                "read_path answered with an instance it does not write"
+            )
 
-        only_theirs = [i for i in instances if not (i.name == "blackboard" and i.writable)]
-        offered = harness.bind_tools(harness.tools(), harness.channels(), only_theirs, ["2"])
+        only_theirs = [
+            i for i in instances if not (i.name == "blackboard" and i.writable)
+        ]
+        offered = harness.bind_tools(
+            harness.tools(), harness.channels(), only_theirs, ["2"]
+        )
         assert [b.tool.name for b in offered] == ["look"], offered
 
 
@@ -1060,7 +1291,9 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
     them any reason to be shown a layout it cannot reach: the episode opens on the
     digest, which is content, and not on a listing.
     """
-    with temp_root(channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND, POST, LOOK]) as root:
+    with temp_root(
+        channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND, POST, LOOK]
+    ) as root:
         seated(root, "t", t={}, o={"group/note": "theirs\n"})
         seen = []
         with quiet():
@@ -1076,20 +1309,31 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
             )
         sent = next(item["tools"] for item in seen if item.get("kind") == "session")
         assert [t["name"] for t in sent] == ["send", "post", "look"], sent
-        assert harness.SHELL_SPEC.name not in [tool["name"] for tool in sent], "the shell was withheld"
+        assert harness.SHELL_SPEC.name not in [tool["name"] for tool in sent], (
+            "the shell was withheld"
+        )
 
         t = trace_on_disk("t", 1)
-        assert t["commands"] == ["cat m"], f"an episode with no shell opens on the digest alone: {t['commands']}"
+        assert t["commands"] == ["cat m"], (
+            f"an episode with no shell opens on the digest alone: {t['commands']}"
+        )
         assert "total " not in t["observation"], "and on no listing"
         assert t["provenance"]["shell_tool"] is False, t["provenance"]["shell_tool"]
 
         # Everything downstream of the turn is untouched.
         files = files_by_path(t)
-        assert files["1/plan.md"]["text"] == "mine\n" and files["1/plan.md"]["author"] == "self"
+        assert (
+            files["1/plan.md"]["text"] == "mine\n"
+            and files["1/plan.md"]["author"] == "self"
+        )
         assert files["out/2"]["text"] == "hello\n", sorted(files)
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
-        assert t["channels"]["mail"]["penalty"] == 0, "the obligation is met through a tool"
-        assert t["channels"]["blackboard"]["posted"] is True, t["channels"]["blackboard"]
+        assert t["channels"]["mail"]["penalty"] == 0, (
+            "the obligation is met through a tool"
+        )
+        assert t["channels"]["blackboard"]["posted"] is True, t["channels"][
+            "blackboard"
+        ]
         said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
         assert said[2] == "theirs\n", said
 
@@ -1115,26 +1359,49 @@ def check_withholding_the_shell_needs_something_to_act_with():
             "no [[tool]] is declared",
             "nothing to act with",
         )
-        refused(lambda: harness.apply_tools(None, chans, "manifest"), "manifest:", "no [[tool]] is declared")
+        refused(
+            lambda: harness.apply_tools(None, chans, "manifest"),
+            "manifest:",
+            "no [[tool]] is declared",
+        )
         pull = dataclasses.replace(harness.SETTINGS, delivery="pull")
         refused(
-            lambda: harness.with_tools(pull, [POST], chans, "manifest"), "manifest:", "opens on the digest", "'pull'"
+            lambda: harness.with_tools(pull, [POST], chans, "manifest"),
+            "manifest:",
+            "opens on the digest",
+            "'pull'",
         )
         undigested = dataclasses.replace(
-            harness.SETTINGS, harness_files={**harness.SETTINGS.harness_files, "digest": ""}
+            harness.SETTINGS,
+            harness_files={**harness.SETTINGS.harness_files, "digest": ""},
         )
-        refused(lambda: harness.with_tools(undigested, [POST], chans, "manifest"), "manifest:", "opens on the digest")
+        refused(
+            lambda: harness.with_tools(undigested, [POST], chans, "manifest"),
+            "manifest:",
+            "opens on the digest",
+        )
 
     with temp_root(delivery="pull"):
-        refused(lambda: harness.apply_tools([POST], chans, "manifest"), "manifest:", "opens on the digest", "'pull'")
+        refused(
+            lambda: harness.apply_tools([POST], chans, "manifest"),
+            "manifest:",
+            "opens on the digest",
+            "'pull'",
+        )
         before = harness.SETTINGS
         push = dataclasses.replace(before, delivery="push")
         built = harness.with_tools(push, [POST], chans, "manifest")
         assert [t.name for t in built.tools] == ["post"], built.tools
-        assert harness.SETTINGS is before, "with_tools builds settings and installs none"
+        assert harness.SETTINGS is before, (
+            "with_tools builds settings and installs none"
+        )
 
     with temp_root(harness_files={"digest": ""}):
-        refused(lambda: harness.apply_tools([POST], chans, "manifest"), "manifest:", "opens on the digest")
+        refused(
+            lambda: harness.apply_tools([POST], chans, "manifest"),
+            "manifest:",
+            "opens on the digest",
+        )
 
     # All three stand once the shell is offered again.
     with temp_root(delivery="pull"):
@@ -1186,7 +1453,12 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_refused():
         # Accepted at declaration: the table is not empty and the digest is pushed.
         assert [t.name for t in harness.tools()] == ["send"]
         with quiet():
-            refused(lambda: harness.run_once("t", fake(say())), "offered no shell", "nothing for it to do", "send")
+            refused(
+                lambda: harness.run_once("t", fake(say())),
+                "offered no shell",
+                "nothing for it to do",
+                "send",
+            )
 
         # A peer to reach makes the same tool an affordance, and the seat runs.
         seated(root, "t", t={}, o={})
@@ -1205,11 +1477,22 @@ def check_what_an_episode_reached_counts_tool_calls_and_not_only_commands():
     with temp_root(tools=[SEND, LOOK]) as root:
         seated(root, "t", t={}, o={"group/note": "theirs\n"})
         with quiet():
-            harness.run_once("t", fake(use("send", to="2", body="hello\n"), use("look", path="2/note"), say()))
+            harness.run_once(
+                "t",
+                fake(
+                    use("send", to="2", body="hello\n"),
+                    use("look", path="2/note"),
+                    say(),
+                ),
+            )
         t = trace_on_disk("t", 1)
-        assert len(t["commands"]) == 1, f"the observation, and nothing the tools ran: {t['commands']}"
+        assert len(t["commands"]) == 1, (
+            f"the observation, and nothing the tools ran: {t['commands']}"
+        )
         assert len(analyze.tool_calls(t)) == 2, analyze.tool_calls(t)
-        assert "2" in analyze.reached(t) and "2/note" in analyze.reached(t), analyze.reached(t)
+        assert "2" in analyze.reached(t) and "2/note" in analyze.reached(t), (
+            analyze.reached(t)
+        )
 
         # Read against the same episode with its tool calls taken away, which is
         # what every one of these read before.

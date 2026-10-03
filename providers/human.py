@@ -4,12 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .base import ModelSpec, NormalizedTurn, PendingResponse, SessionContext, StopReason, ToolResult, ToolSpec, Usage
+from .base import (
+    ModelSpec,
+    NormalizedTurn,
+    PendingResponse,
+    SessionContext,
+    StopReason,
+    ToolResult,
+    ToolSpec,
+    Usage,
+)
 
 
 MODELS = {
     "interactive": ModelSpec(
-        "human", "interactive", 1_000_000, (("uncached_input", 0), ("cache_read", 0), ("cache_write", 0), ("output", 0))
+        "human",
+        "interactive",
+        1_000_000,
+        (("uncached_input", 0), ("cache_read", 0), ("cache_write", 0), ("output", 0)),
     )
 }
 
@@ -17,7 +29,13 @@ MODELS = {
 class HumanSession:
     provider = "human"
 
-    def __init__(self, model: str, system: str, tools: tuple[ToolSpec, ...], context: SessionContext):
+    def __init__(
+        self,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        context: SessionContext,
+    ):
         self.requested_model = model
         self.system = system
         self.tools = tools
@@ -34,14 +52,22 @@ class HumanSession:
 
         self.turn += 1
         request = self.store.publish(
-            self.context.agent, self.context.label, self.context.episode, self.turn, self.system, content, self.tools
+            self.context.agent,
+            self.context.label,
+            self.context.episode,
+            self.turn,
+            self.system,
+            content,
+            self.tools,
         )
         try:
             submission = self.store.wait(request, self.context.is_cancelled)
         except InteractionCancelled as error:
             raise KeyboardInterrupt from error
         calls = submission.tool_calls
-        stop: StopReason = "tool_use" if submission.action == "tool_calls" else "end_turn"
+        stop: StopReason = (
+            "tool_use" if submission.action == "tool_calls" else "end_turn"
+        )
         native = {
             "id": submission.submission_id,
             "provider": self.provider,
@@ -79,6 +105,11 @@ class HumanProvider:
                 raise KeyError(model)
 
     def open_session(
-        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+        self,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+        context: SessionContext,
     ) -> HumanSession:
         return HumanSession(model, system, tools, context)

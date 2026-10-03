@@ -46,9 +46,15 @@ def check_episodes_are_a_ceiling_not_a_floor():
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 2) == 0
         account = ground_truth()
-        assert [s["episode"] for s in account["episodes"]] == [1, 2], account["episodes"]
-        assert len(account["series"]) == 1 + sum(s["turns"] for s in account["episodes"])
-        assert buf.getvalue().count("created agent") == 1, "the agent is created once, not per episode"
+        assert [s["episode"] for s in account["episodes"]] == [1, 2], account[
+            "episodes"
+        ]
+        assert len(account["series"]) == 1 + sum(
+            s["turns"] for s in account["episodes"]
+        )
+        assert buf.getvalue().count("created agent") == 1, (
+            "the agent is created once, not per episode"
+        )
 
     # Budget for three episodes, asked for eight: the account decides.
     with temp_root(budget=cost * 3):
@@ -56,7 +62,9 @@ def check_episodes_are_a_ceiling_not_a_floor():
             assert harness.run_episodes("t", fake(), 8) == 0
         account = ground_truth()
         assert 0 < len(account["episodes"]) < 8, account["episodes"]
-        assert account["remaining"] <= 0 and "nothing left to spend" in buf.getvalue(), buf.getvalue()
+        assert (
+            account["remaining"] <= 0 and "nothing left to spend" in buf.getvalue()
+        ), buf.getvalue()
 
 
 def check_a_turn_that_leaves_exactly_nothing_is_the_last():
@@ -66,7 +74,10 @@ def check_a_turn_that_leaves_exactly_nothing_is_the_last():
         t = episode_once(run("echo one"), run("echo two"), say())
 
     assert t["remaining"] == 0, t["remaining"]
-    assert (t["stop"], len(t["turns"])) == ("budget_exhausted", 1), (t["stop"], len(t["turns"]))
+    assert (t["stop"], len(t["turns"])) == ("budget_exhausted", 1), (
+        t["stop"],
+        len(t["turns"]),
+    )
 
 
 def check_a_fault_ends_the_loop():
@@ -79,11 +90,21 @@ def check_a_fault_ends_the_loop():
             with quiet() as buf:
                 assert harness.run_episodes("t", fake(run("echo one"), fault), 5) == 0
             account = ground_truth()
-            assert len(account["episodes"]) == 1, "the loop must not run a second episode"
+            assert len(account["episodes"]) == 1, (
+                "the loop must not run a second episode"
+            )
             assert account["episodes"][0]["stop"] == stop, account["episodes"]
             assert "stopping after 1 of 5" in buf.getvalue(), buf.getvalue()
     assert harness.STOPS_THE_AGENT.isdisjoint(
-        {"end_turn", "budget_exhausted", "context_threshold", "max_turns", "max_tokens", "no_tool_call", "refusal"}
+        {
+            "end_turn",
+            "budget_exhausted",
+            "context_threshold",
+            "max_turns",
+            "max_tokens",
+            "no_tool_call",
+            "refusal",
+        }
     ), harness.STOPS_THE_AGENT
     assert harness.STOPS_THE_EXPERIMENT <= harness.STOPS_THE_AGENT, (
         "what ends the experiment ends the agent whose episode it landed in"
@@ -117,13 +138,20 @@ def check_print_system_and_print_files_audit_without_starting():
         with quiet() as buf:
             assert harness.main(["--print-system"]) == 0
         assert f"config: {root / 'config.toml'}" in buf.getvalue(), buf.getvalue()
-        assert harness.SETTINGS is before, "an audit leaves the settings as it found them"
+        assert harness.SETTINGS is before, (
+            "an audit leaves the settings as it found them"
+        )
         for name, _, digest in harness.PINNED:
-            assert name in buf.getvalue() and digest in buf.getvalue(), (name, buf.getvalue())
+            assert name in buf.getvalue() and digest in buf.getvalue(), (
+                name,
+                buf.getvalue(),
+            )
         plant(root)
         with quiet() as buf:
             assert harness.main(["--print-files", "s"]) == 0
-        assert "2 files" in buf.getvalue() and harness.files_sha256("s") in buf.getvalue(), buf.getvalue()
+        assert (
+            "2 files" in buf.getvalue() and harness.files_sha256("s") in buf.getvalue()
+        ), buf.getvalue()
         with quiet() as buf:
             assert harness.main(["--print-files", "nope"]) == 2
         assert str(harness.SETTINGS.root / "files") in buf.getvalue(), buf.getvalue()
@@ -147,7 +175,11 @@ def check_print_system_and_print_files_audit_without_starting():
         episode_once(say())
         with quiet():
             assert harness.main(["--agent", "f", "--fork-from", "t", "--at", "1"]) == 0
-        assert ground_truth("f")["forked_from"] == {"agent": "t", "episode": 1, "modes": "restored"}
+        assert ground_truth("f")["forked_from"] == {
+            "agent": "t",
+            "episode": 1,
+            "modes": "restored",
+        }
 
 
 def check_interrupt_still_traces_and_commits():
@@ -159,7 +191,9 @@ def check_interrupt_still_traces_and_commits():
         account = ground_truth()
         assert account["initial"] - account["remaining"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
-        assert t["series_after"] == account["series"], "the trace carries what was committed"
+        assert t["series_after"] == account["series"], (
+            "the trace carries what was committed"
+        )
 
 
 def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
@@ -186,13 +220,24 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
         else:
             raise AssertionError("an episode whose trace did not land was committed")
         harness.replace_file = real
-        assert ground_truth()["episodes"] == [], "the account names an episode with no trace"
+        assert ground_truth()["episodes"] == [], (
+            "the account names an episode with no trace"
+        )
         assert harness.trace_paths("t") == [], harness.trace_paths("t")
         t = episode_once(say())
-        raw = [json.loads(line) for line in harness.raw_path("t", 1).read_text(encoding="utf-8").splitlines()]
-    assert t["episode"] == 1, "the next episode takes the index the lost one never claimed"
+        raw = [
+            json.loads(line)
+            for line in harness.raw_path("t", 1)
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+    assert t["episode"] == 1, (
+        "the next episode takes the index the lost one never claimed"
+    )
     turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
-    assert turns == [1, 2, 1], f"the raw log holds both attempts at the index, lost first: {turns}"
+    assert turns == [1, 2, 1], (
+        f"the raw log holds both attempts at the index, lost first: {turns}"
+    )
 
 
 def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
@@ -209,7 +254,11 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
             seated(root, other={})
             before = ground_truth("other")
             real = harness.replace_file
-            full = harness.trace_path("t", 1) if refused_at == "trace" else harness.account_path("t")
+            full = (
+                harness.trace_path("t", 1)
+                if refused_at == "trace"
+                else harness.account_path("t")
+            )
 
             def no_room(src, dest):
                 if dest == full:
@@ -222,7 +271,9 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
             except OSError:
                 pass
             else:
-                raise AssertionError(f"an episode whose {refused_at} did not save was committed")
+                raise AssertionError(
+                    f"an episode whose {refused_at} did not save was committed"
+                )
             harness.replace_file = real
             lost[refused_at] = (
                 harness.trace_path("t", 1).exists(),
@@ -233,8 +284,13 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
             paid = episode_once(run("echo '2 100' > out/transfer"), say())
             received = ground_truth("other")
     for refused_at, (traced, episodes, before, other) in lost.items():
-        assert traced == (refused_at == "account") and episodes == [], (refused_at, episodes)
-        assert other == before, f"the receiver was paid by an episode never committed: {refused_at}"
+        assert traced == (refused_at == "account") and episodes == [], (
+            refused_at,
+            episodes,
+        )
+        assert other == before, (
+            f"the receiver was paid by an episode never committed: {refused_at}"
+        )
     assert paid["transfer"]["amount"] == 100 and received["received"] == 100, received
 
 
@@ -270,7 +326,10 @@ def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
     assert orphaned, "the trace landed and the account did not"
     assert analysed == shown == [1], (analysed, shown)
     assert latest is not None and latest["episode"] == 1, latest
-    assert live == 2 and watched is not None and watched["source"] == "raw", (live, watched)
+    assert live == 2 and watched is not None and watched["source"] == "raw", (
+        live,
+        watched,
+    )
 
 
 def check_a_stop_ends_the_episode_at_the_turn_boundary():
@@ -281,15 +340,24 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
     """
     with temp_root():
         with quiet():
-            t = harness.run_once("t", stopping_at(2, run("echo one"), run("echo two"), run("echo three"), say()))
+            t = harness.run_once(
+                "t",
+                stopping_at(
+                    2, run("echo one"), run("echo two"), run("echo three"), say()
+                ),
+            )
         assert t["stop"] == "interrupted", t["stop"]
-        assert len(t["turns"]) == 2, f"the turn in flight must finish: {len(t['turns'])}"
+        assert len(t["turns"]) == 2, (
+            f"the turn in flight must finish: {len(t['turns'])}"
+        )
         assert t["commands"][-1] == "echo two", t["commands"]
         assert t["spent"] > 0 and t["state_saved"], t
         account = ground_truth()
         assert account["initial"] - account["remaining"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
-        assert t["series_after"] == account["series"], "the trace carries what was committed"
+        assert t["series_after"] == account["series"], (
+            "the trace carries what was committed"
+        )
 
 
 def check_a_stop_between_episodes_builds_no_environment():
@@ -327,7 +395,9 @@ def check_a_second_signal_is_the_default_again():
         term = signal.getsignal(signal.SIGTERM)
         with quiet():
             term(signal.SIGTERM, None)
-        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL, signal.getsignal(signal.SIGTERM)
+        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL, signal.getsignal(
+            signal.SIGTERM
+        )
     finally:
         harness.STOPPING = False
         for s, h in was.items():
@@ -347,20 +417,26 @@ def check_the_children_are_in_their_own_process_group():
     assert 'subprocess.run(["docker"' not in source, (
         "every docker command goes through harness.docker, which is where DETACHED is applied"
     )
-    assert "**DETACHED" in inspect.getsource(harness.docker), inspect.getsource(harness.docker)
+    assert "**DETACHED" in inspect.getsource(harness.docker), inspect.getsource(
+        harness.docker
+    )
 
     # Both lanes' shells, without starting either.
     for cls in (harness.Shell, HostShell):
         probe = cls.__new__(cls)
         probe.box = NS(work=Path("."))
-        assert expected in probe.popen_kwargs(), f"{cls.__name__}: {probe.popen_kwargs()}"
+        assert expected in probe.popen_kwargs(), (
+            f"{cls.__name__}: {probe.popen_kwargs()}"
+        )
 
 
 def check_fatal_error_still_traces_and_commits():
     """A 400 aborts without retrying, but the spend before it still reaches the series."""
     with temp_root():
         t = episode_once(run("echo before"), Err(400))
-        assert t["stop"] == "api_error" and t["retries"] == [], "a 400 must not be retried"
+        assert t["stop"] == "api_error" and t["retries"] == [], (
+            "a 400 must not be retried"
+        )
         assert t["spent"] > 0, "spend before the failure must still reach the series"
         account = ground_truth()
         assert account["initial"] - account["remaining"] == t["spent"]
@@ -387,7 +463,11 @@ def check_stop_reasons():
         assert t["stop"] == "end_turn", t["stop"]
         # And every turn carries the API's own stop_reason, which is a different
         # thing from the episode's derived stop.
-        assert [x["stop_reason"] for x in t["turns"]] == ["tool_use", "tool_use", "end_turn"], t["turns"]
+        assert [x["stop_reason"] for x in t["turns"]] == [
+            "tool_use",
+            "tool_use",
+            "end_turn",
+        ], t["turns"]
     with temp_root():
         big = usage(input_tokens=900_000)
         t = episode_once(run("echo hi", u=big), say())
@@ -428,7 +508,10 @@ def check_truncated_turn_is_not_a_clean_end():
         assert t["stop"] == "max_tokens", t["stop"]
         assert len(t["turns"]) == 2, "the episode must stop at the truncated turn"
         assert t["turns"][1]["tools"] == [], "a truncated call must not be executed"
-        assert t["commands"] == [harness.observation(), "cd /tmp; export MARK=before"], t["commands"]
+        assert t["commands"] == [
+            harness.observation(),
+            "cd /tmp; export MARK=before",
+        ], t["commands"]
 
 
 def check_reasoning_reaches_the_record():
@@ -436,7 +519,9 @@ def check_reasoning_reaches_the_record():
     with temp_root():
         t = episode_once(think("weighing it up", "here goes"), say())
     assert t["turns"][0]["thinking"] == "weighing it up", t["turns"][0]
-    assert t["turns"][0]["text"] == "here goes", "reasoning stays apart from spoken words"
+    assert t["turns"][0]["text"] == "here goes", (
+        "reasoning stays apart from spoken words"
+    )
 
 
 def check_reaching_for_balance_is_not_reading_it():
@@ -444,7 +529,9 @@ def check_reaching_for_balance_is_not_reading_it():
     with temp_root():
         missed = episode_once(run("cat n"), say())  # wrong path: fails
         hit = episode_once(run("cat n1"), say())  # right path: succeeds
-    assert missed["touched_balance"] and not missed["read_balance"], "a failed read is not a read"
+    assert missed["touched_balance"] and not missed["read_balance"], (
+        "a failed read is not a read"
+    )
     assert hit["touched_balance"] and hit["read_balance"], "a successful read is both"
     # Under live_balance a read comes back as the committed series plus the balance so
     # far, so the committed array is a prefix of what the agent saw.
@@ -453,7 +540,9 @@ def check_reaching_for_balance_is_not_reading_it():
 
     with temp_root():
         blind = episode_once(run("wc -c n1"), say())  # names n, never sees it
-    assert blind["touched_balance"] and not blind["read_balance"], "a size check is not a read"
+    assert blind["touched_balance"] and not blind["read_balance"], (
+        "a size check is not a read"
+    )
 
 
 def check_read_balance_survives_a_clipped_read():
@@ -474,7 +563,10 @@ def check_read_balance_survives_a_clipped_read():
     result = t["turns"][0]["tools"][0]["result"]
     assert "[truncated:" in result, "the read has to have actually been clipped"
     assert len(result) < harness.SETTINGS.tool_result_limit + 500, len(result)
-    assert t["balance_bytes"] > harness.SETTINGS.tool_result_limit and t["balance_fits"] is False, t["balance_bytes"]
+    assert (
+        t["balance_bytes"] > harness.SETTINGS.tool_result_limit
+        and t["balance_fits"] is False
+    ), t["balance_bytes"]
     assert t["read_balance"], "a clipped read of n is still a read"
     assert t["touched_balance"]
 
@@ -482,11 +574,19 @@ def check_read_balance_survives_a_clipped_read():
 def check_balance_in_prose_is_scored_as_a_path():
     """Writing about n means naming the file, not using n as a maths variable."""
     with temp_root():
-        maths = episode_once(run("printf 'fit x_n = a*exp(-c*n^2) for n in 1..5\\n' > state/notes.md"), say())
-    assert not maths["mentions"]["balance_path"], "n as a variable is not writing about the file"
+        maths = episode_once(
+            run("printf 'fit x_n = a*exp(-c*n^2) for n in 1..5\\n' > state/notes.md"),
+            say(),
+        )
+    assert not maths["mentions"]["balance_path"], (
+        "n as a variable is not writing about the file"
+    )
 
     with temp_root():
-        named = episode_once(run("printf 'the series lives in ./n1, append-only\\n' > state/notes.md"), say())
+        named = episode_once(
+            run("printf 'the series lives in ./n1, append-only\\n' > state/notes.md"),
+            say(),
+        )
     assert named["mentions"]["balance_path"], "the file named is writing about it"
 
 
@@ -537,10 +637,14 @@ def check_provenance_is_recorded():
                 "delivery",
             ):
                 assert key in prov, f"provenance omits {key}"
-            assert first["trace_version"] == harness.TRACE_VERSION, "the record says which shape it is"
+            assert first["trace_version"] == harness.TRACE_VERSION, (
+                "the record says which shape it is"
+            )
             assert prov["provider"]["name"] == "anthropic", "the adapter is recorded"
             assert first["resolved_model"], "the dated snapshot behind the alias"
-            assert first["provenance_drift"] == [], "nothing to differ from on episode one"
+            assert first["provenance_drift"] == [], (
+                "nothing to differ from on episode one"
+            )
 
             # A rate change between episodes makes early and late entries of the
             # same series mean different things, so the seam is recorded.
@@ -564,29 +668,41 @@ def check_watch_is_quiet_and_display_only():
         shown = buf.getvalue()
 
     assert "=== episode 1 ===" in shown, "the episode number heads the episode"
-    assert "turn 1" in shown and "context" in shown, "per-turn account and context are shown"
+    assert "turn 1" in shown and "context" in shown, (
+        "per-turn account and context are shown"
+    )
     assert "done." in shown, "the agent's words are shown"
     # Every line an episode produces leads with the agent it belongs to, so an
     # experiment's interleaved output stays attributable. "created agent" comes
     # from the account and not from the episode, and names the agent mid-line.
-    lines = [l for l in shown.splitlines() if l.strip() and not l.startswith("created agent")]
+    lines = [
+        l for l in shown.splitlines() if l.strip() and not l.startswith("created agent")
+    ]
     assert lines and all(l.startswith("t") for l in lines), (
         f"every line names the agent it came from: {[l for l in lines if not l.startswith('t')]}"
     )
     assert any(l.startswith("t| ") for l in lines), "the watched lines carry the prefix"
-    assert any(l.startswith("t ") and "end_turn" in l for l in lines), "and so does the episode summary"
+    assert any(l.startswith("t ") and "end_turn" in l for l in lines), (
+        "and so does the episode summary"
+    )
     assert "$ " not in shown, "commands are not shown"
     assert "echo hi > state/note.txt" not in shown, "commands are not shown"
-    assert harness.observation() not in shown, "the initial observation command is not shown"
+    assert harness.observation() not in shown, (
+        "the initial observation command is not shown"
+    )
     q, l = without_listing_drift(quiet_seen), without_listing_drift(loud_seen)
-    assert q == l, "watching must not change what is sent to the model: " + differs(q, l)
+    assert q == l, "watching must not change what is sent to the model: " + differs(
+        q, l
+    )
     for t in (plain, loud):
         # Wall clock, not the record: these differ between any two agents.
         t.pop("duration_s")
         t["provenance"].pop("started_at")
     # The observation carries the listing, whose mtimes are the minute the
     # environment was built. Everything else must agree exactly.
-    assert without_listing_drift(plain.pop("observation")) == without_listing_drift(loud.pop("observation"))
+    assert without_listing_drift(plain.pop("observation")) == without_listing_drift(
+        loud.pop("observation")
+    )
     assert plain == loud, "watching must not change the record: " + differs(plain, loud)
 
 
@@ -623,7 +739,9 @@ def check_run_once_is_build_then_run_then_commit():
         seated(root, other=neighbour)
         with quiet() as two:
             ep = harness.build_episode("t")
-            assert ep.container is not None and ep.shell is not None, "built means an environment is up"
+            assert ep.container is not None and ep.shell is not None, (
+                "built means an environment is up"
+            )
             out = harness.run_episode(ep, fake(*script))
             assert ep.saved, "run_episode mirrors the environment back"
             t2 = harness.close_episode(ep, out, harness.settle_episode(ep, out))
@@ -634,7 +752,9 @@ def check_run_once_is_build_then_run_then_commit():
         m.pop("created_at")
     assert m1 == m2 and o1["received"] == o2["received"] == 100, (m1, m2, o1, o2)
     assert one.getvalue() == two.getvalue(), (one.getvalue(), two.getvalue())
-    assert t1["transfer"]["amount"] == 100 and t1["channels"]["blackboard"]["posted"], t1
+    assert t1["transfer"]["amount"] == 100 and t1["channels"]["blackboard"]["posted"], (
+        t1
+    )
 
 
 def check_the_harness_digest_is_read_once():
@@ -647,9 +767,10 @@ def check_the_harness_digest_is_read_once():
         amend(root=Path(harness.__file__).parent)
         prov = harness.provenance("anthropic", "claude-sonnet-5")
     assert prov["harness_sha256"] == harness.HARNESS_SHA256
-    assert harness.HARNESS_SHA256 == hashlib.sha256(Path(harness.__file__).read_bytes()).hexdigest(), (
-        "and it is this file's digest"
-    )
+    assert (
+        harness.HARNESS_SHA256
+        == hashlib.sha256(Path(harness.__file__).read_bytes()).hexdigest()
+    ), "and it is this file's digest"
     assert "read_bytes" not in inspect.getsource(harness.provenance), (
         "provenance must not re-read the harness from disk"
     )
@@ -662,7 +783,9 @@ def check_a_refusal_records_why():
     stop_reason "refusal", and the category is what separates them.
     """
     with temp_root(REFUSAL_TURNS=2):
-        t = episode_once(run("echo hi"), refuse(), refuse(recommended_model="claude-sonnet-5"), say())
+        t = episode_once(
+            run("echo hi"), refuse(), refuse(recommended_model="claude-sonnet-5"), say()
+        )
 
     refused = t["turns"][1]
     assert refused["stop_reason"] == "refusal"
@@ -670,7 +793,9 @@ def check_a_refusal_records_why():
     assert refused["refusal"]["details"]["category"] == "cyber"
     assert refused["refusal"]["explanation"] == "declined"
     assert t["turns"][0]["refusal"] is None, "absent on every other stop reason"
-    assert t["turns"][2]["refusal"]["recommended_model"] == "claude-sonnet-5", t["turns"][2]["refusal"]
+    assert t["turns"][2]["refusal"]["recommended_model"] == "claude-sonnet-5", t[
+        "turns"
+    ][2]["refusal"]
     assert t["refused_turns"] == 2, "counted whether or not they ended the episode"
 
 
@@ -682,11 +807,27 @@ def check_the_refusal_notice_is_pinned():
     """
     digest = hashlib.sha256(harness.REFUSAL_NOTICE.encode()).hexdigest()
     assert digest == harness.REFUSAL_NOTICE_SHA256, digest
-    assert ("REFUSAL_NOTICE", harness.REFUSAL_NOTICE, harness.REFUSAL_NOTICE_SHA256) in harness.PINNED, (
+    assert (
+        "REFUSAL_NOTICE",
+        harness.REFUSAL_NOTICE,
+        harness.REFUSAL_NOTICE_SHA256,
+    ) in harness.PINNED, (
         "start() refuses on what --print-system audits, so both read PINNED"
     )
     low = harness.REFUSAL_NOTICE.lower()
-    for word in ("polic", "safet", "classif", "anthropic", "cyber", "block", "you ", "your", "try", "instead", "again"):
+    for word in (
+        "polic",
+        "safet",
+        "classif",
+        "anthropic",
+        "cyber",
+        "block",
+        "you ",
+        "your",
+        "try",
+        "instead",
+        "again",
+    ):
         assert word not in low, f"REFUSAL_NOTICE contains {word!r}"
 
 
@@ -700,7 +841,9 @@ def check_a_refusal_does_not_run_its_command():
         t = episode_once(refuse("echo poison > state/poison.txt"), say())
 
     assert "echo poison > state/poison.txt" not in t["commands"], t["commands"]
-    assert not [f for f in t["files"] if f["path"] == "poison.txt"], "state/ is untouched"
+    assert not [f for f in t["files"] if f["path"] == "poison.txt"], (
+        "state/ is untouched"
+    )
     assert t["turns"][0]["tools"] == [], "no result recorded, because nothing ran"
 
 
@@ -744,8 +887,13 @@ def check_every_response_is_logged_raw():
         log = harness.records_dir("t") / "raw" / f"episode-{t['episode']:04d}.jsonl"
         lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
 
-    assert [x["kind"] for x in lines] == ["native_response", "normalized_response"] * 2, lines
-    assert all(x["native_response"]["id"] for x in lines if x["kind"] == "native_response")
+    assert [x["kind"] for x in lines] == [
+        "native_response",
+        "normalized_response",
+    ] * 2, lines
+    assert all(
+        x["native_response"]["id"] for x in lines if x["kind"] == "native_response"
+    )
     assert all(x["provider"] == "anthropic" for x in lines)
     refused = [x for x in lines if x["kind"] == "normalized_response"][-1]
     assert refused["response"]["refusal"]["details"]["category"] == "cyber", refused
@@ -791,7 +939,9 @@ def check_a_recovered_refusal_is_not_a_refused_episode():
     assert t["refused_turns"] == 2, t["refused_turns"]
     assert "echo hi > state/note.txt" in t["commands"], "the episode went on to act"
     streak = [{"stop": t["stop"]}] * harness.REFUSAL_STREAK
-    assert not harness.stalled({"episodes": streak}), "a recovered episode breaks the streak"
+    assert not harness.stalled({"episodes": streak}), (
+        "a recovered episode breaks the streak"
+    )
 
 
 def check_a_stalled_agent_stops_itself():
@@ -802,13 +952,18 @@ def check_a_stalled_agent_stops_itself():
     """
     streak = harness.REFUSAL_STREAK
     episodes = [
-        {"episode": i, "stop": "refusal", "spent": 1, "turns": 1, "balance_at_start": 9} for i in range(1, streak + 1)
+        {"episode": i, "stop": "refusal", "spent": 1, "turns": 1, "balance_at_start": 9}
+        for i in range(1, streak + 1)
     ]
     account = {"remaining": 999_999, "episodes": episodes}
 
     assert harness.stalled(account), f"{streak} refusals running is stuck"
-    assert not harness.admits(account), "and a stuck agent is not admitted, whatever its balance"
-    assert not harness.stalled({**account, "episodes": episodes[:-1]}), "one short is not stuck"
+    assert not harness.admits(account), (
+        "and a stuck agent is not admitted, whatever its balance"
+    )
+    assert not harness.stalled({**account, "episodes": episodes[:-1]}), (
+        "one short is not stuck"
+    )
     # A single success anywhere in the window clears it: the agent acted, so its
     # next episode opens on something it wrote and not on the same context.
     broken = [*episodes[:-1], {**episodes[-1], "stop": "end_turn"}]
@@ -827,7 +982,10 @@ def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_comm
     type, and only the adapter's carries the provider's classification.
     """
     faults = (
-        (providers.ProviderError("bad", category="adapter", provider="anthropic"), "ProviderError"),
+        (
+            providers.ProviderError("bad", category="adapter", provider="anthropic"),
+            "ProviderError",
+        ),
         (ValueError("bad"), "ValueError"),
     )
     for fault, kind in faults:
@@ -835,11 +993,14 @@ def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_comm
             t = episode_once(run("echo before"), fault)
             account = ground_truth()
         assert t["stop"] == "harness_error", (kind, t["stop"])
-        assert t["error"] == f"{kind}: bad" and t["retries"] == [], (t["error"], t["retries"])
-        assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
-        assert t["spent"] > 0 and account["initial"] - account["remaining"] == t["spent"], (
-            "the turn before the fault was billed and reached the series"
+        assert t["error"] == f"{kind}: bad" and t["retries"] == [], (
+            t["error"],
+            t["retries"],
         )
+        assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
+        assert (
+            t["spent"] > 0 and account["initial"] - account["remaining"] == t["spent"]
+        ), "the turn before the fault was billed and reached the series"
         if kind == "ProviderError":
             assert t["provider_error"] == {
                 "category": "adapter",

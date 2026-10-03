@@ -47,7 +47,13 @@ class InteractionStore:
         self.root = Path(root)
 
     def _agent(self, agent: str) -> str:
-        if not agent or agent in (".", "..") or Path(agent).name != agent or "/" in agent or "\\" in agent:
+        if (
+            not agent
+            or agent in (".", "..")
+            or Path(agent).name != agent
+            or "/" in agent
+            or "\\" in agent
+        ):
             raise InteractionError("invalid agent identifier")
         return agent
 
@@ -121,17 +127,31 @@ class InteractionStore:
         supplied = (
             {"kind": "initial_observation", "text": content}
             if isinstance(content, str)
-            else {"kind": "tool_results", "results": [item.as_dict() for item in content]}
+            else {
+                "kind": "tool_results",
+                "results": [item.as_dict() for item in content],
+            }
         )
         request = InteractionRequest(
-            VERSION, request_id, agent, label, episode, turn, now(), system_prompt, supplied, tools
+            VERSION,
+            request_id,
+            agent,
+            label,
+            episode,
+            turn,
+            now(),
+            system_prompt,
+            supplied,
+            tools,
         )
         atomic(self._request_path(agent, request_id), request.as_dict())
         atomic(self._pending_path(agent), {"request_id": request_id})
         return request
 
     def request(self, agent: str, request_id: str) -> InteractionRequest | None:
-        return self._load(self._request_path(agent, request_id), InteractionRequest.from_dict)
+        return self._load(
+            self._request_path(agent, request_id), InteractionRequest.from_dict
+        )
 
     def current(self, agent: str) -> InteractionRequest | None:
         path = self._pending_path(agent)
@@ -170,13 +190,17 @@ class InteractionStore:
         out = []
         for path in directory.glob("*.json"):
             try:
-                submission = self._load(self._submission_path(agent, path.stem), Submission.from_dict)
+                submission = self._load(
+                    self._submission_path(agent, path.stem), Submission.from_dict
+                )
                 request = None if submission is None else self.request(agent, path.stem)
             except UnreadableRecord:
                 continue
             if request is not None and submission is not None:
                 out.append((request, submission))
-        return sorted(out, key=lambda pair: (pair[0].episode, pair[0].turn, pair[0].created_at))
+        return sorted(
+            out, key=lambda pair: (pair[0].episode, pair[0].turn, pair[0].created_at)
+        )
 
     def _finish(self, agent: str, request_id: str, status: str) -> None:
         """Mark the request `status` and take down the pending pointer if it names it.
@@ -189,7 +213,10 @@ class InteractionStore:
         except UnreadableRecord:
             request = None
         if request is not None:
-            atomic(self._request_path(agent, request_id), {**request.as_dict(), "status": status})
+            atomic(
+                self._request_path(agent, request_id),
+                {**request.as_dict(), "status": status},
+            )
         try:
             pointer = self._read(self._pending_path(agent))
         except UnreadableRecord:
@@ -245,7 +272,12 @@ class InteractionStore:
             raise InteractionConflict("a different submission already won this request")
         return existing
 
-    def wait(self, request: InteractionRequest, cancelled: Callable[[], bool], interval: float = 0.1) -> Submission:
+    def wait(
+        self,
+        request: InteractionRequest,
+        cancelled: Callable[[], bool],
+        interval: float = 0.1,
+    ) -> Submission:
         """The submission that answers `request`, which it then completes.
 
         The request is cancelled instead when `cancelled` returns True, which raises
@@ -268,10 +300,14 @@ class InteractionStore:
             time.sleep(interval)
 
     def load_draft(self, agent: str, request_id: str) -> list[dict[str, Any]]:
-        value = self._read(self.root / "drafts" / self._agent(agent) / f"{request_id}.json")
+        value = self._read(
+            self.root / "drafts" / self._agent(agent) / f"{request_id}.json"
+        )
         return list(value.get("tool_calls", [])) if value else []
 
-    def save_draft(self, agent: str, request_id: str, calls: list[dict[str, Any]]) -> None:
+    def save_draft(
+        self, agent: str, request_id: str, calls: list[dict[str, Any]]
+    ) -> None:
         current = self.current(agent)
         if current is None or current.request_id != request_id:
             raise StaleRequest("the request is no longer pending")

@@ -39,7 +39,9 @@ def check_the_sweep_only_takes_this_suites_containers():
     assert wide.search("mtr-w999999-1234-t-0002"), "including a suite that is gone"
     for theirs in ("mtr-w01-0001", "mtr-warm-0003", "mtr-d04-0006"):
         assert not wide.search(theirs), f"the wide sweep must not reach {theirs}"
-    assert check.parser().parse_args([]).sweep_all is False, "the wide sweep is reached by a flag, never by default"
+    assert check.parser().parse_args([]).sweep_all is False, (
+        "the wide sweep is reached by a flag, never by default"
+    )
     assert check.parser().parse_args(["--sweep-all"]).sweep_all is True
 
 
@@ -62,7 +64,9 @@ def check_the_docs_state_the_suite_size():
     lanes = re.findall(r"runs (\d+) of (\d+)", claude)
     assert lanes, "CLAUDE.md says how many checks --no-docker still runs"
     for host, total in lanes:
-        assert int(total) == len(table), f"CLAUDE.md says {total} checks; there are {len(table)}"
+        assert int(total) == len(table), (
+            f"CLAUDE.md says {total} checks; there are {len(table)}"
+        )
         assert int(total) - int(host) == docker, (
             f"CLAUDE.md says {int(total) - int(host)} need Docker; {docker} open a container"
         )
@@ -71,7 +75,9 @@ def check_the_docs_state_the_suite_size():
 def check_agents_md_mirrors_claude_md():
     """AGENTS.md is CLAUDE.md, byte for byte."""
     root = Path(harness.__file__).parent
-    assert (root / "AGENTS.md").read_bytes() == (root / "CLAUDE.md").read_bytes(), "AGENTS.md and CLAUDE.md differ"
+    assert (root / "AGENTS.md").read_bytes() == (root / "CLAUDE.md").read_bytes(), (
+        "AGENTS.md and CLAUDE.md differ"
+    )
 
 
 def check_every_harness_global_a_check_moves_is_restored():
@@ -130,7 +136,11 @@ def assigned_on(tree: ast.AST, module: str) -> list[str]:
             target = targets.pop()
             if isinstance(target, (ast.Tuple, ast.List)):
                 targets.extend(target.elts)
-            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == module:
+            elif (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == module
+            ):
                 names.append(target.attr)
     return names
 
@@ -148,17 +158,27 @@ def check_no_setting_is_given_in_two_places():
     nothing imports SETTINGS by name, which would hold on to the settings in force at
     the import.
     """
-    assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, "every tunable is owned"
-    assert not harness.PROCESS & harness.TREATMENT, sorted(harness.PROCESS & harness.TREATMENT)
+    assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, (
+        "every tunable is owned"
+    )
+    assert not harness.PROCESS & harness.TREATMENT, sorted(
+        harness.PROCESS & harness.TREATMENT
+    )
 
     tunables = {t.lower() for t in harness.TUNABLES}
     fields = {f.name for f in dataclasses.fields(harness.Settings)}
     assert tunables == fields - {"root", "channels", "harness_files", "tools"}, (
         f"a tunable is the field of its lowercased name: {sorted(tunables ^ fields)}"
     )
-    held = fields | {name for name, value in vars(harness.Settings).items() if isinstance(value, property)}
+    held = fields | {
+        name
+        for name, value in vars(harness.Settings).items()
+        if isinstance(value, property)
+    }
     shadowing = sorted(name.upper() for name in held if hasattr(harness, name.upper()))
-    assert not shadowing, f"a module global beside harness.SETTINGS configures nothing: {shadowing}"
+    assert not shadowing, (
+        f"a module global beside harness.SETTINGS configures nothing: {shadowing}"
+    )
     try:
         setattr(harness.Settings(), "budget", 1)
     except dataclasses.FrozenInstanceError:

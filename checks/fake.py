@@ -26,19 +26,52 @@ def usage(**kw):
 
 
 def attempt(model, output_tokens, kind="message", **kw):
-    return NS(**{"type": kind, "model": model, "input_tokens": 100, "output_tokens": output_tokens, **kw})
+    return NS(
+        **{
+            "type": kind,
+            "model": model,
+            "input_tokens": 100,
+            "output_tokens": output_tokens,
+            **kw,
+        }
+    )
 
 
 def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None):
-    return {"kind": "say", "text": text, "u": u, "id": id, "stop": stop, "details": details, "model": model}
+    return {
+        "kind": "say",
+        "text": text,
+        "u": u,
+        "id": id,
+        "stop": stop,
+        "details": details,
+        "model": model,
+    }
 
 
 def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
-    return {"kind": "agent", "cmds": list(cmds), "u": u, "id": id, "stop": stop, "details": details, "model": model}
+    return {
+        "kind": "agent",
+        "cmds": list(cmds),
+        "u": u,
+        "id": id,
+        "stop": stop,
+        "details": details,
+        "model": model,
+    }
 
 
 def use(name, u=None, id=None, stop="tool_use", **args):
-    return {"kind": "call", "name": name, "args": args, "u": u, "id": id, "stop": stop, "details": None, "model": None}
+    return {
+        "kind": "call",
+        "name": name,
+        "args": args,
+        "u": u,
+        "id": id,
+        "stop": stop,
+        "details": None,
+        "model": None,
+    }
 
 
 def refuse(*cmds, category="cyber", u=None, id=None, **detail):
@@ -56,7 +89,14 @@ def restart(u=None, id=None):
 
 
 def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
-    return {"kind": "think", "thinking": thinking, "text": text, "u": u, "id": id, "stop": stop}
+    return {
+        "kind": "think",
+        "thinking": thinking,
+        "text": text,
+        "u": u,
+        "id": id,
+        "stop": stop,
+    }
 
 
 class FakeError(Exception):
@@ -90,8 +130,15 @@ def _usage(raw, provider, model):
     spec = providers.model_spec(provider, model)
     write_kind = "cache_write_5m" if provider == "anthropic" else "cache_write"
     charges = (
-        Charge("uncached_input", uncached, spec.rate("uncached_input"), uncached * spec.rate("uncached_input")),
-        Charge("cache_read", read, spec.rate("cache_read"), read * spec.rate("cache_read")),
+        Charge(
+            "uncached_input",
+            uncached,
+            spec.rate("uncached_input"),
+            uncached * spec.rate("uncached_input"),
+        ),
+        Charge(
+            "cache_read", read, spec.rate("cache_read"), read * spec.rate("cache_read")
+        ),
         Charge(write_kind, write, spec.rate(write_kind), write * spec.rate(write_kind)),
         Charge("output", output, spec.rate("output"), output * spec.rate("output")),
     )
@@ -113,17 +160,25 @@ class FakeSession:
             self.on_request(self.n)
         if self.seen is not None:
             self.seen.append(
-                {"kind": "request", "provider": self.provider, "model": self.requested_model, "input": content}
+                {
+                    "kind": "request",
+                    "provider": self.provider,
+                    "model": self.requested_model,
+                    "input": content,
+                }
             )
         step = self.steps.pop(0) if self.steps else say()
         if isinstance(step, BaseException):
             raise step
         rid = step["id"] or f"msg{self.n}"
         resolved = step.get("model") or f"{self.requested_model}-20990101"
-        normalized_usage, charges = _usage(step.get("u"), self.provider, self.requested_model)
+        normalized_usage, charges = _usage(
+            step.get("u"), self.provider, self.requested_model
+        )
         if step["kind"] == "agent":
             calls = tuple(
-                ToolCall(f"t{self.n}_{i}", "bash", {"command": command}) for i, command in enumerate(step["cmds"])
+                ToolCall(f"t{self.n}_{i}", "bash", {"command": command})
+                for i, command in enumerate(step["cmds"])
             )
             texts, reasoning = (), ()
         elif step["kind"] == "call":
@@ -172,7 +227,15 @@ class FakeSession:
 
 
 class FakeRouter:
-    def __init__(self, steps=(), seen=None, scripts=None, default=(), on_request=None, on_open=None):
+    def __init__(
+        self,
+        steps=(),
+        seen=None,
+        scripts=None,
+        default=(),
+        on_request=None,
+        on_open=None,
+    ):
         self.steps = list(steps)
         self.seen = seen
         self.scripts = {name: list(values) for name, values in (scripts or {}).items()}
@@ -218,7 +281,9 @@ def fake(*steps, seen=None):
 
 
 def per_agent(default=(), on_request=None, on_open=None, **scripts):
-    return FakeRouter(scripts=scripts, default=default, on_request=on_request, on_open=on_open)
+    return FakeRouter(
+        scripts=scripts, default=default, on_request=on_request, on_open=on_open
+    )
 
 
 def stopping_at(turn: int, *steps):

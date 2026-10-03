@@ -63,16 +63,22 @@ def check_starter_files_land_when_the_balance_falls():
     """
     # A say() episode spends 1750, so this is above episode 1's balance and below
     # episode 2's: the starter files land at the second episode and not the first.
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=499_000
+    ) as root:
         plant(root)
         before = episode_once(say())
         after = episode_once(say())
 
-    assert not [f for f in before["files"] if f.get("starter")], "nothing lands above the threshold"
+    assert not [f for f in before["files"] if f.get("starter")], (
+        "nothing lands above the threshold"
+    )
     assert "m1" not in before["observation"], before["observation"]
     starter = sorted(f["path"] for f in after["files"] if f.get("starter"))
     assert starter == ["state/d/m2", "state/m1"], starter
-    assert "m1" in after["observation"], "the starter files are in the listing the agent opens on"
+    assert "m1" in after["observation"], (
+        "the starter files are in the listing the agent opens on"
+    )
     assert after["provenance"]["starter_files"] == "s"
     assert after["provenance"]["starter_files_sha256"], "the digest goes in provenance"
     assert after["provenance"]["starter_files_below"] == 499_000
@@ -89,7 +95,9 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     # episodes run whatever a turn costs under the model in force.
     below = 500_000 - 2 * turn_cost()
     for name, steps in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
-        with temp_root(budget=500_000, starter_files="s", starter_files_below=below) as root:
+        with temp_root(
+            budget=500_000, starter_files="s", starter_files_below=below
+        ) as root:
             plant(root)
             with quiet():
                 harness.run_episodes(name, fake(*steps), 4)
@@ -110,7 +118,9 @@ def check_starter_files_are_recorded_and_idempotent():
     """The account records what landed, and a later episode does not plant it again."""
     # At the budget itself the threshold is met at episode 1: material that was
     # always there, not material that appeared.
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=500_000
+    ) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())  # the agent overwrites it
         after = episode_once(say())
@@ -120,13 +130,17 @@ def check_starter_files_are_recorded_and_idempotent():
     assert record["remaining"] == 500_000, "and the balance it landed on"
     assert sorted(record["paths"]) == ["d/m2", "m1"], record
     kept = files_by_path(after)["state/m1"]
-    assert kept["text"].strip() == "mine", "a second episode must not restore what the agent changed"
+    assert kept["text"].strip() == "mine", (
+        "a second episode must not restore what the agent changed"
+    )
     assert kept["starter"], "and it is still one of the files the agent was given"
 
 
 def check_starter_files_are_not_the_agents():
     """What the agent was given is `ours`; only what it invented is not."""
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=500_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=500_000
+    ) as root:
         plant(root)
         t = episode_once(run("echo doctrine > state/NOTES.md"), say())
 
@@ -148,11 +162,19 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
     """A starter-files path the agent already wrote stops the agent instead of clobbering it."""
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=499_000
+    ) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())
-        refused(lambda: episode_once(say()), "m1", because="the starter files overwrote a file the agent had made")
-        assert (harness.mirror("t", "notes") / "m1").read_text().strip() == "mine", "and left it alone"
+        refused(
+            lambda: episode_once(say()),
+            "m1",
+            because="the starter files overwrote a file the agent had made",
+        )
+        assert (harness.mirror("t", "notes") / "m1").read_text().strip() == "mine", (
+            "and left it alone"
+        )
 
 
 def check_an_agent_keeps_the_starter_files_it_was_created_with():
@@ -162,18 +184,26 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
     is ignored, other terms are refused, and an account from before the terms
     were pinned adopts the config at its next episode.
     """
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=499_000
+    ) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         first = episode_once(say())
         account = ground_truth()
-        assert (account["starter_files"], account["starter_files_below"]) == ("s", 499_000)
+        assert (account["starter_files"], account["starter_files_below"]) == (
+            "s",
+            499_000,
+        )
         assert first["provenance"]["starter_files"] == "s"
 
         # The config moves on; the agent does not.
         amend(starter_files="other", starter_files_below=500_000)
         second = episode_once(say())
-        assert second["provenance"]["starter_files"] == "s" and second["provenance"]["starter_files_below"] == 499_000
+        assert (
+            second["provenance"]["starter_files"] == "s"
+            and second["provenance"]["starter_files_below"] == 499_000
+        )
         assert ground_truth()["starter_files_landed"]["name"] == "s", (
             "the starter files that landed are the pinned ones"
         )
@@ -186,9 +216,12 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
             "starter_files",
             because="an agent was re-created on different terms",
         )
-        assert harness.load_account("t", starter_files="s", starter_files_below=499_000)["starter_files"] == "s", (
-            "the terms it was created on are accepted"
-        )
+        assert (
+            harness.load_account("t", starter_files="s", starter_files_below=499_000)[
+                "starter_files"
+            ]
+            == "s"
+        ), "the terms it was created on are accepted"
 
         # An account from before the terms were pinned adopts the config at its next episode.
         m = ground_truth()
@@ -205,7 +238,9 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
     A fork from before they landed carries none, and takes the config it is next
     run under.
     """
-    with temp_root(budget=500_000, starter_files="s", starter_files_below=499_000) as root:
+    with temp_root(
+        budget=500_000, starter_files="s", starter_files_below=499_000
+    ) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
         episode_once(say())
@@ -221,7 +256,9 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
         amend(starter_files="other", starter_files_below=500_000)
         with quiet():
             harness.run_once("before", fake(say()))
-        assert ground_truth("before")["starter_files"] == "other", "adopted at its first episode"
+        assert ground_truth("before")["starter_files"] == "other", (
+            "adopted at its first episode"
+        )
         assert (harness.mirror("before", "notes") / "m9").exists(), "and given at it"
 
 
@@ -232,7 +269,9 @@ def check_starter_files_config_is_validated():
 
         def declared(**values):
             """Starter file terms as a manifest states them; config.toml refuses them."""
-            harness.apply_config(values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST)
+            harness.apply_config(
+                values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
+            )
 
         for bad in (
             {"starter_files": "ok"},
@@ -243,15 +282,24 @@ def check_starter_files_config_is_validated():
             {"starter_files": 5, "starter_files_below": 2},
         ):
             with pinned():
-                refused(lambda: declared(**bad), "starter_files", because=f"accepted bad starter_files terms: {bad!r}")
+                refused(
+                    lambda: declared(**bad),
+                    "starter_files",
+                    because=f"accepted bad starter_files terms: {bad!r}",
+                )
 
         with pinned():
             declared(starter_files="ok", starter_files_below=400_000)
-            assert (harness.SETTINGS.starter_files, harness.SETTINGS.starter_files_below) == ("ok", 400_000)
+            assert (
+                harness.SETTINGS.starter_files,
+                harness.SETTINGS.starter_files_below,
+            ) == ("ok", 400_000)
         # The digest covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")
-        assert harness.files_sha256("ok") != was, "a renamed file is a different set of starter files"
+        assert harness.files_sha256("ok") != was, (
+            "a renamed file is a different set of starter files"
+        )
 
 
 def check_fork_reproduces_state_and_account():
@@ -270,22 +318,37 @@ def check_fork_reproduces_state_and_account():
         assert notes.decode() == was["text"], "state/ is the episode it forked at"
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
-        assert forked["series"] == trace["series_after"], "invariant 8: the series is what carries"
+        assert forked["series"] == trace["series_after"], (
+            "invariant 8: the series is what carries"
+        )
         assert not any(harness.mirror("f", "blackboard").rglob("*")), (
             "the parent's blackboard was empty, so the fork's is"
         )
         assert forked["remaining"] == trace["series_after"][-1]
-        assert len(forked["episodes"]) == 1, "the episodes after the fork point are dropped"
-        assert forked["initial"] == parent["initial"] and forked["model"] == parent["model"]
-        assert forked["forked_from"] == {"agent": "t", "episode": 1, "modes": "defaulted"}
-        assert not list((harness.records_dir("f") / "traces").glob("*.json")), "a fork bills nothing"
+        assert len(forked["episodes"]) == 1, (
+            "the episodes after the fork point are dropped"
+        )
+        assert (
+            forked["initial"] == parent["initial"]
+            and forked["model"] == parent["model"]
+        )
+        assert forked["forked_from"] == {
+            "agent": "t",
+            "episode": 1,
+            "modes": "defaulted",
+        }
+        assert not list((harness.records_dir("f") / "traces").glob("*.json")), (
+            "a fork bills nothing"
+        )
 
         # Forking the head restores the modes the parent's sidecar still holds.
         with quiet():
             assert harness.fork("t", 2, "g") == 0
         assert ground_truth("g")["forked_from"]["modes"] == "restored"
         with quiet():
-            assert harness.fork("t", 2, "g") != 0, "an existing agent is not overwritten"
+            assert harness.fork("t", 2, "g") != 0, (
+                "an existing agent is not overwritten"
+            )
 
 
 def check_a_fork_rebuilds_every_tree_the_agent_wrote():
@@ -307,19 +370,29 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
 
-        assert (harness.mirror("f", "notes") / "NOTES.md").read_text(encoding="utf-8") == "mine\n"
-        assert (harness.mirror("f", "blackboard") / "RESULT").read_text(encoding="utf-8") == "posted\n"
-        assert (harness.mirror("f", "mail") / "2").read_text(encoding="utf-8") == "psst\n", (
-            "a message is one file, and the fork rebuilds it as one"
-        )
-        assert (harness.mirror("f", "mail") / "transfer").read_text(encoding="utf-8") == "2 50\n", (
+        assert (harness.mirror("f", "notes") / "NOTES.md").read_text(
+            encoding="utf-8"
+        ) == "mine\n"
+        assert (harness.mirror("f", "blackboard") / "RESULT").read_text(
+            encoding="utf-8"
+        ) == "posted\n"
+        assert (harness.mirror("f", "mail") / "2").read_text(
+            encoding="utf-8"
+        ) == "psst\n", "a message is one file, and the fork rebuilds it as one"
+        assert (harness.mirror("f", "mail") / "transfer").read_text(
+            encoding="utf-8"
+        ) == "2 50\n", (
             "the resolved episode state is rebuilt exactly; the next episode clears the transfer"
         )
         # And nothing that belonged to the neighbour: its blackboard, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
         rebuilt = {
             p.name
-            for tree in (harness.mirror("f", "notes"), harness.mirror("f", "blackboard"), harness.mirror("f", "mail"))
+            for tree in (
+                harness.mirror("f", "notes"),
+                harness.mirror("f", "blackboard"),
+                harness.mirror("f", "mail"),
+            )
             for p in tree.rglob("*")
         }
         assert rebuilt == {"NOTES.md", "RESULT", "2", "transfer"}, sorted(rebuilt)
@@ -342,7 +415,9 @@ def check_fork_refuses_what_it_cannot_rebuild():
                 "created_at": "now",
                 "remaining": 9,
                 "series": [10, 9],
-                "episodes": [{"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}],
+                "episodes": [
+                    {"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}
+                ],
             },
         )
 
@@ -397,24 +472,38 @@ def check_fork_refuses_what_it_cannot_rebuild():
         ]:
             harness.trace_path("p", 1).write_text(json.dumps(bad), encoding="utf-8")
             with quiet():
-                assert harness.fork("p", 1, f"x-{name}") != 0, f"forked a {name} episode"
+                assert harness.fork("p", 1, f"x-{name}") != 0, (
+                    f"forked a {name} episode"
+                )
             assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), (
                 f"a refused fork left a {name} agent behind"
             )
 
         # A trace whose episode the account never came to list: the commit stopped
         # between writing the one and saving the other.
-        harness.trace_path("p", 2).write_text(json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8")
+        harness.trace_path("p", 2).write_text(
+            json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8"
+        )
         with quiet() as said:
-            assert harness.fork("p", 2, "x-orphan") == 2, "forked an episode its account never listed"
+            assert harness.fork("p", 2, "x-orphan") == 2, (
+                "forked an episode its account never listed"
+            )
         assert "never committed" in said.getvalue(), said.getvalue()
-        assert not harness.records_dir("x-orphan").exists(), "a refused fork left an agent behind"
+        assert not harness.records_dir("x-orphan").exists(), (
+            "a refused fork left an agent behind"
+        )
 
         harness.trace_path("p", 1).write_text(json.dumps(trace()), encoding="utf-8")
         with quiet():
-            assert harness.fork("p", 9, "x-missing") != 0, "forked an episode that never ran"
-            assert harness.fork("nosuch", 1, "x-none") != 0, "forked an agent that is not there"
-            assert harness.fork("p", 1, "good") == 0, "and a storable episode still forks"
+            assert harness.fork("p", 9, "x-missing") != 0, (
+                "forked an episode that never ran"
+            )
+            assert harness.fork("nosuch", 1, "x-none") != 0, (
+                "forked an agent that is not there"
+            )
+            assert harness.fork("p", 1, "good") == 0, (
+                "and a storable episode still forks"
+            )
 
 
 def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
@@ -436,7 +525,9 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
                 "created_at": "now",
                 "remaining": 9,
                 "series": [10, 9],
-                "episodes": [{"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}],
+                "episodes": [
+                    {"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}
+                ],
             },
         )
         mine = {
@@ -470,8 +561,12 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
         trace["files"] = [mine]
         harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
         with quiet():
-            assert harness.fork("p", 1, "f") == 0, "the corrected fork takes the same id"
-        assert (harness.mirror("f", "notes") / "a.txt").read_text(encoding="utf-8") == "hi\n"
+            assert harness.fork("p", 1, "f") == 0, (
+                "the corrected fork takes the same id"
+            )
+        assert (harness.mirror("f", "notes") / "a.txt").read_text(
+            encoding="utf-8"
+        ) == "hi\n"
 
 
 def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
@@ -495,9 +590,15 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
             blind = harness.run_once("f", fake(say()))
     assert first["episode"] == 2, first["episode"]
     # The fork's own id in its seat is no drift: a new id is what a fork is.
-    assert first["provenance_drift"] == ["context_fraction: 0.85 -> 0.5"], first["provenance_drift"]
-    assert later["provenance_drift"] == [], "its own trace after that, and nothing moved"
-    assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind["provenance_drift"]
+    assert first["provenance_drift"] == ["context_fraction: 0.85 -> 0.5"], first[
+        "provenance_drift"
+    ]
+    assert later["provenance_drift"] == [], (
+        "its own trace after that, and nothing moved"
+    )
+    assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind[
+        "provenance_drift"
+    ]
 
 
 def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its_seats():
@@ -513,14 +614,28 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
         source = experiment.load_manifest(path)
         with quiet():
             experiment.sequential_round(
-                ids, set(ids), 0, fake(say(), say()), experiment.stamp_of(source), source["labels"]
+                ids,
+                set(ids),
+                0,
+                fake(say(), say()),
+                experiment.stamp_of(source),
+                source["labels"],
             )
-            branch = experiment.load_manifest(experiment.branch_experiment(path, 1, "br", "2", root / "br.toml"))
+            branch = experiment.load_manifest(
+                experiment.branch_experiment(path, 1, "br", "2", root / "br.toml")
+            )
             experiment.sequential_round(
-                ["br-01", "br-02"], {"br-01"}, 1, fake(say()), experiment.stamp_of(branch), branch["labels"]
+                ["br-01", "br-02"],
+                {"br-01"},
+                1,
+                fake(say()),
+                experiment.stamp_of(branch),
+                branch["labels"],
             )
         was, t = trace_on_disk("g01", 1)["provenance"], trace_on_disk("br-01", 2)
-    assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"]["peers"]
+    assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"][
+        "peers"
+    ]
     assert t["provenance_drift"] == [
         f"experiment_id: {was['experiment_id']!r} -> 'br'",
         f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}",

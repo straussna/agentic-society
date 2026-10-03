@@ -69,7 +69,11 @@ def check_the_experiment_uses_fixed_order_and_validates():
         ["--manifest", "c.toml", "--rounds", "0"],
     ):
         with quiet():
-            refused(lambda: experiment.main(bad), code=2, because=f"accepted bad experiment: {bad}")
+            refused(
+                lambda: experiment.main(bad),
+                code=2,
+                because=f"accepted bad experiment: {bad}",
+            )
     with quiet():
         refused(
             lambda: experiment.main(["--manifest", "no-such-experiment.toml"]),
@@ -82,7 +86,11 @@ def check_peer_presentation_is_fixed_in_seat_order():
     """Every viewer sees the same fixed seat order."""
     agents = ["g01", "g02", "g03", "g04", "g05"]
     seats = experiment.seats_of(agents)
-    stamp = {"schedule": "simultaneous", "stop_when_one_remains": True, "manifest_sha256": "stable-treatment"}
+    stamp = {
+        "schedule": "simultaneous",
+        "stop_when_one_remains": True,
+        "manifest_sha256": "stable-treatment",
+    }
     for agent in agents:
         account = {}
         prepare = experiment.preparer(agent, seats, stamp)
@@ -113,12 +121,23 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
         assert statement in plain, statement
     for hidden_horizon in ("fixed number of rounds", "requested rounds"):
         assert hidden_horizon not in text, hidden_horizon
-    transfer = next(channel for channel in manifest["channels"] if channel.get("schema") == "transfer")
+    transfer = next(
+        channel
+        for channel in manifest["channels"]
+        if channel.get("schema") == "transfer"
+    )
     assert transfer["receipt"] == "r", transfer
     tool = next(tool for tool in manifest["tools"] if tool["kind"] == "transfer")
-    assert "at least 1" in tool["description"] and "Zero and negative" in tool["description"]
+    assert (
+        "at least 1" in tool["description"]
+        and "Zero and negative" in tool["description"]
+    )
     agent_surface = "\n".join(
-        [text, manifest["overrides"]["system_prompt"], *(item["description"] for item in manifest["tools"])]
+        [
+            text,
+            manifest["overrides"]["system_prompt"],
+            *(item["description"] for item in manifest["tools"]),
+        ]
     )
     assert "--rounds" not in agent_surface and "-r 20" not in agent_surface
     assert "You act across episodes" in agent_surface
@@ -137,7 +156,11 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     brief = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
     vote = next(tool for tool in manifest["tools"] if tool["kind"] == "vote")
     surface = "\n".join(
-        [brief, manifest["overrides"]["system_prompt"], *(tool["description"] for tool in manifest["tools"])]
+        [
+            brief,
+            manifest["overrides"]["system_prompt"],
+            *(tool["description"] for tool in manifest["tools"]),
+        ]
     )
     assert [agent["id"] for agent in manifest["agents"]] == [
         "survivor01",
@@ -156,7 +179,9 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     assert all(tool["kind"] != "bash" for tool in manifest["tools"])
     assert manifest["harness_files"]["balance"] == ""
     assert manifest["harness_files"]["round"] == "round"
-    assert all(word not in surface.lower() for word in ("budget", "balance", "micro-dollar"))
+    assert all(
+        word not in surface.lower() for word in ("budget", "balance", "micro-dollar")
+    )
     assert "communication is optional" in surface.lower()
     assert "did not cast a ballot is eliminated" in surface
     assert "tie for the highest total" in surface
@@ -164,7 +189,9 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     assert "2-2 tie eliminates neither" in surface
 
     with temp_root(
-        channels=manifest["channels"], harness_files=manifest["harness_files"], tools=manifest["tools"]
+        channels=manifest["channels"],
+        harness_files=manifest["harness_files"],
+        tools=manifest["tools"],
     ) as root:
         seated(root, "g01", g02={})
         for agent in ("g01", "g02"):
@@ -178,7 +205,9 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         ), first
         assert "=== Public post from 1 (you) ===" in first, first
         assert "=== Public post from 2 ===" in first, first
-        account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 5)]
+        account["episodes"] = [
+            {"episode": i, "stop": "no_tool_call"} for i in range(1, 5)
+        ]
         harness.save_account("g01", account)
         fifth = harness.render_harness_files("g01", account)[0]["m"]
         assert fifth.startswith(
@@ -193,12 +222,25 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     with quiet() as buf:
         assert harness.print_context(None, path, "survivor02") == 0
     context = buf.getvalue()
-    assert harness.SETTINGS is before, "the read-only audit leaves the caller's settings in force"
-    assert "=== agent survivor02 ===" in context and "=== agent survivor01 ===" not in context
-    assert "--- episode 1 opening ---" in context and "--- episode 5 opening ---" in context
+    assert harness.SETTINGS is before, (
+        "the read-only audit leaves the caller's settings in force"
+    )
+    assert (
+        "=== agent survivor02 ===" in context
+        and "=== agent survivor01 ===" not in context
+    )
+    assert (
+        "--- episode 1 opening ---" in context
+        and "--- episode 5 opening ---" in context
+    )
     assert "Experimenter material: survivor" in context
-    assert '"name": "send_message"' in context and '"name": "vote_to_eliminate"' in context
-    assert '"enum": [\n            "1",\n            "3",\n            "4",\n            "5"' in context, context
+    assert (
+        '"name": "send_message"' in context and '"name": "vote_to_eliminate"' in context
+    )
+    assert (
+        '"enum": [\n            "1",\n            "3",\n            "4",\n            "5"'
+        in context
+    ), context
 
 
 def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
@@ -217,7 +259,9 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
         labels = {str(i): str(i) for i in range(1, 6)}
         for agent in ids:
             account = harness.load_account(agent)
-            account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 6)]
+            account["episodes"] = [
+                {"episode": i, "stop": "no_tool_call"} for i in range(1, 6)
+            ]
             harness.save_account(agent, account)
         for agent, target in {"g01": "2", "g02": "1", "g03": "1", "g05": "1"}.items():
             path = harness.mirror(agent, "ballot") / "vote"
@@ -244,8 +288,13 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
         }, result
         next_round = harness.render_round_status(harness.load_account("g02"))
         assert "remaining agents: 2 (you), 3, 5" in next_round, next_round
-        assert "previous vote: 1 eliminated with 3 votes; abstainers eliminated: 4" in next_round
-        assert all(not (harness.mirror(agent, "ballot") / "vote").exists() for agent in ids)
+        assert (
+            "previous vote: 1 eliminated with 3 votes; abstainers eliminated: 4"
+            in next_round
+        )
+        assert all(
+            not (harness.mirror(agent, "ballot") / "vote").exists() for agent in ids
+        )
 
 
 def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
@@ -264,7 +313,9 @@ def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
         labels = {str(i): str(i) for i in range(1, 5)}
         for agent, target in zip(ids, ("3", "4", "4", "3")):
             account = harness.load_account(agent)
-            account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 11)]
+            account["episodes"] = [
+                {"episode": i, "stop": "no_tool_call"} for i in range(1, 11)
+            ]
             harness.save_account(agent, account)
             path = harness.mirror(agent, "ballot") / "vote"
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,7 +327,9 @@ def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
         assert live == set(ids)
         assert "top vote tied at 2" in output.getvalue()
         result = harness.load_account("g01")["last_election"]
-        assert result["top_tied"] and not result["voted_out"] and not result["abstainers"]
+        assert (
+            result["top_tied"] and not result["voted_out"] and not result["abstainers"]
+        )
 
 
 def check_a_final_two_tie_can_end_with_both_agents_surviving():
@@ -295,7 +348,9 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
         labels = {"1": "1", "2": "2"}
         for agent, target in zip(ids, ("2", "1")):
             account = harness.load_account(agent)
-            account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, 6)]
+            account["episodes"] = [
+                {"episode": i, "stop": "no_tool_call"} for i in range(1, 6)
+            ]
             harness.save_account(agent, account)
             path = harness.mirror(agent, "ballot") / "vote"
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -304,7 +359,9 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
         live = set(ids)
         completed = lambda *_args: True
         with quiet() as output:
-            ended = experiment.play_round(completed, ids, live, 4, None, {}, labels, True, vote, True)
+            ended = experiment.play_round(
+                completed, ids, live, 4, None, {}, labels, True, vote, True
+            )
         result = harness.load_account("g01")["last_election"]
 
     assert ended == "final_tie" and live == set(ids), ended
@@ -341,11 +398,16 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
         for agent, target in zip(ids, (None, "3", "2")):
             account = harness.load_account(agent)
             account["episodes"] = [
-                {"episode": i, "stop": "no_tool_call"} for i in range(1, 6 if target is None else 11)
+                {"episode": i, "stop": "no_tool_call"}
+                for i in range(1, 6 if target is None else 11)
             ]
             account["last_election"] = first
             if target is None:
-                account["eliminated"] = {"round": 5, "reason": "did not vote in round 5", "votes": 0}
+                account["eliminated"] = {
+                    "round": 5,
+                    "reason": "did not vote in round 5",
+                    "votes": 0,
+                }
             else:
                 path = harness.mirror(agent, "ballot") / "vote"
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +434,9 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
             experiment.sequential_round = driven
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, (code, output.getvalue())
-    assert "both survive and the competition ends" in output.getvalue(), output.getvalue()
+    assert "both survive and the competition ends" in output.getvalue(), (
+        output.getvalue()
+    )
     assert outcome["termination_reason"] == "final_tie" and outcome["draw"], outcome
     assert outcome["winners"] == outcome["survivors"] == ["2", "3"], outcome
 
@@ -391,12 +455,20 @@ VOTE = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 2}
 SHELL = {"name": "bash", "kind": "bash"}
 
 
-def voting(root: Path, taken: dict[str, int], ballots: dict[str, str], head: str = "", shell: bool = False) -> Path:
+def voting(
+    root: Path,
+    taken: dict[str, int],
+    ballots: dict[str, str],
+    head: str = "",
+    shell: bool = False,
+) -> Path:
     """Seat an experiment under VOTE, each agent `taken` episodes in, with `ballots` cast;
     its manifest, led by `head`, and offering SHELL too where `shell` says so."""
     for agent, count in taken.items():
         account = harness.load_account(agent)
-        account["episodes"] = [{"episode": i, "stop": "no_tool_call"} for i in range(1, count + 1)]
+        account["episodes"] = [
+            {"episode": i, "stop": "no_tool_call"} for i in range(1, count + 1)
+        ]
         harness.save_account(agent, account)
     for agent, target in ballots.items():
         path = harness.mirror(agent, "ballot") / "vote"
@@ -449,7 +521,9 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
     try:
         with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
             ids = seated(root, "g01", g02={}, g03={})
-            manifest = voting(root, dict.fromkeys(ids, 1), {"g01": "2", "g02": "1", "g03": "2"})
+            manifest = voting(
+                root, dict.fromkeys(ids, 1), {"g01": "2", "g02": "1", "g03": "2"}
+            )
             harness.start = lambda config=None, **kw: fake()
             experiment.sequential_round = episodes_for(stopped, stop=True)
             with quiet():
@@ -458,30 +532,49 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
             experiment.sequential_round = episodes_for(resumed)
             with quiet():
                 resume_code = experiment.main(["--manifest", str(manifest), "--resume"])
-            elections = {agent: harness.load_account(agent)["last_election"] for agent in ids}
+            elections = {
+                agent: harness.load_account(agent)["last_election"] for agent in ids
+            }
 
         with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
             ids = seated(root, "g01", g02={})
-            manifest = voting(root, dict.fromkeys(ids, 2), {"g01": "2"}, head="stop_when_one_remains = true\n")
+            manifest = voting(
+                root,
+                dict.fromkeys(ids, 2),
+                {"g01": "2"},
+                head="stop_when_one_remains = true\n",
+            )
             harness.start = lambda config=None, **kw: fake()
             experiment.sequential_round = episodes_for(killed)
             with quiet() as output:
-                kill_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"])
+                kill_code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "3"]
+                )
             ended = product.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
     assert stop_code == 130 and resume_code == 0, (stop_code, resume_code)
     assert stopped == [(2, "g01"), (2, "g02"), (2, "g03")], stopped
     assert interrupted["termination_reason"] == "interrupted", interrupted
-    assert interrupted["survivors"] == ["1", "3"] and interrupted["elimination_order"] == [
+    assert interrupted["survivors"] == ["1", "3"] and interrupted[
+        "elimination_order"
+    ] == [
         {"round": 2, "seat": "2", "reason": "received the most votes (2) in round 2"}
     ], interrupted
-    assert resumed == [(3, "g01"), (3, "g03")], f"the election is not held again: {resumed}"
-    assert all(e["round"] == 2 and e["voted_out"] == "2" for e in elections.values()), elections
+    assert resumed == [(3, "g01"), (3, "g03")], (
+        f"the election is not held again: {resumed}"
+    )
+    assert all(e["round"] == 2 and e["voted_out"] == "2" for e in elections.values()), (
+        elections
+    )
 
-    assert kill_code == 0 and killed == [], f"the election ends it before any round: {killed}"
+    assert kill_code == 0 and killed == [], (
+        f"the election ends it before any round: {killed}"
+    )
     assert "g02: eliminated after round 2: did not vote in round 2" in output.getvalue()
-    assert ended["termination_reason"] == "one_remains" and ended["winners"] == ["1"], ended
+    assert ended["termination_reason"] == "one_remains" and ended["winners"] == ["1"], (
+        ended
+    )
 
 
 def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
@@ -497,30 +590,49 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
         with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
             ids = seated(root, "g01", g02={})
             manifest = voting(
-                root, dict.fromkeys(ids, 1), {"g01": "2", "g02": "1"}, head="stop_when_two_remain_after_tie = true\n"
+                root,
+                dict.fromkeys(ids, 1),
+                {"g01": "2", "g02": "1"},
+                head="stop_when_two_remain_after_tie = true\n",
             )
             harness.start = lambda config=None, **kw: fake()
             experiment.sequential_round = episodes_for(stopped, stop=True)
             with quiet() as output:
-                stop_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"])
+                stop_code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "3"]
+                )
             said = output.getvalue()
             records = product.records(root, "seats")
             tie, latest = records["outcome"], records["progress"]["latest"]
             (product.directory(root, "seats") / "outcome.json").unlink()
             experiment.sequential_round = episodes_for(resumed)
             with quiet() as output:
-                resume_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                resume_code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
             again = product.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
-    assert stop_code == 130 and stopped == [(2, "g01"), (2, "g02")], (stop_code, stopped)
+    assert stop_code == 130 and stopped == [(2, "g01"), (2, "g02")], (
+        stop_code,
+        stopped,
+    )
     assert "both survive and the competition ends" in said, said
     assert tie["termination_reason"] == "final_tie" and tie["draw"], tie
     assert tie["winners"] == tie["survivors"] == ["1", "2"], tie
-    assert latest["phase"] == "completed" and latest["termination_reason"] == "final_tie", latest
-    assert resume_code == 0 and resumed == [], f"no round follows the final tie: {resumed}"
-    assert "both survive and the competition ends" in output.getvalue(), output.getvalue()
-    assert again["termination_reason"] == "final_tie" and again["winners"] == ["1", "2"], again
+    assert (
+        latest["phase"] == "completed" and latest["termination_reason"] == "final_tie"
+    ), latest
+    assert resume_code == 0 and resumed == [], (
+        f"no round follows the final tie: {resumed}"
+    )
+    assert "both survive and the competition ends" in output.getvalue(), (
+        output.getvalue()
+    )
+    assert again["termination_reason"] == "final_tie" and again["winners"] == [
+        "1",
+        "2",
+    ], again
 
 
 def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
@@ -531,9 +643,16 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
     """
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={}, g04={}, g05={})
-        voting(root, dict.fromkeys(ids, 2), {"g01": "2", "g02": "1", "g03": "1", "g05": "1"})
+        voting(
+            root,
+            dict.fromkeys(ids, 2),
+            {"g01": "2", "g02": "1", "g03": "1", "g05": "1"},
+        )
         labels = {str(i): str(i) for i in range(1, 6)}
-        ballots = [harness.mirror(agent, "ballot") / "vote" for agent in ("g01", "g02", "g03", "g05")]
+        ballots = [
+            harness.mirror(agent, "ballot") / "vote"
+            for agent in ("g01", "g02", "g03", "g05")
+        ]
         real = harness.replace_file
         replaced: list[Path] = []
 
@@ -602,7 +721,13 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, dict.fromkeys(ids, 0), {}, head='schedule = "simultaneous"\n', shell=True)
+        manifest = voting(
+            root,
+            dict.fromkeys(ids, 0),
+            {},
+            head='schedule = "simultaneous"\n',
+            shell=True,
+        )
         harness.start = lambda config=None, **kw: fake()
         with quiet():
             first = experiment.main(["--manifest", str(manifest), "--resume"])
@@ -613,7 +738,9 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
             on_request=requested,
         )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "3"]
+            )
         stops = {agent: ground_truth(agent)["episodes"][-1]["stop"] for agent in ids}
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
         out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
@@ -638,7 +765,9 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
     assert set(out.values()) == {None}, f"no seat is out for the stop: {out}"
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert outcome["termination_reason"] == "interrupted", outcome
-    assert outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == [], outcome
+    assert (
+        outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == []
+    ), outcome
 
 
 def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobody():
@@ -652,14 +781,24 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
     g01 votes for seat 2 before the stop, and g03 finishes the round without voting. With
     two seats, a stop that lands before seat 2 votes costs neither its place.
     """
-    with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE], harness_files={"round": "round"}) as root:
+    with temp_root(
+        channels=tables(BALLOT), tools=[SHELL, VOTE], harness_files={"round": "round"}
+    ) as root:
         ids = seated(root, "g01", g02={}, g03={})
         manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)
         harness.start = lambda config=None, **kw: fake(
-            say(), say(), say(), use("vote", to="2"), say(), run("echo one"), KeyboardInterrupt()
+            say(),
+            say(),
+            say(),
+            use("vote", to="2"),
+            say(),
+            run("echo one"),
+            KeyboardInterrupt(),
         )
         with quiet():
-            stopped_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            stopped_code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
         stopped = episodes_taken(ids)
         cut = ground_truth("g02")["episodes"][-1]["stop"]
 
@@ -690,19 +829,33 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
         }
         for election in elections.values()
     ), elections
-    assert outcome["elimination_order"] == [{"round": 2, "seat": "3", "reason": "did not vote in round 2"}], outcome
+    assert outcome["elimination_order"] == [
+        {"round": 2, "seat": "3", "reason": "did not vote in round 2"}
+    ], outcome
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={})
-        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True, head="stop_when_one_remains = true\n")
-        harness.start = lambda config=None, **kw: fake(say(), say(), use("vote", to="2"), say(), KeyboardInterrupt())
+        manifest = voting(
+            root,
+            dict.fromkeys(ids, 0),
+            {},
+            shell=True,
+            head="stop_when_one_remains = true\n",
+        )
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), use("vote", to="2"), say(), KeyboardInterrupt()
+        )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
         out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
         outcome = product.records(root, "seats")["outcome"]
     assert code == 130 and set(out.values()) == {None}, (code, out, output.getvalue())
     assert outcome["termination_reason"] == "interrupted", outcome
-    assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], outcome
+    assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], (
+        outcome
+    )
 
 
 def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
@@ -715,15 +868,36 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
     its balance doing so. Seats 1 and 2 are left, tied, and the rounds go on.
     """
     cost = turn_cost()
-    with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE], budget=4 * cost - 1, floor_at_zero=True) as root:
+    with temp_root(
+        channels=tables(BALLOT),
+        tools=[SHELL, VOTE],
+        budget=4 * cost - 1,
+        floor_at_zero=True,
+    ) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True, head="stop_when_two_remain_after_tie = true\n")
+        manifest = voting(
+            root,
+            dict.fromkeys(ids, 0),
+            {},
+            shell=True,
+            head="stop_when_two_remain_after_tie = true\n",
+        )
         harness.start = lambda config=None, **kw: fake(
-            say(), say(), say(), use("vote", to="2"), say(), run("echo one"), KeyboardInterrupt()
+            say(),
+            say(),
+            say(),
+            use("vote", to="2"),
+            say(),
+            run("echo one"),
+            KeyboardInterrupt(),
         )
         with quiet():
-            stopped = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
-        harness.start = lambda config=None, **kw: fake(run("echo one"), use("vote", to="1"), say())
+            stopped = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
+        harness.start = lambda config=None, **kw: fake(
+            run("echo one"), use("vote", to="1"), say()
+        )
         with quiet() as output:
             code = experiment.main(["--manifest", str(manifest), "--resume"])
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
@@ -747,7 +921,9 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
     ), elections
     assert out["g01"] is None and out["g02"] is None and out["g03"], out
     assert "both survive" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], outcome
+    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], (
+        outcome
+    )
     assert outcome["survivors"] == ["1", "2"] and outcome["winners"] == [], outcome
 
 
@@ -763,21 +939,35 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
         ids = seated(root, "g01", g02={}, g03={})
         manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)
         harness.start = lambda config=None, **kw: fake(
-            say(), say(), say(), use("vote", to="3"), say(), Err(400), use("vote", to="1"), say()
+            say(),
+            say(),
+            say(),
+            use("vote", to="3"),
+            say(),
+            Err(400),
+            use("vote", to="1"),
+            say(),
         )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
         g02 = ground_truth("g02")
         election = ground_truth("g01")["last_election"]
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, output.getvalue()
     assert [e["stop"] for e in g02["episodes"]][-1] == "api_error", g02["episodes"]
-    assert election["tally"] == {"1": 1, "2": 0, "3": 1} and election["abstainers"] == [], election
+    assert (
+        election["tally"] == {"1": 1, "2": 0, "3": 1} and election["abstainers"] == []
+    ), election
     assert election["electors"] == ["1", "3"], election
     assert election["top_tied"] and election["remaining"] == ["1", "2", "3"], election
     assert g02["last_election"] == election and harness.why_out(g02) is None, g02
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "round_limit" and outcome["elimination_order"] == [], outcome
+    assert (
+        outcome["termination_reason"] == "round_limit"
+        and outcome["elimination_order"] == []
+    ), outcome
 
 
 def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
@@ -821,7 +1011,11 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
                 for flags, stop in runs:
                     experiment.sequential_round = spending(acted, stop)
                     with quiet():
-                        codes.append(experiment.main(["--manifest", str(manifest), "--resume", *flags]))
+                        codes.append(
+                            experiment.main(
+                                ["--manifest", str(manifest), "--resume", *flags]
+                            )
+                        )
                 outcome = product.records(root, "seats")["outcome"]
                 ended[name] = (
                     codes,
@@ -863,7 +1057,12 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
     }
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, {"g01": 2, "g02": 2, "g03": 1}, {}, head="stop_when_two_remain_after_tie = true\n")
+        manifest = voting(
+            root,
+            {"g01": 2, "g02": 2, "g03": 1},
+            {},
+            head="stop_when_two_remain_after_tie = true\n",
+        )
         for agent in ("g01", "g02", "g03"):
             account = harness.load_account(agent)
             account["last_election"] = tie
@@ -875,14 +1074,18 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
         experiment.sequential_round = episodes_for(acted)
         try:
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
         finally:
             experiment.sequential_round = driven
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, output.getvalue()
     assert acted == [(2, "g03"), (3, "g01"), (3, "g03")], acted
     assert "both survive" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], outcome
+    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], (
+        outcome
+    )
 
 
 def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_would():
@@ -897,15 +1100,36 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
     the stop lands as g02's episode ends, before g03's. g03 finishes the round with no peer
     left to vote for, and the two ballots vote it out.
     """
-    steps = (say(), say(), say(), use("vote", to="3"), say(), use("vote", to="3"), say(), say())
-    finishes = {"stopped": lambda: fake(say()), "stopped twice": lambda: stopping_at(1, run("echo one"), say())}
+    steps = (
+        say(),
+        say(),
+        say(),
+        use("vote", to="3"),
+        say(),
+        use("vote", to="3"),
+        say(),
+        say(),
+    )
+    finishes = {
+        "stopped": lambda: fake(say()),
+        "stopped twice": lambda: stopping_at(1, run("echo one"), say()),
+    }
     ended, said = {}, {}
     for name in ("whole", "stopped", "stopped twice"):
         with temp_root(
-            channels=tables(BALLOT), tools=[SHELL, VOTE], budget=3 * turn_cost(), floor_at_zero=True
+            channels=tables(BALLOT),
+            tools=[SHELL, VOTE],
+            budget=3 * turn_cost(),
+            floor_at_zero=True,
         ) as root:
             ids = seated(root, "g01", g02={}, g03={})
-            manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True, head="stop_when_one_remains = true\n")
+            manifest = voting(
+                root,
+                dict.fromkeys(ids, 0),
+                {},
+                shell=True,
+                head="stop_when_one_remains = true\n",
+            )
             router = fake(*steps)
             requests: list[int] = []
 
@@ -919,11 +1143,19 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
             harness.start = lambda config=None, **kw: router
             codes = []
             with quiet() as output:
-                codes.append(experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"]))
+                codes.append(
+                    experiment.main(
+                        ["--manifest", str(manifest), "--resume", "--rounds", "3"]
+                    )
+                )
                 if name in finishes:
                     harness.STOPPING = False
                     harness.start = lambda config=None, **kw: finishes[name]()
-                    codes.append(experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "3"]))
+                    codes.append(
+                        experiment.main(
+                            ["--manifest", str(manifest), "--resume", "--rounds", "3"]
+                        )
+                    )
             outcome = product.records(root, "seats")["outcome"]
             ended[name] = (
                 codes,
@@ -934,7 +1166,9 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
             )
             said[name] = output.getvalue()
             last = ground_truth("g03")["episodes"][-1]["stop"]
-    voted_out = [{"round": 2, "seat": "3", "reason": "received the most votes (2) in round 2"}]
+    voted_out = [
+        {"round": 2, "seat": "3", "reason": "received the most votes (2) in round 2"}
+    ]
     took = {"g01": 2, "g02": 2, "g03": 2}
     assert ended == {
         "whole": ([0], took, "all_eliminated", [], voted_out),
@@ -966,11 +1200,15 @@ def check_a_seat_that_left_the_table_for_a_run_still_counts_toward_every_stop():
             ids = seated(root, "g01", g02={})
             manifest = seats_manifest(root, ids)
             manifest.write_text(
-                "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+                "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"),
+                encoding="utf-8",
+                newline="\n",
             )
             harness.start = lambda config=None, **kw: fake(say(), Err(400))
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", rounds])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", rounds]
+                )
             took = episodes_taken(ids)
             outcome = product.records(root, "seats")["outcome"]
         alone.append(
@@ -992,26 +1230,57 @@ def check_a_seat_that_left_the_table_for_a_run_still_counts_toward_every_stop():
         ids = seated(root, "g01", g02={})
         harness.start = lambda config=None, **kw: fake(Err(400), Err(400))
         with quiet() as output:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--resume", "--rounds", "3"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--resume",
+                    "--rounds",
+                    "3",
+                ]
+            )
         outcome = product.records(root, "seats")["outcome"]
-    assert code == 0 and "every agent is out" not in output.getvalue(), output.getvalue()
+    assert code == 0 and "every agent is out" not in output.getvalue(), (
+        output.getvalue()
+    )
     assert outcome["termination_reason"] == "none_can_act", outcome
-    assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], outcome
+    assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], (
+        outcome
+    )
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True, head="stop_when_one_remains = true\n")
-        harness.start = lambda config=None, **kw: fake(say(), say(), Err(400), say(), say())
+        manifest = voting(
+            root,
+            dict.fromkeys(ids, 0),
+            {},
+            shell=True,
+            head="stop_when_one_remains = true\n",
+        )
+        harness.start = lambda config=None, **kw: fake(
+            say(), say(), Err(400), say(), say()
+        )
         runs = []
         for rounds in ("4", "3"):
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", rounds])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", rounds]
+                )
             outcome = product.records(root, "seats")["outcome"]
             runs.append(
-                (code, episodes_taken(ids), outcome["termination_reason"], outcome["winners"], output.getvalue())
+                (
+                    code,
+                    episodes_taken(ids),
+                    outcome["termination_reason"],
+                    outcome["winners"],
+                    output.getvalue(),
+                )
             )
             harness.start = lambda config=None, **kw: fake()
-    (first, first_took, first_reason, first_winners, _), (again, took, reason, winners, said) = runs
+    (
+        (first, first_took, first_reason, first_winners, _),
+        (again, took, reason, winners, said),
+    ) = runs
     assert first == 0 and first_took == {"g01": 2, "g02": 2, "g03": 1}, runs[0]
     assert (first_reason, first_winners) == ("one_remains", ["3"]), runs[0]
     assert again == 0 and took == {"g01": 2, "g02": 2, "g03": 2}, runs[1]
@@ -1038,7 +1307,9 @@ def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
         ids = seated(root, "g01", g02={}, g03={})
         manifest = seats_manifest(root, ids)
         manifest.write_text(
-            "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+            "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"),
+            encoding="utf-8",
+            newline="\n",
         )
         real = harness.ready
 
@@ -1054,10 +1325,18 @@ def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
             if out:
                 put_out(out)
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", rounds])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", rounds]
+                )
             outcome = product.records(root, "seats")["outcome"]
             runs.append(
-                (code, episodes_taken(ids), outcome["termination_reason"], outcome["survivors"], outcome["winners"])
+                (
+                    code,
+                    episodes_taken(ids),
+                    outcome["termination_reason"],
+                    outcome["survivors"],
+                    outcome["winners"],
+                )
             )
             said = output.getvalue()
     two = {"g01": 2, "g02": 2, "g03": 1}
@@ -1068,19 +1347,35 @@ def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
         (0, three, "one_remains", ["1"], ["1"]),
         (0, three, "all_eliminated", [], []),
     ], runs
-    assert "g03    sits out: it took 1 episodes and the table has played 3 rounds" in said, said
+    assert (
+        "g03    sits out: it took 1 episodes and the table has played 3 rounds" in said
+    ), said
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, {"g01": 3, "g02": 3, "g03": 1}, {}, shell=True, head="stop_when_one_remains = true\n")
-        harness.start = lambda config=None, **kw: fake(use("vote", to="2"), say(), say())
+        manifest = voting(
+            root,
+            {"g01": 3, "g02": 3, "g03": 1},
+            {},
+            shell=True,
+            head="stop_when_one_remains = true\n",
+        )
+        harness.start = lambda config=None, **kw: fake(
+            use("vote", to="2"), say(), say()
+        )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "1"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "1"]
+            )
         took = episodes_taken(ids)
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0 and took == {"g01": 4, "g02": 4, "g03": 1}, (code, took)
-    assert "g02: eliminated after round 4: did not vote in round 4" in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == ["1"], outcome
+    assert (
+        "g02: eliminated after round 4: did not vote in round 4" in output.getvalue()
+    ), output.getvalue()
+    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == [
+        "1"
+    ], outcome
     assert outcome["survivors"] == ["1"], outcome
 
 
@@ -1096,18 +1391,39 @@ def check_a_ballot_counts_toward_any_seat_still_in_and_a_total_of_zero_elects_no
     """
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True, head="stop_when_two_remain_after_tie = true\n")
+        manifest = voting(
+            root,
+            dict.fromkeys(ids, 0),
+            {},
+            shell=True,
+            head="stop_when_two_remain_after_tie = true\n",
+        )
         harness.start = lambda config=None, **kw: fake(
-            say(), say(), say(), use("vote", to="3"), say(), use("vote", to="3"), say(), Err(400)
+            say(),
+            say(),
+            say(),
+            use("vote", to="3"),
+            say(),
+            use("vote", to="3"),
+            say(),
+            Err(400),
         )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
         election = ground_truth("g01")["last_election"]
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0 and "both survive" not in output.getvalue(), output.getvalue()
-    assert election["tally"] == {"1": 0, "2": 0, "3": 2} and election["electors"] == ["1", "2"], election
+    assert election["tally"] == {"1": 0, "2": 0, "3": 2} and election["electors"] == [
+        "1",
+        "2",
+    ], election
     assert election["voted_out"] == "3" and not election["top_tied"], election
-    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == ["1", "2"], outcome
+    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == [
+        "1",
+        "2",
+    ], outcome
     assert outcome["elimination_order"] == [
         {"round": 2, "seat": "3", "reason": "received the most votes (2) in round 2"}
     ], outcome
@@ -1120,7 +1436,11 @@ def check_a_ballot_counts_toward_any_seat_still_in_and_a_total_of_zero_elects_no
         with quiet():
             held = experiment.resolve_vote(ids, live, {"1": "1", "2": "2"}, VOTE)
         g01 = ground_truth("g01")
-    assert held == 2 and live == {"g01"} and harness.why_out(g01) is None, (held, live, g01)
+    assert held == 2 and live == {"g01"} and harness.why_out(g01) is None, (
+        held,
+        live,
+        g01,
+    )
     assert g01["last_election"] == {
         "round": 2,
         "tally": {"1": 0},
@@ -1146,17 +1466,32 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
         seated(root, "g01", g02={})
         manifest = voting(root, {"g01": 1, "g02": 1}, {}, shell=True)
         put_out("g02")
-        harness.start = lambda config=None, **kw: fake(use("vote", to="2"), say(), seen=seen)
+        harness.start = lambda config=None, **kw: fake(
+            use("vote", to="2"), say(), seen=seen
+        )
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "1"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "1"]
+            )
         g01 = ground_truth("g01")
         offered = trace_on_disk("g01", 2)["offered"]
         outcome = product.records(root, "seats")["outcome"]
-    sessions = [[tool["name"] for tool in event["tools"]] for event in seen if event["kind"] == "session"]
+    sessions = [
+        [tool["name"] for tool in event["tools"]]
+        for event in seen
+        if event["kind"] == "session"
+    ]
     assert code == 0 and sessions == [offered] == [["bash"]], (sessions, offered)
-    assert harness.why_out(g01) is None and "did not vote" not in output.getvalue(), output.getvalue()
-    assert g01["last_election"]["electors"] == ["1"] and g01["last_election"]["abstainers"] == [], g01["last_election"]
-    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == ["1"], outcome
+    assert harness.why_out(g01) is None and "did not vote" not in output.getvalue(), (
+        output.getvalue()
+    )
+    assert (
+        g01["last_election"]["electors"] == ["1"]
+        and g01["last_election"]["abstainers"] == []
+    ), g01["last_election"]
+    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == [
+        "1"
+    ], outcome
 
 
 def check_no_seat_plays_a_round_the_table_has_played_past():
@@ -1178,26 +1513,46 @@ def check_no_seat_plays_a_round_the_table_has_played_past():
             say(), say(), Err(400), use("vote", to="2"), say(), say(), say(), say()
         )
         with quiet():
-            first = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "4"])
+            first = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "4"]
+            )
         records = product.records(root, "seats")
-        before = {agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids}
+        before = {
+            agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids
+        }
         order = records["outcome"]["elimination_order"]
         logged = len(records["progress"]["events"])
         harness.start = lambda config=None, **kw: fake()
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "1"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "1"]
+            )
         records = product.records(root, "seats")
-        after = {agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids}
+        after = {
+            agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids
+        }
         took = episodes_taken(ids)
-    resumed = [(event["phase"], event["round"]) for event in records["progress"]["events"][logged:]]
-    assert first == 0 and [(e["round"], e["seat"]) for e in order] == [(2, "2"), (4, "1")], order
+    resumed = [
+        (event["phase"], event["round"])
+        for event in records["progress"]["events"][logged:]
+    ]
+    assert first == 0 and [(e["round"], e["seat"]) for e in order] == [
+        (2, "2"),
+        (4, "1"),
+    ], order
     assert code == 0 and took == {"g01": 4, "g02": 2, "g03": 1}, (code, took)
-    assert "g03    sits out: it took 1 episodes and the table has played 4 rounds" in output.getvalue(), (
-        output.getvalue()
-    )
+    assert (
+        "g03    sits out: it took 1 episodes and the table has played 4 rounds"
+        in output.getvalue()
+    ), output.getvalue()
     assert after == before, f"no election was held again: {after}"
-    assert records["outcome"]["termination_reason"] == "all_eliminated", records["outcome"]
-    assert records["outcome"]["survivors"] == [] and records["outcome"]["elimination_order"] == order
+    assert records["outcome"]["termination_reason"] == "all_eliminated", records[
+        "outcome"
+    ]
+    assert (
+        records["outcome"]["survivors"] == []
+        and records["outcome"]["elimination_order"] == order
+    )
     assert all(number >= 4 for _, number in resumed), resumed
 
 
@@ -1217,7 +1572,9 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_at_the_
         put_out("g02")
         harness.start = lambda config=None, **kw: fake()
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "1"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "1"]
+            )
         election = ground_truth("g01")["last_election"]
         g03 = ground_truth("g03")
         outcome = product.records(root, "seats")["outcome"]
@@ -1225,8 +1582,12 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_at_the_
     assert election["electors"] == ["1", "2"] and election["tally"] == {}, election
     assert election["abstainers"] == ["2"] and election["voted_out"] == "", election
     assert "last_election" not in g03 and harness.why_out(g03) is None, g03
-    assert outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == [], outcome
-    assert outcome["elimination_order"] == [{"round": 2, "seat": "2", "reason": "did not vote in round 2"}], outcome
+    assert (
+        outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
+    ), outcome
+    assert outcome["elimination_order"] == [
+        {"round": 2, "seat": "2", "reason": "did not vote in round 2"}
+    ], outcome
 
 
 def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
@@ -1234,7 +1595,9 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
     with temp_root() as root:
         old_account = root / "records" / "g01" / "account.json"
         old_account.parent.mkdir(parents=True)
-        old_account.write_text(json.dumps({"agent": "g01", "model": "claude-sonnet-5"}), encoding="utf-8")
+        old_account.write_text(
+            json.dumps({"agent": "g01", "model": "claude-sonnet-5"}), encoding="utf-8"
+        )
         old_note = harness.mirror("g01", "notes") / "old.txt"
         old_note.parent.mkdir(parents=True)
         old_note.write_text("previous run\n", encoding="utf-8")
@@ -1248,14 +1611,23 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
 
         assert len(bundles) == 1, bundles
         assert (
-            json.loads((bundles[0] / "records" / "g01" / "account.json").read_text(encoding="utf-8"))["agent"] == "g01"
+            json.loads(
+                (bundles[0] / "records" / "g01" / "account.json").read_text(
+                    encoding="utf-8"
+                )
+            )["agent"]
+            == "g01"
         )
         assert (bundles[0] / "environments" / "g01" / "notes" / "old.txt").read_text(
             encoding="utf-8"
         ) == "previous run\n"
-        assert account["account_version"] == 2 and len(account["episodes"]) == 1, account
+        assert account["account_version"] == 2 and len(account["episodes"]) == 1, (
+            account
+        )
         assert "warning: starting fresh" in warning.getvalue()
-        assert str(bundles[0]) in warning.getvalue() and "--resume" in warning.getvalue()
+        assert (
+            str(bundles[0]) in warning.getvalue() and "--resume" in warning.getvalue()
+        )
 
         with quiet():
             assert experiment.main(["--manifest", str(manifest), "--resume"]) == 0
@@ -1307,7 +1679,9 @@ def check_an_interrupt_ends_the_whole_experiment():
         live = set(ids)
         with quiet():
             try:
-                experiment.sequential_round(ids, live, 0, fake(run("echo one"), KeyboardInterrupt()))
+                experiment.sequential_round(
+                    ids, live, 0, fake(run("echo one"), KeyboardInterrupt())
+                )
             except KeyboardInterrupt:
                 pass
             else:
@@ -1325,14 +1699,26 @@ def check_an_interrupt_ends_the_whole_experiment():
             experiment.sequential_round(ids, live, 0, fake(run("echo one"), Err(400)))
         took = episodes_taken(ids)
     assert live == {"g02", "g03"}, sorted(live)
-    assert took == {"g01": 1, "g02": 1, "g03": 1}, "the rest of the experiment takes its round"
+    assert took == {"g01": 1, "g02": 1, "g03": 1}, (
+        "the rest of the experiment takes its round"
+    )
 
     # And main answers an interrupt by ending the rounds, not the round.
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        harness.start = lambda config=None, **kw: fake(run("echo one"), KeyboardInterrupt())
+        harness.start = lambda config=None, **kw: fake(
+            run("echo one"), KeyboardInterrupt()
+        )
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5", "--resume"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--rounds",
+                    "5",
+                    "--resume",
+                ]
+            )
         took = episodes_taken(ids)
     assert code == 130, code
     assert took == {"g01": 1, "g02": 0, "g03": 0}, "no round after the one it landed in"
@@ -1346,7 +1732,12 @@ def check_a_stopped_experiment_ends_the_rounds():
         live = set(ids)
         with quiet():
             try:
-                experiment.sequential_round(ids, live, 0, stopping_at(2, run("echo one"), run("echo two"), say()))
+                experiment.sequential_round(
+                    ids,
+                    live,
+                    0,
+                    stopping_at(2, run("echo one"), run("echo two"), say()),
+                )
             except KeyboardInterrupt:
                 pass
             else:
@@ -1376,7 +1767,9 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
 
         harness.ready = noted
         # g02's episode is the one the stop lands in: g01 and g02 have taken round 1.
-        harness.start = lambda config=None, **kw: fake(say(), run("echo one"), KeyboardInterrupt())
+        harness.start = lambda config=None, **kw: fake(
+            say(), run("echo one"), KeyboardInterrupt()
+        )
         with quiet():
             stopped_code = experiment.main(["--manifest", str(manifest), "--resume"])
         stopped = episodes_taken(ids)
@@ -1389,7 +1782,9 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
                 code = experiment.main(["--manifest", str(manifest), "--resume"])
             runs.append((code, list(built), episodes_taken(ids), buf.getvalue()))
         told = {
-            (agent, n): re.search(r"^round: (\d+)$", trace_on_disk(agent, n)["observation"], re.M).group(1)
+            (agent, n): re.search(
+                r"^round: (\d+)$", trace_on_disk(agent, n)["observation"], re.M
+            ).group(1)
             for agent in ids
             for n in (1, 2)
         }
@@ -1405,7 +1800,11 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
     assert all(told[agent, n] == str(n) for agent, n in told), (
         f"every agent is told the round the others are in: {told}"
     )
-    prepared = [(event["round"], event.get("finishing")) for event in events if event["phase"] == "preparing_round"]
+    prepared = [
+        (event["round"], event.get("finishing"))
+        for event in events
+        if event["phase"] == "preparing_round"
+    ]
     assert prepared == [(1, None), (1, ["g03"]), (2, None)], prepared
 
 
@@ -1443,7 +1842,9 @@ def check_a_resumed_simultaneous_experiment_finishes_a_round_through_its_own_sch
         experiment.simultaneous_round = recorded
         try:
             with quiet():
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
         finally:
             experiment.simultaneous_round = driven
         took = episodes_taken(ids)
@@ -1474,7 +1875,9 @@ def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={}, g04={})
         manifest = voting(
-            root, {"g01": 4, "g02": 4, "g03": 4, "g04": 1}, {"g01": "2", "g02": "3", "g03": "2", "g04": "1"}
+            root,
+            {"g01": 4, "g02": 4, "g03": 4, "g04": 1},
+            {"g01": "2", "g02": "3", "g03": "2", "g04": "1"},
         )
         for agent in ("g01", "g02", "g03"):
             account = harness.load_account(agent)
@@ -1486,21 +1889,37 @@ def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
         experiment.sequential_round = episodes_for(acted)
         try:
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
         finally:
             experiment.sequential_round = driven
-        results = {agent: harness.load_account(agent).get("last_election") for agent in ids}
+        results = {
+            agent: harness.load_account(agent).get("last_election") for agent in ids
+        }
         out = {agent: harness.why_out(harness.load_account(agent)) for agent in ids}
     assert code == 0, output.getvalue()
-    assert acted == [(5, "g01"), (5, "g02"), (5, "g03"), (6, "g01"), (6, "g02"), (6, "g03")], acted
-    assert "g04    sits out: it took 1 episodes and the table has played 4 rounds" in output.getvalue(), (
-        output.getvalue()
-    )
+    assert acted == [
+        (5, "g01"),
+        (5, "g02"),
+        (5, "g03"),
+        (6, "g01"),
+        (6, "g02"),
+        (6, "g03"),
+    ], acted
+    assert (
+        "g04    sits out: it took 1 episodes and the table has played 4 rounds"
+        in output.getvalue()
+    ), output.getvalue()
     election = results["g01"]
-    assert election["round"] == 6 and election["tally"] == {"1": 0, "2": 2, "3": 1}, election
+    assert election["round"] == 6 and election["tally"] == {"1": 0, "2": 2, "3": 1}, (
+        election
+    )
     assert election["electors"] == ["1", "2", "3"], election
     assert election["voted_out"] == "2" and results["g03"] == election, results
-    assert results["g04"] is None and out["g04"] is None, "g04 stands in no election and is not out"
+    assert results["g04"] is None and out["g04"] is None, (
+        "g04 stands in no election and is not out"
+    )
     assert "received the most votes (2) in round 6" in out["g02"], out
 
 
@@ -1520,7 +1939,11 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
     note = {"name": "note", "kind": "write_file", "channel": "notes"}
     for older in (False, True):
         seen: list[dict] = []
-        with temp_root(channels=tables(BALLOT), tools=[SHELL, note, VOTE], harness_files={"round": "round"}) as root:
+        with temp_root(
+            channels=tables(BALLOT),
+            tools=[SHELL, note, VOTE],
+            harness_files={"round": "round"},
+        ) as root:
             ids = seated(root, "g01", g02={}, g03={}, g04={})
             manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)
             real = harness.ready
@@ -1544,7 +1967,9 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
                 say(),
             )
             with quiet():
-                missed_code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                missed_code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
             missed = episodes_taken(ids)
             for agent in ids if older else ():
                 account = harness.load_account(agent)
@@ -1559,38 +1984,89 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
                     record["remaining"].remove("4")
                 harness.save_account(agent, account)
             held = {
-                agent: {key: ground_truth(agent).get(key) for key in ("last_election", "eliminated")} for agent in ids
+                agent: {
+                    key: ground_truth(agent).get(key)
+                    for key in ("last_election", "eliminated")
+                }
+                for agent in ids
             }
 
             harness.ready = real
-            harness.start = lambda config=None, **kw: fake(use("vote", to="1"), say(), seen=seen)
+            harness.start = lambda config=None, **kw: fake(
+                use("vote", to="1"), say(), seen=seen
+            )
             with quiet() as output:
-                code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+                code = experiment.main(
+                    ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+                )
             took = episodes_taken(ids)
             after = {
-                agent: {key: ground_truth(agent).get(key) for key in ("last_election", "eliminated")} for agent in ids
+                agent: {
+                    key: ground_truth(agent).get(key)
+                    for key in ("last_election", "eliminated")
+                }
+                for agent in ids
             }
             outcome = product.records(root, "seats")["outcome"]
             finished = trace_on_disk("g04", 2)
-        offered = [[tool["name"] for tool in event["tools"]] for event in seen if event["kind"] == "session"]
+        offered = [
+            [tool["name"] for tool in event["tools"]]
+            for event in seen
+            if event["kind"] == "session"
+        ]
         tally = {"1": 1, "2": 2, "3": 0} if older else {"1": 1, "2": 2, "3": 0, "4": 0}
-        assert missed_code == 0 and missed == {"g01": 2, "g02": 2, "g03": 2, "g04": 1}, missed
+        assert missed_code == 0 and missed == {
+            "g01": 2,
+            "g02": 2,
+            "g03": 2,
+            "g04": 1,
+        }, missed
         assert held["g01"]["last_election"]["tally"] == tally, (older, held)
-        assert held["g02"]["eliminated"]["reason"] == "received the most votes (2) in round 2", (older, held)
-        assert code == 0 and took == {"g01": 3, "g02": 2, "g03": 3, "g04": 3}, (older, code, took)
+        assert (
+            held["g02"]["eliminated"]["reason"]
+            == "received the most votes (2) in round 2"
+        ), (older, held)
+        assert code == 0 and took == {"g01": 3, "g02": 2, "g03": 3, "g04": 3}, (
+            older,
+            code,
+            took,
+        )
         assert "--- round 2 (g04) ---" in output.getvalue(), (older, output.getvalue())
-        assert "eliminated after round" not in output.getvalue(), (older, output.getvalue())
-        assert after == held, f"the election already held is not held again: {older} {after}"
-        assert (held["g04"]["last_election"] or {}).get("electors") == (None if older else ["1", "2", "3"]), (
+        assert "eliminated after round" not in output.getvalue(), (
+            older,
+            output.getvalue(),
+        )
+        assert after == held, (
+            f"the election already held is not held again: {older} {after}"
+        )
+        assert (held["g04"]["last_election"] or {}).get("electors") == (
+            None if older else ["1", "2", "3"]
+        ), (
             older,
             held["g04"],
         )
         assert held["g04"]["eliminated"] is None, (older, held["g04"])
-        assert offered[0] == finished["offered"] == ["bash", "note"], (older, offered, finished["offered"])
-        assert "phase: discussion" in finished["observation"], (older, finished["observation"])
-        assert "vote only" not in finished["observation"], (older, finished["observation"])
-        assert outcome["survivors"] == ["1", "3", "4"] and outcome["elimination_order"] == [
-            {"round": 2, "seat": "2", "reason": "received the most votes (2) in round 2"}
+        assert offered[0] == finished["offered"] == ["bash", "note"], (
+            older,
+            offered,
+            finished["offered"],
+        )
+        assert "phase: discussion" in finished["observation"], (
+            older,
+            finished["observation"],
+        )
+        assert "vote only" not in finished["observation"], (
+            older,
+            finished["observation"],
+        )
+        assert outcome["survivors"] == ["1", "3", "4"] and outcome[
+            "elimination_order"
+        ] == [
+            {
+                "round": 2,
+                "seat": "2",
+                "reason": "received the most votes (2) in round 2",
+            }
         ], (older, outcome)
 
 
@@ -1616,7 +2092,9 @@ def check_a_seat_that_cannot_finish_its_round_on_resume_leaves_the_rest_playing(
             first = experiment.main(["--manifest", str(manifest), "--resume"])
         missed = episodes_taken(ids)
         with quiet() as output:
-            code = experiment.main(["--manifest", str(manifest), "--resume", "--rounds", "2"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--resume", "--rounds", "2"]
+            )
         took = episodes_taken(ids)
         outcome = product.records(root, "seats")["outcome"]
     assert first == 0 and missed == {"g01": 1, "g02": 0, "g03": 1}, (first, missed)
@@ -1640,16 +2118,28 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
         ids = seated(root, "g01", g02={}, g03={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5", "--resume"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--rounds",
+                    "5",
+                    "--resume",
+                ]
+            )
         took = episodes_taken(ids)
         rested = {r: harness.load_account(r)["remaining"] for r in ids}
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
-    assert took == {"g01": 1, "g02": 1, "g03": 1}, f"one episode each, then nothing left to ask for: {took}"
+    assert took == {"g01": 1, "g02": 1, "g03": 1}, (
+        f"one episode each, then nothing left to ask for: {took}"
+    )
     assert set(rested.values()) == {0}, rested
     assert buf.getvalue().count("drops out: nothing left to spend") == 3, buf.getvalue()
     assert "every agent is out after 1 rounds" in buf.getvalue(), buf.getvalue()
-    assert outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == [], outcome
+    assert (
+        outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
+    ), outcome
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1660,19 +2150,31 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
 
         harness.ready = unbuildable
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5", "--resume"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--rounds",
+                    "5",
+                    "--resume",
+                ]
+            )
         took = episodes_taken(ids)
         records = product.records(root, "seats")
         outcome = records["outcome"]
-        phases = [(event["phase"], event["round"]) for event in records["progress"]["events"]]
+        phases = [
+            (event["phase"], event["round"]) for event in records["progress"]["events"]
+        ]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
     assert "no agent could take an episode in round 1" in buf.getvalue(), buf.getvalue()
     assert outcome["termination_reason"] == "none_can_act", outcome
-    assert outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == [], outcome
-    assert [phase for phase in phases if phase[0] == "preparing_round"] == [("preparing_round", 1)], (
-        f"the empty round is what ends the rounds, and no round follows it: {phases}"
-    )
+    assert (
+        outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == []
+    ), outcome
+    assert [phase for phase in phases if phase[0] == "preparing_round"] == [
+        ("preparing_round", 1)
+    ], f"the empty round is what ends the rounds, and no round follows it: {phases}"
 
 
 def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
@@ -1683,7 +2185,15 @@ def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
         ids = seated(root, "g01", g02={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet():
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "1", "--resume"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--rounds",
+                    "1",
+                    "--resume",
+                ]
+            )
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0 and outcome["termination_reason"] == "round_limit", outcome
     assert outcome["survivors"] == [] and outcome["scores"] == {"1": 0, "2": 0}, outcome
@@ -1698,17 +2208,30 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         put_out("g03")
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(seats_manifest(root, ids)), "--rounds", "5", "--resume"])
+            code = experiment.main(
+                [
+                    "--manifest",
+                    str(seats_manifest(root, ids)),
+                    "--rounds",
+                    "5",
+                    "--resume",
+                ]
+            )
         took = episodes_taken(ids)
         alone = harness.load_account("g01")["episodes"][-1]
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 5, "g02": 0, "g03": 0}, took
-    assert outcome["termination_reason"] == "round_limit" and not outcome["winners"], outcome
+    assert outcome["termination_reason"] == "round_limit" and not outcome["winners"], (
+        outcome
+    )
     assert "competition ends" not in buf.getvalue(), buf.getvalue()
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
     assert alone["channels"]["mail"]["penalty"] == 0, alone["channels"]["mail"]
-    assert not alone["channels"]["blackboard"]["posted"] and alone["channels"]["blackboard"]["penalty"] > 0
+    assert (
+        not alone["channels"]["blackboard"]["posted"]
+        and alone["channels"]["blackboard"]["penalty"] > 0
+    )
 
     with temp_root(channels=ALL_OWED) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1716,17 +2239,25 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         put_out("g03")
         manifest = seats_manifest(root, ids)
         manifest.write_text(
-            "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+            "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"),
+            encoding="utf-8",
+            newline="\n",
         )
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
-            code = experiment.main(["--manifest", str(manifest), "--rounds", "5", "--resume"])
+            code = experiment.main(
+                ["--manifest", str(manifest), "--rounds", "5", "--resume"]
+            )
         took = episodes_taken(ids)
         outcome = product.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
-    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == ["1"], outcome
-    assert "g01 is the only agent left; the competition ends" in buf.getvalue(), buf.getvalue()
+    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == [
+        "1"
+    ], outcome
+    assert "g01 is the only agent left; the competition ends" in buf.getvalue(), (
+        buf.getvalue()
+    )
 
 
 def check_a_manifest_is_validated():
@@ -1765,7 +2296,11 @@ def check_a_manifest_is_validated():
             "not toml ==\n",
         ):
             p = manifest_file(root, bad)
-            refused(lambda: experiment.load_manifest(p), str(p), because=f"accepted bad manifest: {bad!r}")
+            refused(
+                lambda: experiment.load_manifest(p),
+                str(p),
+                because=f"accepted bad manifest: {bad!r}",
+            )
         refused(
             lambda: experiment.load_manifest(root / "experiments" / "missing.toml"),
             because="a missing manifest was ignored",
@@ -1774,8 +2309,14 @@ def check_a_manifest_is_validated():
             ("stop_when_one_remains", "1", "int"),
             ("stop_when_two_remain_after_tie", '"yes"', "str"),
         ):
-            p = manifest_file(root, f'{key} = {value}\nsystem_prompt = ""\n' + two, f"{key}.toml")
-            refused(lambda: experiment.load_manifest(p), str(p), f"{key} must be bool, got {kind}")
+            p = manifest_file(
+                root, f'{key} = {value}\nsystem_prompt = ""\n' + two, f"{key}.toml"
+            )
+            refused(
+                lambda: experiment.load_manifest(p),
+                str(p),
+                f"{key} must be bool, got {kind}",
+            )
 
         p = manifest_file(root, good)
         m = experiment.load_manifest(p)
@@ -1812,7 +2353,11 @@ def check_a_manifest_is_validated():
     assert set(m) == set(short) == experiment.Manifest.__required_keys__, (
         "a manifest, read or meant by a list of ids, holds the keys Manifest declares"
     )
-    assert short["schedule"] == "sequential" and short["overrides"] == {} and short["sha256"] == ""
+    assert (
+        short["schedule"] == "sequential"
+        and short["overrides"] == {}
+        and short["sha256"] == ""
+    )
     assert [e["id"] for e in short["agents"]] == ["a", "b"]
     assert experiment.stamp_of(m) == {
         "schedule": "simultaneous",
@@ -1862,28 +2407,49 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         traces = {r: trace_on_disk(r, 1) for r in accounts}
 
         p.write_text(
-            p.read_text(encoding="utf-8").replace('starter_files = "a"', 'starter_files = "b"'),
+            p.read_text(encoding="utf-8").replace(
+                'starter_files = "a"', 'starter_files = "b"'
+            ),
             encoding="utf-8",
             newline="\n",
         )
         with quiet():
             refused(
-                lambda: experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]),
+                lambda: experiment.main(
+                    ["--manifest", str(p), "--rounds", "1", "--resume"]
+                ),
                 "starter_files",
                 because="an agent was re-created on different terms",
             )
     assert code == 0, buf.getvalue()
     assert (
-        asked[0] == ({"grace_episodes": 2, "system_prompt": ""}, {("anthropic", "claude-sonnet-5")}) and len(asked) == 2
+        asked[0]
+        == (
+            {"grace_episodes": 2, "system_prompt": ""},
+            {("anthropic", "claude-sonnet-5")},
+        )
+        and len(asked) == 2
     ), asked
-    assert {r: m["starter_files"] for r, m in accounts.items()} == {"g01": "a", "g02": "b", "g03": ""}
-    assert accounts["g02"]["initial"] == 600000 and accounts["g01"]["initial"] == harness.SETTINGS.budget
+    assert {r: m["starter_files"] for r, m in accounts.items()} == {
+        "g01": "a",
+        "g02": "b",
+        "g03": "",
+    }
+    assert (
+        accounts["g02"]["initial"] == 600000
+        and accounts["g01"]["initial"] == harness.SETTINGS.budget
+    )
     assert starter == {"g01": "alpha\n", "g02": "bravo\n", "g03": None}, starter
     for r, t in traces.items():
-        assert t["provenance"]["starter_files"] == accounts[r]["starter_files"], (r, t["provenance"])
+        assert t["provenance"]["starter_files"] == accounts[r]["starter_files"], (
+            r,
+            t["provenance"],
+        )
         assert t["provenance"]["schedule"] == "sequential"
         assert t["provenance"]["manifest_sha256"] == digest
-        assert t["provenance"]["grace_episodes"] == 2, "the experiment's default reached every agent"
+        assert t["provenance"]["grace_episodes"] == 2, (
+            "the experiment's default reached every agent"
+        )
     assert "sequential" in buf.getvalue(), buf.getvalue()
 
 
@@ -1903,12 +2469,20 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
         took = episodes_taken(ids)
     first = next(i for i, (what, _) in enumerate(events) if what == "create")
     before = [what for what, _ in events[:first]]
-    assert before.count("start") == before.count("load") == 3 and set(before) == {"start", "load"}, (
-        f"every environment is built before any episode runs: {events}"
+    assert before.count("start") == before.count("load") == 3 and set(before) == {
+        "start",
+        "load",
+    }, f"every environment is built before any episode runs: {events}"
+    assert [agent_of(n) for what, n in events if what == "start"] == ids, (
+        "in seat order"
     )
-    assert [agent_of(n) for what, n in events if what == "start"] == ids, "in seat order"
-    assert sorted(agent_of(n) for what, n in events if what == "close") == ids, "and every one reaped"
-    assert acted and took == {"g01": 1, "g02": 1, "g03": 1} and live == set(ids), (took, live)
+    assert sorted(agent_of(n) for what, n in events if what == "close") == ids, (
+        "and every one reaped"
+    )
+    assert acted and took == {"g01": 1, "g02": 1, "g03": 1} and live == set(ids), (
+        took,
+        live,
+    )
 
 
 def check_a_simultaneous_round_runs_its_episodes_at_once():
@@ -1926,7 +2500,9 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
         with quiet():
             experiment.simultaneous_round(ids, live, 0, create)
         stops = {r: harness.load_account(r)["episodes"][0]["stop"] for r in ids}
-    assert set(stops.values()) == {"no_tool_call"}, f"an episode that waited alone would have erred instead: {stops}"
+    assert set(stops.values()) == {"no_tool_call"}, (
+        f"an episode that waited alone would have erred instead: {stops}"
+    )
 
 
 def check_a_simultaneous_round_reads_last_round_and_not_this_one():
@@ -1938,17 +2514,27 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         first = per_agent(
-            g01=(run("echo hello > 1/RESULT", "echo psst > out/2", "echo '2 250' > out/transfer"), say()),
+            g01=(
+                run(
+                    "echo hello > 1/RESULT",
+                    "echo psst > out/2",
+                    "echo '2 250' > out/transfer",
+                ),
+                say(),
+            ),
             g02=(run(f"cat {digest_name()}", "ls 1"), say()),
         )
         live = set(ids)
         with quiet():
             experiment.simultaneous_round(ids, live, 0, first)
         g02_first = ground_truth("g02")["episodes"][0]
-        said, listed = (c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"])
+        said, listed = (
+            c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"]
+        )
         # g01 submits nothing, so the transfer is made only in the episode that declared it.
         second = per_agent(
-            g01=(run("rm out/transfer", f"cat {digest_name()}"), say()), g02=(run(f"cat {digest_name()}"), say())
+            g01=(run("rm out/transfer", f"cat {digest_name()}"), say()),
+            g02=(run(f"cat {digest_name()}"), say()),
         )
         with quiet():
             experiment.simultaneous_round(ids, live, 1, second)
@@ -1957,12 +2543,18 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
     assert "hello" not in said and "psst" not in said and "RESULT" not in listed, (
         f"round 0 did not read round 0: {said} / {listed}"
     )
-    assert "hello" in later["observation"] and "psst" in later["observation"], later["observation"]
-    assert "1 2 250" in later["observation"], "the transfer is on the ledger at the next episode"
+    assert "hello" in later["observation"] and "psst" in later["observation"], later[
+        "observation"
+    ]
+    assert "1 2 250" in later["observation"], (
+        "the transfer is on the ledger at the next episode"
+    )
     assert g02["received"] == 250 and g02_first["received"] == 250, (g02, g02_first)
     span = g02["series"][g02_first["series_from"] : g02_first["series_to"] + 1]
     assert len(span) == elements_of(g02_first), (span, g02_first)
-    assert span[-1] == span[-2] + 250, "the credit is the last element of the receiver's span"
+    assert span[-1] == span[-2] + 250, (
+        "the credit is the last element of the receiver's span"
+    )
 
 
 def check_a_simultaneous_credit_lands_before_the_floor():
@@ -1978,13 +2570,17 @@ def check_a_simultaneous_credit_lands_before_the_floor():
             ids = seated(root, "g01", g02={})
             live = set(ids)
             with quiet():
-                experiment.simultaneous_round(ids, live, 0, per_agent(g01=(run(transfer), say()), g02=(say(),)))
+                experiment.simultaneous_round(
+                    ids, live, 0, per_agent(g01=(run(transfer), say()), g02=(say(),))
+                )
             m = ground_truth("g02")
             results[name] = (m["remaining"], m.get("forgiven", 0), harness.admits(m))
     assert results["transfer"] == (49, 0, True), (
         f"the credit landed first, so nothing was forgiven and the agent goes on: {results}"
     )
-    assert results["none"] == (0, 1, False), f"without it the overshoot is floored: {results}"
+    assert results["none"] == (0, 1, False), (
+        f"without it the overshoot is floored: {results}"
+    )
     assert results["exact"] == (0, 0, False), (
         f"a credit that brings the agent to exactly zero leaves it out, for good: {results}"
     )
@@ -2000,7 +2596,9 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
 
     class Unread(dict):
         def get(self, *args):
-            raise OSError("what the blackboard held at episode start does not read back")
+            raise OSError(
+                "what the blackboard held at episode start does not read back"
+            )
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -2019,7 +2617,13 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
         try:
             with quiet():
                 experiment.simultaneous_round(
-                    ids, live, 0, per_agent(g01=(run("echo '2 250' > out/transfer"), say()), default=(say(),))
+                    ids,
+                    live,
+                    0,
+                    per_agent(
+                        g01=(run("echo '2 250' > out/transfer"), say()),
+                        default=(say(),),
+                    ),
                 )
         except OSError as e:
             raised = e
@@ -2032,7 +2636,9 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
     assert traced == {"g01": True, "g02": False, "g03": True}, traced
     assert (sent["agent"], sent["amount"]) == ("g02", 250), sent
     assert g02["received"] == 250 and g02["remaining"] == before["remaining"] + 250, g02
-    assert g02["series"] == before["series"] + [before["remaining"] + 250], g02["series"]
+    assert g02["series"] == before["series"] + [before["remaining"] + 250], g02[
+        "series"
+    ]
 
 
 def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
@@ -2054,13 +2660,19 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
         (
             "sequential",
             experiment.sequential_round,
-            lambda: fake(run("echo '2 100' > out/transfer"), say(), run("echo '1 250' > out/transfer"), say()),
+            lambda: fake(
+                run("echo '2 100' > out/transfer"),
+                say(),
+                run("echo '1 250' > out/transfer"),
+                say(),
+            ),
         ),
         (
             "simultaneous",
             experiment.simultaneous_round,
             lambda: per_agent(
-                g01=(run("echo '2 100' > out/transfer"), say()), g02=(run("echo '1 250' > out/transfer"), say())
+                g01=(run("echo '2 100' > out/transfer"), say()),
+                g02=(run("echo '1 250' > out/transfer"), say()),
             ),
         ),
     )
@@ -2087,13 +2699,20 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
             assert isinstance(raised, OSError), (schedule, lost, raised)
             for agent, account in accounts.items():
                 spent = sum(episode["spent"] for episode in account["episodes"])
-                assert reconciled(account, spent) == account["remaining"] == account["series"][-1], (
+                assert (
+                    reconciled(account, spent)
+                    == account["remaining"]
+                    == account["series"][-1]
+                ), (
                     schedule,
                     lost,
                     account,
                 )
             ended[schedule, lost] = {
-                agent: ([episode["received"] for episode in account["episodes"]], account.get("received", 0))
+                agent: (
+                    [episode["received"] for episode in account["episodes"]],
+                    account.get("received", 0),
+                )
                 for agent, account in accounts.items()
             }
     # What each committed episode received inside its span, and what each account holds
@@ -2122,7 +2741,10 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                 try:
                     with quiet():
                         experiment.simultaneous_round(
-                            ids, set(ids), 0, per_agent(g01=(say(),), g02=(run(transfer), say()))
+                            ids,
+                            set(ids),
+                            0,
+                            per_agent(g01=(say(),), g02=(run(transfer), say())),
                         )
                 except OSError:
                     pass
@@ -2137,9 +2759,14 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     # Floored, a take-back forgives what its close would have; unfloored, it forgives
     # nothing, and the balance stays below zero where the close left it.
     assert stood[True, True][:4] == stood[True, False][:4] == (0, 1, 0, 0), stood
-    assert stood[True, True][4] == [-1, 49, -1, 0] and stood[True, False][4] == [-1, 0], stood
+    assert stood[True, True][4] == [-1, 49, -1, 0] and stood[True, False][4] == [
+        -1,
+        0,
+    ], stood
     assert stood[False, True][:4] == stood[False, False][:4] == (-1, 0, 0, -1), stood
-    assert stood[False, True][4] == [-1, 49, -1] and stood[False, False][4] == [-1], stood
+    assert stood[False, True][4] == [-1, 49, -1] and stood[False, False][4] == [-1], (
+        stood
+    )
 
 
 def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_committed():
@@ -2156,12 +2783,18 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
     rounds = {
         "sequential": (
             experiment.sequential_round,
-            lambda: fake(run("echo '2 100' > out/transfer"), say(), run("echo '1 250' > out/transfer"), say()),
+            lambda: fake(
+                run("echo '2 100' > out/transfer"),
+                say(),
+                run("echo '1 250' > out/transfer"),
+                say(),
+            ),
         ),
         "simultaneous": (
             experiment.simultaneous_round,
             lambda: per_agent(
-                g01=(run("echo '2 100' > out/transfer"), say()), g02=(run("echo '1 250' > out/transfer"), say())
+                g01=(run("echo '2 100' > out/transfer"), say()),
+                g02=(run("echo '1 250' > out/transfer"), say()),
             ),
         ),
     }
@@ -2202,7 +2835,10 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
             harness.replace_file = no_room
             raised = None
             try:
-                with quiet(), contextlib.redirect_stderr(Broken() if broken else sys.stderr):
+                with (
+                    quiet(),
+                    contextlib.redirect_stderr(Broken() if broken else sys.stderr),
+                ):
                     a_round(ids, set(ids), 0, router())
             except (KeyboardInterrupt, OSError) as e:
                 raised = e
@@ -2211,9 +2847,16 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
         assert raised is not None, case
         for account in accounts.values():
             spent = sum(episode["spent"] for episode in account["episodes"])
-            assert reconciled(account, spent) == account["remaining"] == account["series"][-1], (case, account)
+            assert (
+                reconciled(account, spent)
+                == account["remaining"]
+                == account["series"][-1]
+            ), (case, account)
         ended[case] = {
-            agent: ([episode["received"] for episode in account["episodes"]], account.get("received", 0))
+            agent: (
+                [episode["received"] for episode in account["episodes"]],
+                account.get("received", 0),
+            )
             for agent, account in accounts.items()
         }
     # What each committed episode received inside its span, and what each account holds
@@ -2221,8 +2864,14 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
     assert ended == {
         ("sequential", "g01", None, False): {"g01": ([0], 0), "g02": ([], 100)},
         ("sequential", "g02", None, False): {"g01": ([0], 250), "g02": ([0], 100)},
-        ("simultaneous", "g01", None, False): {"g01": ([250], 250), "g02": ([100], 100)},
-        ("simultaneous", "g02", None, False): {"g01": ([250], 250), "g02": ([100], 100)},
+        ("simultaneous", "g01", None, False): {
+            "g01": ([250], 250),
+            "g02": ([100], 100),
+        },
+        ("simultaneous", "g02", None, False): {
+            "g01": ([250], 250),
+            "g02": ([100], 100),
+        },
         ("simultaneous", "g01", "g02", False): {"g01": ([250], 0), "g02": ([], 100)},
         ("simultaneous", "g02", "g01", False): {"g01": ([], 250), "g02": ([0], 0)},
         ("simultaneous", None, "g02", True): {"g01": ([250], 0), "g02": ([], 100)},
@@ -2240,7 +2889,9 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
                 gate.wait()
                 harness.STOPPING = True
 
-        return per_agent(default=(run("echo one"), run("echo two"), say()), on_request=requested)
+        return per_agent(
+            default=(run("echo one"), run("echo two"), say()), on_request=requested
+        )
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -2262,7 +2913,9 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
         p = manifest_file(
-            root, 'schedule = "simultaneous"\nsystem_prompt = ""\n' + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids)
+            root,
+            'schedule = "simultaneous"\nsystem_prompt = ""\n'
+            + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids),
         )
         harness.start = lambda config=None, **kw: stopping_create()
         with quiet() as buf:
@@ -2270,7 +2923,9 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
         took = episodes_taken(ids)
     assert code == 130, code
     assert took == {"g01": 1, "g02": 1, "g03": 1}, took
-    assert "interrupted" in buf.getvalue() and "simultaneous" in buf.getvalue(), buf.getvalue()
+    assert "interrupted" in buf.getvalue() and "simultaneous" in buf.getvalue(), (
+        buf.getvalue()
+    )
 
 
 def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order():
@@ -2279,7 +2934,12 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
         ids = seated(root, "g01", g02={}, g03={})
         live = set(ids)
         with quiet() as buf:
-            experiment.simultaneous_round(ids, live, 0, per_agent(default=(run("echo one"), run("echo two"), say())))
+            experiment.simultaneous_round(
+                ids,
+                live,
+                0,
+                per_agent(default=(run("echo one"), run("echo two"), say())),
+            )
     lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
     assert lines, "nothing was echoed"
     assert all(any(ln.startswith(r) for r in ids) for ln in lines), (
@@ -2287,7 +2947,9 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
     )
     summary = [i for i, ln in enumerate(lines) if re.match(r"^g0\d\s+ep1\s", ln)]
     assert [lines[i].split()[0] for i in summary] == ids, "summaries in seat order"
-    assert summary and summary[0] > max(i for i, ln in enumerate(lines) if "| " in ln), "and after every echoed line"
+    assert summary and summary[0] > max(
+        i for i, ln in enumerate(lines) if "| " in ln
+    ), "and after every echoed line"
 
 
 def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_seats_the_rest():
@@ -2356,7 +3018,9 @@ def check_labels_are_validated():
     """A label is letters, digits, '.', '_' and '-', distinct after defaults, and not a path."""
 
     def two(a: str = "", b: str = "") -> str:
-        return f'system_prompt = ""\n[[agent]]\nid = "g01"\n{a}[[agent]]\nid = "g02"\n{b}'
+        return (
+            f'system_prompt = ""\n[[agent]]\nid = "g01"\n{a}[[agent]]\nid = "g02"\n{b}'
+        )
 
     with temp_root() as root:
         for bad in (
@@ -2372,9 +3036,14 @@ def check_labels_are_validated():
                 "label",
                 because=f"accepted a bad label: {bad!r}",
             )
-        m = experiment.load_manifest(manifest_file(root, two('label = "Studio"\n', 'label = "Game"\n')))
+        m = experiment.load_manifest(
+            manifest_file(root, two('label = "Studio"\n', 'label = "Game"\n'))
+        )
         assert m["labels"] == PERSONA_LABELS, m["labels"]
-        assert experiment.load_manifest(manifest_file(root, two()))["labels"] == {"1": "1", "2": "2"}
+        assert experiment.load_manifest(manifest_file(root, two()))["labels"] == {
+            "1": "1",
+            "2": "2",
+        }
         assert experiment.shorthand(["a", "b"])["labels"] == {"1": "1", "2": "2"}
 
 
@@ -2389,14 +3058,25 @@ def check_a_manifest_table_replaces_the_whole_set():
             'readers = "self"\npath = "state"\n' + agents,
         )
         m = experiment.load_manifest(p)
-        table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p), tuple(m["labels"].values()))
-        assert [c.name for c in table] == ["notes"], "one table declared, one channel in force"
-        assert hf == {"balance": "n", "digest": "m"}, "no [harness_files], no change"
-        assert [c.name for c in harness.channels()] == ["notes", "blackboard", "mail", "transfer"], (
-            "loading a manifest sets nothing; start() does"
+        table, hf = harness.validate_channels(
+            m["channels"], m["harness_files"], str(p), tuple(m["labels"].values())
         )
+        assert [c.name for c in table] == ["notes"], (
+            "one table declared, one channel in force"
+        )
+        assert hf == {"balance": "n", "digest": "m"}, "no [harness_files], no change"
+        assert [c.name for c in harness.channels()] == [
+            "notes",
+            "blackboard",
+            "mail",
+            "transfer",
+        ], "loading a manifest sets nothing; start() does"
 
-        p = manifest_file(root, 'system_prompt = ""\n[harness_files]\ndigest = ""\n' + agents, name="d.toml")
+        p = manifest_file(
+            root,
+            'system_prompt = ""\n[harness_files]\ndigest = ""\n' + agents,
+            name="d.toml",
+        )
         m = experiment.load_manifest(p)
         assert m["channels"] is None, "no [[channel]], and the table in force stays"
         table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p))
@@ -2414,7 +3094,11 @@ def check_a_manifest_declares_what_the_harness_says():
     """
     mine, ours = "You are studio 1.", "You are one of several studios."
     text = (
-        'system_prompt = "' + ours + '"\n[[agent]]\nid = "g01"\nsystem_prompt = "' + mine + '"\n[[agent]]\nid = "g02"\n'
+        'system_prompt = "'
+        + ours
+        + '"\n[[agent]]\nid = "g01"\nsystem_prompt = "'
+        + mine
+        + '"\n[[agent]]\nid = "g02"\n'
     )
     with temp_root() as root:
         # Declared and never inherited: a manifest silent on it is refused, and the
@@ -2425,7 +3109,9 @@ def check_a_manifest_declares_what_the_harness_says():
             "system_prompt",
             because="a manifest declaring no prompt was accepted",
         )
-        empty = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "g01"\n', name="e.toml")
+        empty = manifest_file(
+            root, 'system_prompt = ""\n[[agent]]\nid = "g01"\n', name="e.toml"
+        )
         assert experiment.load_manifest(empty)["overrides"] == {"system_prompt": ""}
 
         p = manifest_file(root, text)
@@ -2444,25 +3130,43 @@ def check_a_manifest_declares_what_the_harness_says():
 
         # A seat's own declaration is one of its pinned settings.
         original = p.read_text(encoding="utf-8")
-        p.write_text(original.replace(mine, mine + " Again."), encoding="utf-8", newline="\n")
+        p.write_text(
+            original.replace(mine, mine + " Again."), encoding="utf-8", newline="\n"
+        )
         with quiet():
             refused(
-                lambda: experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]),
+                lambda: experiment.main(
+                    ["--manifest", str(p), "--rounds", "1", "--resume"]
+                ),
                 "system_prompt",
                 because="an agent was re-created on a different system prompt",
             )
         # The experiment's default is read at creation like every other setting, so a
         # seat that took it keeps what it was told and a later manifest does not resay it.
-        p.write_text(original.replace(ours, ours + " Again."), encoding="utf-8", newline="\n")
+        p.write_text(
+            original.replace(ours, ours + " Again."), encoding="utf-8", newline="\n"
+        )
         with quiet():
-            assert experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"]) == 0
+            assert (
+                experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"])
+                == 0
+            )
         kept = ground_truth("g02")["system_prompt"]
     assert code == 0, buf.getvalue()
     assert sent == {mine, ours}, "each seat was told what it declared"
     assert harness.SYSTEM not in sent, "and nothing was told the shipped default"
-    assert {r: a["system_prompt"] for r, a in accounts.items()} == {"g01": mine, "g02": ours}
-    assert kept == ours, "the account is what the agent is told, not the manifest of the day"
+    assert {r: a["system_prompt"] for r, a in accounts.items()} == {
+        "g01": mine,
+        "g02": ours,
+    }
+    assert kept == ours, (
+        "the account is what the agent is told, not the manifest of the day"
+    )
     for r, t in traces.items():
         want = accounts[r]["system_prompt"]
         assert t["provenance"]["system"] == want, (r, t["provenance"]["system"])
-        assert t["provenance"]["system_sha256"] == t["system_sha256"] == harness.system_sha256(want)
+        assert (
+            t["provenance"]["system_sha256"]
+            == t["system_sha256"]
+            == harness.system_sha256(want)
+        )

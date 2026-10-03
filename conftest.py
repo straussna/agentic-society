@@ -23,9 +23,13 @@ collect_ignore = ["checks/fake.py", "checks/lanes.py"]
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("checks")
-    group.addoption("--docker", action="store_true", help="run the checks that need a container")
     group.addoption(
-        "--real", action="store_true", help="run every check in a container, including the ones that need not be"
+        "--docker", action="store_true", help="run the checks that need a container"
+    )
+    group.addoption(
+        "--real",
+        action="store_true",
+        help="run every check in a container, including the ones that need not be",
     )
 
 
@@ -35,7 +39,9 @@ def pytest_configure(config: pytest.Config) -> None:
     for variable in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
         os.environ.pop(variable, None)
     real = config.getoption("real")
-    configure(real, (real or config.getoption("docker")) and docker_ready(), os.getpid())
+    configure(
+        real, (real or config.getoption("docker")) and docker_ready(), os.getpid()
+    )
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:

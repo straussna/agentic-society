@@ -55,7 +55,9 @@ def check_the_view_reads_a_live_episode_from_raw():
     with temp_root():
         episode_once(*DEFAULT)
         unfinished()
-        assert view.live_index("t") == 1, "a raw log with no trace is an unfinished episode"
+        assert view.live_index("t") == 1, (
+            "a raw log with no trace is an unfinished episode"
+        )
         v = view.episode_view("t", 1)
         assert (v["source"], v["live"]) == ("raw", True), v["source"]
         assert [c["call"] for t in v["turns"] for c in t["tools"]] == [
@@ -76,7 +78,9 @@ def check_a_live_episode_under_a_manifest_that_declares_no_tool_opens_without_th
     with temp_root() as root:
         episode_once(*DEFAULT)
         unfinished()
-        path = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "t"\n', "silent.toml")
+        path = manifest_file(
+            root, 'system_prompt = ""\n[[agent]]\nid = "t"\n', "silent.toml"
+        )
         manifest = experiment.load_manifest(path)
         account = ground_truth()
         account["experiment"] = {"manifest_sha256": manifest["sha256"]}
@@ -89,7 +93,10 @@ def check_a_live_episode_under_a_manifest_that_declares_no_tool_opens_without_th
             view.manifests = real
 
     assert manifest["tools"] is None, manifest["tools"]
-    assert v is not None and (v["source"], v["observation"]["shell"]) == ("raw", False), v
+    assert v is not None and (v["source"], v["observation"]["shell"]) == (
+        "raw",
+        False,
+    ), v
 
 
 def check_the_view_prefers_the_trace_once_it_lands():
@@ -125,7 +132,9 @@ def check_the_view_survives_a_partial_raw_line():
         with raw.open("a", encoding="utf-8") as f:
             f.write('{"turn": 4, "received": "2026-01-01T00:00:0')
         assert len(view.raw_lines(raw)) == whole, "the fragment is not a turn yet"
-        assert view.episode_view("t", 1)["total_turns"] == whole // 2, "and nothing raised"
+        assert view.episode_view("t", 1)["total_turns"] == whole // 2, (
+            "and nothing raised"
+        )
 
 
 def check_the_view_costs_a_live_turn_like_the_account():
@@ -145,10 +154,18 @@ def check_the_view_costs_a_live_turn_like_the_account():
         gt = ground_truth()
         unfinished()
         # The account as it stood at episode start: episode 1 started at the initial balance.
-        account = {"provider": gt["provider"], "model": gt["model"], "remaining": gt["series"][0]}
-        turns = view.from_raw(view.latest_attempt(view.raw_lines(harness.raw_path("t", 1))), account)
+        account = {
+            "provider": gt["provider"],
+            "model": gt["model"],
+            "remaining": gt["series"][0],
+        }
+        turns = view.from_raw(
+            view.latest_attempt(view.raw_lines(harness.raw_path("t", 1))), account
+        )
 
-    assert gt["series"][2] == gt["series"][3], "the replayed id has to have billed nothing"
+    assert gt["series"][2] == gt["series"][3], (
+        "the replayed id has to have billed nothing"
+    )
     assert [t["balance"] for t in turns] == gt["series"][1:], (
         f"derived {[t['balance'] for t in turns]} against {gt['series'][1:]}"
     )
@@ -191,9 +208,19 @@ def check_the_page_fetches_nothing():
     page = view.PAGE
     assert "<title>agentic-society</title>" in page
     assert "//cdn" not in page and "<script src" not in page, "nothing is fetched"
-    for fetches in ("@import", "url(http", "url(//", "url('", 'url("', "<link", "fonts.googleapis"):
+    for fetches in (
+        "@import",
+        "url(http",
+        "url(//",
+        "url('",
+        'url("',
+        "<link",
+        "fonts.googleapis",
+    ):
         assert fetches not in page, f"the page reaches out with {fetches}"
-    assert page.count("<script>") == 1 and "</script>" in page, "one inline script, and nothing else"
+    assert page.count("<script>") == 1 and "</script>" in page, (
+        "one inline script, and nothing else"
+    )
 
 
 def check_the_view_serves_its_api():
@@ -204,10 +231,14 @@ def check_the_view_serves_its_api():
         with serving() as base:
             with urllib.request.urlopen(base + "/") as r:
                 page = r.read().decode("utf-8")
-                assert r.status == 200 and page != view.PAGE, "the served page carries its control token"
+                assert r.status == 200 and page != view.PAGE, (
+                    "the served page carries its control token"
+                )
                 assert "__INTERACTION_CONTROL_TOKEN__" not in page
             assert got(base, "/api/experiments")[1]["experiments"][0]["name"] == "t"
-            assert [s["episode"] for s in got(base, "/api/agent/t")[1]["episodes"]] == [1]
+            assert [s["episode"] for s in got(base, "/api/agent/t")[1]["episodes"]] == [
+                1
+            ]
             assert got(base, "/api/agent/t")[1]["seat"] == "1"
             assert got(base, "/api/agent/t/episode/1")[1]["source"] == "trace"
             # An agent driven on its own is an experiment of one: its private store, the
@@ -218,10 +249,22 @@ def check_the_view_serves_its_api():
             assert [f["path"] for f in private[0]["files"]] == ["note.txt"]
             head = got(base, "/api/experiment/t")[1]
             assert [s["n"] for s in head["seats"]] == [ground_truth()["series"][-1]]
-            assert head["ledger"] == [], "an experiment of one has given nothing to anyone"
-            assert got(base, "/api/experiment/t/file?agent=t&channel=notes&path=note.txt")[1]["text"] == "hi\n"
+            assert head["ledger"] == [], (
+                "an experiment of one has given nothing to anyone"
+            )
+            assert (
+                got(base, "/api/experiment/t/file?agent=t&channel=notes&path=note.txt")[
+                    1
+                ]["text"]
+                == "hi\n"
+            )
             log = got(base, "/api/experiment/t/messages")[1]
-            assert (log["events"], log["tip"], log["seats"], log["committed"]) == ([], [], 1, 0), log
+            assert (log["events"], log["tip"], log["seats"], log["committed"]) == (
+                [],
+                [],
+                1,
+                0,
+            ), log
 
 
 def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
@@ -244,7 +287,11 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
             if path.endswith("/episode/1"):
                 out[path] = (status, body.get("source"))
             elif path.startswith("/api/agent/"):
-                out[path] = (status, body.get("live"), [e["episode"] for e in body.get("episodes", [])])
+                out[path] = (
+                    status,
+                    body.get("live"),
+                    [e["episode"] for e in body.get("episodes", [])],
+                )
             else:
                 out[path] = (
                     status,
@@ -267,7 +314,9 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
                 view.experiments()
                 if moved:
                     st = account.stat()
-                    os.utime(account, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+                    os.utime(
+                        account, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000)
+                    )
                 view.read_json = lambda path: None if path == account else real(path)
                 try:
                     return seen({path: answer(base, path) for path in routes})
@@ -288,7 +337,11 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
 
     for answers, live, source in ((committed, None, "trace"), (in_flight, 1, "raw")):
         served = tuple(
-            {routes[0]: (200, members, [live, None], []), routes[1]: (200, live, [1]), routes[2]: (200, source)}
+            {
+                routes[0]: (200, members, [live, None], []),
+                routes[1]: (200, live, [1]),
+                routes[2]: (200, source),
+            }
             for members in (["t", "u"], ["u"], ["u"])
         )
         assert answers == served, answers
@@ -356,7 +409,9 @@ def check_the_observational_view_routes_never_write():
         sweep()
         watched = digest(root)
 
-    assert settled == finished, sorted(set(settled) ^ set(finished)) or "contents changed"
+    assert settled == finished, (
+        sorted(set(settled) ^ set(finished)) or "contents changed"
+    )
     assert watched == running, sorted(set(watched) ^ set(running)) or "contents changed"
 
 
@@ -368,7 +423,10 @@ def check_the_view_names_a_set_of_agents():
     """
     seats = {"1": "q01", "2": "q02", "3": "q03"}
     peers = {"q01": seats, "q02": seats, "q03": seats}
-    named = {agent: view.group_of(agent, {"peers": {"seen": seen}}) for agent, seen in peers.items()}
+    named = {
+        agent: view.group_of(agent, {"peers": {"seen": seen}})
+        for agent, seen in peers.items()
+    }
     assert set(named.values()) == {"q"}, named
 
     # No prefix in common: still one set, and still one name for it.
@@ -379,7 +437,12 @@ def check_the_view_names_a_set_of_agents():
     assert both == ["alpha+beta", "alpha+beta"], both
 
     # Started alone, with no experiment to ask: live01 and live02 sit together.
-    assert [view.group_of(r, {}) for r in ("live01", "live02", "b01s", "solo")] == ["live", "live", "b", "solo"]
+    assert [view.group_of(r, {}) for r in ("live01", "live02", "b01s", "solo")] == [
+        "live",
+        "live",
+        "b",
+        "solo",
+    ]
 
 
 def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
@@ -399,10 +462,16 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
         "survivor03": {},
     }
     with temp_root():
-        groups, claimed = view.anchored_groups(accounts, {"stamp": (manifest, Path("grouped-fixture.toml"))})
+        groups, claimed = view.anchored_groups(
+            accounts, {"stamp": (manifest, Path("grouped-fixture.toml"))}
+        )
 
     assert len(groups) == 1 and groups[0]["name"] == "survivor", groups
-    assert groups[0]["seats"] == {"1": "survivor01", "2": "survivor02", "3": "survivor03"}
+    assert groups[0]["seats"] == {
+        "1": "survivor01",
+        "2": "survivor02",
+        "3": "survivor03",
+    }
     assert groups[0]["tools"][0]["every"] == 5
     assert claimed == set(accounts)
 
@@ -430,12 +499,18 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
         try:
             again = view.experiment_named("g")
             polled = list(reads)
-            account = json.loads(harness.account_path("g01").read_text(encoding="utf-8"))
+            account = json.loads(
+                harness.account_path("g01").read_text(encoding="utf-8")
+            )
             account["experiment"] = {"experiment_id": "renamed"}
-            harness.account_path("g01").write_text(json.dumps(account), encoding="utf-8")
+            harness.account_path("g01").write_text(
+                json.dumps(account), encoding="utf-8"
+            )
             renamed = view.experiment_named("g")
             harness.records_dir("h01").mkdir(parents=True)
-            harness.account_path("h01").write_text(json.dumps({"agent": "h01"}), encoding="utf-8")
+            harness.account_path("h01").write_text(
+                json.dumps({"agent": "h01"}), encoding="utf-8"
+            )
             joined = [exp["name"] for exp in view.experiments()]
             trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
             trace["episode"], trace["provenance"]["tools"] = 2, tools
@@ -444,7 +519,9 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
             uncommitted = view.experiment_named("g")
             read_on_landing = list(reads)
             account["episodes"].append({"episode": 2, "stop": "end_turn", "spent": 1})
-            harness.account_path("g01").write_text(json.dumps(account), encoding="utf-8")
+            harness.account_path("g01").write_text(
+                json.dumps(account), encoding="utf-8"
+            )
             landed = view.experiment_named("g")
         finally:
             view.read_json = real
@@ -508,12 +585,18 @@ def check_a_grouping_reads_each_account_once_a_poll():
     with rooted(HostBox):
         fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
         for agent in ("g01", "g02"):
-            account = json.loads(harness.account_path(agent).read_text(encoding="utf-8"))
+            account = json.loads(
+                harness.account_path(agent).read_text(encoding="utf-8")
+            )
             account["peers"]["labels"] = labels
-            harness.account_path(agent).write_text(json.dumps(account), encoding="utf-8")
+            harness.account_path(agent).write_text(
+                json.dumps(account), encoding="utf-8"
+            )
         trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
         trace["episode"] = 2
-        trace["provenance"]["tools"] = [{"name": "post", "kind": "post_public", "channel": "blackboard"}]
+        trace["provenance"]["tools"] = [
+            {"name": "post", "kind": "post_public", "channel": "blackboard"}
+        ]
         harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
         path = harness.account_path("g01")
         reads: list[Path] = []
@@ -533,7 +616,9 @@ def check_a_grouping_reads_each_account_once_a_poll():
             view.read_json = real
         again = [(exp["labels"], exp["tools"]) for exp in view.experiments()]
 
-    assert polled == [(labels, [])], f"a poll read g01's account again for what it ran under: {polled}"
+    assert polled == [(labels, [])], (
+        f"a poll read g01's account again for what it ran under: {polled}"
+    )
     assert again == polled, f"a grouping read from a second read was kept: {again}"
     assert reads == [path], f"one poll read g01's account {len(reads)} times"
 
@@ -554,7 +639,9 @@ def check_a_trace_that_predates_the_harness_file_names_still_groups():
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
-    assert head.get("balance") == harness.DEFAULT_HARNESS_FILES["balance"] != "purse", head
+    assert head.get("balance") == harness.DEFAULT_HARNESS_FILES["balance"] != "purse", (
+        head
+    )
 
 
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():
@@ -574,7 +661,11 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
             account = harness.load_account(agent)
             account["last_election"] = result
             if agent == "g02":
-                account["eliminated"] = {"round": 5, "reason": "did not vote in round 5", "votes": 0}
+                account["eliminated"] = {
+                    "round": 5,
+                    "reason": "did not vote in round 5",
+                    "votes": 0,
+                }
             harness.save_account(agent, account)
         head = view.header(c)
 
@@ -599,17 +690,30 @@ def check_the_view_shows_every_seat_side_by_side():
 
     # Seat order, and every seat present: the numbering is absolute, so column 2
     # is g02 to whoever is reading and not the second one they were shown.
-    assert [(col["seat"], col["agent"]) for col in boards] == [("1", "g01"), ("2", "g02")]
-    assert [(col["seat"], col["agent"]) for col in stores] == [("1", "g01"), ("2", "g02")]
+    assert [(col["seat"], col["agent"]) for col in boards] == [
+        ("1", "g01"),
+        ("2", "g02"),
+    ]
+    assert [(col["seat"], col["agent"]) for col in stores] == [
+        ("1", "g01"),
+        ("2", "g02"),
+    ]
     assert [[f["path"] for f in col["files"]] for col in boards] == [["msg"], ["msg"]]
-    assert [[f["path"] for f in col["files"]] for col in stores] == [["NOTES.md", "secret.md"], ["secret.md"]]
+    assert [[f["path"] for f in col["files"]] for col in stores] == [
+        ["NOTES.md", "secret.md"],
+        ["secret.md"],
+    ]
     # A listing is a listing: a file is read when it is opened, not on every poll.
     assert all("text" not in f for col in boards + stores for f in col["files"])
-    assert opened["text"] == "hello 1\n", "a blackboard is read from the agent that owns it"
+    assert opened["text"] == "hello 1\n", (
+        "a blackboard is read from the agent that owns it"
+    )
     # starter is the starter files alone, and it is a fact about the private store.
     assert [f["path"] for f in stores[0]["files"] if f["starter"]] == ["NOTES.md"]
     assert not [f for col in boards for f in col["files"] if f["starter"]]
-    assert [f["path"] for col in stores for f in col["files"] if f["path"] == "secret.md"] == [
+    assert [
+        f["path"] for col in stores for f in col["files"] if f["path"] == "secret.md"
+    ] == [
         "secret.md",
         "secret.md",
     ], "each store holds its own, and neither holds the other's"
@@ -677,34 +781,62 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         not_a_vote_round = view.tree_view(c, "notes", 1)
         with serving() as base:
             served = got(base, "/api/experiment/g/tree/blackboard?round=1")[1]
-            served_file = got(base, "/api/experiment/g/file?agent=g02&channel=blackboard&path=post.md&round=1")[1]
+            served_file = got(
+                base,
+                "/api/experiment/g/file?agent=g02&channel=blackboard&path=post.md&round=1",
+            )[1]
 
-    assert live["history"] == {"kind": "round", "every": 1, "rounds": [1, 2], "selected": None}
+    assert live["history"] == {
+        "kind": "round",
+        "every": 1,
+        "rounds": [1, 2],
+        "selected": None,
+    }
     assert board["history"]["selected"] == 1
-    assert [[f["path"] for f in col["files"]] for col in board["columns"]] == [["post.md"], ["post.md"]]
-    assert all("text" not in f for col in board["columns"] for f in col["files"]), "the snapshot index stays lazy"
+    assert [[f["path"] for f in col["files"]] for col in board["columns"]] == [
+        ["post.md"],
+        ["post.md"],
+    ]
+    assert all("text" not in f for col in board["columns"] for f in col["files"]), (
+        "the snapshot index stays lazy"
+    )
     assert opened["text"] == "post 2-1\n"
     assert served["history"]["selected"] == 1 and served_file["text"] == opened["text"]
-    assert ballot["history"] == {"kind": "vote", "every": 2, "rounds": [2], "selected": 2}
+    assert ballot["history"] == {
+        "kind": "vote",
+        "every": 2,
+        "rounds": [2],
+        "selected": 2,
+    }
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
 
 
 # What a human seat is offered in the player history checks: a post and a message.
 PLAYER_POST = {"name": "post", "kind": "post_public", "channel": "blackboard"}
 PLAYER_SEND = {"name": "send", "kind": "send_message_to", "channel": "mail"}
-PLAYER_OFFERED = tuple(ToolSpec(tool["name"], "", {"type": "object"}) for tool in (PLAYER_POST, PLAYER_SEND))
+PLAYER_OFFERED = tuple(
+    ToolSpec(tool["name"], "", {"type": "object"})
+    for tool in (PLAYER_POST, PLAYER_SEND)
+)
 
 
-def answered(store: InteractionStore, episode: int, turn: int, *calls: tuple[str, dict]) -> None:
+def answered(
+    store: InteractionStore, episode: int, turn: int, *calls: tuple[str, dict]
+) -> None:
     """g01's request for one turn of `episode`, published and answered with `calls`."""
-    request = store.publish("g01", "1", episode, turn, "", "observation", PLAYER_OFFERED)
+    request = store.publish(
+        "g01", "1", episode, turn, "", "observation", PLAYER_OFFERED
+    )
     store.submit(
         "g01",
         request.request_id,
         {
             "submission_id": f"s{episode}{turn}",
             "action": "tool_calls",
-            "tool_calls": [{"id": f"c{i}", "name": name, "input": value} for i, (name, value) in enumerate(calls)],
+            "tool_calls": [
+                {"id": f"c{i}", "name": name, "input": value}
+                for i, (name, value) in enumerate(calls)
+            ],
         },
     )
 
@@ -736,15 +868,30 @@ def check_the_player_history_adds_each_accepted_human_call_once():
         }
     ]
     with rooted(HostBox):
-        fake_experiment([("g01", "00:01", {"files": committed}), ("g02", "00:02")], agents=("g01", "g02"))
+        fake_experiment(
+            [("g01", "00:01", {"files": committed}), ("g02", "00:02")],
+            agents=("g01", "g02"),
+        )
         offering_the_player_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
         answered(store, 1, 1, ("post", {"body": "hello all\n"}))
-        answered(store, 2, 1, ("post", {"body": "second post"}), ("send", {"to": "2", "body": "psst"}))
+        answered(
+            store,
+            2,
+            1,
+            ("post", {"body": "second post"}),
+            ("send", {"to": "2", "body": "psst"}),
+        )
         answered(store, 2, 2, ("send", {"to": "2", "body": "psst"}))
         cut = store.publish("g01", "1", 2, 3, "", "observation", PLAYER_OFFERED)
-        (harness.interactions_root() / "submissions" / "g01" / f"{cut.request_id}.json").write_text(
-            '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na', encoding="utf-8"
+        (
+            harness.interactions_root()
+            / "submissions"
+            / "g01"
+            / f"{cut.request_id}.json"
+        ).write_text(
+            '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na',
+            encoding="utf-8",
         )
         store.publish("g01", "1", 2, 4, "", "observation", PLAYER_OFFERED)
         c = view.experiment_named("g")
@@ -762,10 +909,15 @@ def check_the_player_history_adds_each_accepted_human_call_once():
         ("hello all\n", False),
         ("second post", True),
     ], history["public"]
-    private = [(e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted")) for e in history["private"]]
+    private = [
+        (e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted"))
+        for e in history["private"]
+    ]
     assert private == [("psst", "2", "g02", "1", True)], history["private"]
     assert status == 200, "a submission that does not read took the seat's history down"
-    assert served == json.loads(json.dumps(history)), "the route serves what player_history says"
+    assert served == json.loads(json.dumps(history)), (
+        "the route serves what player_history says"
+    )
     assert outsider == 404, "an agent outside the experiment has no history in it"
 
 
@@ -814,16 +966,33 @@ def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
                 harness.trace_path(agent, index).unlink()
         offering_the_player_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
-        answered(store, 3, 1, ("post", {"body": "hello all\n"}), ("send", {"to": "2", "body": "psst"}))
-        answered(store, 4, 1, ("post", {"body": "next round"}), ("send", {"to": "2", "body": "later"}))
+        answered(
+            store,
+            3,
+            1,
+            ("post", {"body": "hello all\n"}),
+            ("send", {"to": "2", "body": "psst"}),
+        )
+        answered(
+            store,
+            4,
+            1,
+            ("post", {"body": "next round"}),
+            ("send", {"to": "2", "body": "later"}),
+        )
         c = view.experiment_named("g")
         history = view.player_history(c, "g01") if c else {}
 
-    assert [(e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]] == [
+    assert [
+        (e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]
+    ] == [
         (1, "hello all\n", False),
         (2, "next round", True),
     ], history["public"]
-    assert [(e["round"], e["episode"], e["text"], e.get("accepted", False)) for e in history["private"]] == [
+    assert [
+        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        for e in history["private"]
+    ] == [
         (1, 3, "psst", False),
         (2, 4, "later", True),
     ], history["private"]
@@ -838,11 +1007,19 @@ def check_the_view_shows_every_balance_from_its_own_account():
     with two_seats() as (c, _):
         h = view.header(c)
 
-    assert [(s["seat"], s["agent"], s["n"]) for s in h["seats"]] == [("1", "g01", 900), ("2", "g02", 800)]
+    assert [(s["seat"], s["agent"], s["n"]) for s in h["seats"]] == [
+        ("1", "g01", 900),
+        ("2", "g02", 800),
+    ]
     assert h["ledger"] == [], "an experiment that has given nothing has an empty ledger"
     assert h["round"] == 0, "no episode has been committed, so no round has been taken"
-    assert [s["transfer"] for s in h["seats"]] == [None, None], "and nobody has declared one"
-    assert [s["starter_files"] for s in h["seats"]] == ["objective-notes", "objective-notes"]
+    assert [s["transfer"] for s in h["seats"]] == [None, None], (
+        "and nobody has declared one"
+    )
+    assert [s["starter_files"] for s in h["seats"]] == [
+        "objective-notes",
+        "objective-notes",
+    ]
     assert h["seated"]
 
 
@@ -873,7 +1050,9 @@ def check_the_view_cuts_a_round_where_an_agent_repeats():
         now = view.round_now(c, rows)
         seen = view.agent_view("g02", c)["episodes"]
 
-    assert [r["round"] for r in rows] == [1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4], [(r["agent"], r["round"]) for r in rows]
+    assert [r["round"] for r in rows] == [1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4], [
+        (r["agent"], r["round"]) for r in rows
+    ]
     assert now == 4
     # The one the episode index gets wrong: g02 sat round 3 out, so its third
     # episode is round 4 and counting episodes would have called it round 3.
@@ -897,7 +1076,10 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
             c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
             rnd = view.round_now(c, rows)
-            return rnd, {agent: view.seat_row(seat, agent, rows, rnd) for seat, agent in view.places_of(c)}
+            return rnd, {
+                agent: view.seat_row(seat, agent, rows, rnd)
+                for seat, agent in view.places_of(c)
+            }
 
     # Round 3 open, g01 has taken it and the other two have not been reached.
     open_rnd, open_seats = tiles(
@@ -914,7 +1096,14 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     # The same shape with g03 having missed round 2, so round 3 finds it a round
     # behind and not a round late.
     past_rnd, past_seats = tiles(
-        [("g01", "00:01"), ("g02", "00:02"), ("g03", "00:03"), ("g01", "00:04"), ("g02", "00:05"), ("g01", "00:06")]
+        [
+            ("g01", "00:01"),
+            ("g02", "00:02"),
+            ("g03", "00:03"),
+            ("g01", "00:04"),
+            ("g02", "00:05"),
+            ("g01", "00:06"),
+        ]
     )
 
     assert open_rnd == 3 and past_rnd == 3, (open_rnd, past_rnd)
@@ -952,16 +1141,25 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
         seen = [e for e in m["events"] if e["path"] == "out/2"]
         transfers = [e for e in m["events"] if e["kind"] == "transfer"]
 
-    assert [e["change"] for e in seen] == ["sent", "sent"], [(e["round"], e["change"]) for e in seen]
-    assert {e["to_seat"] for e in seen} == {"2"} and {e["to_agent"] for e in seen} == {"g02"}
-    assert [e["from_seat"] for e in seen] == ["1"] * 2, "and every one of them is seat 1's"
+    assert [e["change"] for e in seen] == ["sent", "sent"], [
+        (e["round"], e["change"]) for e in seen
+    ]
+    assert {e["to_seat"] for e in seen} == {"2"} and {e["to_agent"] for e in seen} == {
+        "g02"
+    }
+    assert [e["from_seat"] for e in seen] == ["1"] * 2, (
+        "and every one of them is seat 1's"
+    )
     assert [e["round"] for e in seen] == [1, 2]
     assert seen[0]["text"] == "hello\n" and seen[1]["text"] == "louder\n"
     assert not seen[1]["diff"], "each episode is a new delivery, not an edit"
     # Each declaration is its own episode event and carries resolve_transfer's
     # verdict, which is the only place a declaration that moved nothing says why.
     assert [e["change"] for e in transfers] == ["sent"], transfers
-    assert transfers[0]["transfer"]["amount"] == 10 and transfers[0]["transfer"]["error"] is None
+    assert (
+        transfers[0]["transfer"]["amount"] == 10
+        and transfers[0]["transfer"]["error"] is None
+    )
     assert transfers[0]["to_seat"] == "2" and transfers[0]["delivered"] is None, (
         "a transfer reaches nobody in particular: what it moved is in g, which all read"
     )
@@ -997,7 +1195,11 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
     def changes(delivery: str | None) -> list[tuple]:
         with rooted(HostBox):
             c = fake_experiment(
-                [("g01", "00:01", held("out/2")), ("g01", "00:02", held("out/2")), ("g01", "00:03", held())],
+                [
+                    ("g01", "00:01", held("out/2")),
+                    ("g01", "00:02", held("out/2")),
+                    ("g01", "00:03", held()),
+                ],
                 agents=("g01", "g02"),
             )
             for path in harness.trace_paths("g01"):
@@ -1008,7 +1210,9 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
                 path.write_text(json.dumps(trace), encoding="utf-8")
             return [(e["episode"], e["change"]) for e in view.messages(c)["events"]]
 
-    assert changes(None) == [(1, "sent"), (2, "standing"), (3, "withdrawn")], changes(None)
+    assert changes(None) == [(1, "sent"), (2, "standing"), (3, "withdrawn")], changes(
+        None
+    )
     assert changes("episode") == [(1, "sent"), (2, "sent")], changes("episode")
 
 
@@ -1030,7 +1234,9 @@ def check_the_view_shows_what_the_receiver_has_not_seen_yet():
     assert [e["path"] for e in after["tip"]] == ["out/3"]
     tip = after["tip"][0]
     assert tip["round"] is None and tip["tip"] and tip["change"] == "sent"
-    assert tip["delivered"] is None, "no episode has started since, so nobody has been given it"
+    assert tip["delivered"] is None, (
+        "no episode has started since, so nobody has been given it"
+    )
     assert after["events"] == before["events"], "and what is committed did not move"
 
 
@@ -1048,8 +1254,12 @@ def check_the_view_reads_delivery_off_the_observation():
         m = view.messages(view.experiment_of("t"))
         ev = next(e for e in m["events"] if e["path"] == "out/2")
 
-    assert "=== in/1 ===" in taken["observation"], "the addressee started holding the message"
-    assert "in/1" not in " ".join(taken["commands"]), "and named it in no command of its own"
+    assert "=== in/1 ===" in taken["observation"], (
+        "the addressee started holding the message"
+    )
+    assert "in/1" not in " ".join(taken["commands"]), (
+        "and named it in no command of its own"
+    )
     d = ev["delivered"]
     assert d["shown_before"] is True, "which is the whole of what delivery is now"
     assert (d["environment"], d["named"], d["clipped"]) == (True, False, False), d
@@ -1083,7 +1293,10 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
 
     with rooted(HostBox):
         c = fake_experiment(
-            [("g01", "00:01", held("out/2", "own", False)), ("g02", "00:02", held("in/1", "peer", True))],
+            [
+                ("g01", "00:01", held("out/2", "own", False)),
+                ("g02", "00:02", held("in/1", "peer", True)),
+            ],
             agents=("g01", "g02"),
         )
         m = view.messages(c)
@@ -1106,12 +1319,16 @@ def check_the_view_splits_the_observation_into_the_listing_and_the_rest():
         t = episode_once(*DEFAULT)
         o = view.episode_view("t", 1)["observation"]
 
-    assert o["listing"] + "".join(f"=== {s['path']} ===\n{s['text']}" for s in o["shown_before"]) == t["observation"], (
-        "the halves are the whole observation and nothing else"
-    )
+    assert (
+        o["listing"]
+        + "".join(f"=== {s['path']} ===\n{s['text']}" for s in o["shown_before"])
+        == t["observation"]
+    ), "the halves are the whole observation and nothing else"
     assert "=== " not in o["listing"], "the listing ends where the first section starts"
     paths = [s["path"] for s in o["shown_before"]]
-    assert digest_name() not in paths, "the digest names its own sections and never itself"
+    assert digest_name() not in paths, (
+        "the digest names its own sections and never itself"
+    )
     assert "n1" in paths and ledger_name() in paths, paths
     assert all(s["bytes"] == len(s["text"].encode("utf-8")) for s in o["shown_before"])
     assert o["clipped"] is False and o["name"] == digest_name()
@@ -1126,11 +1343,15 @@ def check_the_view_carries_every_provenance_field_the_trace_holds():
     with temp_root() as root:
         seated(root, other={})
         episode_once(*DEFAULT)
-        seen = view.agent_view("t", view.experiment_of("t"))["episodes"][0]["provenance"]
+        seen = view.agent_view("t", view.experiment_of("t"))["episodes"][0][
+            "provenance"
+        ]
         want = harness.provenance("anthropic", "claude-sonnet-5")
 
     assert set(want) <= set(seen), sorted(set(want) - set(seen))
-    assert {"digest_file_limit", "observation_limit"} <= set(seen), "the two that decide what the digest carries"
+    assert {"digest_file_limit", "observation_limit"} <= set(seen), (
+        "the two that decide what the digest carries"
+    )
     # The page picks no field, so no field can be left behind by one.
     assert not [k for k in want if f'"{k}"' in view.PAGE], (
         "the provenance panel iterates what the trace holds and names nothing"
@@ -1147,10 +1368,22 @@ def check_the_view_states_an_obligation_the_grace_waived():
         seated(root, other={})
         t = episode_once(run("cat n1"), say())
         v = view.episode_view("t", 1)
-        mine = next(s for s in view.header(view.experiment_of("t"))["seats"] if s["agent"] == "t")
+        mine = next(
+            s
+            for s in view.header(view.experiment_of("t"))["seats"]
+            if s["agent"] == "t"
+        )
 
-        assert v["obligations"] == {"blackboard": False, "mail": False, "transfer": False}, v["obligations"]
-        assert (t["channels"]["blackboard"]["penalty"], t["channels"]["mail"]["penalty"], t["transfer"]["penalty"]) == (
+        assert v["obligations"] == {
+            "blackboard": False,
+            "mail": False,
+            "transfer": False,
+        }, v["obligations"]
+        assert (
+            t["channels"]["blackboard"]["penalty"],
+            t["channels"]["mail"]["penalty"],
+            t["transfer"]["penalty"],
+        ) == (
             0,
             0,
             0,
@@ -1176,7 +1409,11 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
     """
 
     def tile() -> dict:
-        return next(s for s in view.header(view.experiment_of("t"))["seats"] if s["agent"] == "t")
+        return next(
+            s
+            for s in view.header(view.experiment_of("t"))["seats"]
+            if s["agent"] == "t"
+        )
 
     with temp_root() as root:
         seated(root, other={})
@@ -1192,7 +1429,9 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         mine["spent"],
         [s["spent"] for s in gt["episodes"]],
     )
-    assert mine["spent"] != gt["initial"] - gt["remaining"], "the transfer moved the balance without being spent"
+    assert mine["spent"] != gt["initial"] - gt["remaining"], (
+        "the transfer moved the balance without being spent"
+    )
     assert mine["spent_this_round"] <= mine["spent"], "a round is part of a life"
     assert mine["rebated"] == gt["rebated"] > 0, "and what it won back is on the tile"
     assert mine["transfer"] == {
@@ -1215,7 +1454,14 @@ def check_the_view_builds_its_tabs_from_the_table():
     """The page's tabs, trees, message log and diffs follow the table the traces record."""
     with temp_root(channels=PERSONA, harness_files=PERSONA_FILES) as root:
         seated(root, labels=PERSONA_LABELS, other={})
-        episode_once(run("echo me > journal/IDENTITY.md", "echo n > from-Studio/post", "echo hi > to/Game"), say())
+        episode_once(
+            run(
+                "echo me > journal/IDENTITY.md",
+                "echo n > from-Studio/post",
+                "echo hi > to/Game",
+            ),
+            say(),
+        )
         c = view.experiment_of("t")
         h = view.header(c)
         journal = view.tree_view(c, "journal")
@@ -1239,13 +1485,23 @@ def check_the_view_builds_its_tabs_from_the_table():
     assert [f["path"] for f in board["columns"][0]["files"]] == ["post"]
     assert opened["text"] == "me\n" and missing is None
     assert v["observation"]["name"] == "digest" and v["observation"]["inbox"] == "from"
-    assert set(v["channels"]) == {"noticeboard", "letters"} and v["channels"]["noticeboard"]["posted"]
-    assert [c["channel"] for c in changes] == ["journal", "identity", "noticeboard", "letters"]
+    assert (
+        set(v["channels"]) == {"noticeboard", "letters"}
+        and v["channels"]["noticeboard"]["posted"]
+    )
+    assert [c["channel"] for c in changes] == [
+        "journal",
+        "identity",
+        "noticeboard",
+        "letters",
+    ]
     assert any(line.startswith("+me") for line in changes[1]["lines"]), changes[1]
-    assert changes[0]["lines"] == [], "the identity file is its own channel, not the journal's"
-    assert [(e["path"], e["from_label"], e["to_label"], e["to_seat"]) for e in events] == [
-        ("to/Game", "Studio", "Game", "2")
-    ], events
+    assert changes[0]["lines"] == [], (
+        "the identity file is its own channel, not the journal's"
+    )
+    assert [
+        (e["path"], e["from_label"], e["to_label"], e["to_seat"]) for e in events
+    ] == [("to/Game", "Studio", "Game", "2")], events
 
 
 def check_the_view_shows_an_experimenter_channel_once():
@@ -1264,7 +1520,9 @@ def check_the_view_shows_an_experimenter_channel_once():
         ("agent", "transcripts"),
     ]
     assert tree["static"] and [c["agent"] for c in tree["columns"]] == ["experimenter"]
-    assert tree["what"] == "provided by the experimenter; every agent reads the same files"
+    assert (
+        tree["what"] == "provided by the experimenter; every agent reads the same files"
+    )
     assert opened["text"] == "same words for every seat\n"
 
 
@@ -1274,7 +1532,9 @@ def check_a_long_series_is_thinned_to_its_ends():
     thinned = view.thin(list(range(1000)))
     assert len(thinned) == view.SPARK_POINTS, len(thinned)
     assert thinned[0] == 0 and thinned[-1] == 999, (thinned[0], thinned[-1])
-    assert all(a < b for a, b in zip(thinned, thinned[1:])), "sampled in order, nothing repeated"
+    assert all(a < b for a, b in zip(thinned, thinned[1:])), (
+        "sampled in order, nothing repeated"
+    )
     assert view.thin(list(range(1000)), 5) == [0, 250, 500, 749, 999]
     assert view.thin([7, 8, 9]) == [7, 8, 9] and view.thin([]) == []
 
@@ -1387,7 +1647,12 @@ def check_the_page_has_no_raw_newline_inside_a_js_string():
     line end inside one is a string the browser would refuse to parse.
     """
     assert lines_ending_inside_a_string('const a = "one\ntwo;\n') == [1]
-    assert lines_ending_inside_a_string('const b = `x "y\nz" ${"w"}`;\n// "cut\nconst c = "ok";\n') == []
+    assert (
+        lines_ending_inside_a_string(
+            'const b = `x "y\nz" ${"w"}`;\n// "cut\nconst c = "ok";\n'
+        )
+        == []
+    )
     assert lines_ending_inside_a_string("const d = 'one\\'\"\ntwo';\n") == []
     script = view.PAGE.partition("<script>")[2].partition("</script>")[0]
     assert script.strip(), "the page has a script"
@@ -1415,12 +1680,22 @@ def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
 def check_the_page_summarises_the_experiment_and_resizes_its_sections():
     """The dashboard leads with aggregate signals and its main splits are adjustable."""
     page = view.PAGE
-    for label in ("remaining", "spent this round", "spent total", "active now", "needs attention"):
+    for label in (
+        "remaining",
+        "spent this round",
+        "spent total",
+        "active now",
+        "needs attention",
+    ):
         assert f'["{label}"' in page, label
     for kind in ("overview", "mail", "tree"):
         assert f'data-resize="{kind}"' in page, kind
-    assert 'role="separator"' in page and 'document.addEventListener("pointermove"' in page
-    assert "holdNumber(`${kind}-width`, width)" in page, "resized sections persist locally"
+    assert (
+        'role="separator"' in page and 'document.addEventListener("pointermove"' in page
+    )
+    assert "holdNumber(`${kind}-width`, width)" in page, (
+        "resized sections persist locally"
+    )
 
 
 def check_the_page_has_one_dismissible_file_inspector():

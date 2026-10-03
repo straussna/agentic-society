@@ -147,7 +147,9 @@ def check_anthropic_messages_wire_shape_and_state():
             cache_creation_input_tokens=4,
             cache_creation=None,
         ),
-        content=[NS(type="tool_use", id="call1", name="bash", input={"command": "pwd"})],
+        content=[
+            NS(type="tool_use", id="call1", name="bash", input={"command": "pwd"})
+        ],
         model_dump=lambda: {
             "id": "a1",
             "model": "claude-sonnet-5-20260901",
@@ -157,15 +159,29 @@ def check_anthropic_messages_wire_shape_and_state():
         },
     )
     messages = Messages(response)
-    session = AnthropicProvider(NS(messages=messages)).open_session("claude-sonnet-5", "system", TOOLS, 123, CONTEXT)
+    session = AnthropicProvider(NS(messages=messages)).open_session(
+        "claude-sonnet-5", "system", TOOLS, 123, CONTEXT
+    )
     first = session.request("hello")
     turn = first.normalize()
     session.request((ToolResult("call1", "ok"),))
     sent = messages.sent
-    assert set(sent[0]) == {"model", "max_tokens", "messages", "tools", "cache_control", "system"}
+    assert set(sent[0]) == {
+        "model",
+        "max_tokens",
+        "messages",
+        "tools",
+        "cache_control",
+        "system",
+    }
     assert sent[0]["model"] == "claude-sonnet-5" and sent[0]["max_tokens"] == 123
     assert sent[0]["tools"] == [
-        {"name": "bash", "description": "run", "input_schema": TOOLS[0].input_schema, "strict": True}
+        {
+            "name": "bash",
+            "description": "run",
+            "input_schema": TOOLS[0].input_schema,
+            "strict": True,
+        }
     ]
     assert sent[1]["messages"][-1]["content"][0] == {
         "type": "tool_result",
@@ -173,7 +189,9 @@ def check_anthropic_messages_wire_shape_and_state():
         "content": "ok",
         "is_error": False,
     }
-    assert turn.provider == "anthropic" and turn.tool_calls[0].input == {"command": "pwd"}
+    assert turn.provider == "anthropic" and turn.tool_calls[0].input == {
+        "command": "pwd"
+    }
 
 
 def check_openai_responses_wire_shape_and_manual_state():
@@ -217,18 +235,34 @@ def check_openai_responses_wire_shape_and_manual_state():
         },
     )
     responses = Responses(response)
-    session = OpenAIProvider(NS(responses=responses)).open_session("gpt-5.6-terra", "system", TOOLS, 321, CONTEXT)
+    session = OpenAIProvider(NS(responses=responses)).open_session(
+        "gpt-5.6-terra", "system", TOOLS, 321, CONTEXT
+    )
     turn = session.request("hello").normalize()
     session.request((ToolResult("call1", "ok"),))
     sent = responses.sent
     assert sent[0]["store"] is False
     assert sent[0]["include"] == ["reasoning.encrypted_content"]
     assert sent[0]["tools"] == [
-        {"type": "function", "name": "bash", "description": "run", "parameters": TOOLS[0].input_schema, "strict": True}
+        {
+            "type": "function",
+            "name": "bash",
+            "description": "run",
+            "parameters": TOOLS[0].input_schema,
+            "strict": True,
+        }
     ]
-    assert sent[1]["input"][-1] == {"type": "function_call_output", "call_id": "call1", "output": "ok"}
-    reasoning = next(item for item in sent[1]["input"] if item.get("type") == "reasoning")
-    call = next(item for item in sent[1]["input"] if item.get("type") == "function_call")
+    assert sent[1]["input"][-1] == {
+        "type": "function_call_output",
+        "call_id": "call1",
+        "output": "ok",
+    }
+    reasoning = next(
+        item for item in sent[1]["input"] if item.get("type") == "reasoning"
+    )
+    call = next(
+        item for item in sent[1]["input"] if item.get("type") == "function_call"
+    )
     assert reasoning == {
         "type": "reasoning",
         "id": "rs1",
@@ -236,7 +270,12 @@ def check_openai_responses_wire_shape_and_manual_state():
         "content": [],
         "encrypted_content": "cipher",
     }
-    assert call == {"type": "function_call", "call_id": "call1", "name": "bash", "arguments": '{"command":"pwd"}'}
+    assert call == {
+        "type": "function_call",
+        "call_id": "call1",
+        "name": "bash",
+        "arguments": '{"command":"pwd"}',
+    }
     assert turn.provider == "openai" and turn.usage.reasoning_tokens == 3
 
 
@@ -271,8 +310,12 @@ def check_provider_tool_schemas_are_identical():
         model_dump=lambda: {},
     )
     am, om = Messages(anthropic_response), Responses(openai_response)
-    AnthropicProvider(NS(messages=am)).open_session("claude-sonnet-5", "", TOOLS, 1, CONTEXT).request("x")
-    OpenAIProvider(NS(responses=om)).open_session("gpt-5.6-terra", "", TOOLS, 1, CONTEXT).request("x")
+    AnthropicProvider(NS(messages=am)).open_session(
+        "claude-sonnet-5", "", TOOLS, 1, CONTEXT
+    ).request("x")
+    OpenAIProvider(NS(responses=om)).open_session(
+        "gpt-5.6-terra", "", TOOLS, 1, CONTEXT
+    ).request("x")
     a = am.sent[0]["tools"][0]
     o = om.sent[0]["tools"][0]
     assert (a["name"], a["description"], a["input_schema"], a["strict"]) == (
@@ -303,14 +346,23 @@ def check_openai_usage_prices_cache_reasoning_and_long_context():
     long = normalize_openai(response(300_000), "gpt-5.6-terra")
     assert short.usage.uncached_input_tokens == 8_500
     assert short.usage.reasoning_tokens == 40 and short.usage.output_tokens == 100
-    assert sum(c.centi_micros for c in long.charges) > 2 * sum(c.centi_micros for c in short.charges)
-    assert next(c for c in long.charges if c.kind == "output").centi_micros == 100 * 1200 * 3 // 2
+    assert sum(c.centi_micros for c in long.charges) > 2 * sum(
+        c.centi_micros for c in short.charges
+    )
+    assert (
+        next(c for c in long.charges if c.kind == "output").centi_micros
+        == 100 * 1200 * 3 // 2
+    )
 
 
 def check_promotional_price_expiry_is_scoped_to_seated_models():
-    assert not providers.lapsed_prices([("openai", "gpt-5.6-sol")], dt.date(2026, 11, 21))
+    assert not providers.lapsed_prices(
+        [("openai", "gpt-5.6-sol")], dt.date(2026, 11, 21)
+    )
     assert providers.lapsed_prices([("openai", "gpt-5.6-sol")], dt.date(2026, 11, 22))
-    assert not providers.lapsed_prices([("openai", "gpt-5.6-terra")], dt.date(2099, 1, 1))
+    assert not providers.lapsed_prices(
+        [("openai", "gpt-5.6-terra")], dt.date(2099, 1, 1)
+    )
 
 
 def check_manifest_resolves_provider_model_per_seat():
@@ -331,8 +383,13 @@ def check_mixed_provider_simultaneous_round():
         harness.load_account("claude", provider="anthropic", model="claude-sonnet-5")
         harness.load_account("gpt", provider="openai", model="gpt-5.6-terra")
         live = {"claude", "gpt"}
-        ran = experiment.simultaneous_round(["claude", "gpt"], live, 0, per_agent(claude=(say("a"),), gpt=(say("o"),)))
-        traces = [json.loads(harness.trace_path(agent, 1).read_text(encoding="utf-8")) for agent in ("claude", "gpt")]
+        ran = experiment.simultaneous_round(
+            ["claude", "gpt"], live, 0, per_agent(claude=(say("a"),), gpt=(say("o"),))
+        )
+        traces = [
+            json.loads(harness.trace_path(agent, 1).read_text(encoding="utf-8"))
+            for agent in ("claude", "gpt")
+        ]
     assert ran and [(t["provider"], t["requested_model"]) for t in traces] == [
         ("anthropic", "claude-sonnet-5"),
         ("openai", "gpt-5.6-terra"),
@@ -340,7 +397,11 @@ def check_mixed_provider_simultaneous_round():
 
 
 def check_unknown_providers_and_models_are_refused():
-    for provider, model in (("gateway", "x"), ("anthropic", "gpt-5.6-terra"), ("openai", "claude-sonnet-5")):
+    for provider, model in (
+        ("gateway", "x"),
+        ("anthropic", "gpt-5.6-terra"),
+        ("openai", "claude-sonnet-5"),
+    ):
         try:
             providers.model_spec(provider, model)
         except providers.ProviderConfigurationError:
@@ -376,9 +437,9 @@ def check_provider_preflight_requires_only_its_own_key():
             AnthropicProvider(NS(models=Models())).preflight(["claude-sonnet-5"])
         except providers.ProviderError as error:
             assert error.category == "authentication" and error.provider == "anthropic"
-            assert str(error).endswith("Set ANTHROPIC_API_KEY in the shell this experiment is launched from."), str(
-                error
-            )
+            assert str(error).endswith(
+                "Set ANTHROPIC_API_KEY in the shell this experiment is launched from."
+            ), str(error)
         else:
             raise AssertionError("Anthropic started without its key")
         os.environ.pop("OPENAI_API_KEY")
@@ -404,9 +465,13 @@ def check_provider_preflight_requires_only_its_own_key():
                 except providers.ProviderError as failure:
                     assert failure.category == category, (variable, failure.as_dict())
                     assert failure.status_code == getattr(error, "status_code", None)
-                    hint = f"Set {variable} in the shell this experiment is launched from."
+                    hint = (
+                        f"Set {variable} in the shell this experiment is launched from."
+                    )
                     assert str(failure).endswith(hint) == hinted, str(failure)
-                    assert hinted or str(failure) == f"{type(error).__name__}: {error}", str(failure)
+                    assert (
+                        hinted or str(failure) == f"{type(error).__name__}: {error}"
+                    ), str(failure)
                 else:
                     raise AssertionError(f"{variable}: preflight passed {error!r}")
 
@@ -422,10 +487,18 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
     them, each built on the one before: config.toml, the manifest's defaults, its
     channel table and its tool table.
     """
-    unset = dict.fromkeys(("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"))
+    unset = dict.fromkeys(
+        ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL")
+    )
     sdks = {name: unbuildable(name) for name in ("anthropic", "openai")}
-    declared = [{"name": "bash", "kind": "bash"}, {"name": "jot", "kind": "write_file", "channel": "journal"}]
-    for provider, model in (("anthropic", "claude-sonnet-5"), ("openai", "gpt-5.6-terra")):
+    declared = [
+        {"name": "bash", "kind": "bash"},
+        {"name": "jot", "kind": "write_file", "channel": "journal"},
+    ]
+    for provider, model in (
+        ("anthropic", "claude-sonnet-5"),
+        ("openai", "gpt-5.6-terra"),
+    ):
         variable = f"{provider.upper()}_API_KEY"
         with (
             swapped(os.environ, **unset),
@@ -437,12 +510,18 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
             amend(root=Path(folder))
             before = harness.SETTINGS
             try:
-                harness.start(requirements=[(provider, model)], channel_tables=PERSONA, tool_tables=declared)
+                harness.start(
+                    requirements=[(provider, model)],
+                    channel_tables=PERSONA,
+                    tool_tables=declared,
+                )
             except SystemExit as error:
                 assert error.code == 2, error.code
             else:
                 raise AssertionError(f"{provider} started without {variable}")
-            assert harness.SETTINGS is before, "a refused start leaves the settings as it found them"
+            assert harness.SETTINGS is before, (
+                "a refused start leaves the settings as it found them"
+            )
         refusal = out.getvalue().strip().splitlines()[-1]
         assert refusal == (
             f"{provider} preflight failed: {variable} is not set. Set {variable} "
@@ -491,9 +570,13 @@ def check_version_three_accounts_are_refused():
     with temp_root() as root:
         path = root / "records" / "old" / "account.json"
         path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({"agent": "old", "model": "claude-sonnet-5"}), encoding="utf-8")
+        path.write_text(
+            json.dumps({"agent": "old", "model": "claude-sonnet-5"}), encoding="utf-8"
+        )
         try:
-            __import__("harness").load_account("old", provider="anthropic", model="claude-sonnet-5")
+            __import__("harness").load_account(
+                "old", provider="anthropic", model="claude-sonnet-5"
+            )
         except SystemExit as error:
             assert "version-3" in str(error) and "fresh agent id" in str(error)
         else:
@@ -525,15 +608,27 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
             assert not hasattr(inspect.getattr_static(factory, attr), "__get__"), (
                 f"{name}.{attr} is read off the class, where a property is not its value"
             )
-        assert providers.CATALOGS[name] is factory.models, f"{name}: the catalog is the adapter's"
+        assert providers.CATALOGS[name] is factory.models, (
+            f"{name}: the catalog is the adapter's"
+        )
         for model, spec in factory.models.items():
             record = providers.provenance(name, model)
-            assert list(record) == ["name", *declared[name], "model_spec"], (name, list(record))
-            assert record == {"name": name, **declared[name], "model_spec": spec.as_dict()}, record
-            assert (record["model_spec"]["provider"], record["model_spec"]["name"]) == (name, model)
-    assert [name for name in providers.FACTORIES if providers.is_interactive(name)] == ["human"], (
-        "a person answers the human seat's turns, and no other's"
-    )
+            assert list(record) == ["name", *declared[name], "model_spec"], (
+                name,
+                list(record),
+            )
+            assert record == {
+                "name": name,
+                **declared[name],
+                "model_spec": spec.as_dict(),
+            }, record
+            assert (record["model_spec"]["provider"], record["model_spec"]["name"]) == (
+                name,
+                model,
+            )
+    assert [name for name in providers.FACTORIES if providers.is_interactive(name)] == [
+        "human"
+    ], "a person answers the human seat's turns, and no other's"
 
 
 def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
@@ -561,9 +656,9 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
         (statusless("PermissionDeniedError"), "authentication"),
     )
     sessions = {
-        "anthropic": lambda raising: AnthropicProvider(NS(messages=raising)).open_session(
-            "claude-sonnet-5", "", TOOLS, 1, CONTEXT
-        ),
+        "anthropic": lambda raising: AnthropicProvider(
+            NS(messages=raising)
+        ).open_session("claude-sonnet-5", "", TOOLS, 1, CONTEXT),
         "openai": lambda raising: OpenAIProvider(NS(responses=raising)).open_session(
             "gpt-5.6-terra", "", TOOLS, 1, CONTEXT
         ),
@@ -579,7 +674,10 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
                     failure.as_dict(),
                 )
                 assert failure.status_code == getattr(error, "status_code", None)
-                assert failure.native_type == type(error).__name__ and failure.__cause__ is error
+                assert (
+                    failure.native_type == type(error).__name__
+                    and failure.__cause__ is error
+                )
                 # What a trace's provider_error says of a failure mid-episode: the
                 # SDK's words and no more, the key having been accepted to get there.
                 assert str(failure) == f"{type(error).__name__}: {error}", str(failure)
@@ -592,10 +690,21 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
         t = episode_once(classify_error(APIConnectionError(), "anthropic"), *DEFAULT)
     assert t["stop"] == "end_turn", t["stop"]
     assert t["retries"] == [
-        {"attempt": 1, "provider": "anthropic", "error": "ProviderError", "category": "retryable_api", "status": None}
+        {
+            "attempt": 1,
+            "provider": "anthropic",
+            "error": "ProviderError",
+            "category": "retryable_api",
+            "status": None,
+        }
     ], t["retries"]
     with temp_root():
-        t = episode_once(*(classify_error(APITimeoutError(), "anthropic") for _ in range(harness.RETRY_ATTEMPTS)))
+        t = episode_once(
+            *(
+                classify_error(APITimeoutError(), "anthropic")
+                for _ in range(harness.RETRY_ATTEMPTS)
+            )
+        )
     assert t["stop"] == "api_error", t["stop"]
     assert len(t["retries"]) == harness.RETRY_ATTEMPTS - 1, t["retries"]
     assert t["provider_error"]["native_type"] == "APITimeoutError", t["provider_error"]
@@ -629,32 +738,60 @@ def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
 
     refused = normalize_openai(
         response(
-            [message(NS(type="output_text", text="partial"), NS(type="refusal", refusal="I can't help with that."))]
+            [
+                message(
+                    NS(type="output_text", text="partial"),
+                    NS(type="refusal", refusal="I can't help with that."),
+                )
+            ]
         ),
         "gpt-5.6-terra",
     )
     assert refused.stop_reason == "refusal", refused.stop_reason
-    assert refused.refusal and refused.refusal.explanation == "I can't help with that.", refused.refusal
-    assert refused.text == ("partial",) and refused.charges, "a refusal that wrote text is billed"
+    assert (
+        refused.refusal and refused.refusal.explanation == "I can't help with that."
+    ), refused.refusal
+    assert refused.text == ("partial",) and refused.charges, (
+        "a refusal that wrote text is billed"
+    )
 
     cut = normalize_openai(
-        response([message(NS(type="output_text", text="half"))], "incomplete", NS(reason="max_output_tokens")),
+        response(
+            [message(NS(type="output_text", text="half"))],
+            "incomplete",
+            NS(reason="max_output_tokens"),
+        ),
         "gpt-5.6-terra",
     )
-    assert (cut.stop_reason, cut.native_stop_reason) == ("max_tokens", "max_output_tokens"), cut
-    assert cut.native_stop_details == {"reason": "max_output_tokens"}, cut.native_stop_details
+    assert (cut.stop_reason, cut.native_stop_reason) == (
+        "max_tokens",
+        "max_output_tokens",
+    ), cut
+    assert cut.native_stop_details == {"reason": "max_output_tokens"}, (
+        cut.native_stop_details
+    )
     assert cut.refusal is None
 
-    filtered = normalize_openai(response([], "incomplete", NS(reason="content_filter")), "gpt-5.6-terra")
-    assert (filtered.stop_reason, filtered.native_stop_reason) == ("other", "content_filter")
+    filtered = normalize_openai(
+        response([], "incomplete", NS(reason="content_filter")), "gpt-5.6-terra"
+    )
+    assert (filtered.stop_reason, filtered.native_stop_reason) == (
+        "other",
+        "content_filter",
+    )
     pending = normalize_openai(response([], "in_progress"), "gpt-5.6-terra")
-    assert (pending.stop_reason, pending.native_stop_reason) == ("other", "in_progress"), pending
+    assert (pending.stop_reason, pending.native_stop_reason) == (
+        "other",
+        "in_progress",
+    ), pending
 
     for arguments in ("[1]", "{"):
         call = NS(type="function_call", call_id="c", name="bash", arguments=arguments)
         try:
             normalize_openai(response([call]), "gpt-5.6-terra")
         except providers.ProviderError as error:
-            assert (error.provider, error.category) == ("openai", "adapter"), error.as_dict()
+            assert (error.provider, error.category) == ("openai", "adapter"), (
+                error.as_dict()
+            )
         else:
             raise AssertionError(f"arguments {arguments!r} became a tool call")

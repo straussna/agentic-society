@@ -85,9 +85,14 @@ def docker_ready() -> bool:
 
 def _ask_docker() -> bool:
     """Put the question to the daemon. Says so once if the image is not built."""
-    if not shutil.which("docker") or subprocess.run(["docker", "info"], capture_output=True).returncode:
+    if (
+        not shutil.which("docker")
+        or subprocess.run(["docker", "info"], capture_output=True).returncode
+    ):
         return False
-    if subprocess.run(["docker", "image", "inspect", harness.SETTINGS.image], capture_output=True).returncode:
+    if subprocess.run(
+        ["docker", "image", "inspect", harness.SETTINGS.image], capture_output=True
+    ).returncode:
         print(f"image {harness.SETTINGS.image} not built\n")
         return False
     return True
@@ -185,7 +190,12 @@ class HostBox:
         kept = True
         for inst in instances:
             if inst.writable and not inst.nested and not inst.is_file:
-                kept = harness.save_state(inst.host, self._fetcher(self.work / inst.path), lambda: None) and kept
+                kept = (
+                    harness.save_state(
+                        inst.host, self._fetcher(self.work / inst.path), lambda: None
+                    )
+                    and kept
+                )
         return kept
 
     def _fetcher(self, src: Path) -> Callable[[Path], bool]:
@@ -249,7 +259,9 @@ class NoBox:
 
 def never_start(*args, **kwargs) -> Callable:
     """Stands in for harness.start where nothing under test may reach the API."""
-    raise AssertionError("harness.start was reached, and nothing here may start an agent")
+    raise AssertionError(
+        "harness.start was reached, and nothing here may start an agent"
+    )
 
 
 def agent_of(container: str) -> str:
@@ -260,7 +272,15 @@ def agent_of(container: str) -> str:
 def leaked_containers() -> str:
     """The names of every container this worker's episodes of agent t left behind."""
     return subprocess.run(
-        ["docker", "ps", "-a", "--filter", f"name={harness.CONTAINER_PREFIX}t-", "--format", "{{.Names}}"],
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"name={harness.CONTAINER_PREFIX}t-",
+            "--format",
+            "{{.Names}}",
+        ],
         capture_output=True,
         text=True,
     ).stdout.strip()
@@ -289,7 +309,9 @@ def seats_manifest(root: Path, ids: Iterable[str], name: str = "seats.toml") -> 
     its agents are told, so the empty prompt is written out.
     """
     seat = "[[agent]]" + chr(10) + 'id = "%s"' + chr(10)
-    return manifest_file(root, 'system_prompt = ""' + chr(10) + "".join(seat % i for i in ids), name)
+    return manifest_file(
+        root, 'system_prompt = ""' + chr(10) + "".join(seat % i for i in ids), name
+    )
 
 
 def tables(*extra: dict, **per_name: dict) -> list[dict]:
@@ -322,7 +344,11 @@ def offers(*declared: dict) -> list[dict]:
     """
     out = []
     for d in declared:
-        out.append(d if isinstance(d, dict) else dict(zip(("kind", "channel"), d.split(":")), name=d.split(":")[0]))
+        out.append(
+            d
+            if isinstance(d, dict)
+            else dict(zip(("kind", "channel"), d.split(":")), name=d.split(":")[0])
+        )
     return out
 
 
@@ -347,9 +373,14 @@ def channel_toml(declared: list[dict], harness_files: dict | None = None) -> str
 
     out = []
     if harness_files:
-        out.append("[harness_files]\n" + "".join(f"{k} = {value(v)}\n" for k, v in harness_files.items()))
+        out.append(
+            "[harness_files]\n"
+            + "".join(f"{k} = {value(v)}\n" for k, v in harness_files.items())
+        )
     for table in declared:
-        out.append("[[channel]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in table.items()))
+        out.append(
+            "[[channel]]\n" + "".join(f"{k} = {value(v)}\n" for k, v in table.items())
+        )
     return "\n".join(out)
 
 
@@ -360,7 +391,9 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
     """
     planted = plant(root, name, **files)
     harness.apply_channels(
-        tables({"name": path, "writer": "experimenter", "source": name, "path": path}), None, "check"
+        tables({"name": path, "writer": "experimenter", "source": name, "path": path}),
+        None,
+        "check",
     )
     return planted
 
@@ -438,7 +471,12 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
     seams = {k: v for k, v in overrides.items() if k not in fields}
     unknown = set(seams) - (SEAMS - {"SETTINGS"})
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
-    with pinned(), tempfile.TemporaryDirectory(prefix="mtr-check-", ignore_cleanup_errors=True) as d:
+    with (
+        pinned(),
+        tempfile.TemporaryDirectory(
+            prefix="mtr-check-", ignore_cleanup_errors=True
+        ) as d,
+    ):
         # Before the tables: a tool table is refused or not by the delivery and the
         # digest in force.
         amend(root=Path(d), **fields)
@@ -470,7 +508,13 @@ def host_root(channels=None, harness_files=None, tools=None, **overrides):
     """
     if not host_bash():
         raise Skip
-    with rooted(HostBox, channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
+    with rooted(
+        HostBox,
+        channels=channels,
+        harness_files=harness_files,
+        tools=tools,
+        **overrides,
+    ) as d:
         yield d
 
 
@@ -482,10 +526,14 @@ def temp_root(channels=None, harness_files=None, tools=None, **overrides):
     trace - without paying for a container that proves nothing they assert.
     """
     if REAL_ONLY:
-        with docker_root(channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
+        with docker_root(
+            channels=channels, harness_files=harness_files, tools=tools, **overrides
+        ) as d:
             yield d
         return
-    with host_root(channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
+    with host_root(
+        channels=channels, harness_files=harness_files, tools=tools, **overrides
+    ) as d:
         yield d
 
 
@@ -498,7 +546,13 @@ def docker_root(channels=None, harness_files=None, tools=None, **overrides):
     """
     if not docker_ready():
         raise Skip
-    with rooted(harness.Container, channels=channels, harness_files=harness_files, tools=tools, **overrides) as d:
+    with rooted(
+        harness.Container,
+        channels=channels,
+        harness_files=harness_files,
+        tools=tools,
+        **overrides,
+    ) as d:
         yield d
 
 
@@ -536,7 +590,9 @@ def episode_once(*steps, seen=None):
 
 def ground_truth(agent="t") -> dict:
     """account.json as it stands on disk, read back and not carried."""
-    return json.loads((harness.records_dir(agent) / "account.json").read_text(encoding="utf-8"))
+    return json.loads(
+        (harness.records_dir(agent) / "account.json").read_text(encoding="utf-8")
+    )
 
 
 def episodes_taken(ids: list[str]) -> dict[str, int]:
@@ -659,7 +715,12 @@ def environment_of(agent: str, ids: list[str]) -> list[harness.Instance]:
     return harness.environment(agent, {"seat": seat, "peers": {"seen": seats}})
 
 
-def seated(root: Path, agent: str = "t", labels: dict[str, str] | None = None, **agents: dict[str, str]) -> list[str]:
+def seated(
+    root: Path,
+    agent: str = "t",
+    labels: dict[str, str] | None = None,
+    **agents: dict[str, str],
+) -> list[str]:
     """Lay out an experiment, create every account, and seat every agent in it.
 
     What experiment.py's prepare() does before each episode of a round: a seat, the
@@ -685,7 +746,10 @@ def turn_cost() -> int:
     """What one scripted turn costs, in micro-dollars."""
     raw = usage()
     spec = providers.model_spec("anthropic", "claude-sonnet-5")
-    return (raw.input_tokens * spec.rate("uncached_input") + raw.output_tokens * spec.rate("output")) // 100
+    return (
+        raw.input_tokens * spec.rate("uncached_input")
+        + raw.output_tokens * spec.rate("output")
+    ) // 100
 
 
 def put_out(agent: str) -> None:
@@ -717,13 +781,20 @@ def two_seats():
         ids = seated(
             root,
             "g01",
-            g01={"NOTES.md": "given\n", "secret.md": "mine\n", "group/msg": "hello 2\n"},
+            g01={
+                "NOTES.md": "given\n",
+                "secret.md": "mine\n",
+                "group/msg": "hello 2\n",
+            },
             g02={"secret.md": "theirs\n", "group/msg": "hello 1\n"},
         )
         for agent, series in (("g01", [1000, 900]), ("g02", [1000, 800])):
             account = harness.load_account(agent)
             account["series"], account["remaining"] = series, series[-1]
-            account["starter_files_landed"] = {"name": "objective-notes", "paths": ["NOTES.md"]}
+            account["starter_files_landed"] = {
+                "name": "objective-notes",
+                "paths": ["NOTES.md"],
+            }
             harness.save_account(agent, account)
         yield view.experiment_of("g01"), experiment.seats_of(ids)
 
@@ -789,8 +860,20 @@ def fake_experiment(
 # A persona channel table without a brief: a journal with an identity file inside
 # it, a noticeboard per label, letters, and no transfer channel.
 PERSONA = [
-    {"name": "journal", "writer": "self", "readers": "self", "shape": "directory", "path": "journal"},
-    {"name": "identity", "writer": "self", "readers": "self", "shape": "file", "path": "journal/IDENTITY.md"},
+    {
+        "name": "journal",
+        "writer": "self",
+        "readers": "self",
+        "shape": "directory",
+        "path": "journal",
+    },
+    {
+        "name": "identity",
+        "writer": "self",
+        "readers": "self",
+        "shape": "file",
+        "path": "journal/IDENTITY.md",
+    },
     {
         "name": "noticeboard",
         "writer": "self",
@@ -816,7 +899,10 @@ PERSONA_LABELS = {"1": "Studio", "2": "Game"}
 
 
 def refused(
-    call, *words: str, because: str = "accepted what should have been refused", code: int | None = None
+    call,
+    *words: str,
+    because: str = "accepted what should have been refused",
+    code: int | None = None,
 ) -> None:
     """Run `call`, which must exit naming every word given, and with `code` where one is given."""
     try:

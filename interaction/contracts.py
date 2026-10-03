@@ -44,7 +44,11 @@ class InteractionRequest:
             str(value.get("system_prompt", "")),
             dict(value["input"]),
             tuple(
-                ToolSpec(str(tool["name"]), str(tool.get("description", "")), dict(tool["input_schema"]))
+                ToolSpec(
+                    str(tool["name"]),
+                    str(tool.get("description", "")),
+                    dict(tool["input_schema"]),
+                )
                 for tool in value["available_tools"]
             ),
             str(value["status"]),
@@ -117,9 +121,13 @@ class Submission:
         if action == "tool_calls" and not calls:
             raise ValueError("tool_calls requires at least one call")
         names = {tool.name for tool in request.available_tools}
-        if any(not call.id or not call.name or call.name not in names for call in calls):
+        if any(
+            not call.id or not call.name or call.name not in names for call in calls
+        ):
             raise ValueError("each call needs an id and a declared tool name")
-        return cls(VERSION, request.request_id, submission_id, action, tuple(calls), now())
+        return cls(
+            VERSION, request.request_id, submission_id, action, tuple(calls), now()
+        )
 
     def same_as(self, other: "Submission") -> bool:
         """Whether `other` is this submission sent again: the same id, action and calls."""

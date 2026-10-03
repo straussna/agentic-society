@@ -25,7 +25,12 @@ SERVED = usage(output_tokens=200)
 
 # A root under which an agent meets its starter files at once, carries on past
 # one refusal, and is priced at opus-5's rates.
-BUSY = {"REFUSAL_TURNS": 2, "budget": 500_000, "starter_files": "s", "starter_files_below": 500_000}
+BUSY = {
+    "REFUSAL_TURNS": 2,
+    "budget": 500_000,
+    "starter_files": "s",
+    "starter_files_below": 500_000,
+}
 
 
 def busy_episodes(root) -> list[dict]:
@@ -39,7 +44,9 @@ def busy_episodes(root) -> list[dict]:
     plant(root)
     seated(root, other={})
     first = episode_once(
-        run("echo changed > state/m1", "echo hi > out/2", "echo '2 100' > out/transfer"),
+        run(
+            "echo changed > state/m1", "echo hi > out/2", "echo '2 100' > out/transfer"
+        ),
         refuse(),
         run("echo served", u=SERVED),
         say(),
@@ -55,19 +62,39 @@ def check_the_identity_delta_counts_changed_lines():
         "turns": [{"text": "hello"}, {"text": None}],
         "files": [{"path": "state/IDENTITY.md", "text": "a\nb\n"}],
     }
-    two = {"episode": 2, "turns": [{"text": "hi"}], "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
-    three = {"episode": 3, "turns": [], "files": [{"path": "state/NOTES", "text": "n\n"}]}
-    same = {"episode": 4, "turns": [{"text": ""}], "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}]}
+    two = {
+        "episode": 2,
+        "turns": [{"text": "hi"}],
+        "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}],
+    }
+    three = {
+        "episode": 3,
+        "turns": [],
+        "files": [{"path": "state/NOTES", "text": "n\n"}],
+    }
+    same = {
+        "episode": 4,
+        "turns": [{"text": ""}],
+        "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}],
+    }
     path = "state/IDENTITY.md"
-    assert analyze.identity_delta(None, one, path) == 2, "at first sight the whole file is new"
+    assert analyze.identity_delta(None, one, path) == 2, (
+        "at first sight the whole file is new"
+    )
     assert analyze.identity_delta(one, two, path) == 3, "one line gone, two arrived"
-    assert analyze.identity_delta(two, three, path) is None, "absent is no figure, not zero"
+    assert analyze.identity_delta(two, three, path) is None, (
+        "absent is no figure, not zero"
+    )
     assert analyze.identity_delta(two, same, path) == 0, "and unchanged is zero"
     assert [analyze.text_chars(t) for t in (one, two, three, same)] == [5, 2, 0, 0]
     lines = analyze.identity_lines([one, two, three, same], path)
-    assert lines[0].endswith("first present ep1, changed in 1 of 2 later episodes"), lines
+    assert lines[0].endswith("first present ep1, changed in 1 of 2 later episodes"), (
+        lines
+    )
     assert lines[1].endswith("ep1:2 ep2:3 ep4:0"), lines
-    assert analyze.identity_lines([three], path) == [f"  identity file         : {path} was never present"]
+    assert analyze.identity_lines([three], path) == [
+        f"  identity file         : {path} was never present"
+    ]
     assert analyze.identity_lines([one], None) == [], "no path, no section"
 
     # And through the whole tool, over real traces.
@@ -77,10 +104,14 @@ def check_the_identity_delta_counts_changed_lines():
         ts = analyze.load("t")["t"]
         assert analyze.row(ts[1], ts[0], path)["identity_delta"] == 3
         assert analyze.row(ts[1])["identity_delta"] == "", "blank without a path"
-        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", "and blank where the file is absent"
+        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", (
+            "and blank where the file is absent"
+        )
         with quiet() as buf:
             assert analyze.main(["--agent", "t", "--identity", path]) == 0
-        csv_text = (harness.records_dir("t") / "analysis" / "episodes.csv").read_text(encoding="utf-8")
+        csv_text = (harness.records_dir("t") / "analysis" / "episodes.csv").read_text(
+            encoding="utf-8"
+        )
     assert "ep1:2 ep2:3" in buf.getvalue(), buf.getvalue()
     rows = list(csv.DictReader(io.StringIO(csv_text)))
     assert rows[0]["identity_delta"] == "2"
@@ -123,7 +154,10 @@ def check_the_report_names_what_the_traces_hold():
         ("its own seat", "1, label 1, balance n1"),
         ("the experiment's transfers", "giver -> receiver, amount"),
     ):
-        assert analyze.report_line(label, value) in text, (analyze.report_line(label, value), text)
+        assert analyze.report_line(label, value) in text, (
+            analyze.report_line(label, value),
+            text,
+        )
     assert "      1 -> 2  100" in text, text
     assert "    ep0001  1 of 4 turns  cyber  ended end_turn  declined" in text, text
     assert "claude-sonnet-5" in text and "s1" not in text, text
@@ -131,7 +165,9 @@ def check_the_report_names_what_the_traces_hold():
     assert f"  $ {harness.observation(shell=True)}" in spoken, spoken
     assert "agent t  episode 1  anthropic/claude-sonnet-5  stop=end_turn" in spoken
     assert "agent t  episode 2  anthropic/claude-sonnet-5" in spoken
-    assert "    $ echo '2 100' > out/transfer" in spoken and "    $ echo served" in spoken, spoken
+    assert (
+        "    $ echo '2 100' > out/transfer" in spoken and "    $ echo served" in spoken
+    ), spoken
     assert "  changes:" in spoken and "+2 100" in spoken and "-2 100" in spoken, (
         "the declaration arriving and going are both in the diffs"
     )
@@ -154,9 +190,19 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["served_models"] == "claude-sonnet-5-20990101", r1["served_models"]
     assert r1["refusal_category"] == "cyber" and r1["refused_turns"] == 1, r1
     assert r1["provider"] == "anthropic" and r1["resolved_model"], r1
-    assert r1["sent_to"] == "2" and r1["mail_addressed"] == "2" and r1["mail_crowded"] == "", r1
-    assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, "the declaration is the schema channel's, not a slot"
-    assert (r1["transfer_to"], r1["transfer_amount"], r1["transfer_rebate"]) == ("2", 100, 100), r1
+    assert (
+        r1["sent_to"] == "2"
+        and r1["mail_addressed"] == "2"
+        and r1["mail_crowded"] == ""
+    ), r1
+    assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, (
+        "the declaration is the schema channel's, not a slot"
+    )
+    assert (r1["transfer_to"], r1["transfer_amount"], r1["transfer_rebate"]) == (
+        "2",
+        100,
+        100,
+    ), r1
     assert r1["transfer_error"] == "" and r1["transfer_penalised"] == 0, r1
     assert r1["starter_files"] == "s" and r1["starter_files_count"] == 2, r1
     assert r1["touched_starter"] is True, r1
@@ -169,9 +215,14 @@ def check_the_csv_row_flattens_a_trace():
     # The first episode's message has expired and the second sent none.
     assert r2["sent_to"] == "" and r2["mail_addressed"] == "", r2
     assert r2["transfer_amount"] == 0 and r2["transfer_to"] == "", r2
-    assert r2["refusal_category"] == "" and r2["served_models"] == "claude-sonnet-5-20990101", r2
+    assert (
+        r2["refusal_category"] == ""
+        and r2["served_models"] == "claude-sonnet-5-20990101"
+    ), r2
     assert r2["touched_starter"] is False, r2
-    assert r2["ledger_lines"] == 1, "the transfer is on the ledger this episode opened on"
+    assert r2["ledger_lines"] == 1, (
+        "the transfer is on the ledger this episode opened on"
+    )
     assert list(r1) == list(r2), "every row has the same columns in the same order"
     assert len(set(r1)) == len(r1), "and no column name twice"
     # state/m1 was overwritten in the first episode and stays overwritten.
@@ -189,7 +240,13 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
     reader that answered from the first channel of each kind would under-report
     what an agent was charged and never say which channel it went quiet on.
     """
-    gallery = {"name": "gallery", "writer": "self", "readers": "all", "path": "art-{label}", **HALF}
+    gallery = {
+        "name": "gallery",
+        "writer": "self",
+        "readers": "all",
+        "path": "art-{label}",
+        **HALF,
+    }
     with temp_root(channels=tables(gallery, blackboard=HALF)) as root:
         seated(root, other={})
         t = episode_once(run("echo p > 1/post"), say())
@@ -197,7 +254,11 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
         r = analyze.row(t)
         text = analyze.report(analyze.load("t"))
         v = view.episode_view("t", 1)
-        mine = next(s for s in view.header(view.experiment_of("t"))["seats"] if s["agent"] == "t")
+        mine = next(
+            s
+            for s in view.header(view.experiment_of("t"))["seats"]
+            if s["agent"] == "t"
+        )
 
     took = account["penalised"]
     assert took == {"gallery": t["channels"]["gallery"]["penalty"]}, took
@@ -209,16 +270,23 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
 
     # The report states the share by the channel it was taken on, and how many
     # episodes met each obligation, one line a channel.
-    assert analyze.report_line("taken for silence on gallery", took["gallery"]) in text, text
+    assert (
+        analyze.report_line("taken for silence on gallery", took["gallery"]) in text
+    ), text
     assert analyze.report_line("episodes that met gallery", "0 of 1") in text, text
     assert analyze.report_line("episodes that met blackboard", "1 of 1") in text, text
 
     # And the page names the channel, so the tile and the transcript cannot state
     # an obligation the other leaves out.
-    assert v["obligations"] == {"blackboard": True, "gallery": False, "mail": False, "transfer": False}, v[
-        "obligations"
+    assert v["obligations"] == {
+        "blackboard": True,
+        "gallery": False,
+        "mail": False,
+        "transfer": False,
+    }, v["obligations"]
+    assert ("gallery", "no post") in [(u["channel"], u["why"]) for u in v["unmet"]], v[
+        "unmet"
     ]
-    assert ("gallery", "no post") in [(u["channel"], u["why"]) for u in v["unmet"]], v["unmet"]
     assert mine["unmet"] == v["unmet"], (mine["unmet"], v["unmet"])
 
 
@@ -243,12 +311,26 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
         {"id": "3", "name": "post", "input": {"body": "hi"}},
         {"id": "4", "input": {"command": "ls"}},
     ]
-    logged = [{"kind": "normalized_response", "turn": 1, "response": {"id": "r", "tool_calls": calls, "charges": []}}]
+    logged = [
+        {
+            "kind": "normalized_response",
+            "turn": 1,
+            "response": {"id": "r", "tool_calls": calls, "charges": []},
+        }
+    ]
     traced = view.from_trace({"turns": [{"turn": 1, "tools": records}]})[0]["tools"]
     live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
 
     shown = ["ls", "(restart)", "post(body='hi')", "ls"]
     assert [analyze.tool_call(rec) for rec in records] == shown
-    assert [c["call"] for c in traced] == shown and [c["call"] for c in live] == shown, (traced, live)
-    assert [c["shell"] for c in traced] == [c["shell"] for c in live] == [True, True, False, True], (traced, live)
-    assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, "and only the declared tool's is a tool call"
+    assert [c["call"] for c in traced] == shown and [
+        c["call"] for c in live
+    ] == shown, (traced, live)
+    assert (
+        [c["shell"] for c in traced]
+        == [c["shell"] for c in live]
+        == [True, True, False, True]
+    ), (traced, live)
+    assert len(analyze.tool_calls({"turns": [{"tools": records}]})) == 1, (
+        "and only the declared tool's is a tool call"
+    )

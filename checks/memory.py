@@ -54,20 +54,33 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         copied = harness.mirror("new", "notes") / "memory.md"
 
         assert copied.read_bytes() == body.encode("utf-8")
-        assert inherited["episodes"] == [] and inherited["series"] == [harness.SETTINGS.budget]
+        assert inherited["episodes"] == [] and inherited["series"] == [
+            harness.SETTINGS.budget
+        ]
         assert inherited["memory_from"] == entry["memory_from"]
         record = inherited["memory_inherited"]
         assert record["agent"] == "old" and record["episode"] == 7
-        assert record["memories"][0]["sha256"] == hashlib.sha256(body.encode("utf-8")).hexdigest()
+        assert (
+            record["memories"][0]["sha256"]
+            == hashlib.sha256(body.encode("utf-8")).hexdigest()
+        )
         assert not harness.mirror("new", "blackboard").joinpath("post.md").exists()
 
-        prepare = experiment.preparer("new", {"1": "new"}, {"schedule": "simultaneous", "manifest_sha256": "m"})
+        prepare = experiment.preparer(
+            "new", {"1": "new"}, {"schedule": "simultaneous", "manifest_sha256": "m"}
+        )
         prepare(inherited)
-        provenance = harness.provenance(inherited["provider"], inherited["model"], experiment=inherited["experiment"])
+        provenance = harness.provenance(
+            inherited["provider"],
+            inherited["model"],
+            experiment=inherited["experiment"],
+        )
         assert provenance["memory_from"] == record
 
         experiment.inherit_memory(entry, inherited)
-        assert copied.read_bytes() == body.encode("utf-8"), "resuming recopied the memory"
+        assert copied.read_bytes() == body.encode("utf-8"), (
+            "resuming recopied the memory"
+        )
 
 
 def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
@@ -104,11 +117,17 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
     cases = {
         "was created with memory_from": pinned_elsewhere,
         "does not exist": lambda: None,
-        "trace version": rewritten(lambda t: t.update(trace_version=harness.TRACE_VERSION - 1)),
+        "trace version": rewritten(
+            lambda t: t.update(trace_version=harness.TRACE_VERSION - 1)
+        ),
         "did not save its state": rewritten(lambda t: t.update(state_saved=False)),
-        "matching write_memory tools": rewritten(lambda t: t["provenance"].update(tools=[])),
+        "matching write_memory tools": rewritten(
+            lambda t: t["provenance"].update(tools=[])
+        ),
         "several memories": rewritten(lambda t: t["files"].append(dict(t["files"][0]))),
-        "exact text copy": rewritten(lambda t: t["files"][0].update(size=len(body) + 1)),
+        "exact text copy": rewritten(
+            lambda t: t["files"][0].update(size=len(body) + 1)
+        ),
         "would overwrite": planted_differently,
     }
     for why, arrange in cases.items():
@@ -125,7 +144,9 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
             now = destination.read_bytes() if destination.exists() else None
             recorded = harness.account_on_disk("new")
         assert now == held, f"{why}: the memory changed from {held!r} to {now!r}"
-        assert "memory_inherited" not in recorded, f"{why}: {recorded.get('memory_inherited')}"
+        assert "memory_inherited" not in recorded, (
+            f"{why}: {recorded.get('memory_inherited')}"
+        )
 
 
 def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
@@ -145,7 +166,9 @@ def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
         except SystemExit as e:
             code = e.code
         else:
-            raise AssertionError("harness.py run as a file did not exit through its CLI")
+            raise AssertionError(
+                "harness.py run as a file did not exit through its CLI"
+            )
         finally:
             sys.argv = argv
     assert code == 0, (code, output.getvalue())
@@ -180,4 +203,6 @@ def check_memory_from_is_strict_agent_grammar():
             except SystemExit:
                 pass
             else:
-                raise AssertionError(f"accepted invalid agent memory grammar: {declaration}")
+                raise AssertionError(
+                    f"accepted invalid agent memory grammar: {declaration}"
+                )

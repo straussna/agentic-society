@@ -32,7 +32,11 @@ from .human import HumanProvider
 from .openai import OpenAIProvider
 
 
-FACTORIES = {"anthropic": AnthropicProvider, "openai": OpenAIProvider, "human": HumanProvider}
+FACTORIES = {
+    "anthropic": AnthropicProvider,
+    "openai": OpenAIProvider,
+    "human": HumanProvider,
+}
 CATALOGS = {name: factory.models for name, factory in FACTORIES.items()}
 
 
@@ -51,11 +55,13 @@ def is_interactive(provider: str | None) -> bool:
 def model_spec(provider: str, model: str) -> ModelSpec:
     if provider not in CATALOGS:
         raise ProviderConfigurationError(
-            f"unknown provider {provider!r}; choose one of {list(provider_names())}", provider=provider
+            f"unknown provider {provider!r}; choose one of {list(provider_names())}",
+            provider=provider,
         )
     if model not in CATALOGS[provider]:
         raise ProviderConfigurationError(
-            f"unknown {provider} model {model!r}; choose one of {list(CATALOGS[provider])}", provider=provider
+            f"unknown {provider} model {model!r}; choose one of {list(CATALOGS[provider])}",
+            provider=provider,
         )
     return CATALOGS[provider][model]
 
@@ -63,15 +69,23 @@ def model_spec(provider: str, model: str) -> ModelSpec:
 def provenance(provider: str, model: str) -> dict[str, Any]:
     """The trace's provider record: the name, what the adapter declares, and the model."""
     spec = model_spec(provider, model)
-    return {"name": provider, **FACTORIES[provider].provenance_facts, "model_spec": spec.as_dict()}
+    return {
+        "name": provider,
+        **FACTORIES[provider].provenance_facts,
+        "model_spec": spec.as_dict(),
+    }
 
 
-def lapsed_prices(requirements: Iterable[tuple[str, str]], today: dt.date | None = None) -> list[str]:
+def lapsed_prices(
+    requirements: Iterable[tuple[str, str]], today: dt.date | None = None
+) -> list[str]:
     today = today or dt.date.today()
     lapsed = []
     for provider, model in sorted(set(requirements)):
         spec = model_spec(provider, model)
-        if spec.price_valid_through and today > dt.date.fromisoformat(spec.price_valid_through):
+        if spec.price_valid_through and today > dt.date.fromisoformat(
+            spec.price_valid_through
+        ):
             lapsed.append(
                 f"{provider}/{model}: rates expired after {spec.price_valid_through}. "
                 f"{spec.price_replacement or 'Update the provider catalog.'}"
@@ -80,12 +94,18 @@ def lapsed_prices(requirements: Iterable[tuple[str, str]], today: dt.date | None
 
 
 class DirectProviderRouter:
-    def __init__(self, requirements: Iterable[tuple[str, str]], instances: dict[str, ModelProvider] | None = None):
+    def __init__(
+        self,
+        requirements: Iterable[tuple[str, str]],
+        instances: dict[str, ModelProvider] | None = None,
+    ):
         grouped: dict[str, set[str]] = defaultdict(set)
         for provider, model in requirements:
             model_spec(provider, model)
             grouped[provider].add(model)
-        self.requirements = {name: frozenset(models) for name, models in grouped.items()}
+        self.requirements = {
+            name: frozenset(models) for name, models in grouped.items()
+        }
         self.providers: dict[str, ModelProvider] = dict(instances or {})
         for name in self.requirements:
             if name not in self.providers:
@@ -105,7 +125,9 @@ class DirectProviderRouter:
         context: SessionContext,
     ) -> ModelSession:
         model_spec(provider, model)
-        return self.providers[provider].open_session(model, system, tools, max_tokens, context)
+        return self.providers[provider].open_session(
+            model, system, tools, max_tokens, context
+        )
 
 
 __all__ = [

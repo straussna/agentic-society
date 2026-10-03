@@ -10,11 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import VERSION, InteractionRequest
-from .store import InteractionConflict, InteractionError, InteractionStore, UnreadableRecord
+from .store import (
+    InteractionConflict,
+    InteractionError,
+    InteractionStore,
+    UnreadableRecord,
+)
 
 
 def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
-    print(f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}")
+    print(
+        f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}"
+    )
     supplied = request.input
     if supplied["kind"] == "initial_observation":
         print("\nInitial observation:\n" + supplied.get("text", ""))
@@ -22,7 +29,9 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
         print("\nTool results:")
         for result in supplied.get("results", []):
             state = "error" if result.get("is_error") else "result"
-            print(f"  {result.get('tool_call_id')} ({state}): {result.get('content', '')}")
+            print(
+                f"  {result.get('tool_call_id')} ({state}): {result.get('content', '')}"
+            )
     print("\nAvailable tools:")
     for tool in request.available_tools:
         schema = tool.input_schema
@@ -30,14 +39,20 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
         fields = []
         for name, spec in schema.get("properties", {}).items():
             allowed = spec.get("enum")
-            shape = " | ".join(map(str, allowed)) if allowed else spec.get("type", "value")
+            shape = (
+                " | ".join(map(str, allowed)) if allowed else spec.get("type", "value")
+            )
             fields.append(f"{name}{'*' if name in required else ''}: {shape}")
         print(f"  {tool.name} — {tool.description}")
         print(f"    {', '.join(fields) if fields else 'JSON object'}")
-    print(f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}")
+    print(
+        f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}"
+    )
 
 
-def waiting(store: InteractionStore, agent: str) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
+def waiting(
+    store: InteractionStore, agent: str
+) -> tuple[InteractionRequest | None, list[dict[str, Any]]]:
     """The request pending for `agent` and its draft.
 
     A pending pointer or request that does not read is reported and reads as none; a
@@ -64,7 +79,9 @@ def run(agent: str, root: Path) -> int:
         describe(request, draft)
     else:
         print(f"No pending interaction for {agent}.")
-    print("\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, submit, done, refresh, quit")
+    print(
+        "\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, submit, done, refresh, quit"
+    )
     while True:
         try:
             line = input("human> ").strip()
@@ -97,11 +114,17 @@ def run(agent: str, root: Path) -> int:
                 if name not in {tool.name for tool in request.available_tools}:
                     print(f"unknown tool {name!r}")
                     continue
-                draft.append({"id": f"human-{uuid.uuid4().hex}", "name": name, "input": value})
+                draft.append(
+                    {"id": f"human-{uuid.uuid4().hex}", "name": name, "input": value}
+                )
                 store.save_draft(agent, request.request_id, draft)
                 print(f"drafted call {len(draft)}")
             elif command == "draft":
-                print(json.dumps(draft, ensure_ascii=False, indent=2) if draft else "empty")
+                print(
+                    json.dumps(draft, ensure_ascii=False, indent=2)
+                    if draft
+                    else "empty"
+                )
             elif command == "remove":
                 number = int(rest)
                 if number < 1 or number > len(draft):
@@ -145,7 +168,10 @@ def main(argv: list[str] | None = None) -> int:
     # harness.interactions_root() for this repository, spelled out because the
     # interaction package sits below harness and does not import it.
     parser.add_argument(
-        "--root", type=Path, default=Path(__file__).resolve().parents[1] / "interactions", help=argparse.SUPPRESS
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "interactions",
+        help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
     return run(args.agent, args.root)

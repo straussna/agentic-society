@@ -77,7 +77,9 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
         elif kind == "tool_use":
             calls.append(
                 ToolCall(
-                    str(field(block, "id", "")), str(field(block, "name", "")), dict(field(block, "input", {}) or {})
+                    str(field(block, "id", "")),
+                    str(field(block, "name", "")),
+                    dict(field(block, "input", {}) or {}),
                 )
             )
 
@@ -92,23 +94,40 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
     else:
         cache_1h = 0
     output = int(field(raw_usage, "output_tokens", 0) or 0)
-    usage = Usage(uncached + cache_read + cache_5m + cache_1h, uncached, cache_read, cache_5m + cache_1h, output, 0)
+    usage = Usage(
+        uncached + cache_read + cache_5m + cache_1h,
+        uncached,
+        cache_read,
+        cache_5m + cache_1h,
+        output,
+        0,
+    )
     spec = MODELS[requested_model]
     long = usage.prefix_tokens > (spec.long_context_threshold or spec.context_window)
     input_multiplier = spec.long_context_input_multiplier if long else (1, 1)
     output_multiplier = spec.long_context_output_multiplier if long else (1, 1)
     charges: tuple[Charge, ...] = (
-        charge("uncached_input", uncached, spec.rate("uncached_input"), input_multiplier),
+        charge(
+            "uncached_input", uncached, spec.rate("uncached_input"), input_multiplier
+        ),
         charge("cache_read", cache_read, spec.rate("cache_read"), input_multiplier),
-        charge("cache_write_5m", cache_5m, spec.rate("cache_write_5m"), input_multiplier),
-        charge("cache_write_1h", cache_1h, spec.rate("cache_write_1h"), input_multiplier),
+        charge(
+            "cache_write_5m", cache_5m, spec.rate("cache_write_5m"), input_multiplier
+        ),
+        charge(
+            "cache_write_1h", cache_1h, spec.rate("cache_write_1h"), input_multiplier
+        ),
         charge("output", output, spec.rate("output"), output_multiplier),
     )
     native_stop = field(native, "stop_reason")
     if native_stop == "refusal" and not content:
         charges = ()
     stop: StopReason = STOPS.get(native_stop, "other")
-    stop_details = native_dict(field(native, "stop_details", {})) if field(native, "stop_details") else None
+    stop_details = (
+        native_dict(field(native, "stop_details", {}))
+        if field(native, "stop_details")
+        else None
+    )
     refusal = None
     if native_stop == "refusal" or field(native, "refusal"):
         details = field(native, "refusal") or stop_details or {}
@@ -138,7 +157,14 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
 class AnthropicSession:
     provider = "anthropic"
 
-    def __init__(self, client: Any, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int):
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+    ):
         self.client = client
         self.requested_model = model
         self.system = system
@@ -168,7 +194,12 @@ class AnthropicSession:
             "max_tokens": self.max_tokens,
             "messages": messages,
             "tools": [
-                {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema, "strict": True}
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                    "strict": True,
+                }
                 for tool in self.tools
             ],
             "cache_control": {"type": "ephemeral"},
@@ -222,6 +253,11 @@ class AnthropicProvider:
                 raise classify_error(error, self.name, self.key_variable) from error
 
     def open_session(
-        self, model: str, system: str, tools: tuple[ToolSpec, ...], max_tokens: int, context: SessionContext
+        self,
+        model: str,
+        system: str,
+        tools: tuple[ToolSpec, ...],
+        max_tokens: int,
+        context: SessionContext,
     ) -> AnthropicSession:
         return AnthropicSession(self.client, model, system, tools, max_tokens)
