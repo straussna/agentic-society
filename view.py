@@ -1011,7 +1011,7 @@ def header(exp: dict) -> dict:
 
     Each balance comes from its agent's own account, the source the harness
     renders the balance files from. The ledger is harness.ledger for any one
-    member; every reader computes it alike. It reads every other member's account
+    seat; every reader computes it alike. It reads every other seat's account
     from disk, so a poll that cannot read one - save_account's rename caught
     mid-poll - shows no ledger and leaves it to the next.
     """

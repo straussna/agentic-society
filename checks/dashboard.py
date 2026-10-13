@@ -342,11 +342,11 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
     for answers, live, source in ((committed, None, "trace"), (in_flight, 1, "raw")):
         served = tuple(
             {
-                routes[0]: (200, members, [live, None], []),
+                routes[0]: (200, seats, [live, None], []),
                 routes[1]: (200, live, [1]),
                 routes[2]: (200, source),
             }
-            for members in (["t", "u"], ["u"], ["u"])
+            for seats in (["t", "u"], ["u"], ["u"])
         )
         assert answers == served, answers
 
@@ -583,7 +583,7 @@ def check_a_grouping_read_without_an_account_is_read_again_next_poll():
 def check_a_grouping_reads_each_account_once_a_poll():
     """The grouping is read from one state of each account: the labels an experiment
     shows and the trace its table and tools come from are the ones the account its
-    members were grouped by names, so an account that stops reading later in the same
+    seats were grouped by names, so an account that stops reading later in the same
     poll - save_account's rename caught mid-poll - changes neither that poll's answer
     nor the grouping kept for the next. g01's second trace is one its account does not
     list, whose commit stopped between the two, and no episode of g01's."""

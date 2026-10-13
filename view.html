@@ -698,7 +698,7 @@ function overlay(tiles) {
 
 function renderPicks() {
   const el = document.getElementById("picks");
-  // One set is not a choice between sets.
+  // One experiment is not a choice between experiments.
   if (S.experiments.length < 2) { el.innerHTML = ""; return; }
   const why = (c) => c.seated ? `${c.seats.length} seated` : "no seating: no board or mailbox between them";
   el.innerHTML = S.experiments.map(c => `<button class="filt ${c.experiment_id === S.experiment ? "on" : ""}"
@@ -1929,7 +1929,7 @@ function poll() {
       return;
     }
     if (S.experiment == null || !S.experiments.some(c => c.experiment_id === S.experiment)) {
-      // An experiment actually moving beats one merely on disk: a set that stopped
+      // An experiment actually moving beats one merely on disk: one that stopped
       // months ago should not be what the page opens on.
       const first = S.experiments.find(c => c.experiment_id === d.focus)
         || S.experiments.find(c => c.running) || S.experiments[0];
