@@ -4029,7 +4029,7 @@ class Bound:
         turn. Every cataloged model accepts it, so the tool set varies by
         experiment and never by provider or model.
         """
-        return ToolSpec(self.tool.name, self.description(), self.schema())
+        return ToolSpec(self.tool.name, self.description(), self.input_schema())
 
     def description(self) -> str:
         """What the agent is told this tool does.
@@ -4059,14 +4059,14 @@ class Bound:
             else "Nobody else can read it."
         )
 
-    def schema(self) -> dict:
+    def input_schema(self) -> dict:
         """The input schema, which is the harness's whatever the description says.
 
         `additionalProperties: false` and a whole `required` are what strict tool
         use asks of every object, and are true of these anyway: a call carries
         exactly the arguments the kind acts on.
         """
-        return self.kind.schema(self)
+        return self.kind.input_schema(self)
 
     def call(self, shell: Shell, args: dict) -> str:
         """Do what the call asks, and say what actually happened.
@@ -4158,8 +4158,8 @@ class ToolKind:
 
     `takes` is the channel the kind acts on as a rejection names it, and `fits` the
     test a declared channel is held to. `describe` is what a tool of this kind says
-    of itself where the experiment writes no words, `schema` the input a call is
-    held to, and `act` what a call does and says it did; each is handed the Bound,
+    of itself where the experiment writes no words, `input_schema` the input a call
+    is held to, and `act` what a call does and says it did; each is handed the Bound,
     so none can say or reach what the channel table does not. The fields after
     them decide where the kind is offered and what it leaves behind.
     """
@@ -4167,7 +4167,7 @@ class ToolKind:
     takes: str
     fits: Callable[[Channel], bool]
     describe: Callable[[Bound], str]
-    schema: Callable[[Bound], dict]
+    input_schema: Callable[[Bound], dict]
     act: Callable[[Bound, Shell, dict], str]
     file: str = ""  # the one file it keeps in the agent's own instance
     expires: bool = False  # that file is cleared as each episode is built
@@ -4235,7 +4235,7 @@ def write_slot_said(b: Bound) -> str:
     )
 
 
-def write_slot_schema(b: Bound) -> dict:
+def write_slot_input_schema(b: Bound) -> dict:
     """A reachable peer's label, and the text for their slot."""
     return inputs(
         to={
@@ -4275,7 +4275,7 @@ def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
     return set_message(b, shell, b.slots[0], args.get("body"))
 
 
-def send_message_to_schema(b: Bound) -> dict:
+def send_message_to_input_schema(b: Bound) -> dict:
     """A reachable peer's label, and the message."""
     return inputs(
         to={"type": "string", "enum": b.slots, "description": "The peer's label."},
@@ -4299,7 +4299,7 @@ def write_file_said(b: Bound) -> str:
     )
 
 
-def write_file_schema(b: Bound) -> dict:
+def write_file_input_schema(b: Bound) -> dict:
     """A path under the agent's own instance, and the text for it."""
     return inputs(
         path={
@@ -4357,7 +4357,7 @@ def vote_said(b: Bound) -> str:
     )
 
 
-def vote_schema(b: Bound) -> dict:
+def vote_input_schema(b: Bound) -> dict:
     """A reachable peer's label."""
     return inputs(
         to={
@@ -4409,7 +4409,7 @@ def transfer_said(b: Bound) -> str:
     )
 
 
-def transfer_schema(b: Bound) -> dict:
+def transfer_input_schema(b: Bound) -> dict:
     """A reachable peer's label, and a whole amount."""
     return inputs(
         to={"type": "string", "enum": b.slots},
@@ -4479,7 +4479,7 @@ def read_path_said(b: Bound) -> str:
     )
 
 
-def read_path_schema(b: Bound) -> dict:
+def read_path_input_schema(b: Bound) -> dict:
     """One whole path in the channel."""
     return inputs(
         path={"type": "string", "description": "One file's path in this channel."}
@@ -4492,7 +4492,7 @@ def read_path_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 # The fixed menu: one entry a kind, holding the channel it takes, what it says, its
-# schema, what a call does, the file it keeps and where it is offered. What a kind
+# input schema, what a call does, the file it keeps and where it is offered. What a kind
 # means past its own calls - the election a vote decides, the post a board is
 # settled on, the memory an agent inherits - is read where it is used, by the kind's
 # name. A kind the harness gains is an entry here and a check. Nothing a manifest
@@ -4505,7 +4505,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         "a mailbox channel",
         unparsed_mailbox,
         write_slot_said,
-        write_slot_schema,
+        write_slot_input_schema,
         write_slot_call,
         needs_peer=True,
     ),
@@ -4528,14 +4528,14 @@ TOOL_KINDS: dict[str, ToolKind] = {
             "It expires after that episode and is retained only if they record it "
             "in private memory. A later call to that peer in this episode replaces it."
         ),
-        send_message_to_schema,
+        send_message_to_input_schema,
         send_message_to_call,
     ),
     "write_file": ToolKind(
         "a directory channel the agent writes",
         lambda ch: ch.writer == "self" and ch.shape == "directory",
         write_file_said,
-        write_file_schema,
+        write_file_input_schema,
         write_file_call,
     ),
     "post_public": ToolKind(
@@ -4566,7 +4566,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         "a private directory channel",
         lambda ch: ch.is_private_store,
         vote_said,
-        vote_schema,
+        vote_input_schema,
         vote_call,
         file="vote",
         expires=True,
@@ -4579,7 +4579,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         "an enabled transfer schema channel",
         lambda ch: ch.schema == "transfer" and ch.funded_by != "none",
         transfer_said,
-        transfer_schema,
+        transfer_input_schema,
         transfer_call,
         seats=True,
         needs_peer=True,
@@ -4588,7 +4588,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         "any channel the environment plants",
         lambda ch: True,
         read_path_said,
-        read_path_schema,
+        read_path_input_schema,
         read_path_call,
         writes=False,
     ),
