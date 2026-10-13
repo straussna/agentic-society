@@ -27,8 +27,9 @@ Sections, in the order an episode meets them:
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
                                     resolve_mailbox, SETTLEMENTS
  14. Provenance and the trace       provenance, drift, snapshot
- 15. The phases of one episode      Episode, build_episode, run_episode, settle_episode,
-                                    close_episode, run_once, ready, drive
+ 15. The steps of one episode       Episode, build_episode, run_episode, settle_episode,
+                                    close_episode, commit_episode, run_once, ready,
+                                    drive
  16. Many episodes                  start, catch_signals, run_episodes
  17. Forking                        fork
  18. CLI                            main
@@ -4808,7 +4809,7 @@ def new_episode_record() -> dict:
     """The record run_turns fills in, with every field present from the start.
 
     stop: how the episode ended, harness_error until something else is known.
-    spent: micro-dollars, committed on every path. turns, commands, retries,
+    spent: micro-dollars, recorded on every path. turns, commands, retries,
     observation: what happened. resolved_model: the dated snapshot behind the
     alias. live_balance_writes/errors/tampered: how the per-turn writes of the
     balance file went. balance_floor: the balance the turn loop stops at, which is
@@ -5105,7 +5106,7 @@ def run_turns(
         else:
             out["stop"] = "max_turns"
     except KeyboardInterrupt:
-        # Ctrl+C ends the episode and commits what it spent.
+        # Ctrl+C ends the episode, and what it spent is settled like any other spend.
         out["stop"] = "interrupted"
         out["error"] = "KeyboardInterrupt"
     except Exception as e:
@@ -5118,7 +5119,7 @@ def run_turns(
         if isinstance(e, ProviderError):
             out["provider_error"] = e.as_dict()
     finally:
-        # Committed on every path: an episode that cost money appears in the series.
+        # Recorded on every path: an episode that spent money appears in the series.
         out["spent"] = centi // 100
 
     return out
@@ -5772,7 +5773,7 @@ def snapshot(
     return {"files": files, "mentions": mentions, "mention_lines": lines}
 
 
-# --- 15. The phases of one episode -----------------------------------------------
+# --- 15. The steps of one episode ------------------------------------------------
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -6008,7 +6009,7 @@ def assert_writable(shell: Shell, instances: list[Instance]) -> None:
 def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     """Run the episode in a built environment, then mirror the environment back and reap it.
 
-    The one phase that bills. Whatever run_turns returns - a whole episode, or
+    The one step that spends. Whatever run_turns returns - a whole episode, or
     one that ended on an API error it swallowed - the sandbox's trees are
     mirrored back and the sandbox closed on the way out.
     """
@@ -6042,7 +6043,8 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
 def settle_episode(
     ep: Episode, out: dict, credit: Callable[[str, int], None] | None = None
 ) -> dict:
-    """Commit the spend and settle every obligation the channel table declares.
+    """Take the spend from the balance and settle every obligation the channel table
+    declares.
 
     The parsed channel settles first, then every other obligated channel in
     declaration order, and each penalty that moves the balance appends to the
@@ -6085,7 +6087,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     """Floor, write the trace, record the episode in the account, pay what its
     transfers owe, print the line.
 
-    Last of the phases, after every credit that reaches this agent's account has
+    Last of the steps, after every credit that reaches this agent's account has
     landed: the floor is what decides whether an agent that crossed zero is exhausted,
     and a transfer that arrived in the same round counts toward the answer. The
     trace is whole on disk before the account lists its episode, so no account
@@ -6295,12 +6297,12 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
 
 
 def commit_episode(ep: Episode, out: dict) -> dict:
-    """Settle and close in one step: what an episode run on its own does."""
+    """Settle the episode, then close it: the commit an episode run on its own makes."""
     return close_episode(ep, out, settle_episode(ep, out))
 
 
 def run_once(agent: str, router: ProviderRouter) -> dict:
-    """Build the environment, run an episode in a fresh container, commit, trace."""
+    """Build the environment, run one episode in a fresh sandbox, and commit it."""
     ep = build_episode(agent)
     return commit_episode(ep, run_episode(ep, router))
 
@@ -6311,10 +6313,10 @@ def ready(
     """Build `agent`'s environment if its account is in play. The Episode, or None.
 
     `prepare(account)` runs before the environment is built and may add to the
-    account, which is saved first. Container failures raise; nothing has been billed.
+    account, which is saved first. Container failures raise; nothing has been spent.
     """
-    # Re-read, never carried: the commit phases are the only writers of ground
-    # truth, so this decides on what was just spent.
+    # Re-read, never carried: settling and closing are the only steps that write
+    # ground truth, so this decides on what was just spent.
     account = load_account(agent)
     if not in_play(account):
         return None

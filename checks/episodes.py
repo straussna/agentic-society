@@ -720,10 +720,10 @@ def check_watch_is_quiet_and_display_only():
 
 
 def check_run_once_is_build_then_run_then_commit():
-    """run_once is the phases composed: a driver composing them itself gets the same record.
+    """run_once is the steps composed: a driver composing them itself gets the same record.
 
     Same trace, same accounts, same console, so a simultaneous round that holds the
-    phases apart commits exactly what an episode run on its own would have.
+    steps apart commits exactly what an episode run on its own would have.
     """
     script = (
         run(
@@ -760,7 +760,7 @@ def check_run_once_is_build_then_run_then_commit():
             t2 = harness.close_episode(ep, out, harness.settle_episode(ep, out))
         m2, o2 = ground_truth(), ground_truth("other")
 
-    assert normal(t1) == normal(t2), "the same record, phase by phase or in one call"
+    assert normal(t1) == normal(t2), "the same record, step by step or in one call"
     for m in (m1, m2):
         m.pop("created_at")
     assert m1 == m2 and o1["received"] == o2["received"] == 100, (m1, m2, o1, o2)
