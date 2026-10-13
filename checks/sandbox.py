@@ -642,7 +642,7 @@ def check_only_a_channel_takes_what_an_episode_writes():
     """Invariant 4 at the filesystem: nowhere but a channel accepts a write.
 
     /work is root's and so is the home directory, so a write to either fails
-    where the agent stands. The refusal is the enforcement; nothing here relies
+    where the agent stands. The denial is the enforcement; nothing here relies
     on the agent being told where it may write.
     """
     with docker_root():

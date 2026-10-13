@@ -280,7 +280,8 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
 
 
 def check_an_experimenter_channel_is_roots_and_read_only_in_every_seat():
-    """In a container the experimenter channel is root's, refuses every write, and reads."""
+    """In a container the experimenter channel is root's, denies every write, and
+    reads."""
     with docker_root() as root:
         shared(root, "brief", BRIEF="read me first\n")
         seated(root, other={})
@@ -760,7 +761,7 @@ def check_an_episode_with_no_turn_settles_nothing():
 
 
 def check_the_channels_answer_differently():
-    """Its own three trees take writes; every seat, message and balance refuses.
+    """Its own three trees take writes; every seat, message and balance denies them.
 
     The whole arrangement in one episode: what the agent may not write it cannot
     reach by writing, by chmod, or by replacing the directory the file sits in.

@@ -48,7 +48,7 @@ class Proc:
 
 
 class BrokenShell:
-    """A shell that finds nothing at any path and refuses every write."""
+    """A shell that finds nothing at any path and denies every write."""
 
     restarts = 0
     proc = Proc()

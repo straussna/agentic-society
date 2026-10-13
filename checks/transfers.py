@@ -530,7 +530,7 @@ def check_a_transfer_to_a_seat_out_of_play_costs_the_share():
 
 
 def check_a_ledger_resists_every_route():
-    """g refuses append, chmod, rm, mv, symlink and an absolute path, like a balance.
+    """g denies append, chmod, rm, mv, symlink and an absolute path, like a balance.
 
     Every transfer being public is only true while the file saying so cannot be
     edited by the agents it is about.

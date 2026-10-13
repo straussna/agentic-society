@@ -630,7 +630,8 @@ def check_a_receipt_says_what_each_obligation_came_to():
 
 
 def check_a_receipt_is_roots_in_the_container():
-    """In a container the receipt is root's and refuses a write, like every harness file."""
+    """In a container the receipt is root's and denies a write, like every status
+    file."""
     with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
         seated(root, other={})
         episode_once(run("echo '2 100' > out/transfer"), say())

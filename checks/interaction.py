@@ -1091,8 +1091,9 @@ def check_the_view_reports_a_pending_pointer_that_does_not_read_and_serves_the_r
 
 
 def check_the_view_handler_answers_only_for_the_server_serve_builds():
-    """A server without the token and the origin has nothing a POST's headers could match,
-    so the handler refuses to read them off it rather than letting absent equal absent."""
+    """A server without the token and the origin has nothing a POST's headers could
+    match, so the handler declines to read them off it rather than letting absent
+    equal absent."""
     httpd = view.serve(0)
     try:
         assert isinstance(httpd, view.ViewServer), type(httpd)
