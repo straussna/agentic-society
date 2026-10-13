@@ -339,14 +339,14 @@ def check_a_branch_that_fails_partway_can_be_made_again():
     }
 
 
-def check_a_branch_standing_is_each_ledger_field_as_it_stood_as_the_round_ended():
+def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     """Every running total of a branch sums the episodes up to the one it forks at: what
     was sent, rebated, debited, forgiven and taken by each channel, and what was received
     inside an episode or, from a peer settling outside it, between two. Past that episode
     the series is the round's until what the account received comes to what the ledger
     had paid it by the round's end, and holds every credit taken back, with the floor
     that answers one: a credit past that is a later round's. A series that cannot hold
-    what the ledger paid is no standing."""
+    what the ledger paid has no branch totals."""
     first = {
         "episode": 1,
         "spent": 100,
@@ -440,10 +440,10 @@ def check_a_branch_standing_is_each_ledger_field_as_it_stood_as_the_round_ended(
         )
     }
     for case, (account, expected) in cases.items():
-        standing = experiment.branch_standing(account, case[1], case[2])
-        assert standing == expected, (case, standing)
-        if standing is not None:
-            stood, totals = standing
+        found = experiment.branch_totals(account, case[1], case[2])
+        assert found == expected, (case, found)
+        if found is not None:
+            stood, totals = found
             spent = sum(e["spent"] for e in account["episodes"][: case[1]])
             assert reconciled({"initial": stood[0], **totals}, spent) == stood[-1], (
                 case,

@@ -683,7 +683,7 @@ class Totals(TypedDict):
     penalised: dict[str, int]
 
 
-def branch_standing(
+def branch_totals(
     account: harness.Account, episode: int, received: int
 ) -> tuple[list[int], Totals] | None:
     """The series and running totals an account stood on as the round of its
@@ -808,19 +808,19 @@ def branch_experiment(
     # episode by whatever reached it after that: the ledger says what the round's
     # transfers had paid it by then.
     ledger = harness.ledger_events(sources[0][1]["id"], sources[0][2])
-    standings: dict[str, tuple[list[int], Totals]] = {}
+    totals_by_seat: dict[str, tuple[list[int], Totals]] = {}
     for seat, entry, parent, episode in sources:
         paid = sum(
             amount
             for round, _, taker, amount in ledger
             if taker == manifest["labels"][seat] and round <= at_round
         )
-        if (standing := branch_standing(parent, episode, paid)) is None:
+        if (seat_totals := branch_totals(parent, episode, paid)) is None:
             raise SystemExit(
                 f"{entry['id']} cannot be carried as it stood at round {at_round}: "
                 f"its series does not hold the {paid} the ledger paid it by then"
             )
-        standings[seat] = standing
+        totals_by_seat[seat] = seat_totals
     # The elections held by the round, by round, from every seat's history. Each fork
     # carries every one of them that names its seat, the last as its last election, so
     # the branch holds no election again that its round had held.
@@ -839,7 +839,7 @@ def branch_experiment(
         for seat, entry, parent, episode in sources:
             new = new_ids[seat]
             created.append(new)
-            series, totals = standings[seat]
+            series, totals = totals_by_seat[seat]
             if harness.fork(entry["id"], episode, new, series):
                 raise SystemExit(f"could not fork {entry['id']}")
             account = harness.load_account(new)
