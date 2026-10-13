@@ -10,7 +10,7 @@ from checks.fake import fake, run, say
 from checks.lanes import (
     ALL_OWED,
     HALF,
-    HostBox,
+    HostSandbox,
     PERSONA,
     PERSONA_FILES,
     PERSONA_LABELS,
@@ -266,7 +266,7 @@ def check_a_channel_table_is_validated():
 def check_retired_keys_are_refused():
     """Every key RETIRED names is refused by name, in config.toml and in a manifest,
     and the refusal says where that setting is declared."""
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         f = root / "config.toml"
         for key in harness.RETIRED:
             f.write_text(

@@ -11,7 +11,7 @@ import harness
 
 from checks.fake import fake, run, say
 from checks.lanes import (
-    HostBox,
+    HostSandbox,
     amend,
     episode_once,
     files_by_path,
@@ -264,7 +264,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
 
 def check_starter_files_config_is_validated():
     """starter_files and starter_files_below are set together, and starter_files must name a real directory."""
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         plant(root, "ok")
 
         def declared(**values):
@@ -401,7 +401,7 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
 
 def check_fork_refuses_what_it_cannot_rebuild():
     """Anything the trace did not store exactly stops the fork."""
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         priv = harness.records_dir("p") / "traces"
         priv.mkdir(parents=True)
         harness.save_account(
@@ -512,7 +512,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
     Otherwise the records ahead of it would sit in the new id's mirrors, and the
     corrected fork under the same id would be refused as an agent that exists.
     """
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         (harness.records_dir("p") / "traces").mkdir(parents=True)
         harness.save_account(
             "p",

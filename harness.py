@@ -17,8 +17,8 @@ Sections, in the order an episode meets them:
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
- 10. The container and the shell    Box, Container, Shell, load_state, save_state, clip,
-                                    Bound, TOOL_KINDS, bind_tools, episode_specs
+ 10. The sandbox and the shell      Sandbox, Container, Shell, load_state, save_state,
+                                    clip, Bound, TOOL_KINDS, bind_tools, episode_specs
  11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
@@ -3109,7 +3109,7 @@ def before_digests(
     return before
 
 
-# --- 10. The container and the shell ---------------------------------------------
+# --- 10. The sandbox and the shell -----------------------------------------------
 
 
 def docker(argv: list[str], **kw: Any) -> subprocess.CompletedProcess:
@@ -3146,7 +3146,7 @@ def reap(container: str) -> None:
         pass
 
 
-def plant_harness_files(box: str, files: dict[str, str]) -> None:
+def plant_harness_files(container: str, files: dict[str, str]) -> None:
     """Write every harness-owned file into /work, root's and read-only.
 
     The balances, the ledger, a receipt and the digest, each copied on its own so
@@ -3163,7 +3163,7 @@ def plant_harness_files(box: str, files: dict[str, str]) -> None:
                 "exec",
                 "-u",
                 "root",
-                box,
+                container,
                 "bash",
                 "-c",
                 "cd /work && mkdir -p " + " ".join(shlex.quote(p) for p in parents),
@@ -3177,7 +3177,12 @@ def plant_harness_files(box: str, files: dict[str, str]) -> None:
             (staged / name).parent.mkdir(parents=True, exist_ok=True)
             (staged / name).write_text(text, encoding="utf-8", newline="\n")
             docker(
-                ["docker", "cp", str((staged / name).resolve()), f"{box}:/work/{name}"],
+                [
+                    "docker",
+                    "cp",
+                    str((staged / name).resolve()),
+                    f"{container}:/work/{name}",
+                ],
                 check=True,
                 capture_output=True,
             )
@@ -3188,7 +3193,7 @@ def plant_harness_files(box: str, files: dict[str, str]) -> None:
             "exec",
             "-u",
             "root",
-            box,
+            container,
             "bash",
             "-c",
             f"cd /work && chown root:root {quoted} && chmod 444 {quoted}",
@@ -3395,14 +3400,14 @@ class EnvironmentBuildError(RuntimeError):
 BUILD_FAILURES = (subprocess.CalledProcessError, OSError, EnvironmentBuildError)
 
 
-class Box(Protocol):
-    """What build_episode and run_episode ask of the environment an episode runs in.
+class Sandbox(Protocol):
+    """What build_episode and run_episode ask of the sandbox an episode runs in.
 
-    Container is the one the harness runs; a check binds its own class in BOX.
+    Container is the one the harness runs; a check binds its own class in SANDBOX.
     """
 
     @classmethod
-    def start(cls, name: str) -> Box: ...
+    def start(cls, name: str) -> Sandbox: ...
 
     def load(self, instances: list[Instance], files: dict[str, str]) -> None: ...
 
@@ -3414,11 +3419,11 @@ class Box(Protocol):
 
 
 class Container:
-    """The environment an episode runs in: started, loaded, mirrored back, reaped.
+    """The sandbox an episode runs in: started, loaded, mirrored back, reaped.
 
     build_episode starts one and run_episode closes it; these five methods are
-    everything they ask, which Box states. An episode elsewhere puts its own class
-    in BOX.
+    everything they ask, which Sandbox states. An episode elsewhere puts its own
+    class in SANDBOX.
     """
 
     def __init__(self, name: str) -> None:
@@ -3511,8 +3516,8 @@ class Container:
         reap(self.name)
 
 
-# The class build_episode starts an episode in. check.py binds its HostBox here.
-BOX: type[Box] = Container
+# The class build_episode starts an episode in. check.py binds its HostSandbox here.
+SANDBOX: type[Sandbox] = Container
 
 
 class Shell:
@@ -5780,7 +5785,7 @@ class Episode:
     records: Path
     before: dict[str, Any]  # what each obligated channel held at episode start
     started: float = 0.0
-    container: Box | None = None  # None until build_episode has started one
+    container: Sandbox | None = None  # None until build_episode has started one
     shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
@@ -5791,7 +5796,7 @@ class Episode:
     credited: int = 0
 
     @property
-    def built(self) -> tuple[Box, Shell]:
+    def built(self) -> tuple[Sandbox, Shell]:
         """The environment and its shell. Every Episode build_episode returns has both;
         asked of one without them, this raises."""
         if self.container is None or self.shell is None:
@@ -5944,10 +5949,10 @@ def build_episode(agent: str) -> Episode:
     try:
         # Inside the try, so there is no window in which a container exists and
         # nothing is bound to reap it.
-        box = ep.container = BOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
-        box.load(instances, shown)
+        sandbox = ep.container = SANDBOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
+        sandbox.load(instances, shown)
         loaded = True
-        shell = ep.shell = box.shell()
+        shell = ep.shell = sandbox.shell()
         clear_episode_actions(shell, instances)
         assert_writable(shell, instances)
     except BaseException:
@@ -5985,7 +5990,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     one that ended on an API error it swallowed - the container is saved and
     closed on the way out.
     """
-    box, shell = ep.built
+    sandbox, shell = ep.built
     WATCH_AGENT.set(f"{ep.agent}| ")
     out: dict = {}
     try:
@@ -6007,8 +6012,8 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
         shell.close()
         # Before the reap: the container holds the only copy of whatever the
         # agent wrote.
-        ep.saved = box.save(ep.instances)
-        box.close()
+        ep.saved = sandbox.save(ep.instances)
+        sandbox.close()
     return out
 
 

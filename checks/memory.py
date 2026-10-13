@@ -9,7 +9,15 @@ import sys
 
 import experiment
 import harness
-from checks.lanes import HostBox, manifest_file, offers, plant, quiet, refused, rooted
+from checks.lanes import (
+    HostSandbox,
+    manifest_file,
+    offers,
+    plant,
+    quiet,
+    refused,
+    rooted,
+)
 
 
 def source_trace(agent: str, episode: int, body: str) -> None:
@@ -43,7 +51,7 @@ def source_trace(agent: str, episode: int, body: str) -> None:
 
 def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
     """The declared memory crosses exactly; account history and transient channels do not."""
-    with rooted(HostBox, tools=offers("write_memory:notes")):
+    with rooted(HostSandbox, tools=offers("write_memory:notes")):
         body = "A complete inherited memory.\nUnicode: →\n"
         source_trace("old", 7, body)
         account = harness.load_account("new")
@@ -131,7 +139,7 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
         "would overwrite": planted_differently,
     }
     for why, arrange in cases.items():
-        with rooted(HostBox, tools=offers("write_memory:notes")), quiet():
+        with rooted(HostSandbox, tools=offers("write_memory:notes")), quiet():
             arrange()
             destination = harness.mirror("new", "notes") / "memory.md"
             held = destination.read_bytes() if destination.exists() else None
@@ -157,7 +165,7 @@ def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
     no starter files by that name.
     """
     argv = sys.argv
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         plant(root, "only-here", m1="alpha\n")
         sys.argv = [harness.__file__, "--print-files", "only-here"]
         try:
@@ -177,7 +185,7 @@ def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
 
 def check_memory_from_is_strict_agent_grammar():
     """A source and positive episode are required, and a new seat cannot be its own source."""
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         good = manifest_file(
             root,
             'system_prompt = ""\n[[agent]]\nid = "new"\nmemory_from = { agent = "old", episode = 7 }\n',

@@ -1,6 +1,6 @@
 """The two lanes an episode can run in, and the fixtures every check shares.
 
-The boxes (a directory on this machine, a recording one, one that refuses to
+The sandboxes (a directory on this machine, a recording one, one that refuses to
 start), the throwaway roots, the fake experiment, the persona table, and the
 helpers that read the record back."""
 
@@ -37,7 +37,7 @@ class Skip(Exception):
 
 
 # Set by --real: every check takes a container, including the ones that would
-# otherwise run on the host box. What proves the two lanes still agree.
+# otherwise run on the host sandbox. What proves the two lanes still agree.
 REAL_ONLY = False
 
 # The answer to docker_ready(), once some process has paid for it. Carried into
@@ -103,7 +103,7 @@ def _ask_docker() -> bool:
 # episode ended on - run against a directory and a bash process on this machine.
 # What only a container can show stays on docker_root below.
 def host_bash() -> str | None:
-    """The bash to run the host box's episodes in, as an absolute path.
+    """The bash to run the host sandbox's episodes in, as an absolute path.
 
     An absolute path: on Windows PATH can resolve `bash` to Git's or WSL's, which
     disagree about what a path is and what /tmp means.
@@ -122,9 +122,9 @@ class HostShell(harness.Shell):
     only where the process runs and how a balance is rewritten differ.
     """
 
-    def __init__(self, box: "HostBox") -> None:
-        self.box = box
-        super().__init__(box.name)
+    def __init__(self, sandbox: "HostSandbox") -> None:
+        self.sandbox = sandbox
+        super().__init__(sandbox.name)
 
     def argv(self) -> list[str]:
         # No profile: what the agent's shell is must not depend on this account.
@@ -135,20 +135,20 @@ class HostShell(harness.Shell):
         # processes a signal aimed at the harness reaches.
         return {
             **super().popen_kwargs(),
-            "cwd": str(self.box.work),
+            "cwd": str(self.sandbox.work),
             # Stop MSYS rewriting paths inside the agent's own commands.
             "env": {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"},
         }
 
     def republish_balance(self, label: str, series: list[int], expected: str) -> str:
-        n = self.box.work / harness.balance_name(label)
+        n = self.sandbox.work / harness.balance_name(label)
         was = n.read_text(encoding="utf-8") if n.exists() else ""
         n.write_text(harness.render_balance(series), encoding="utf-8", newline="\n")
         return "ok" if was == expected else "tampered"
 
 
-class HostBox:
-    """An episode's environment as a directory on this machine, in place of a container.
+class HostSandbox:
+    """An episode's sandbox as a directory on this machine, in place of a container.
 
     Same five methods run_once asks of harness.Container, same instances. No
     ownership and no locking: a check turning on either belongs on docker_root.
@@ -160,7 +160,7 @@ class HostBox:
         self.work = Path(self.dir)
 
     @classmethod
-    def start(cls, name: str) -> "HostBox":
+    def start(cls, name: str) -> "HostSandbox":
         return cls(name)
 
     def load(self, instances: list[harness.Instance], files: dict[str, str]) -> None:
@@ -211,8 +211,9 @@ class HostBox:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-class RecordingBox(HostBox):
-    """A HostBox that writes down every start, load and close, for a check on ordering.
+class RecordingSandbox(HostSandbox):
+    """A HostSandbox that writes down every start, plant and close, for a check on
+    ordering.
 
     `events` is bound by recording(), which a check holds for its duration.
     """
@@ -226,7 +227,7 @@ class RecordingBox(HostBox):
             cls.events.append((what, name))
 
     @classmethod
-    def start(cls, name: str) -> "RecordingBox":
+    def start(cls, name: str) -> "RecordingSandbox":
         cls.note("start", name)
         return cls(name)
 
@@ -241,20 +242,20 @@ class RecordingBox(HostBox):
 
 @contextlib.contextmanager
 def recording():
-    """A fresh RecordingBox.events for one check, cleared again on exit."""
-    RecordingBox.events = []
+    """A fresh RecordingSandbox.events for one check, cleared again on exit."""
+    RecordingSandbox.events = []
     try:
-        yield RecordingBox.events
+        yield RecordingSandbox.events
     finally:
-        RecordingBox.events = []
+        RecordingSandbox.events = []
 
 
-class NoBox:
-    """A box no episode may be built in: start() fails the check that reached it."""
+class NoSandbox:
+    """A sandbox no episode may be built in: start() fails the check that reached it."""
 
     @classmethod
-    def start(cls, name: str) -> "NoBox":
-        raise AssertionError(f"an environment was built for {name}, and none may be")
+    def start(cls, name: str) -> "NoSandbox":
+        raise AssertionError(f"a sandbox was started for {name}, and none may be")
 
 
 def never_start(*args, **kwargs) -> Callable:
@@ -403,7 +404,7 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 # and flags it sets. temp_root refuses any other.
 SEAMS = {
     "SETTINGS",
-    "BOX",
+    "SANDBOX",
     "ready",
     "start",
     "load_account",
@@ -457,13 +458,13 @@ def amend(**fields) -> None:
 
 
 @contextlib.contextmanager
-def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
-    """Point harness at a throwaway directory, with episodes running in `box`.
+def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
+    """Point harness at a throwaway directory, with episodes running in `sandbox`.
 
     `overrides` amend a tunable (max_turns=1, command_timeout=2) or move a seam
-    (BOX=RecordingBox, start=capture) for the duration, and pinned() puts every one
-    of them back. `tools` are [[tool]] tables, decided against whatever channel table
-    is then in force.
+    (SANDBOX=RecordingSandbox, start=capture) for the duration, and pinned() puts
+    every one of them back. `tools` are [[tool]] tables, decided against whatever
+    channel table is then in force.
     """
     provider = overrides.pop("PROVIDER", "anthropic")
     model = overrides.pop("MODEL", "claude-sonnet-5")
@@ -480,7 +481,7 @@ def rooted(box, channels=None, harness_files=None, tools=None, **overrides):
         # Before the tables: a tool table is refused or not by the delivery and the
         # digest in force.
         amend(root=Path(d), **fields)
-        harness.BOX = box
+        harness.SANDBOX = sandbox
         load_account = harness.load_account
 
         def load_test_account(agent, **terms):
@@ -509,7 +510,7 @@ def host_root(channels=None, harness_files=None, tools=None, **overrides):
     if not host_bash():
         raise Skip
     with rooted(
-        HostBox,
+        HostSandbox,
         channels=channels,
         harness_files=harness_files,
         tools=tools,
@@ -777,7 +778,7 @@ def unfinished() -> None:
 @contextlib.contextmanager
 def two_seats():
     """An experiment of two, laid out and seated, with a blackboard and a store each."""
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         ids = seated(
             root,
             "g01",

@@ -18,9 +18,9 @@ import product
 from checks.fake import DEFAULT, Err, fake, per_agent, run, say, stopping_at, use
 from checks.lanes import (
     ALL_OWED,
-    HostBox,
+    HostSandbox,
     PERSONA_LABELS,
-    RecordingBox,
+    RecordingSandbox,
     agent_of,
     channel_toml,
     digest_name,
@@ -2268,7 +2268,7 @@ def check_a_manifest_is_validated():
         f'[[agent]]\nid = "g01"\nstarter_files = "s"\nstarter_files_below = 400000\n'
         f'[[agent]]\nid = "g02"\nbudget = 7\nmodel = "{other_model}"\n'
     )
-    with rooted(HostBox) as root:
+    with rooted(HostSandbox) as root:
         plant(root, "s")
         two = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
         for bad in (
@@ -2455,11 +2455,11 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
 
 def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs():
     """Under a simultaneous schedule every container is up and loaded before the first API call."""
-    with recording() as events, temp_root(BOX=RecordingBox) as root:
+    with recording() as events, temp_root(SANDBOX=RecordingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
 
         def opened():
-            RecordingBox.note("create", threading.current_thread().name)
+            RecordingSandbox.note("create", threading.current_thread().name)
 
         create = per_agent(default=DEFAULT, on_open=opened)
 
@@ -2954,7 +2954,7 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
 
 def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_seats_the_rest():
     """An environment that will not build costs its agent one attempt, then its seat; the rest run."""
-    with recording() as events, temp_root(BOX=RecordingBox) as root:
+    with recording() as events, temp_root(SANDBOX=RecordingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
         failures = {"g02": 1, "g03": 99}
         real = harness.ready
@@ -2981,16 +2981,16 @@ def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_
 def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
     """A stop that lands while environments are being built starts nothing and reaps what was built."""
 
-    class StoppingBox(RecordingBox):
+    class StoppingSandbox(RecordingSandbox):
         @classmethod
         def start(cls, name):
-            box = super().start(name)
+            sandbox = super().start(name)
             if sum(1 for what, _ in cls.events if what == "start") == 2:
                 harness.STOPPING = True
-            return box
+            return sandbox
 
     calls = []
-    with recording() as events, temp_root(BOX=StoppingBox) as root:
+    with recording() as events, temp_root(SANDBOX=StoppingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
         live = set(ids)
 

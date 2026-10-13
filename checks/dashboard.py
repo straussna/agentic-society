@@ -24,7 +24,7 @@ from providers import ToolSpec
 from checks.fake import DEFAULT, fake, run, say, usage
 from checks.lanes import (
     ALL_OWED,
-    HostBox,
+    HostSandbox,
     PERSONA,
     PERSONA_FILES,
     PERSONA_LABELS,
@@ -499,7 +499,7 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
         reads.append(path)
         return real(path)
 
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         first = fake_experiment([("g01", "00:01")])
         view.read_json = counted
         try:
@@ -545,7 +545,7 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
 def check_a_record_holding_no_object_reads_as_no_record():
     """A JSON file holding a list or a number is read as no record at all, so an
     account like that is left out of the grouping instead of failing every poll."""
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment([("g01", "00:01")])
         harness.records_dir("k01").mkdir(parents=True)
         harness.account_path("k01").write_text("[1, 2]", encoding="utf-8")
@@ -561,7 +561,7 @@ def check_a_grouping_read_without_an_account_is_read_again_next_poll():
     groups without that seat, and that grouping is kept for no later poll: the next
     one reads the account again and the agent is among the experiment's seats, though
     nothing on disk has moved since."""
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
         before = [exp["seats"] for exp in view.experiments()]
         account = harness.account_path("g01")
@@ -588,7 +588,7 @@ def check_a_grouping_reads_each_account_once_a_poll():
     nor the grouping kept for the next. g01's second trace is one its account does not
     list, whose commit stopped between the two, and no episode of g01's."""
     labels = {"1": "alpha", "2": "beta"}
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
         for agent in ("g01", "g02"):
             account = json.loads(
@@ -634,7 +634,7 @@ def check_a_trace_that_predates_the_harness_file_names_still_groups():
     names, as one naming no channel table is read under the default table, so its
     experiment still groups and its header still opens instead of failing every poll.
     The names in force are another experiment's, and not the ones it ran under."""
-    with rooted(HostBox, harness_files={"balance": "purse"}):
+    with rooted(HostSandbox, harness_files={"balance": "purse"}):
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
@@ -734,7 +734,7 @@ def check_the_view_shows_every_seat_side_by_side():
 def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
     """A seat whose account a poll cannot read counts as still to act, not as out."""
     acted = [("g01", "00:01"), ("g02", "00:02"), ("g01", "00:03")]
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment(acted, agents=("g01", "g02"))
         c = view.experiment_by_id("g")
         rows = view.experiment_episodes(c)
@@ -774,7 +774,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         ("g01", "00:03", {"files": files("1", 2)}),
         ("g02", "00:04", {"files": files("2", 2)}),
     ]
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment(acted, agents=("g01", "g02"))
         tools = [
             {"name": "post", "kind": "post_public", "channel": "blackboard"},
@@ -914,7 +914,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
             "text": "hello all\n",
         }
     ]
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment(
             [("g01", "00:01", {"files": committed}), ("g02", "00:02")],
             agents=("g01", "g02"),
@@ -1008,7 +1008,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
         ("g01", "00:05", {"files": said}),
         ("g02", "00:06"),
     ]
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         fake_experiment(acted, agents=("g01", "g02"))
         # Both seats forked at episode 2: the accounts list the two they inherited,
         # and the traces are the branch's own.
@@ -1122,7 +1122,7 @@ def check_the_view_reads_the_round_the_harness_announces():
         ("g02", "00:10"),
         ("g03", "00:10"),
     ]
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         c = fake_experiment(acted)
         rows = view.experiment_episodes(c)
         now = view.round_now(c, rows)
@@ -1145,7 +1145,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     def tiles(acted):
         # Nothing left on any account, which is the whole point: a seat still to
         # come reads that way on the balance that would stop it starting.
-        with rooted(HostBox):
+        with rooted(HostSandbox):
             c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
             current_round = view.round_now(c, rows)
@@ -1197,7 +1197,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
 
     # A forked seat lists the episodes it inherited and holds no trace of them: g02's
     # two are still the rounds it played, so round 3 finds it still to come.
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         c = fake_experiment(
             [
                 ("g01", "00:01"),
@@ -1226,7 +1226,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     # Behind is judged against the table's round, the episodes committed, as
     # experiment.behind judges it: g01 in flight on round 4 leaves g02, which missed
     # only round 3, a seat the run seats again.
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         c = fake_experiment(
             [
                 ("g01", "00:01"),
@@ -1318,7 +1318,7 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
         }
 
     def changes(delivery: str | None) -> list[tuple]:
-        with rooted(HostBox):
+        with rooted(HostSandbox):
             c = fake_experiment(
                 [
                     ("g01", "00:01", held("out/2")),
@@ -1416,7 +1416,7 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
             ],
         }
 
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         c = fake_experiment(
             [
                 ("g01", "00:01", held("out/2", "own", False)),

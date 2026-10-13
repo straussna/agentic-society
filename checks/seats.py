@@ -11,7 +11,7 @@ from checks.fake import Err, fake, run, say
 from checks.lanes import (
     ALL_OWED,
     HALF,
-    HostBox,
+    HostSandbox,
     digest_name,
     docker_root,
     environment_of,
@@ -54,7 +54,7 @@ def check_a_private_store_never_leaves_its_agent():
     The whole point of two writable trees: one is addressed to the experiment and
     one is not, and the harness never copies the second anywhere.
     """
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         ids = lay_out(
             g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
             g02={"secret.md": "theirs alone\n", "group/msg": "hello 1\n"},
@@ -93,7 +93,7 @@ def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
     mentions is what the agent wrote. A neighbour's blackboard full of balances and
     the word "budget" would otherwise answer for it at round one.
     """
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         ids = lay_out(
             g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
             g02={"group/out": "the budget is 90 and ./n1 holds it\n"},
@@ -128,7 +128,7 @@ def check_starter_files_and_a_peer_are_told_apart():
     starter files, so one flag covering both cannot answer what the starter files
     put there.
     """
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         ids = lay_out(
             g01={"NOTES.md": "mine\n", "m1": "alpha\n"}, g02={"group/out": "theirs\n"}
         )
@@ -326,7 +326,7 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
     The asymmetry the ruleset turns on: a blackboard is read by everyone and an
     outbox by exactly one, so what an agent says can be aimed.
     """
-    with rooted(HostBox):
+    with rooted(HostSandbox):
         lay_out(
             g01={"out/3": "for three alone\n", "group/RESULT": "for everyone\n"},
             g02={},

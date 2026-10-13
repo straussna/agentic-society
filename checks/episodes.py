@@ -20,7 +20,7 @@ import view
 from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think, usage
 from checks.lanes import (
     HostShell,
-    NoBox,
+    NoSandbox,
     amend,
     differs,
     digest_name,
@@ -113,7 +113,7 @@ def check_a_fault_ends_the_loop():
 
 def check_episodes_flag_is_validated():
     """--episodes below one is refused before anything is created or billed."""
-    with rooted(NoBox):
+    with rooted(NoSandbox):
         harness.start = never_start
         for bad in ("0", "-1"):
             with quiet():
@@ -362,7 +362,7 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
 
 def check_a_stop_between_episodes_builds_no_environment():
     """A stop that lands between episodes starts no container at all."""
-    with rooted(NoBox, STOPPING=True):
+    with rooted(NoSandbox, STOPPING=True):
         harness.load_account("t")  # the agent exists; what does not is an episode
         seen = []
         with quiet() as buf:
@@ -424,7 +424,7 @@ def check_the_children_are_in_their_own_process_group():
     # Both lanes' shells, without starting either.
     for cls in (harness.Shell, HostShell):
         probe = cls.__new__(cls)
-        probe.box = NS(work=Path("."))
+        probe.sandbox = NS(work=Path("."))
         assert expected in probe.popen_kwargs(), (
             f"{cls.__name__}: {probe.popen_kwargs()}"
         )

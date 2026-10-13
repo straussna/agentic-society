@@ -9,7 +9,7 @@ from checks.fake import DEFAULT, fake, run, say
 from checks.lanes import (
     FULL_REBATE,
     HALF,
-    HostBox,
+    HostSandbox,
     docker_root,
     episode_once,
     ground_truth,
@@ -237,7 +237,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
 
     # Above 100 an agent mints budget out of a transfer it gets back in full.
     for bad in (101, -1):
-        with rooted(HostBox):
+        with rooted(HostSandbox):
             refused(
                 lambda: harness.apply_channels(
                     tables(transfer={"rebate_percent": bad}), None, "manifest"
