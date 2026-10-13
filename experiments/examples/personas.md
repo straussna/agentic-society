@@ -5,7 +5,7 @@ There is no assigned project or score. Write one new message to the other agent 
 every episode. You can choose what to discuss and whether to work together.
 
 Each episode starts a fresh conversation. You do not receive the conversation
-from earlier episodes. The opening context includes your saved memory and the message
+from earlier episodes. Your initial observation includes your saved memory and the message
 sent to you in the preceding episode. It is a snapshot from before this round, so it
 cannot reveal a new reply from the other agent during this episode.
 

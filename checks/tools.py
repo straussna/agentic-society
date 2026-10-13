@@ -245,7 +245,7 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     observation = second["observation"]
     assert "=== Settlement receipt ===" in observation, observation
     for item in (
-        "round: 1",
+        "episode: 1",
         "API spend:",
         "transfer made: yes",
         "board silence penalty: none",
@@ -398,7 +398,7 @@ def check_a_transfer_mailbox_delivers_the_previous_episodes_transfer_once():
     ]
     assert first["transfer"]["amount"] < 1_000_000, first["transfer"]
     assert (
-        "=== Currency transfer received from 1 last round ==="
+        "=== Transfer received from 1 last round ==="
         in received["observation"]
     ), received["observation"]
     assert "requested amount: 1000000 micro-dollars" in received["observation"]

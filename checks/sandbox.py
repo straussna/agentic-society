@@ -884,17 +884,17 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
             and not file["planted"]
         ), (t["episode"], file)
         assert file["channel"] == "mailbox" and not file["starter"], file
-    assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), (
+    assert second["turns"][0]["tools"][0]["result"].startswith("episode: 1\n"), (
         "the receipt is planted over what the agent left there"
     )
     assert left == "mine\n", f"the agent's file was scrubbed as a receipt: {left!r}"
-    assert third["turns"][0]["tools"][0]["result"].startswith("round: 2\n"), third[
+    assert third["turns"][0]["tools"][0]["result"].startswith("episode: 2\n"), third[
         "turns"
     ][0]
     assert "outbox/receipt" not in files_by_path(third), (
         "a receipt the agent left alone is in no record"
     )
-    assert planted.startswith("round: 2\n"), (
+    assert planted.startswith("episode: 2\n"), (
         f"the receipt came back to the mirror: {planted!r}"
     )
     assert scrubbed, "and it is what the next build scrubs"

@@ -174,7 +174,7 @@ runs one.
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
 | `harness.py --watch` | Echo the agent's words and account to stdout |
 | `harness.py --fork-from AGENT --at-episode N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
-| `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the opening context, or a `files/` listing; start no episode |
+| `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the initial observation, or a `files/` listing; start no episode |
 
 Each experiment writes under `experiment_records/<experiment_id>/`: the progress log,
 `progress.jsonl`, one line per stage each round reaches as it reaches it, the last naming
@@ -420,8 +420,8 @@ their oldest-to-newest history; ledger rows name round, giver, receiver and amou
 prior-round transfer notices name their receiver, requested amount and result. A
 receipt itemizes the preceding episode's starting balance, API spend, whether it was a
 grace episode, the transfer, each settled channel's silence penalty (`none` where the
-episode spoke on the channel), credits from peers, floor adjustment, ending balance,
-and the reconciliation.
+episode spoke on the channel), credits from peers, the amount floored at zero, ending
+balance, and the reconciliation.
 
 ### 4.4 Measured, and the silence penalty
 
@@ -469,12 +469,12 @@ nothing, and `silence_penalty_percent` must be 0. One schema channel per experim
 schema menu is fixed in code.
 
 A `receipt = "<path>"` on a schema channel asks the harness to plant an itemized
-receipt of the settlement at that path at the next episode start. It states the round,
+receipt of the settlement at that path at the next episode start. It states the episode,
 starting balance, API spend, whether it was a grace episode, declaration and transfer
 result, one line per settled channel giving its silence penalty (`none` where the episode
 spoke on the channel, otherwise the amount taken, 0 included) and what the episode did
-there, the total silence penalties, amount received from peers, floor adjustment, ending
-balance, and reconciliation. It is a status file like a balance: root-owned, quoted in the digest once and named as
+there, the total silence penalties, amount received from peers, the amount floored at
+zero, ending balance, and reconciliation. It is a status file like a balance: root-owned, quoted in the digest once and named as
 unchanged after, in no file record, and scrubbed before the next one is planted. Off by
 default, since it is an additional statement from the harness.
 
@@ -624,7 +624,7 @@ experiment that writes one is stating the mechanics itself where it wants them s
 `py -3 harness.py --print-system --manifest PATH` prints every declared description
 beside the prompts, which is what makes this surface auditable without starting an
 episode. `py -3 harness.py --print-context --manifest PATH` composes the fresh seats'
-opening digests and complete bound schemas as well, including reachable-peer lists and
+first digests and complete bound schemas as well, including reachable-peer lists and
 the discussion and vote tool sets.
 
 **The input schema is never declarable.** `input_schema`, `schema`, `properties` and

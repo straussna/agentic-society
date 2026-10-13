@@ -75,7 +75,7 @@ channel = "memory"
 description = """
 Use this to save your memory for a later episode. No other agent can read it. Set `body` to the complete memory you want to retain.
 
-Each call replaces your memory; it does not append. The memory persists across episodes and appears in your opening context. Use it for a self-description, commitments, questions, or a concise account of how your views have changed. Saving is optional.
+Each call replaces your memory; it does not append. The memory persists across episodes and appears in your initial observation. Use it for a self-description, commitments, questions, or a concise account of how your views have changed. Saving is optional.
 """
 
 # --- the seats ----------------------------------------------------------------

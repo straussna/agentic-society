@@ -201,7 +201,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         account = harness.load_account("g01")
         first = harness.render_harness_files("g01", account)[0]["m"]
         assert first.startswith(
-            "=== Round status ===\nround: 1 (cycle 1, 1/5)\nyou: 1\n"
+            "=== Round status ===\nround: 1 (vote cycle 1, 1/5)\nyou: 1\n"
             "in play: 1 (you), 2\nround type: discussion\n"
         ), first
         assert "=== Board post from 1 (you) ===" in first, first
@@ -212,7 +212,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         harness.save_account("g01", account)
         fifth = harness.render_harness_files("g01", account)[0]["m"]
         assert fifth.startswith(
-            "=== Round status ===\nround: 5 (cycle 1, 5/5)\n"
+            "=== Round status ===\nround: 5 (vote cycle 1, 5/5)\n"
             "you: 1\nin play: 1 (you), 2\n"
             "round type: vote; communication unavailable\n"
             "required private ballot: call vote_to_eliminate; peers receive only the result, "
@@ -246,7 +246,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
 
 
 def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
-    """At a cycle boundary abstention and the unique highest total both eliminate."""
+    """At a vote cycle boundary abstention and the unique highest total both
+    eliminate."""
     ballot = {
         "name": "ballot",
         "writer": "self",
@@ -826,7 +827,7 @@ def check_an_elector_an_interrupt_kept_from_voting_leaves_the_vote_eliminating_n
     assert cut == "interrupted", cut
     assert code == 0 and took == {"g01": 2, "g02": 2, "g03": 2}, (code, took)
     assert "--- round 2 (g03) ---" in output.getvalue(), output.getvalue()
-    assert told and told.group(0) == "round: 2 (cycle 1, 2/2)", told
+    assert told and told.group(0) == "round: 2 (vote cycle 1, 2/2)", told
     assert all(
         election
         == {

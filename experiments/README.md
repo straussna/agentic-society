@@ -196,7 +196,7 @@ Copy `examples/sandbox.toml` and edit it. Three things to know before the first 
 
 `py -3 harness.py --print-system --manifest <path>` prints every system prompt and
 declared tool description, without starting an episode. Dynamic context such as starter
-files, the opening digest, generated descriptions, input schemas and reachable-peer lists
+files, the first digest, generated descriptions, input schemas and reachable-peer lists
 is not rendered by this command. Use
 `py -3 harness.py --print-context --manifest <path>` to compose them for every
 fresh seat's first discussion and vote episodes, or add `--agent <id>` for one seat.

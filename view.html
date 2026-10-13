@@ -815,7 +815,7 @@ function renderHeader() {
   document.getElementById("whosub").innerHTML =
     `${h.active} of ${h.seat_tiles.length} active · round ${h.round}` +
     (h.schedule ? ` · ${esc(h.schedule)}` : "") +
-    (h.every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.round_type)}` : "") +
+    (h.every ? ` · ${h.vote_cycle ? `vote cycle ${h.vote_cycle} · ` : ""}${esc(h.round_type)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no board or mailbox between them`);
   const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.balance);

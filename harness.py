@@ -592,9 +592,10 @@ DEFAULT_CHANNELS: tuple[Channel, ...] = (
 )
 
 # The files the harness writes into every environment, by role: <balance><label>
-# holds each seat's balance history, and the digest is what has been said to this
-# agent. docs/manifest.md section 5. The code's default names, as DEFAULT_CHANNELS
-# is its default table: what a trace that records none is read under.
+# holds each seat's balance history, and the digest quotes every pushed channel to
+# this agent. docs/manifest.md section 5. The code's default names, as
+# DEFAULT_CHANNELS are its default channels: what a trace that records none is read
+# under.
 DEFAULT_HARNESS_FILES: Mapping[str, str] = MappingProxyType(
     {"balance": "n", "digest": "m"}
 )
@@ -1389,7 +1390,7 @@ class Settings:
     starter_files: str = ""
     # The starter files land at the first episode at or below this balance.
     starter_files_below: int = 0
-    # Whether what has been said to an agent is quoted to it at episode start ("push")
+    # Whether the pushed channels are quoted to an agent at episode start ("push")
     # or left in the environment for it to read ("pull"). One of DELIVERIES.
     delivery: str = "push"
     # Characters of each file the digest carries. Per file and not for the whole, so
@@ -2698,7 +2699,7 @@ def receipt_text(account: Account, ch: Channel) -> str:
         else f"nothing ({transfer.get('error') or 'no declaration'})"
     )
     lines = [
-        f"round: {episode.get('episode', '?')}",
+        f"episode: {episode.get('episode', '?')}",
         f"starting balance: {start}",
         f"API spend: {episode.get('spent', 0)}",
         f"grace episode: {'yes (silence penalties waived)' if grace else 'no'}",
@@ -2725,12 +2726,12 @@ def receipt_text(account: Account, ch: Channel) -> str:
     lines += [
         f"total silence penalties: {penalties}",
         f"received from peers: {received}",
-        f"balance-floor adjustment: {floored}",
+        f"floored at zero: {floored}",
         f"ending balance: {ending}",
         (
             "reconciliation: starting balance - API spend - transfer debit "
             "+ transfer rebate - total silence penalties + received from peers "
-            "+ balance-floor adjustment = ending balance"
+            "+ floored at zero = ending balance"
         ),
     ]
     return "\n".join(lines) + "\n"
@@ -2826,9 +2827,11 @@ def digest_name(
             incoming = f"{inst.channel.inbox}/"
             outgoing = f"{inst.channel.outbox}/"
             if path.startswith(incoming):
-                return f"Currency transfer received from {path.removeprefix(incoming)} last round"
+                return (
+                    f"Transfer received from {path.removeprefix(incoming)} last round"
+                )
             if path.startswith(outgoing):
-                return f"Currency transfer sent to {path.removeprefix(outgoing)} last round"
+                return f"Transfer sent to {path.removeprefix(outgoing)} last round"
         return "Transfer submitted last round"
     return path
 
@@ -2878,7 +2881,7 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
     fields = body.strip().split()
     if inst.channel.shape == "mailbox":
         if len(fields) != 1 or not fields[0].isdigit():
-            return "No valid currency transfer was submitted last round.\n"
+            return "No valid transfer was submitted last round.\n"
         return (
             f"requested amount: {fields[0]} micro-dollars\n"
             "status: submitted in the giver's previous episode; the transfer ledger "
@@ -2973,12 +2976,12 @@ def render_round_status(account: Account) -> str:
         ]
     else:
         position = (round - 1) % vote.every + 1
-        cycle = (round - 1) // vote.every + 1
+        vote_cycle = (round - 1) // vote.every + 1
         voting = position == vote.every and not election_held(
             account["agent"], account, round
         )
         lines = [
-            f"round: {round} (cycle {cycle}, {position}/{vote.every})",
+            f"round: {round} (vote cycle {vote_cycle}, {position}/{vote.every})",
             f"you: {seating.label}",
             f"in play: {in_play_labels}",
         ]
@@ -3011,7 +3014,8 @@ def render_round_status(account: Account) -> str:
 def digest_for(
     agent: str, account: Account, files: dict[str, str], carried: set[str]
 ) -> tuple[str, dict[str, str]]:
-    """The digest: what has been said to this agent, and the sha256 of what it quotes.
+    """The digest: every pushed channel quoted to this agent, and the sha256 of what it
+    quotes.
 
     The round announcement comes first where one is declared. It is followed by
     one section per file of every pushed instance in instances() order, the
@@ -4583,13 +4587,13 @@ def transfer_said(b: Bound) -> str:
         if ch.funded_by == "giver"
         else f"The harness funds it and rebates {ch.rebate_percent}% to you."
     )
-    action = (
-        "Send currency to one peer"
+    lead = (
+        "Send a transfer to one peer"
         if ch.shape == "mailbox"
         else "Declare a transfer to one peer"
     )
     return (
-        f"{action}. The amount must be a whole number of micro-dollars "
+        f"{lead}. The amount must be a whole number of micro-dollars "
         "that is at least 1; zero and negative amounts are invalid. The "
         "transfer applies only to this episode and must be submitted again in "
         "each later episode. The harness transfers the requested amount, capped "
@@ -4640,7 +4644,7 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
                 continue
             held = read_path_in(shell, f"{ch.outbox}/{label}")
             if isinstance(held, Unanswered):
-                return "Your currency outbox could not be checked. Nothing changed."
+                return "Your transfer outbox could not be checked. Nothing changed."
             other_pending = other_pending or held is not None
     if was == declared and not other_pending:
         return "That transfer is already pending for this episode."
@@ -4653,7 +4657,7 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
                 SETTINGS.command_timeout,
             )
             if cleared.strip() != "1":
-                return "Your currency transfer could not be saved cleanly."
+                return "Your transfer could not be saved cleanly."
     return (
         f"Transfer of {amount} to {to} is pending for this episode's settlement."
         if wrote >= 0

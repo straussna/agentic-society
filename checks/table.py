@@ -557,7 +557,7 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
         "observation"
     ]
     for item in (
-        "round: 1",
+        "episode: 1",
         "starting balance:",
         "API spend:",
         "transfer declaration: 2 100",
@@ -577,7 +577,7 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     )
     assert second["channels"]["mailbox"]["addressed"] == [], "nor a message"
     updated = third["turns"][0]["tools"][0]["result"]
-    assert updated != text and updated.startswith("round: 2\n"), updated
+    assert updated != text and updated.startswith("episode: 2\n"), updated
     assert f"=== outbox/receipt ===\n{updated}" in third["observation"], third[
         "observation"
     ]
@@ -666,7 +666,7 @@ def check_a_receipt_is_roots_in_the_container():
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("-r--r--r--"), results[0]
     assert "rc=1" in results[1], results[1]
-    assert "round: 1" in results[2], results[2]
+    assert "episode: 1" in results[2], results[2]
     assert (
         "transfer moved: 1 (you) -> 2; actual amount moved: 100 micro-dollars"
         in results[2]
@@ -682,7 +682,7 @@ def check_a_harness_file_makes_its_own_directory_in_the_container():
         t = episode_once(run("ls -ld receipts"), run("cat receipts/last"), say())
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("d"), results[0]
-    assert "round: 1" in results[1], results[1]
+    assert "episode: 1" in results[1], results[1]
     assert (
         "transfer moved: 1 (you) -> 2; actual amount moved: 100 micro-dollars"
         in results[1]
@@ -718,7 +718,7 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     )
     assert "OUTBOX-OK" in wrote, wrote
     assert (
-        receipt.startswith("round: 1\n") and "transfer declaration: 2 100" in receipt
+        receipt.startswith("episode: 1\n") and "transfer declaration: 2 100" in receipt
     ), receipt
     assert second["channels"]["mailbox"]["addressed"] == ["2"], second["channels"][
         "mailbox"

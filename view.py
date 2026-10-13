@@ -385,7 +385,7 @@ def inbox_headings(name: str) -> set[str]:
 
 
 def inbox_prefix(mail: harness.Channel | None) -> str | None:
-    """The prefix used for inbox items in the opening digest."""
+    """The prefix used for inbox items in the digest."""
     if mail is None:
         return None
     return "Message from " if mail.agent_view == "letters" else f"{mail.inbox}/"
@@ -1142,7 +1142,9 @@ def header(exp: dict) -> dict:
         "active": sum(tile["out_reason"] is None for tile in seat_tiles),
         "every": every,
         "round_type": round_type,
-        "cycle": (current_round - 1) // every + 1 if every and current_round else None,
+        "vote_cycle": (current_round - 1) // every + 1
+        if every and current_round
+        else None,
         "elections": [elections[r] for r in sorted(elections)],
         "progress": records["progress"],
         "outcome": records["outcome"],
