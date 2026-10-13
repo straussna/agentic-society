@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 import experiment
 import harness
-import product
+import progress
 
 from checks.fake import DEFAULT, Err, fake, interrupting_at, per_agent, run, say, use
 from checks.lanes import (
@@ -434,7 +434,7 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
                 code = experiment.main(["--manifest", str(manifest), "--resume"])
         finally:
             experiment.sequential_round = driven
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, (code, output.getvalue())
     assert "both survive and the competition ends" in output.getvalue(), (
         output.getvalue()
@@ -530,7 +530,7 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
             experiment.sequential_round = episodes_for(stopped, stop=True)
             with quiet():
                 stop_code = experiment.main(["--manifest", str(manifest), "--resume"])
-            interrupted = product.records(root, "seats")["outcome"]
+            interrupted = progress.records(root, "seats")["outcome"]
             experiment.sequential_round = episodes_for(resumed)
             with quiet():
                 resume_code = experiment.main(["--manifest", str(manifest), "--resume"])
@@ -552,7 +552,7 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
                 kill_code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", "3"]
                 )
-            ended = product.records(root, "seats")["outcome"]
+            ended = progress.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
     assert stop_code == 130 and resume_code == 0, (stop_code, resume_code)
@@ -604,15 +604,15 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
                     ["--manifest", str(manifest), "--resume", "--rounds", "3"]
                 )
             said = output.getvalue()
-            records = product.records(root, "seats")
+            records = progress.records(root, "seats")
             tie, latest = records["outcome"], records["progress"]["latest"]
-            (product.directory(root, "seats") / "outcome.json").unlink()
+            (progress.directory(root, "seats") / "outcome.json").unlink()
             experiment.sequential_round = episodes_for(resumed)
             with quiet() as output:
                 resume_code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", "2"]
                 )
-            again = product.records(root, "seats")["outcome"]
+            again = progress.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
     assert stop_code == 130 and stopped == [(2, "g01"), (2, "g02")], (
@@ -746,7 +746,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
         stops = {agent: ground_truth(agent)["episodes"][-1]["stop"] for agent in ids}
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
         out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert first == 0 and code == 130, (first, code)
     assert set(stops.values()) == {"interrupted"}, stops
     assert all(
@@ -810,7 +810,7 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
         took = episodes_taken(ids)
         told = re.search(r"^round: .*$", trace_on_disk("g03", 2)["observation"], re.M)
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert stopped_code == 130 and stopped == {"g01": 2, "g02": 2, "g03": 1}, stopped
     assert cut == "interrupted", cut
     assert code == 0 and took == {"g01": 2, "g02": 2, "g03": 2}, (code, took)
@@ -852,7 +852,7 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
         out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 130 and set(out.values()) == {None}, (code, out, output.getvalue())
     assert outcome["termination_reason"] == "interrupted", outcome
     assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], (
@@ -904,7 +904,7 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
             code = experiment.main(["--manifest", str(manifest), "--resume"])
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
         out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert stopped == 130 and code == 0, (stopped, code, output.getvalue())
     assert all(
         election
@@ -956,7 +956,7 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
             )
         g02 = ground_truth("g02")
         election = ground_truth("g01")["last_election"]
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, output.getvalue()
     assert [e["stop"] for e in g02["episodes"]][-1] == "api_error", g02["episodes"]
     assert (
@@ -1019,7 +1019,7 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
                                 ["--manifest", str(manifest), "--resume", *flags]
                             )
                         )
-                outcome = product.records(root, "seats")["outcome"]
+                outcome = progress.records(root, "seats")["outcome"]
                 ended[name] = (
                     codes,
                     acted,
@@ -1082,7 +1082,7 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
                 )
         finally:
             experiment.sequential_round = driven
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, output.getvalue()
     assert acted == [(2, "g03"), (3, "g01"), (3, "g03")], acted
     assert "both survive" not in output.getvalue(), output.getvalue()
@@ -1159,7 +1159,7 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
                             ["--manifest", str(manifest), "--resume", "--rounds", "3"]
                         )
                     )
-            outcome = product.records(root, "seats")["outcome"]
+            outcome = progress.records(root, "seats")["outcome"]
             ended[name] = (
                 codes,
                 episodes_taken(ids),
@@ -1213,7 +1213,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
                     ["--manifest", str(manifest), "--resume", "--rounds", rounds]
                 )
             took = episodes_taken(ids)
-            outcome = product.records(root, "seats")["outcome"]
+            outcome = progress.records(root, "seats")["outcome"]
         alone.append(
             (
                 code,
@@ -1242,7 +1242,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
                     "3",
                 ]
             )
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0 and "every agent is out" not in output.getvalue(), (
         output.getvalue()
     )
@@ -1269,7 +1269,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
                 code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", rounds]
                 )
-            outcome = product.records(root, "seats")["outcome"]
+            outcome = progress.records(root, "seats")["outcome"]
             runs.append(
                 (
                     code,
@@ -1331,7 +1331,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
                 code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", rounds]
                 )
-            outcome = product.records(root, "seats")["outcome"]
+            outcome = progress.records(root, "seats")["outcome"]
             runs.append(
                 (
                     code,
@@ -1371,7 +1371,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
                 ["--manifest", str(manifest), "--resume", "--rounds", "1"]
             )
         took = episodes_taken(ids)
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0 and took == {"g01": 4, "g02": 4, "g03": 1}, (code, took)
     assert (
         "g02: eliminated after round 4: did not vote in round 4" in output.getvalue()
@@ -1416,7 +1416,7 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
         election = ground_truth("g01")["last_election"]
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0 and "both survive" not in output.getvalue(), output.getvalue()
     assert election["tally"] == {"1": 0, "2": 0, "3": 2} and election["electors"] == [
         "1",
@@ -1475,7 +1475,7 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
             )
         g01 = ground_truth("g01")
         offered = trace_on_disk("g01", 2)["offered"]
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     sessions = [
         [tool["name"] for tool in event["tools"]]
         for event in seen
@@ -1515,7 +1515,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
             first = experiment.main(
                 ["--manifest", str(manifest), "--resume", "--rounds", "4"]
             )
-        records = product.records(root, "seats")
+        records = progress.records(root, "seats")
         before = {
             agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids
         }
@@ -1526,7 +1526,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
             code = experiment.main(
                 ["--manifest", str(manifest), "--resume", "--rounds", "1"]
             )
-        records = product.records(root, "seats")
+        records = progress.records(root, "seats")
         after = {
             agent: {key: ground_truth(agent).get(key) for key in keys} for agent in ids
         }
@@ -1576,7 +1576,7 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated(
             )
         election = ground_truth("g01")["last_election"]
         g03 = ground_truth("g03")
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0 and election["round"] == 2, (code, election, output.getvalue())
     assert election["electors"] == ["1", "2"] and election["tally"] == {}, election
     assert election["abstainers"] == ["2"] and election["voted_out"] == "", election
@@ -1795,7 +1795,7 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
             for agent in ids
             for n in (1, 2)
         }
-        events = product.records(root, "seats")["progress"]["events"]
+        events = progress.records(root, "seats")["progress"]["events"]
     assert stopped_code == 130 and stopped == {"g01": 1, "g02": 1, "g03": 0}, stopped
     (finish_code, finishing, finished, said), (next_code, everyone, level, _) = runs
     assert finish_code == next_code == 0, runs
@@ -2017,7 +2017,7 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
                 }
                 for agent in ids
             }
-            outcome = product.records(root, "seats")["outcome"]
+            outcome = progress.records(root, "seats")["outcome"]
             finished = trace_on_disk("g04", 2)
         offered = [
             [tool["name"] for tool in event["tools"]]
@@ -2106,7 +2106,7 @@ def check_a_seat_that_cannot_finish_its_round_on_resume_leaves_the_rest_playing(
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
         took = episodes_taken(ids)
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert first == 0 and missed == {"g01": 1, "g02": 0, "g03": 1}, (first, missed)
     assert code == 0 and took == {"g01": 2, "g02": 0, "g03": 2}, (code, took)
     said = output.getvalue()
@@ -2139,7 +2139,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
             )
         took = episodes_taken(ids)
         rested = {r: harness.load_account(r)["remaining"] for r in ids}
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 1, "g02": 1, "g03": 1}, (
         f"one episode each, then nothing left to ask for: {took}"
@@ -2170,9 +2170,9 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
                 ]
             )
         took = episodes_taken(ids)
-        records = product.records(root, "seats")
+        records = progress.records(root, "seats")
         outcome = records["outcome"]
-        phases = [
+        stages = [
             (event["phase"], event["round"]) for event in records["progress"]["events"]
         ]
     assert code == 0, code
@@ -2182,9 +2182,9 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     assert (
         outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == []
     ), outcome
-    assert [phase for phase in phases if phase[0] == "preparing_round"] == [
+    assert [stage for stage in stages if stage[0] == "preparing_round"] == [
         ("preparing_round", 1)
-    ], f"the empty round is what ends the rounds, and no round follows it: {phases}"
+    ], f"the empty round is what ends the rounds, and no round follows it: {stages}"
 
 
 def check_the_outcome_names_no_seat_the_last_round_exhausted_a_survivor():
@@ -2203,7 +2203,7 @@ def check_the_outcome_names_no_seat_the_last_round_exhausted_a_survivor():
                     "--resume",
                 ]
             )
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0 and outcome["termination_reason"] == "round_limit", outcome
     assert outcome["survivors"] == [] and outcome["scores"] == {"1": 0, "2": 0}, outcome
 
@@ -2228,7 +2228,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
             )
         took = episodes_taken(ids)
         alone = harness.load_account("g01")["episodes"][-1]
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 5, "g02": 0, "g03": 0}, took
     assert outcome["termination_reason"] == "round_limit" and not outcome["winners"], (
@@ -2258,7 +2258,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
                 ["--manifest", str(manifest), "--rounds", "5", "--resume"]
             )
         took = episodes_taken(ids)
-        outcome = product.records(root, "seats")["outcome"]
+        outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
     assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == [

@@ -130,13 +130,13 @@ forking, the CLI. `build_episode`, `run_episode`, `settle_episode` and `close_ep
 are the four steps; `run_once` composes them for one agent and `experiment.py`
 composes them for a round.
 
-`experiment.py` is the manifest reader and the two round drivers; `product.py` keeps
+`experiment.py` is the manifest reader and the two round drivers; `progress.py` keeps
 the progress log and the experiment's spend, lineage and outcome records. `providers/`
 holds the Anthropic, OpenAI and human providers, and `interaction/` the interaction
 store `human.py` attaches to. `analyze.py` owns reading traces; `view.py` reads
 through it and serves `view.html`. `checks/` holds the suite by topic (`metering`,
 `episodes`, `sandbox`, `starter`, `seats`, `transfers`, `rounds`, `table`, `tools`,
-`memory`, `providers`, `interaction`, `product`, `analysis`, `dashboard`, `suite`),
+`memory`, `providers`, `interaction`, `progress`, `analysis`, `dashboard`, `suite`),
 with the fake API in `checks/fake.py` and the two lanes
 and every shared fixture in `checks/lanes.py`; `check.py` discovers `check_*` functions
 across them and runs them in a process pool.

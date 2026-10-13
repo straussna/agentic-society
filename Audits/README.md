@@ -22,7 +22,7 @@ Run it from the repository root:
 | `simplicity` | simplicity | Simplicity Score | plugin |
 | `typing` | typing | Typing Score | plugin |
 | `testing` | testing | Coverage Score | plugin |
-| `guardrails` | guardrails, scoped to `harness.py`, `experiment.py`, `product.py`, `providers`, `interaction`, `view.py`, `human.py`, `Dockerfile`, `config.toml` | Guardrails Score | plugin |
+| `guardrails` | guardrails, scoped to `harness.py`, `experiment.py`, `progress.py`, `providers`, `interaction`, `view.py`, `human.py`, `Dockerfile`, `config.toml` | Guardrails Score | plugin |
 | `docs` | docs | Docs Score | plugin |
 | `meta` | meta | Meta-Audit Score | plugin |
 

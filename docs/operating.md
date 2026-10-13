@@ -12,7 +12,7 @@ to check before an episode that spends.
 ```
 harness.py               run one episode; creates the agent on first use
 experiment.py            run several agents together, in seat order or all at once
-product.py               the progress log and the spend, lineage and outcome records
+progress.py              the progress log and the spend, lineage and outcome records
 human.py                 attach a terminal to a human seat's pending request
 interaction/             the interaction store, its request contracts, and the terminal client
 providers/               the providers and their model and rate catalogs

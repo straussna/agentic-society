@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import harness
-import product
+import progress
 import view
 from interaction import (
     InteractionCancelled,
@@ -151,7 +151,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
         real, refused = os.replace, []
 
         def held(source, destination) -> None:
-            if len(refused) < product.RENAME_ATTEMPTS - 1:
+            if len(refused) < progress.RENAME_ATTEMPTS - 1:
                 refused.append(destination)
                 raise PermissionError(13, "held open by a reader", str(destination))
             real(source, destination)
@@ -164,7 +164,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
             request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         finally:
             os.replace = real
-        assert len(refused) == product.RENAME_ATTEMPTS - 1, refused
+        assert len(refused) == progress.RENAME_ATTEMPTS - 1, refused
         assert store.current("a") == request, "the write landed once the reader let go"
         os.replace = never
         try:

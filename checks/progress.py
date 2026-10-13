@@ -10,7 +10,7 @@ from pathlib import Path
 
 import experiment
 import harness
-import product
+import progress
 import providers
 from checks.fake import Err, fake, per_agent, run, say, use
 from checks.lanes import (
@@ -68,7 +68,7 @@ def check_product_controls_are_declared_and_validated():
                 raise AssertionError(f"accepted invalid product controls: {bad!r}")
 
 
-def check_product_records_cost_progress_and_outcome_from_accounts_and_traces():
+def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_traces():
     """Human spend is excluded, progress is durable, and outcomes cite trace bytes."""
     with temp_root() as root:
         accounts = {
@@ -90,7 +90,7 @@ def check_product_records_cost_progress_and_outcome_from_accounts_and_traces():
             trace.parent.mkdir(parents=True, exist_ok=True)
             trace.write_text(json.dumps({"agent": agent}), encoding="utf-8")
         load = accounts.__getitem__
-        cost = product.cost(
+        cost = progress.cost(
             accounts,
             load,
             {"maximum": 130, "reserved_completion": 100, "warning": 20},
@@ -100,16 +100,16 @@ def check_product_records_cost_progress_and_outcome_from_accounts_and_traces():
         assert cost["ceiling_reached"], (
             "the reserve is protected before another round starts"
         )
-        product.progress(root, "pilot", "preparing_round", 1)
-        product.progress(root, "pilot", "waiting_player", 1, {"agents": ["player"]})
-        recorded = product.records(root, "pilot")["progress"]
+        progress.log_stage(root, "pilot", "preparing_round", 1)
+        progress.log_stage(root, "pilot", "waiting_player", 1, {"agents": ["player"]})
+        recorded = progress.records(root, "pilot")["progress"]
         assert [event["phase"] for event in recorded["events"]] == [
             "preparing_round",
             "waiting_player",
         ]
         assert recorded["latest"] == recorded["events"][-1], recorded
         assert recorded["latest"]["agents"] == ["player"], recorded
-        outcome = product.outcome(
+        outcome = progress.outcome(
             root,
             "pilot",
             ["auto", "player"],
@@ -130,12 +130,12 @@ def check_product_records_cost_progress_and_outcome_from_accounts_and_traces():
             ).hexdigest()
             for item in outcome["evidence"]
         ), outcome["evidence"]
-        public = product.revealed(outcome, "at_completion")
+        public = progress.revealed(outcome, "at_completion")
         assert public["winners"] == ["P"] and "scores" not in public
         assert "evidence" not in public, (
             "experimenter-only evidence is not player output"
         )
-        assert product.revealed(outcome, "at_completion", experimenter=True)["evidence"]
+        assert progress.revealed(outcome, "at_completion", experimenter=True)["evidence"]
 
 
 def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
@@ -174,7 +174,7 @@ def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
             "human",
             "interactive",
         )
-        lineage = product.records(root, "takeover")["lineage"]
+        lineage = progress.records(root, "takeover")["lineage"]
         assert (
             lineage["source_experiment_id"] == "source" and lineage["source_round"] == 1
         )
@@ -223,7 +223,7 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
             made = sorted(p.name for p in harness.records_root().iterdir())
             assert made == ["other-01", "source-a", "source-b"], made
             assert not (root / "other.toml").exists() and not output.exists()
-            assert product.records(root, "takeover")["lineage"] is None
+            assert progress.records(root, "takeover")["lineage"] is None
             experiment.branch_experiment(source, 1, "takeover", "2", output)
             rejected(
                 lambda: experiment.branch_experiment(
@@ -272,7 +272,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
     with temp_root() as root:
         source = branch_source(root)
         output = root / "experiments" / "branches" / "takeover.toml"
-        loading, replacing = harness.load_account, product.replace
+        loading, replacing = harness.load_account, progress.replace
 
         def full(agent, **terms):
             if agent == "takeover-02":
@@ -287,7 +287,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
         failed = []
         for module, name, broken in (
             (harness, "load_account", full),
-            (product, "replace", unwritable),
+            (progress, "replace", unwritable),
         ):
             real = getattr(module, name)
             setattr(module, name, broken)
@@ -305,7 +305,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
                 if harness.records_dir(agent).exists()
                 or harness.mirror_dir(agent).exists()
             ]
-            written = output.exists() or product.directory(root, "takeover").exists()
+            written = output.exists() or progress.directory(root, "takeover").exists()
             failed.append((refused_branch, left, written, said.getvalue()))
         bundles = sorted((root / "displaced").iterdir())
         moved = [
@@ -318,7 +318,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
         ]
         with quiet():
             made = experiment.branch_experiment(source, 1, "takeover", "2", output)
-        lineage = product.records(root, "takeover")["lineage"]
+        lineage = progress.records(root, "takeover")["lineage"]
     for refused_branch, left, written, said in failed:
         assert isinstance(refused_branch, OSError), refused_branch
         assert not left and not written, (left, written)
@@ -815,7 +815,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         with quiet():
             code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
         capped = episodes_taken(["p1", "p2"])
-        records = product.records(root, "capped")
+        records = progress.records(root, "capped")
     assert code == 0 and capped == {"p1": 2, "p2": 2}, (code, capped)
     latest = records["progress"]["latest"]
     assert (
@@ -852,7 +852,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         with quiet():
             code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
         alone = episodes_taken(["p1", "p2"])
-        records = product.records(root, "last")
+        records = progress.records(root, "last")
     assert code == 0 and alone == {"p1": 1, "p2": 1}, (code, alone)
     latest = records["progress"]["latest"]
     assert (
@@ -875,7 +875,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         with quiet():
             code = experiment.main(["--manifest", str(manifest), "--rounds", "3"])
         both = episodes_taken(["p1", "p2"])
-        records = product.records(root, "both")
+        records = progress.records(root, "both")
     assert code == 0 and both == {"p1": 1, "p2": 1}, (code, both)
     assert [
         (event["phase"], event["round"]) for event in records["progress"]["events"][-2:]
@@ -895,9 +895,9 @@ def check_an_unreadable_record_is_told_from_an_absent_one():
     """read() is None only where there is no file. A progress.json that does not read
     stops the next progress write, is left as it is, and shows as no progress."""
     with temp_root() as root:
-        base = product.directory(root, "pilot")
-        assert product.read(base / "progress.json") is None, "no file is no record"
-        assert product.records(root, "pilot") == {
+        base = progress.directory(root, "pilot")
+        assert progress.read(base / "progress.json") is None, "no file is no record"
+        assert progress.records(root, "pilot") == {
             "progress": None,
             "outcome": None,
             "lineage": None,
@@ -906,8 +906,8 @@ def check_an_unreadable_record_is_told_from_an_absent_one():
         for data in (b"{not json", b"[1, 2]", b"\xff\xfe{}", b""):
             (base / "progress.json").write_bytes(data)
             for call in (
-                lambda: product.read(base / "progress.json"),
-                lambda: product.progress(root, "pilot", "preparing_round", 1),
+                lambda: progress.read(base / "progress.json"),
+                lambda: progress.log_stage(root, "pilot", "preparing_round", 1),
             ):
                 try:
                     call()
@@ -921,7 +921,7 @@ def check_an_unreadable_record_is_told_from_an_absent_one():
                 "and it is left as it was"
             )
             assert not (base / "progress.jsonl").exists(), "and no event was written"
-            assert product.records(root, "pilot")["progress"] is None, data
+            assert progress.records(root, "pilot")["progress"] is None, data
 
 
 def check_progress_appends_each_event_and_reads_its_history_back():
@@ -929,12 +929,12 @@ def check_progress_appends_each_event_and_reads_its_history_back():
     and the latest alone. A line a crash cut short costs that line and no other, and a
     progress.json holding its own events starts the log with them."""
     with temp_root() as root:
-        base = product.directory(root, "pilot")
-        for phase in ("preparing_round", "waiting_autonomous", "round_completed"):
-            event = product.progress(root, "pilot", phase, 1, {"agents": ["a"]})
+        base = progress.directory(root, "pilot")
+        for stage in ("preparing_round", "waiting_autonomous", "round_completed"):
+            event = progress.log_stage(root, "pilot", stage, 1, {"agents": ["a"]})
         head = json.loads((base / "progress.json").read_text(encoding="utf-8"))
         assert head == {
-            "version": product.VERSION,
+            "version": progress.VERSION,
             "experiment_id": "pilot",
             "latest": event,
         }, head
@@ -947,8 +947,8 @@ def check_progress_appends_each_event_and_reads_its_history_back():
 
         with (base / "progress.jsonl").open("ab") as log:
             log.write(b'{"at":"2026-01-01T00:00:00Z","pha')
-        product.progress(root, "pilot", "completed", 1)
-        recorded = product.records(root, "pilot")["progress"]
+        progress.log_stage(root, "pilot", "completed", 1)
+        recorded = progress.records(root, "pilot")["progress"]
         assert [event["phase"] for event in recorded["events"]] == [
             "preparing_round",
             "waiting_autonomous",
@@ -960,35 +960,35 @@ def check_progress_appends_each_event_and_reads_its_history_back():
             "experiment_id",
         } <= set(recorded), recorded
 
-        single = product.directory(root, "single")
+        single = progress.directory(root, "single")
         earlier = [
-            {"at": "2026-01-01T00:00:00Z", "phase": phase, "round": 1}
-            for phase in ("preparing_round", "round_completed")
+            {"at": "2026-01-01T00:00:00Z", "phase": stage, "round": 1}
+            for stage in ("preparing_round", "round_completed")
         ]
-        product.atomic(
+        progress.atomic(
             single / "progress.json",
             {
-                "version": product.VERSION,
+                "version": progress.VERSION,
                 "experiment_id": "single",
                 "latest": earlier[-1],
                 "events": earlier,
             },
         )
-        assert product.records(root, "single")["progress"]["events"] == earlier
-        product.progress(root, "single", "preparing_round", 2)
+        assert progress.records(root, "single")["progress"]["events"] == earlier
+        progress.log_stage(root, "single", "preparing_round", 2)
         assert [
             (event["phase"], event["round"])
-            for event in product.records(root, "single")["progress"]["events"]
+            for event in progress.records(root, "single")["progress"]["events"]
         ] == [("preparing_round", 1), ("round_completed", 1), ("preparing_round", 2)]
         assert "events" not in json.loads(
             (single / "progress.json").read_text(encoding="utf-8")
         )
 
 
-def check_a_round_writes_each_phase_as_it_reaches_it():
+def check_a_round_writes_each_stage_as_it_reaches_it():
     """Progress follows the round as it goes: the round waits on an episode before it
     runs, resolves its actions after it ran and before it settles, and settles it
-    before it is committed, so no phase is written once the round has left it. An
+    before it is committed, so no stage is written once the round has left it. An
     episode has settled once its turns are in the series its account holds.
 
     g01's transfer reaches g02's account once g01's episode is committed, and not when
@@ -1020,7 +1020,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
 
             harness.ready = noted
 
-            def progress(phase, round, detail):
+            def log_stage(stage, round, detail):
                 def state(agent):
                     if harness.trace_path(agent, round).exists():
                         return "committed"
@@ -1037,7 +1037,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
 
                 seen.append(
                     (
-                        phase,
+                        stage,
                         round,
                         detail,
                         {agent: state(agent) for agent in ids},
@@ -1058,7 +1058,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                     seated_ids,
                     1,
                     fake(run("echo '2 250' > out/transfer"), say()),
-                    progress=progress,
+                    log_stage=log_stage,
                 )
                 sequential = seen[:]
                 seen.clear()
@@ -1067,7 +1067,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                     seated_ids,
                     2,
                     per_agent(default=(say(),), on_send=after_g01),
-                    progress=progress,
+                    log_stage=log_stage,
                 )
 
         g02_waits = "waiting_player" if player else "waiting_autonomous"
@@ -1160,8 +1160,8 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
         ], (player, seen)
 
 
-def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play():
-    """progress.jsonl holds one line for each phase each round reaches, in the order it
+def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play():
+    """progress.jsonl holds one line for each stage each round reaches, in the order it
     reaches them, and nothing else: every round played is completed once, and one that a
     stop counting seats ends the rounds before is neither prepared nor completed. The
     last line names the round the rounds ended at, so the record's rounds never go back.
@@ -1182,14 +1182,14 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
                 or event.get("active")
                 or event.get("termination_reason"),
             )
-            for event in product.records(root, "seats")["progress"]["events"]
+            for event in progress.records(root, "seats")["progress"]["events"]
         ]
 
     def played(round: int, *agents: str) -> list[tuple]:
         return [
-            (phase, round, [agent])
+            (stage, round, [agent])
             for agent in agents
-            for phase in ("waiting_autonomous", "resolving_actions", "settling_round")
+            for stage in ("waiting_autonomous", "resolving_actions", "settling_round")
         ]
 
     ids = ["g01", "g02"]
@@ -1288,7 +1288,7 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
         lambda: per_agent(g01=(run("echo one"), Err(400)), default=(say(),)),
         {"g01": 1, "g02": 1},
     )
-    # Where the write fails: at a phase, or at every event whose detail has this key.
+    # Where the write fails: at a stage, or at every event whose detail has this key.
     cases = [
         (at, failure, played)
         for at in ("resolving_actions", "settling_round")
@@ -1298,8 +1298,8 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
     cases.append(("completed_autonomous", ValueError, simultaneous))
     for at, failure, (a_round, router, took) in cases:
 
-        def failing(phase, round, detail, at=at, failure=failure):
-            if at == phase or at in (detail or {}):
+        def failing(stage, round, detail, at=at, failure=failure):
+            if at == stage or at in (detail or {}):
                 raise failure("progress.json does not read")
 
         case = (a_round.__name__, at, failure.__name__)
@@ -1309,7 +1309,7 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
             raised: BaseException | None = None
             try:
                 with quiet():
-                    a_round(ids, seated_ids, 1, router(), progress=failing)
+                    a_round(ids, seated_ids, 1, router(), log_stage=failing)
             except (ValueError, KeyboardInterrupt) as e:
                 raised = e
             taken = episodes_taken(ids)

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, TypedDict, TypeVar
 
 import harness
-import product
+import progress
 import providers
 from harness import check_keys, rejecter
 from providers import ProviderRouter
@@ -136,13 +136,13 @@ class Manifest(TypedDict):
     sha256: str
 
 
-# What a round tells the experiment's progress record: the phase it has reached, the
-# round, and the detail of the event. product.progress bound to one record.
+# What a round tells the experiment's progress log: the stage it has reached, the
+# round, and the detail of the event. progress.log_stage bound to one record.
 Progress = Callable[[str, int, dict[str, Any] | None], object]
 
 # How a round is driven, sequential_round or simultaneous_round. Called with the agents
 # in seat order, the seated ones that act in it, the round, the router, the stamp, the
-# labels and the progress record; returns whether any agent took an episode. Rounds
+# labels and the progress log; returns whether any agent took an episode. Rounds
 # count from 1, and a seat's episode of a round has the round's number.
 Round = Callable[
     [
@@ -325,7 +325,7 @@ def load_manifest(path: Path) -> Manifest:
     experiment_id = top.get("experiment_id", path.stem)
     if (
         not isinstance(experiment_id, str)
-        or not product.IDENTIFIER.fullmatch(experiment_id)
+        or not progress.IDENTIFIER.fullmatch(experiment_id)
         or experiment_id in (".", "..")
     ):
         raise SystemExit(
@@ -774,7 +774,7 @@ def branch_experiment(
     )
     if output.exists():
         raise SystemExit(f"branch manifest {output} already exists")
-    if product.directory(harness.SETTINGS.root, experiment_id).exists():
+    if progress.directory(harness.SETTINGS.root, experiment_id).exists():
         raise SystemExit(f"experiment record {experiment_id!r} already exists")
     new_ids = {seat: f"{experiment_id}-{int(seat):02d}" for seat in manifest["labels"]}
     check_ids(list(new_ids.values()), "branch")
@@ -917,8 +917,8 @@ def branch_experiment(
             "traces": evidence,
             "branch_manifest": str(output),
         }
-        product.atomic(
-            product.directory(harness.SETTINGS.root, experiment_id) / "lineage.json",
+        progress.atomic(
+            progress.directory(harness.SETTINGS.root, experiment_id) / "lineage.json",
             lineage,
         )
     except BaseException:
@@ -927,7 +927,7 @@ def branch_experiment(
             file=sys.stderr,
         )
         output.unlink(missing_ok=True)
-        product.displace(
+        progress.displace(
             harness.SETTINGS.root,
             experiment_id,
             harness.displace_agents(created, "moved {names} aside to {bundle}"),
@@ -1091,26 +1091,26 @@ def take_seats(agents: list[str], seated: set[str]) -> None:
             seated.discard(agent)
 
 
-def unrecorded(phase: str, round: int, detail: dict[str, Any] | None) -> None:
-    """The progress of a round driven straight from a list of ids, which has no
+def unrecorded(stage: str, round: int, detail: dict[str, Any] | None) -> None:
+    """The progress log of a round driven straight from a list of ids, which has no
     experiment record to write to."""
 
 
 def tell(
-    progress: Progress,
+    log_stage: Progress,
     held: list[BaseException],
-    phase: str,
+    stage: str,
     round: int,
     detail: dict[str, Any],
 ) -> None:
-    """Write a phase reached between billed episodes and their commit.
+    """Log a stage reached between episodes that spent and their commit.
 
-    A raise there would leave billed spend uncommitted, so a write that fails, or a
+    A raise there would leave those episodes uncommitted, so a write that fails, or a
     second Ctrl+C that lands in it, is kept in `held`, for the round to raise once its
     episodes are committed and its agents that cannot go on are unseated.
     """
     try:
-        progress(phase, round, detail)
+        log_stage(stage, round, detail)
     except BaseException as e:
         held.append(e)
 
@@ -1122,11 +1122,11 @@ def sequential_round(
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
-    progress: Progress = unrecorded,
+    log_stage: Progress = unrecorded,
 ) -> bool:
     """One episode for each seated agent, in seat order.
 
-    Each agent's phases go to `progress` as it reaches them: the round waits on its
+    Each agent's stages go to `log_stage` as it reaches them: the round waits on its
     episode, resolves its actions, and settles it. Returns whether any of them took
     one; a round where none did moved nothing.
     """
@@ -1144,7 +1144,7 @@ def sequential_round(
         player = providers.is_interactive(
             harness.account_on_disk(agent).get("provider")
         )
-        progress(
+        log_stage(
             "waiting_player" if player else "waiting_autonomous",
             round,
             {"agents": [agent]},
@@ -1157,9 +1157,9 @@ def sequential_round(
             continue
         out = harness.run_episode(ep, router)
         held: list[BaseException] = []
-        tell(progress, held, "resolving_actions", round, {"agents": [agent]})
+        tell(log_stage, held, "resolving_actions", round, {"agents": [agent]})
         settled = harness.settle_episode(ep, out)
-        tell(progress, held, "settling_round", round, {"agents": [agent]})
+        tell(log_stage, held, "settling_round", round, {"agents": [agent]})
         trace = harness.close_episode(ep, out, settled)
         acted = True
         if unseated_by(trace["stop"]):
@@ -1238,7 +1238,7 @@ def simultaneous_round(
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
-    progress: Progress = unrecorded,
+    log_stage: Progress = unrecorded,
 ) -> bool:
     """One episode for each seated agent, all at once.
 
@@ -1247,8 +1247,8 @@ def simultaneous_round(
     transfers owe, and each closes in seat order. A credit to an agent whose episode
     is in this round lands in its account in hand just before it closes: after its
     own turns and before its floor, so an agent is exhausted on the round's net and
-    never lifted back by a transfer that had already arrived. Each phase goes to
-    `progress` as the round reaches it, and so does each autonomous episode as it
+    never lifted back by a transfer that had already arrived. Each stage goes to
+    `log_stage` as the round reaches it, and so does each autonomous episode as it
     ends. Returns whether any agent took an episode.
 
     No receiver keeps a credit from a giver whose episode was not committed, and none
@@ -1287,14 +1287,14 @@ def simultaneous_round(
             running = [
                 name for name in built if name not in outs and name not in errors
             ]
-            phase = (
+            stage = (
                 "waiting_player"
                 if any(interactive[name] for name in running)
                 else "waiting_autonomous"
                 if running
                 else "resolving_actions"
             )
-            tell(progress, held, phase, round, {"completed_autonomous": agent})
+            tell(log_stage, held, stage, round, {"completed_autonomous": agent})
 
     threads = [
         threading.Thread(target=go, args=(agent, ep), name=agent, daemon=True)
@@ -1304,9 +1304,9 @@ def simultaneous_round(
     players = [agent for agent in built if interactive[agent]]
     try:
         if autonomous:
-            progress("waiting_autonomous", round, {"agents": autonomous})
+            log_stage("waiting_autonomous", round, {"agents": autonomous})
         if players:
-            progress("waiting_player", round, {"agents": players})
+            log_stage("waiting_player", round, {"agents": players})
         for t in threads:
             t.start()
     except BaseException:
@@ -1329,7 +1329,7 @@ def simultaneous_round(
         return lambda receiver, amount: owed.append((giver, receiver, amount))
 
     tell(
-        progress,
+        log_stage,
         held,
         "resolving_actions",
         round,
@@ -1343,7 +1343,7 @@ def simultaneous_round(
             settled[agent] = harness.settle_episode(ep, outs[agent], owing(agent))
         except BaseException as e:
             errors.setdefault(agent, e)
-    tell(progress, held, "settling_round", round, {"agents": list(settled)})
+    tell(log_stage, held, "settling_round", round, {"agents": list(settled)})
     traces: dict[str, dict] = {}
     # receiver -> (giver, amount): the credits each receiver closed on.
     carried: dict[str, list[tuple[str, int]]] = {}
@@ -1696,7 +1696,7 @@ def play_round(
     stop_when_one_remains: bool,
     vote: dict | None = None,
     stop_when_two_remain_after_tie: bool = False,
-    progress: Progress = unrecorded,
+    log_stage: Progress = unrecorded,
     finishing: set[str] | None = None,
 ) -> str | None:
     """One round: unseat the agents that cannot act, name the round, run it, resolve its
@@ -1734,7 +1734,7 @@ def play_round(
     waiting = seated - set(acting)
     seated -= waiting
     try:
-        acted = a_round(agents, seated, round, router, stamp, labels, progress)
+        acted = a_round(agents, seated, round, router, stamp, labels, log_stage)
     finally:
         seated |= waiting
     if not acted and not seated:
@@ -1876,7 +1876,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not a.resume:
         bundle = harness.displace_agents(agents, harness.FRESH_START)
-        product.displace(harness.SETTINGS.root, experiment_id, bundle)
+        progress.displace(harness.SETTINGS.root, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
@@ -1896,7 +1896,7 @@ def main(argv: list[str] | None = None) -> int:
         f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, {manifest['schedule']})"
     )
     take_seats(agents, seated)
-    progress = functools.partial(product.progress, harness.SETTINGS.root, experiment_id)
+    log_stage = functools.partial(progress.log_stage, harness.SETTINGS.root, experiment_id)
     reason = "round_limit"
     code = 0
     # The last round this run prepared.
@@ -1925,7 +1925,7 @@ def main(argv: list[str] | None = None) -> int:
                 if agent in seated and len(accounts[agent]["episodes"]) < current_round
             ]
             round = current_round if finishing else current_round + 1
-            cost = product.cost(
+            cost = progress.cost(
                 agents, harness.load_account, manifest["cost"], providers.is_interactive
             )
             # Judged before the round is prepared, so the record prepares no round that a
@@ -1937,7 +1937,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if ended is not None:
                     break
-            progress(
+            log_stage(
                 "preparing_round",
                 round,
                 {
@@ -1962,10 +1962,10 @@ def main(argv: list[str] | None = None) -> int:
                 manifest["stop_when_one_remains"],
                 vote,
                 manifest["stop_when_two_remain_after_tie"],
-                progress,
+                log_stage,
                 set(finishing) or None,
             )
-            progress(
+            log_stage(
                 "round_completed",
                 round,
                 {"active": [agent for agent in agents if agent in seated]},
@@ -1995,12 +1995,12 @@ def main(argv: list[str] | None = None) -> int:
     # The round the rounds ended at: the current round, or the one this run last
     # prepared where no seat played it, so the record's rounds never go back.
     current_round = furthest_round(harness.load_account(agent) for agent in agents)
-    progress(
+    log_stage(
         reason if reason in ("interrupted", "cost_ceiling") else "completed",
         max(prepared_round, current_round),
         {"termination_reason": reason},
     )
-    product.outcome(
+    progress.outcome(
         harness.SETTINGS.root,
         experiment_id,
         agents,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from product import now
+from progress import now
 from providers.base import ToolCall, ToolSpec
 
 

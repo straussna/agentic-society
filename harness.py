@@ -80,7 +80,7 @@ from typing import (
     get_args,
 )
 
-import product
+import progress
 import providers
 from providers import (
     NormalizedResponse,
@@ -1798,8 +1798,8 @@ def save_trace(agent: str, episode: int, trace: dict) -> None:
 
 
 def replace_file(src: Path, dest: Path) -> None:
-    """os.replace, retried while a Windows reader holds `dest` open: product.replace."""
-    product.replace(src, dest)
+    """os.replace, retried while a Windows reader holds `dest` open: progress.replace."""
+    progress.replace(src, dest)
 
 
 # The pinned settings, as load_account's keyword -> the account key that holds each.

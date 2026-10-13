@@ -102,7 +102,7 @@ holds one thread on another for up to 10 seconds, on a barrier or an event, also
 fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
 `a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
-`a_round_writes_each_phase_as_it_reaches_it`,
+`a_round_writes_each_stage_as_it_reaches_it`,
 `two_clients_racing_one_request_leave_one_winner_and_one_conflict`,
 `one_submission_sent_twice_at_once_returns_the_winner_to_both`,
 `human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn`,

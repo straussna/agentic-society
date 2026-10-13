@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 VERSION = 1
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
-PHASES = (
+STAGES = (
     "preparing_round",
     "waiting_autonomous",
     "waiting_player",
@@ -161,24 +161,24 @@ def logged(path: Path) -> list[dict[str, Any]]:
     return found
 
 
-def progress(
+def log_stage(
     runtime_root: Path,
     experiment_id: str,
-    phase: str,
+    stage: str,
     round: int,
     detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Record that the experiment has reached `phase`, and return the event.
+    """Record that the experiment has reached `stage`, and return the event.
 
     The event is appended to progress.jsonl, and progress.json is rewritten to hold the
-    header and this event as the latest. A progress.json that does not read stops the
-    write, and is left as it is.
+    header and this event as the latest, with the stage under its "phase" key. A
+    progress.json that does not read stops the write, and is left as it is.
     """
-    if phase not in PHASES:
-        raise ValueError(f"unknown progress phase {phase!r}")
+    if stage not in STAGES:
+        raise ValueError(f"unknown progress stage {stage!r}")
     base = directory(runtime_root, experiment_id)
     with _LOCK:
-        event = {"at": now(), "phase": phase, "round": round, **(detail or {})}
+        event = {"at": now(), "phase": stage, "round": round, **(detail or {})}
         previous = read(base / "progress.json") or {}
         log = base / "progress.jsonl"
         # A progress.json that holds its own events list starts the log with them.

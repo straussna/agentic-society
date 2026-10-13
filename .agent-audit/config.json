@@ -27,7 +27,7 @@
       "scope": [
         "harness.py",
         "experiment.py",
-        "product.py",
+        "progress.py",
         "providers",
         "interaction",
         "analyze.py",
@@ -48,7 +48,7 @@
     "source": [
       "harness.py",
       "experiment.py",
-      "product.py",
+      "progress.py",
       "analyze.py",
       "view.py",
       "human.py",
@@ -115,7 +115,7 @@
     ],
     "layers": {
       "providers.base": 0,
-      "product": 0,
+      "progress": 0,
       "interaction": 1,
       "providers": 2,
       "harness": 3,
@@ -134,7 +134,7 @@
     "configModule": "config.toml",
     "publicationModules": [
       "harness.py",
-      "product.py",
+      "progress.py",
       "interaction/store.py"
     ],
     "networkOwner": "providers",

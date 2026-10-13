@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from product import atomic, now
+from progress import atomic, now
 from providers.base import ToolResult, ToolSpec
 
 from .contracts import InteractionRequest, Submission, VERSION

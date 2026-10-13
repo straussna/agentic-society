@@ -27,7 +27,7 @@ from typing import Any, Mapping, NamedTuple
 import analyze
 import experiment
 import harness
-import product
+import progress
 import providers
 from interaction import (
     InteractionConflict,
@@ -1087,10 +1087,10 @@ def header(exp: dict) -> dict:
         phase = "vote"
     # The records sit under the experiment_id the accounts are stamped with, which a
     # second experiment arriving at a taken id is not keyed by.
-    records = product.records(
+    records = progress.records(
         harness.SETTINGS.root, stamp.get("experiment_id") or exp["experiment_id"]
     )
-    cost = product.cost(
+    cost = progress.cost(
         exp["seats"], account_of, stamp.get("cost") or {}, providers.is_interactive
     )
     try:
