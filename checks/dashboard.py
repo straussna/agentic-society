@@ -1887,9 +1887,9 @@ def check_the_page_exposes_ephemeral_round_snapshots():
     assert 'aria-pressed="${d.history.selected == null}"' in page
     assert "S.treeRound = {}" in page, "changing experiments clears the chosen snapshot"
     assert "&round=${encodeURIComponent(S.treeRound[channel])}" in page
-    assert "renderPublicChat(channel)" in page
+    assert "renderBoard(channel)" in page
     assert "renderBallotAggregate(channel)" in page
-    assert 'class="thread public-chat"' in page and 'class="thread ballot-view"' in page
+    assert 'class="thread board-view"' in page and 'class="thread ballot-view"' in page
     assert 'class="vote-tally"' in page and 'class="ballot-table"' in page
 
 

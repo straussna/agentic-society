@@ -243,16 +243,16 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .msg .ft { margin-top:3px; color:var(--faint); font-size:12px; }
 .sys { margin-top:10px; text-align:center; color:var(--faint); font-size:12.5px; }
 .sys b { font:400 12.5px/1.5 var(--mono); font-weight:400; }
-.public-chat { flex:1 1 auto; min-height:0; }
-.public-chat .thead { justify-content:space-between; }
-.public-chat .group-title, .ballot-view .group-title { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
-.public-chat .participants { display:flex; align-items:center; }
-.public-chat .participant { width:25px; height:25px; display:grid; place-items:center; margin-left:-5px;
+.board-view { flex:1 1 auto; min-height:0; }
+.board-view .thead { justify-content:space-between; }
+.board-view .group-title, .ballot-view .group-title { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.board-view .participants { display:flex; align-items:center; }
+.board-view .participant { width:25px; height:25px; display:grid; place-items:center; margin-left:-5px;
   border:1px solid var(--line2); border-radius:50%; background:var(--raise); font:600 10px/1 var(--mono); }
-.public-chat .participant:first-child { margin-left:0; }
-.public-chat .msg { max-width:min(920px,92%); }
-.public-chat .msg .bub { border-left:2px solid var(--speaker,var(--accent)); }
-.public-chat .msg .mh b { font-weight:600; }
+.board-view .participant:first-child { margin-left:0; }
+.board-view .msg { max-width:min(920px,92%); }
+.board-view .msg .bub { border-left:2px solid var(--speaker,var(--accent)); }
+.board-view .msg .mh b { font-weight:600; }
 .ballot-view { flex:1 1 auto; min-height:0; }
 .ballot-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:14px; }
 .vote-tally { display:grid; gap:8px; margin-bottom:18px; }
@@ -446,17 +446,17 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 .input-card.error { border-color:var(--bad); }
 .human-chat { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
 .human-chat-log { height:420px; overflow-y:auto; padding:12px; background:linear-gradient(180deg,var(--bg),var(--panel)); }
-.private-chat-list { display:grid; gap:9px; }
-.private-thread { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--bg); }
-.private-thread > summary { display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer;
+.mailbox-list { display:grid; gap:9px; }
+.mailbox-thread { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--bg); }
+.mailbox-thread > summary { display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer;
   color:var(--accent); background:var(--raise); list-style:none; font:600 12px/1.25 var(--sans); }
-.private-thread > summary::-webkit-details-marker { display:none; }
-.private-thread > summary::after { content:"+"; margin-left:auto; color:var(--faint); font-size:16px; }
-.private-thread[open] > summary { border-bottom:1px solid var(--line); }
-.private-thread[open] > summary::after { content:"−"; }
-.private-thread .human-chat-log { height:320px; }
-.private-thread.empty > summary { color:var(--faint); }
-.private-count { color:var(--faint); font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; }
+.mailbox-thread > summary::-webkit-details-marker { display:none; }
+.mailbox-thread > summary::after { content:"+"; margin-left:auto; color:var(--faint); font-size:16px; }
+.mailbox-thread[open] > summary { border-bottom:1px solid var(--line); }
+.mailbox-thread[open] > summary::after { content:"−"; }
+.mailbox-thread .human-chat-log { height:320px; }
+.mailbox-thread.empty > summary { color:var(--faint); }
+.mailbox-count { color:var(--faint); font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; }
 .chat-update { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1px solid rgba(194,160,107,.7);
   border-radius:999px; color:var(--warn); background:rgba(194,160,107,.16); font:700 10px/1 var(--sans);
   letter-spacing:.07em; text-transform:uppercase; animation:update-glow 1.4s ease-in-out infinite; }
@@ -1142,12 +1142,12 @@ function keyOf(channel, agent) {
 
 function snapshotHtml(d) {
   if (!d.history) return "";
-  const publicChat = d.history.kind === "round";
-  return `<div class="snapshotbar"><span class="lbl">${publicChat ? "Posts" : "Votes"}</span>
-    <div class="snapshots" role="group" aria-label="${publicChat ? "Board round snapshots" : "Ballot vote-round snapshots"}">
+  const isBoard = d.history.kind === "round";
+  return `<div class="snapshotbar"><span class="lbl">${isBoard ? "Posts" : "Votes"}</span>
+    <div class="snapshots" role="group" aria-label="${isBoard ? "Board round snapshots" : "Ballot vote-round snapshots"}">
       <button class="chip ${d.history.selected == null ? "on live" : ""}" data-round="" aria-pressed="${d.history.selected == null}">Live</button>
       ${d.history.rounds.map(r => `<button class="chip ${d.history.selected === r ? "on" : ""}"
-        data-round="${r}" aria-pressed="${d.history.selected === r}">${publicChat ? "" : "vote "}r${r}</button>`).join("")}
+        data-round="${r}" aria-pressed="${d.history.selected === r}">${isBoard ? "" : "vote "}r${r}</button>`).join("")}
     </div></div>`;
 }
 
@@ -1162,7 +1162,7 @@ function wireSnapshots(el, channel) {
   });
 }
 
-function renderPublicChat(channel) {
+function renderBoard(channel) {
   const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
   const selected = d.history.selected;
@@ -1192,10 +1192,10 @@ function renderPublicChat(channel) {
   const missing = d.columns.filter(c => !c.files.length).map(c => nameOf(c.seat)).filter(Boolean);
   const status = messages.length ? `${messages.length} post${messages.length === 1 ? "" : "s"} · ${
     new Set(messages.map(m => m.c.agent)).size} seat${new Set(messages.map(m => m.c.agent)).size === 1 ? "" : "s"}` : "no posts";
-  redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread public-chat" aria-label="${esc(roundName)}">
+  redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread board-view" aria-label="${esc(roundName)}">
     <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span><span class="note">${status}</span></div>
       <div class="participants" aria-label="Seats that posted">${participants}</div></div>
-    <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted in this chat.</div>`}
+    <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted on this board.</div>`}
       ${missing.length && selected != null ? `<div class="sys">No post from ${missing.map(esc).join(", ")}</div>` : ""}</div>
     </section></div>`);
   wireSnapshots(el, channel);
@@ -1247,7 +1247,7 @@ function renderBallotAggregate(channel) {
 function renderTree(channel) {
   const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
-  if (d.history && d.history.kind === "round") return renderPublicChat(channel);
+  if (d.history && d.history.kind === "round") return renderBoard(channel);
   if (d.history && d.history.kind === "vote") return renderBallotAggregate(channel);
   const chosen = S.inspect[channel] || null;
   const sig = JSON.stringify([channel, d.history, d.columns.map(c =>
@@ -1789,15 +1789,15 @@ function renderHumanHistory(history, humanAgent, tiles, currentRound) {
   mailboxRoot.dataset.sig = sig;
   mailboxRoot.innerHTML = peers.map(peer => {
     const events = mailboxEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
-    return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
-      <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
+    return `<details class="mailbox-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
+      <summary><span>${esc(peer.label)}</span><span class="mailbox-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
       <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredRound)}</div>
       ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-receiver="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
   mailboxRoot.querySelectorAll(".human-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
   mailboxRoot.querySelectorAll("[data-receiver]").forEach(field =>
-    wireChatComposer(field, field.closest(".private-thread").querySelector(".human-chat-log"),
+    wireChatComposer(field, field.closest(".mailbox-thread").querySelector(".human-chat-log"),
       field.dataset.receiver, `human-draft:${requestKey}:mailbox:${field.dataset.receiver}`));
 }
 
@@ -1849,7 +1849,7 @@ function renderInteraction(request) {
         <div id="human-board" class="human-chat-log" role="log" aria-label="Board"><div class="empty">Loading history&hellip;</div></div>
         ${postIndex >= 0 ? `<div class="chat-compose"><textarea rows="2" data-field="body" data-type="string"
           aria-label="Post to board" placeholder="Post to board…"></textarea></div>` : ""}</section>
-      <h3>Mailbox</h3><div id="human-mailbox" class="private-chat-list" aria-label="Mailbox"
+      <h3>Mailbox</h3><div id="human-mailbox" class="mailbox-list" aria-label="Mailbox"
         ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
       <h3>Turn input</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
     <div class="human-column"><h3>Turn actions</h3>${tools || `<div class="note">Use the composers, then submit the turn.</div>`}
