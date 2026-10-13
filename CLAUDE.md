@@ -1,15 +1,15 @@
 # Vocabulary
 
 `docs/manifest.md` defines every term this repo uses: harness, experimenter, agent, seat,
-label, episode, turn, round, experiment, environment, channel, blackboard, mailbox,
-schema, starter files, harness files, digest, account, trace.
+label, episode, turn, round, experiment, environment, channel, board, mailbox,
+schema, starter files, status files, digest, account, trace.
 
 # Running check.py
 
 `check.py` runs the verification suite, which lives under `checks/`, one module per
 topic, with the fake API in `checks/fake.py` and every shared fixture in
-`checks/lanes.py`. Nothing in it bills an API. Some of it starts Docker containers,
-and that is the only part that is slow.
+`checks/lanes.py`. Nothing in it spends money on an API. Some of it starts Docker
+containers, and that is the only part that is slow.
 
 Available verification commands:
 
@@ -18,9 +18,9 @@ Available verification commands:
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" refusal fallback
 # Every check that needs no container: pricing, metering, refusals, traces, the declared
 # system prompt, starter files, forks, experiments, manifests, the channel table, the tool
-# table and what a tool call does, labels, receipts, harness file names, simultaneous
+# table and what a tool call does, labels, receipts, status file names, simultaneous
 # rounds, experimenter channels, transfer funding, push and pull delivery, author labels,
-# transfers, the ledger, blackboards and mailboxes, what the digest carries, the initial
+# transfers, the ledger, boards and mailboxes, what the digest carries, the initial
 # observation, the silence penalties, the grace, the floor
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --no-docker
 # Full verification suite
@@ -61,7 +61,7 @@ activated venv. No linter is configured. From the Bash tool:
 ```
 
 The commands [docs/operating.md](docs/operating.md) lists run under the same interpreter, from
-the repo root, where their relative paths start; `--print-system` bills nothing:
+the repo root, where their relative paths start; `--print-system` spends nothing:
 
 ```powershell
 Set-Location "C:\source\repos\agentic-society"
@@ -80,7 +80,7 @@ process on this machine.
 
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
-refuse every route into them — run in a real container and skip when Docker is
+deny every route into them — run in a real container and skip when Docker is
 down. `--no-docker` runs 340 of 366.
 
 `--real` runs every check in a container, which verifies that the two lanes
@@ -114,7 +114,7 @@ exceed the core count; the default is sized for this machine.
 
 One `Ctrl+C` ends the agent cleanly. It does not raise: it sets a flag that the
 turn loop reads where it checks whether the balance is exhausted, so the episode ends
-the way an exhausted budget ends it — the turn in flight finishes, its spend is committed,
+the way an exhausted budget ends it — the turn in flight finishes, its spend is settled,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
