@@ -97,13 +97,13 @@ def check_every_harness_global_a_check_moves_is_restored():
         "the scan reads every form an assignment takes, and a comparison is none"
     )
     moved: dict[str, set[str]] = {}
-    for label, fn in checks().items():
+    for check_name, fn in checks().items():
         try:
             tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
         except OSError, TypeError:
             continue
         for name in assigned_on(tree, "harness"):
-            moved.setdefault(name, set()).add(label)
+            moved.setdefault(name, set()).add(check_name)
     assert moved, "no check assigns a harness global; the scan found nothing to hold"
     loose = {name: sorted(ls) for name, ls in moved.items() if name not in SEAMS}
     assert not loose, f"assigned by a check and not in SEAMS: {loose}"

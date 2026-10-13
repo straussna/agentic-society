@@ -51,19 +51,19 @@ def episodes_in(fn: Callable) -> int:
     return max(1, n)
 
 
-def run_one(label: str) -> tuple[str, str, str]:
+def run_one(name: str) -> tuple[str, str, str]:
     """Run one check and say how it went, in data a worker can send home.
 
     The traceback is formatted here, not raised: an assertion carrying an
     arbitrary object does not always survive the trip between processes.
     """
     try:
-        checks()[label]()
+        checks()[name]()
     except Skip:
-        return label, "skip", ""
+        return name, "skip", ""
     except BaseException:
-        return label, "fail", traceback.format_exc()
-    return label, "ok", ""
+        return name, "fail", traceback.format_exc()
+    return name, "ok", ""
 
 
 def sweep(everyones: bool = False) -> None:
@@ -119,9 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     """Run the checks, in as many processes as asked for."""
     args = parser().parse_args(argv)
     chosen = [
-        l
-        for l in checks()
-        if not args.patterns or any(pat in l for pat in args.patterns)
+        name
+        for name in checks()
+        if not args.patterns or any(pat in name for pat in args.patterns)
     ]
     if args.list:
         print("\n".join(chosen))
@@ -144,35 +144,35 @@ def main(argv: list[str] | None = None) -> int:
     started = time.time()
     failed, skipped = [], []
 
-    def record(label, how, detail):
+    def record(name, how, detail):
         if how == "skip":
-            skipped.append(label)
-            print(f"SKIP  {label}", flush=True)
+            skipped.append(name)
+            print(f"SKIP  {name}", flush=True)
         elif how == "fail":
-            failed.append(label)
-            print(f"FAIL  {label}\n{detail}", flush=True)
+            failed.append(name)
+            print(f"FAIL  {name}\n{detail}", flush=True)
         else:
-            print(f"ok    {label}", flush=True)
+            print(f"ok    {name}", flush=True)
 
     jobs = max(1, min(args.jobs, len(chosen)))
     # In a finally: a worker dying is what leaves a container behind, and it is
     # also what breaks the pool and ends this function early.
     try:
         if jobs == 1:
-            for label in chosen:
-                record(*run_one(label))
+            for name in chosen:
+                record(*run_one(name))
         else:
             # Heaviest first, and only here: checks() stays alphabetical because
             # --list and the name filters read it.
             table = checks()
-            queue = sorted(chosen, key=lambda l: -episodes_in(table[l]))
+            queue = sorted(chosen, key=lambda name: -episodes_in(table[name]))
             with futures.ProcessPoolExecutor(
                 max_workers=jobs,
                 initializer=configure,
                 initargs=(args.real, available, os.getpid()),
             ) as pool:
                 for done in futures.as_completed(
-                    [pool.submit(run_one, l) for l in queue]
+                    [pool.submit(run_one, name) for name in queue]
                 ):
                     record(*done.result())
     finally:

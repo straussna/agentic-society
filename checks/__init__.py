@@ -8,7 +8,7 @@ from typing import Callable
 
 
 def checks() -> dict[str, Callable]:
-    """Every check across the package, by the label the runner prints."""
+    """Every check across the package, by the name the runner prints."""
     found = {}
     for found_module in pkgutil.iter_modules(__path__):
         module = importlib.import_module(f"checks.{found_module.name}")
