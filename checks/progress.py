@@ -268,7 +268,7 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
 
 def check_a_branch_that_fails_partway_can_be_made_again():
     """A branch that fails partway moves the agents it forked, and anything else it wrote,
-    under displaced/, so the same branch can then be made.
+    under archive/, so the same branch can then be made.
 
     It fails once forking its second seat, before anything else is written, and once
     writing its lineage, with its manifest and its record's directory already in place.
@@ -311,7 +311,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
             ]
             written = output.exists() or progress.directory(root, "takeover").exists()
             failed.append((refused_branch, left, written, said.getvalue()))
-        bundles = sorted((root / "displaced").iterdir())
+        bundles = sorted((root / "archive").iterdir())
         moved = [
             sorted(
                 f"{kind.name}/{p.name}"
@@ -333,7 +333,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
         ), said
     forked = [
         f"{kind}/takeover-0{seat}"
-        for kind in ("environments", "records")
+        for kind in ("mirrors", "records")
         for seat in (1, 2)
     ]
     assert moved == [forked, sorted(forked + ["experiment_records/takeover"])], moved

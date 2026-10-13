@@ -1591,7 +1591,7 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated(
     ], outcome
 
 
-def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
+def check_a_fresh_run_archives_previous_state_and_resume_continues_it():
     """Fresh launches preserve matching state elsewhere; --resume continues compatible state."""
     with temp_root() as root:
         old_account = root / "records" / "g01" / "account.json"
@@ -1607,7 +1607,7 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
 
         with quiet() as warning:
             assert experiment.main(["--manifest", str(manifest)]) == 0
-        bundles = list((root / "displaced").iterdir())
+        bundles = list((root / "archive").iterdir())
         account = ground_truth("g01")
 
         assert len(bundles) == 1, bundles
@@ -1619,7 +1619,7 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
             )["agent"]
             == "g01"
         )
-        assert (bundles[0] / "environments" / "g01" / "notes" / "old.txt").read_text(
+        assert (bundles[0] / "mirrors" / "g01" / "notes" / "old.txt").read_text(
             encoding="utf-8"
         ) == "previous run\n"
         assert (
@@ -1634,7 +1634,7 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
         with quiet():
             assert experiment.main(["--manifest", str(manifest), "--resume"]) == 0
         assert len(ground_truth("g01")["episodes"]) == 2
-        assert list((root / "displaced").iterdir()) == bundles
+        assert list((root / "archive").iterdir()) == bundles
 
 
 def check_an_experiment_gives_a_failed_environment_one_more_go():

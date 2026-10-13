@@ -272,7 +272,7 @@ Nothing here is a channel to the agent. `view.py` serves a page because fifteen 
 are hard to follow in fifteen consoles, but it is in the same category as `--watch`:
 it reads `records/`, it writes nothing but a human seat's own turn — the seat
 acting, not anything said to it — through one origin- and token-checked route into the
-interaction store under `interactions/`, it never reaches the sandbox, and the trace
+interaction store under `interaction_store/`, it never reaches the sandbox, and the trace
 is still the record. What it cannot show honestly it marks instead of filling in — a
 command in flight has no output on disk, and `state/` is stamped with the episode it
 is current as of.

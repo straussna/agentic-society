@@ -82,12 +82,12 @@ def raised(
 
 
 def submission_file(root: Path, agent: str, request_id: str) -> Path:
-    return root / "interactions" / "submissions" / agent / f"{request_id}.json"
+    return root / "interaction_store" / "submissions" / agent / f"{request_id}.json"
 
 
 def check_interaction_store_preserves_requests_and_first_submission():
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "Seat A", 2, 3, "system", "observation", TOOLS)
         on_disk = store.current("a")
         assert on_disk == request
@@ -127,7 +127,7 @@ def check_interaction_store_preserves_requests_and_first_submission():
 
 def check_new_interaction_request_isolated_from_stale_submissions_and_keeps_draft():
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         old = store.publish("a", "A", 1, 1, "", "first", TOOLS)
         store.save_draft("a", old.request_id, submission(old)["tool_calls"])
         assert store.load_draft("a", old.request_id)[0]["name"] == "remember"
@@ -147,7 +147,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
     """On Windows a reader holding the target open refuses the rename for as long as the
     read takes, and view.py reads the pending pointer and the request on every poll."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         real, refused = os.replace, []
 
         def held(source, destination) -> None:
@@ -175,7 +175,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
             )
         finally:
             os.replace = real
-        assert not list((root / "interactions").rglob("*.tmp")), (
+        assert not list((root / "interaction_store").rglob("*.tmp")), (
             "a write that failed left its temporary file behind"
         )
         assert store.current("a") == request, "and what was there before is still there"
@@ -184,7 +184,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
 def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pending():
     """The envelope is all that stands between a browser POST and a human seat's turn."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         good = submission(request)
 
@@ -224,7 +224,7 @@ def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pend
                 f"{case} was accepted",
             )
             assert store.current("a") == request, f"{case} moved the request on"
-        assert not (root / "interactions" / "submissions").exists(), (
+        assert not (root / "interaction_store" / "submissions").exists(), (
             "a rejected envelope left a submission behind"
         )
         assert (
@@ -276,7 +276,7 @@ def race(
 def check_two_clients_racing_one_request_leave_one_winner_and_one_conflict():
     """The browser panel and the terminal can submit one turn at once; the first link wins."""
     with temp_root() as root:
-        store = HeldBeforeTheLink(root / "interactions")
+        store = HeldBeforeTheLink(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         got = race(
             store,
@@ -307,7 +307,7 @@ def check_two_clients_racing_one_request_leave_one_winner_and_one_conflict():
 def check_one_submission_sent_twice_at_once_returns_the_winner_to_both():
     """A double-click is one submission: whichever copy links first, both get it back."""
     with temp_root() as root:
-        store = HeldBeforeTheLink(root / "interactions")
+        store = HeldBeforeTheLink(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         got = race(
             store,
@@ -322,7 +322,7 @@ def check_the_winners_submission_id_on_other_calls_or_another_action_is_a_confli
     """Only the winner sent again gets the winner back: a client that reused its id on
     a different turn would otherwise be told it won while its own calls were dropped."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         won = store.submit("a", request.request_id, submission(request))
         reused = {
@@ -348,7 +348,7 @@ def check_an_unreadable_submission_ends_the_wait_instead_of_polling_forever():
     """A submission that is there and does not read can never be replaced, so waiting
     on it would hold the seat, and a simultaneous round with it, for good."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         path = submission_file(root, "a", request.request_id)
         path.parent.mkdir(parents=True)
@@ -378,7 +378,7 @@ def check_an_unreadable_submission_ends_the_wait_instead_of_polling_forever():
 def check_an_unreadable_submission_is_reported_and_never_taken_for_a_winner():
     """Neither the client that wrote it nor any other: nothing the store can read won."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         path = submission_file(root, "a", request.request_id)
         path.parent.mkdir(parents=True)
@@ -397,14 +397,14 @@ def check_an_unreadable_submission_is_reported_and_never_taken_for_a_winner():
 def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent():
     """Absent is None to every caller; there and unreadable is an error naming the file."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         assert (
             store.current("a") is None
             and store.pending() == []
             and store.history("a") == []
         )
         assert store.load_draft("a", "nothing") == []
-        pointer = root / "interactions" / "pending" / "a.json"
+        pointer = root / "interaction_store" / "pending" / "a.json"
         for written in ("[]", '{"request_id": 5}', "{not json"):
             pointer.parent.mkdir(parents=True, exist_ok=True)
             pointer.write_text(written, encoding="utf-8")
@@ -423,7 +423,7 @@ def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent
             "the list of pending requests leaves out the seat it cannot read, and only that one"
         )
         request_file = (
-            root / "interactions" / "requests" / "b" / f"{request.request_id}.json"
+            root / "interaction_store" / "requests" / "b" / f"{request.request_id}.json"
         )
         request_file.write_text('{"version": 1}', encoding="utf-8")
         raised(
@@ -443,8 +443,8 @@ def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_
     one that does not read, and a wait on its own request ends as it would have: stopped
     as stopped, answered with the submission that landed."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
-        pointer = root / "interactions" / "pending" / "a.json"
+        store = InteractionStore(root / "interaction_store")
+        pointer = root / "interaction_store" / "pending" / "a.json"
         pointer.parent.mkdir(parents=True)
         pointer.write_text("[]", encoding="utf-8")
         stopped = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -473,7 +473,7 @@ def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_
 
         broken = store.publish("a", "A", 2, 1, "", "observation", TOOLS)
         request_file = (
-            root / "interactions" / "requests" / "a" / f"{broken.request_id}.json"
+            root / "interaction_store" / "requests" / "a" / f"{broken.request_id}.json"
         )
         request_file.write_text('{"version": 1}', encoding="utf-8")
         raised(
@@ -509,7 +509,7 @@ def check_history_pairs_each_answered_request_with_its_submission_in_turn_order(
     """Six turns over three episodes, so a directory listing in that order by chance is
     one in 720."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         turns = [(episode, turn) for episode in (1, 2, 3) for turn in (1, 2)]
         for episode, turn in turns:
             answered(store, episode, turn, end=turn == 2)
@@ -537,13 +537,13 @@ def check_history_leaves_out_a_turn_whose_request_or_submission_does_not_read():
     """A seat's history is still served when one of its turns is not: the human view
     asks for it on every poll."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         kept, cut, lost = (answered(store, 1, turn) for turn in (1, 2, 3))
         submission_file(root, "a", cut.request_id).write_text(
             "{truncated", encoding="utf-8"
         )
         request_file = (
-            root / "interactions" / "requests" / "a" / f"{lost.request_id}.json"
+            root / "interaction_store" / "requests" / "a" / f"{lost.request_id}.json"
         )
         request_file.write_text('{"version": 1}', encoding="utf-8")
         assert [r.request_id for r, _ in store.history("a")] == [kept.request_id]
@@ -583,7 +583,7 @@ def said_in_order(out: io.StringIO, *expected: str) -> None:
 
 def check_human_cli_drafts_and_submits_declared_calls():
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         commands = iter(
             ['call remember {"body":"from terminal"}', "draft", "submit", "quit"]
@@ -592,7 +592,7 @@ def check_human_cli_drafts_and_submits_declared_calls():
         try:
             builtins.input = lambda prompt="": next(commands)
             with contextlib.redirect_stdout(io.StringIO()):
-                assert cli.run("a", root / "interactions") == 0
+                assert cli.run("a", root / "interaction_store") == 0
         finally:
             builtins.input = original
         submitted = store.wait(request, lambda: False, 0)
@@ -601,7 +601,7 @@ def check_human_cli_drafts_and_submits_declared_calls():
 
 def check_human_cli_rejects_what_it_cannot_send_and_ends_a_turn_without_calls():
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
         with terminal(
             [
@@ -620,7 +620,7 @@ def check_human_cli_rejects_what_it_cannot_send_and_ends_a_turn_without_calls():
                 "quit",
             ]
         ) as out:
-            assert cli.run("a", root / "interactions") == 0
+            assert cli.run("a", root / "interaction_store") == 0
         said_in_order(
             out,
             "unknown tool 'nope'",
@@ -645,7 +645,7 @@ def check_human_cli_rejects_what_it_cannot_send_and_ends_a_turn_without_calls():
 
 def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         turns: dict[str, Any] = {}
 
         def session():
@@ -673,7 +673,7 @@ def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
             yield "done"
 
         with terminal(session()) as out:
-            assert cli.run("a", root / "interactions") == 0, (
+            assert cli.run("a", root / "interaction_store") == 0, (
                 "end of input leaves the terminal"
             )
         said_in_order(
@@ -702,12 +702,12 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
     """At the start, on refresh and after a request moves on: the file is named, the
     terminal goes on as if there were none, and the request after it can be answered."""
     with temp_root() as root:
-        store = InteractionStore(root / "interactions")
-        pointer = root / "interactions" / "pending" / "a.json"
+        store = InteractionStore(root / "interaction_store")
+        pointer = root / "interaction_store" / "pending" / "a.json"
         pointer.parent.mkdir(parents=True)
         pointer.write_text("[]", encoding="utf-8")
         turns: dict[str, Any] = {}
-        drafts = root / "interactions" / "drafts" / "a"
+        drafts = root / "interaction_store" / "drafts" / "a"
 
         def session():
             yield "refresh"
@@ -723,7 +723,7 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
             yield "done"
 
         with terminal(session()) as out:
-            assert cli.run("a", root / "interactions") == 0, (
+            assert cli.run("a", root / "interaction_store") == 0, (
                 "end of input leaves the terminal"
             )
         said_in_order(
@@ -763,7 +763,7 @@ def human_session(
         "system",
         TOOLS,
         100,
-        SessionInfo(agent, f"Seat {agent}", 4, root / "interactions", cancelled),
+        SessionInfo(agent, f"Seat {agent}", 4, root / "interaction_store", cancelled),
     ), published
 
 
@@ -789,7 +789,7 @@ def check_human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn
         session, published = human_session(root, "a")
         thread, outcome = sending(session, "observation")
         assert published.wait(5), "the human provider published no request"
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         pending = store.current("a")
         assert (
             pending is not None
@@ -819,7 +819,7 @@ def check_human_provider_ends_the_turn_on_an_end_turn_submission():
         assert published.wait(5), (
             "the human provider published no request for the tool results"
         )
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         pending = store.current("a")
         assert (
             pending is not None and pending.input["input_type"] == "tool_results"
@@ -840,7 +840,7 @@ def check_human_provider_cancels_its_request_when_the_episode_stops():
         session, published = human_session(root, "b", stopping)
         thread, outcome = sending(session, "observation")
         assert published.wait(5), "the human provider published no request"
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         pending = store.current("b")
         assert pending is not None
         stopping.set()
@@ -858,7 +858,7 @@ def check_human_provider_cancels_its_request_when_the_episode_stops():
 def check_view_interaction_route_requires_origin_token_and_pending_request():
     with temp_root() as root:
         episode_once()
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         pending = store.publish("t", "1", 2, 1, "system", "observation", TOOLS)
         httpd = view.serve(0)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -950,7 +950,7 @@ def check_view_interaction_route_answers_each_rejection_with_its_own_status():
     retry."""
     with temp_root() as root:
         episode_once()
-        store = InteractionStore(root / "interactions")
+        store = InteractionStore(root / "interaction_store")
         old = store.publish("t", "1", 2, 1, "system", "observation", TOOLS)
         pending = store.publish(
             "t", "1", 2, 2, "system", (ToolResult("call-1", "ok"),), TOOLS
@@ -1062,8 +1062,8 @@ def check_the_view_reports_a_pending_pointer_that_does_not_read_and_serves_the_r
     """The seat's own route says the file is broken; the list and the header go on without it."""
     with temp_root() as root:
         episode_once()
-        (root / "interactions" / "pending").mkdir(parents=True)
-        (root / "interactions" / "pending" / "t.json").write_text(
+        (root / "interaction_store" / "pending").mkdir(parents=True)
+        (root / "interaction_store" / "pending" / "t.json").write_text(
             "[]", encoding="utf-8"
         )
         httpd = view.serve(0)
@@ -1114,8 +1114,8 @@ def check_the_view_handler_answers_only_for_the_server_serve_builds():
 
 
 def check_the_human_cli_answers_the_store_the_harness_publishes_to():
-    """With no --root the terminal reads the repository's interactions/, the one the
-    harness publishes to under its own root. The interaction package does not import
+    """With no --root the terminal reads the repository's interaction_store/, the one
+    the harness publishes to under its own root. The interaction package does not import
     harness, so it spells that path itself, and the two are held alike here."""
     ran = []
     original = cli.run
@@ -1125,7 +1125,7 @@ def check_the_human_cli_answers_the_store_the_harness_publishes_to():
     finally:
         cli.run = original
     with harness.using(harness.Settings()):
-        expected = harness.interactions_root()
+        expected = harness.interaction_store_root()
     assert ran == [("a", expected)], (ran, expected)
 
 

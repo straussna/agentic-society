@@ -738,7 +738,7 @@ def check_mirror_trees_keeps_the_previous_tree_when_the_swap_fails():
     that fails puts the mirror back; False says nothing was updated.
     """
     with rooted(HostSandbox) as root:
-        mirror = root / "environments" / "t" / "notes"
+        mirror = root / "mirrors" / "t" / "notes"
         mirror.mkdir(parents=True)
         (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")
 
@@ -923,7 +923,7 @@ def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wro
 def check_the_modes_sidecar_is_read_back():
     """The modes sidecar reads as path -> mode, skipping a line with no path."""
     with rooted(HostSandbox) as root:
-        tree = root / "environments" / "t" / "notes"
+        tree = root / "mirrors" / "t" / "notes"
         tree.mkdir(parents=True)
         sidecar = harness.modes_file(tree)
         assert sidecar.parent == tree.parent and sidecar.name == "notes.modes", sidecar

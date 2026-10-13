@@ -1345,7 +1345,7 @@ class Settings:
     moves root after, as print_context does.
     """
 
-    # Where records/, environments/, interactions/, displaced/, files/ and config.toml
+    # Where records/, mirrors/, interaction_store/, archive/, files/ and config.toml
     # are: this file's directory, until a check points it at a throwaway one.
     root: Path = Path(__file__).resolve().parent
 
@@ -1550,10 +1550,10 @@ def records_root() -> Path:
     return SETTINGS.root / "records"
 
 
-def interactions_root() -> Path:
+def interaction_store_root() -> Path:
     """Where an interactive seat's requests wait on a human: the human provider publishes
     them there, and view.py and human.py submit the answers."""
-    return SETTINGS.root / "interactions"
+    return SETTINGS.root / "interaction_store"
 
 
 def records_dir(agent: str) -> Path:
@@ -1563,13 +1563,14 @@ def records_dir(agent: str) -> Path:
 
 # What a run started without --resume says of the records it moved aside.
 FRESH_START = (
-    "warning: starting fresh; displaced previous state for {names} to {bundle} "
+    "warning: starting fresh; archived the previous records and mirrors of {names} "
+    "under {bundle} "
     "(use --resume to continue existing compatible records)"
 )
 
 
-def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
-    """Move existing records and environment mirrors into one preserved run bundle.
+def archive_agents(agents: Iterable[str], notice: str) -> Path | None:
+    """Move existing records and mirrors into one preserved run bundle under archive/.
 
     `notice` is the line that says why, printed with {names} and {bundle} filled in
     where anything was moved.
@@ -1577,22 +1578,22 @@ def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
     agents = tuple(agents)
     sources = [
         (kind, place(agent))
-        for kind, place in (("records", records_dir), ("environments", mirror_dir))
+        for kind, place in (("records", records_dir), ("mirrors", mirror_dir))
         for agent in agents
         if place(agent).exists()
     ]
     if not sources:
         return None
 
-    displaced = SETTINGS.root / "displaced"
-    displaced.mkdir(parents=True, exist_ok=True)
+    archive = SETTINGS.root / "archive"
+    archive.mkdir(parents=True, exist_ok=True)
     moment = time.time_ns()
     stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(moment / 1_000_000_000))
     base = f"{stamp}-{moment % 1_000_000_000:09d}Z"
-    bundle = displaced / base
+    bundle = archive / base
     suffix = 1
     while bundle.exists():
-        bundle = displaced / f"{base}-{suffix}"
+        bundle = archive / f"{base}-{suffix}"
         suffix += 1
     bundle.mkdir()
 
@@ -1664,7 +1665,7 @@ def committed_traces(agent: str, account: Mapping[str, Any]) -> list[Path]:
 
 def mirror_dir(agent: str) -> Path:
     """Where the host mirrors of every channel one agent writes are kept."""
-    return SETTINGS.root / "environments" / agent
+    return SETTINGS.root / "mirrors" / agent
 
 
 def mirror(agent: str, name: str) -> Path:
@@ -2152,7 +2153,7 @@ def penalise(account: Account, ch: Channel) -> int:
 # by sha256 in every episode (invariant 9).
 def files_dir(name: str) -> Path:
     """Where starter files or an experimenter channel's source lives.
-    Committed, unlike environments/ and records/."""
+    Committed, unlike mirrors/ and records/."""
     return SETTINGS.root / "files" / name
 
 
@@ -5051,7 +5052,7 @@ def run_turns(
     seen: set[str] = set()
     out, next_input = open_episode(shell, episode, provider, model, remaining)
     info = SessionInfo(
-        agent, label, episode, interactions_root(), lambda: INTERRUPTING
+        agent, label, episode, interaction_store_root(), lambda: INTERRUPTING
     )
     session = router.open_session(provider, model, system, specs, s.max_tokens, info)
 
@@ -6943,7 +6944,7 @@ def main(argv: list[str] | None = None) -> int:
         "--resume",
         action="store_true",
         help="continue the existing compatible agent account; without this flag, "
-        "previous state is preserved under displaced/ and a fresh run starts",
+        "previous state is preserved under archive/ and a fresh run starts",
     )
     ap.add_argument(
         "--print-system",
@@ -7050,7 +7051,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     catch_signals()
     if not a.resume:
-        displace_agents([a.agent], FRESH_START)
+        archive_agents([a.agent], FRESH_START)
     account = load_account(a.agent, **experiment.terms_of(entry))
     experiment.inherit_memory(entry, account)
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])

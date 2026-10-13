@@ -49,15 +49,16 @@ def directory(runtime_root: Path, experiment_id: str) -> Path:
     return root(runtime_root) / experiment_id
 
 
-def displace(
+def archive(
     runtime_root: Path, experiment_id: str, bundle: Path | None = None
 ) -> Path | None:
-    """Preserve an existing experiment record before a fresh run reuses its identity."""
+    """Preserve an existing experiment record under archive/ before a fresh run reuses
+    its identity: in `bundle`, or in a bundle of its own."""
     source = directory(runtime_root, experiment_id)
     if not source.exists():
         return None
     if bundle is None:
-        bundle = Path(runtime_root) / "displaced" / f"product-{time.time_ns()}"
+        bundle = Path(runtime_root) / "archive" / f"progress-{time.time_ns()}"
     destination = bundle / "experiment_records" / experiment_id
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(destination))

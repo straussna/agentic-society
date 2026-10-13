@@ -120,7 +120,7 @@ reaped. An experiment ends every remaining round, and every agent keeps its seat
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
 the round the stop landed in before the next begins, as
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
-command without `--resume` moves what the stopped run left under `displaced/` and starts
+command without `--resume` moves what the stopped run left under `archive/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
 

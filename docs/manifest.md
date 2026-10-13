@@ -78,7 +78,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
 | **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[harness_files]` table, and a ledger and a receipt, named on the transfer channel |
 | **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
-| **Mirror** | The host's copy of one tree an agent writes, one per channel under `environments/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
+| **Mirror** | The host's copy of one tree an agent writes, one per channel under `mirrors/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
 | **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[harness_files] digest = ""` writes none |
 | **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
 
@@ -125,7 +125,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Response** | What one model call returns, normalized: text, reasoning, tool calls, usage, itemized charges and a stop reason |
 | **Request** | A human seat's turn waiting for a person: the system prompt, the input and the tools the turn may call, held in the interaction store until a submission answers it or the episode cancels it |
 | **Submission** | A person's answer to one request: the tool calls to make, or the end of the turn |
-| **Interaction store** | The files under `interactions/` holding each human seat's requests and submissions, which `human.py` and the dashboard both read and write |
+| **Interaction store** | The files under `interaction_store/` holding each human seat's requests and submissions, which `human.py` and the dashboard both read and write |
 
 ## 1. What a manifest is
 
@@ -168,7 +168,7 @@ runs one.
 | `NAME`, `-m NAME` | The manifest: a bare name is looked for in `experiments/` then `experiments/examples/`; anything with a suffix or directory is a path |
 | `-r N` | Up to N rounds, default 1, stopping early where a stop below ends the rounds first; under `--resume` a round the last run left unfinished is finished first, and is one of the N |
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
-| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished vote round's election the last run did not, and never one it did; a seat more than one round behind the current round is unseated, and is no longer in play. Without it, the previous records and mirrors move under `displaced/` and a fresh run starts |
+| `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished vote round's election the last run did not, and never one it did; a seat more than one round behind the current round is unseated, and is no longer in play. Without it, the previous records and mirrors move under `archive/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
 | `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
@@ -743,7 +743,7 @@ each later trace record the source episode and the copied files' sha256s.
 
 This is set at creation rather than by a fork: it preserves only the memory an agent
 can read while every other part of the agent starts fresh. It is rejected if the
-source is another seat in the new experiment, because starting fresh would displace
+source is another seat in the new experiment, because starting fresh would archive
 that source before it could be read.
 
 `quality_tier` is a free string recorded in the account and in the spend summary each
@@ -1033,7 +1033,7 @@ which names its `turn_count`, where its elements sit in the balance history
 credited inside its span (`received_this_episode`). Every election it took part in
 records its `tally`, whether the top vote was `tied`, and the `candidates_left`.
 
-A fresh CLI run moves matching prior records and mirrors under `displaced/<timestamp>/`.
+A fresh CLI run moves matching prior records and mirrors under `archive/<timestamp>/`.
 `--resume`, `--fork-from`, `--branch-from` and `memory_from` read version-3 accounts and
 version-5 traces only, and reject a record of any other version, naming the version it
 holds or saying it holds none.

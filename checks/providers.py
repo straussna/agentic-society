@@ -36,7 +36,7 @@ TOOLS = (
         },
     ),
 )
-INFO = SessionInfo("a", "1", 1, Path("interactions"))
+INFO = SessionInfo("a", "1", 1, Path("interaction_store"))
 
 
 class Messages:

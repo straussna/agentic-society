@@ -353,7 +353,7 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
 
 def check_a_name_off_the_url_cannot_leave_records():
     """A name off the URL reaches the filesystem only after matching a listing,
-    so nothing can be walked out of records/ or environments/ by asking, and
+    so nothing can be walked out of records/ or mirrors/ by asking, and
     every unknown name is a 404."""
     with temp_root():
         episode_once(*DEFAULT)
@@ -927,7 +927,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
             agents=("g01", "g02"),
         )
         offering_the_human_tools(("g01", "g02"))
-        store = InteractionStore(harness.interactions_root())
+        store = InteractionStore(harness.interaction_store_root())
         answered(store, 1, 1, ("post", {"body": "hello all\n"}))
         answered(
             store,
@@ -939,7 +939,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
         answered(store, 2, 2, ("send", {"to": "2", "body": "psst"}))
         cut = store.publish("g01", "1", 2, 3, "", "observation", HUMAN_OFFERED)
         (
-            harness.interactions_root()
+            harness.interaction_store_root()
             / "submissions"
             / "g01"
             / f"{cut.request_id}.json"
@@ -1025,7 +1025,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
             for episode in (1, 2):
                 harness.trace_path(agent, episode).unlink()
         offering_the_human_tools(("g01", "g02"))
-        store = InteractionStore(harness.interactions_root())
+        store = InteractionStore(harness.interaction_store_root())
         answered(
             store,
             3,

@@ -6,7 +6,7 @@ Serves a page on 127.0.0.1 showing one experiment's activity, every directory
 channel, and one transcript at a time, above every seat's balance, what it has
 spent, and any transfer ledger. Every GET route only reads. The one POST route,
 held to the page's origin and token, writes a human seat's submission into the
-interaction store under interactions/, and nothing else."""
+interaction store under interaction_store/, and nothing else."""
 
 from __future__ import annotations
 
@@ -952,7 +952,7 @@ def seat_row(
     latest = episodes[-1] if episodes else {}
     running = running_episode(agent, account)
     try:
-        interaction = InteractionStore(harness.interactions_root()).current(agent)
+        interaction = InteractionStore(harness.interaction_store_root()).current(agent)
     except InteractionError:
         # Left out, as /api/interaction leaves it out: the seat's own route reports the
         # file, and the seat's next request is written over it.
@@ -1485,9 +1485,8 @@ def human_history(exp: dict, agent: str) -> dict:
         (event["episode"], event["from_agent"], event["to_label"], event["text"])
         for event in mailbox
     }
-    for request, submission in InteractionStore(harness.interactions_root()).history(
-        agent
-    ):
+    store = InteractionStore(harness.interaction_store_root())
+    for request, submission in store.history(agent):
         episode = request.episode
         round = round_of(episode)
         for call in submission.tool_calls:
@@ -2209,7 +2208,7 @@ class View(http.server.BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("body is not an object")
-            result = self.interactions().submit(parts[2], parts[3], payload)
+            result = self.interaction_store().submit(parts[2], parts[3], payload)
         except (InvalidSubmission, ValueError, json.JSONDecodeError) as error:
             return self.send_json({"error": str(error)}, status=400)
         except StaleRequest as error:
@@ -2226,7 +2225,7 @@ class View(http.server.BaseHTTPRequestHandler):
         """One request. `parts` is the path split on slashes, already unquoted.
 
         A name off the URL reaches the filesystem only after matching one
-        already there, so no path can be walked out of records/ or environments/.
+        already there, so no path can be walked out of records/ or mirrors/.
         """
         if not parts:
             return self.send_page()
@@ -2241,14 +2240,14 @@ class View(http.server.BaseHTTPRequestHandler):
                 }
             )
         if parts == ["api", "interaction"]:
-            pending = self.interactions().pending()
+            pending = self.interaction_store().pending()
             return self.send_json(
                 {"requests": [request.as_dict() for request in pending]}
             )
         if len(parts) == 3 and parts[:2] == ["api", "interaction"]:
             if parts[2] not in agent_names():
                 return self.send_json({"error": f"no agent {parts[2]}"}, status=404)
-            request = self.interactions().current(parts[2])
+            request = self.interaction_store().current(parts[2])
             if request is None:
                 return self.send_json({"request": None})
             return self.send_json({"request": request.as_dict()})
@@ -2357,9 +2356,9 @@ class View(http.server.BaseHTTPRequestHandler):
             )
         return self.server
 
-    def interactions(self) -> InteractionStore:
+    def interaction_store(self) -> InteractionStore:
         """The store the human provider publishes to, under the root this request reads."""
-        return InteractionStore(harness.interactions_root())
+        return InteractionStore(harness.interaction_store_root())
 
 
 class ViewServer(http.server.ThreadingHTTPServer):

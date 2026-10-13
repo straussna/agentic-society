@@ -410,7 +410,7 @@ def load_manifest(path: Path) -> Manifest:
     ]:
         raise SystemExit(
             f"{path}: memory_from must name an agent outside this experiment; "
-            f"starting fresh would displace the source for {inherited_inside[0]!r}"
+            f"starting fresh would archive the source for {inherited_inside[0]!r}"
         )
 
     labels: dict[str, str] = {}
@@ -936,10 +936,10 @@ def branch_experiment(
             file=sys.stderr,
         )
         output.unlink(missing_ok=True)
-        progress.displace(
+        progress.archive(
             harness.SETTINGS.root,
             experiment_id,
-            harness.displace_agents(created, "moved {names} aside to {bundle}"),
+            harness.archive_agents(created, "moved {names} aside to {bundle}"),
         )
         raise
     return output
@@ -1811,7 +1811,7 @@ def main(argv: list[str] | None = None) -> int:
         "--resume",
         action="store_true",
         help="continue existing compatible agent accounts; without this flag, "
-        "previous state is preserved under displaced/ and a fresh run starts",
+        "previous state is preserved under archive/ and a fresh run starts",
     )
     ap.add_argument(
         "-c", "--config", type=Path, help="default: config.toml beside harness.py"
@@ -1888,8 +1888,8 @@ def main(argv: list[str] | None = None) -> int:
         else sequential_round
     )
     if not a.resume:
-        bundle = harness.displace_agents(agents, harness.FRESH_START)
-        progress.displace(harness.SETTINGS.root, experiment_id, bundle)
+        bundle = harness.archive_agents(agents, harness.FRESH_START)
+        progress.archive(harness.SETTINGS.root, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' blackboards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
