@@ -79,7 +79,7 @@ def check_tool_summaries_and_failures_expose_no_storage_details():
     with temp_root(tools=declared) as root:
         seated(root, "t", other={})
         account = ground_truth("t")
-        actions = {
+        bound = {
             item.tool.kind: item
             for item in harness.bind_tools(
                 harness.tools(),
@@ -90,11 +90,11 @@ def check_tool_summaries_and_failures_expose_no_storage_details():
         }
         shell = BrokenShell()
         results = [
-            actions["write_memory"].call(shell, {"body": "memory"}),
-            actions["send_message_to"].call(shell, {"to": "2", "body": "message"}),
-            actions["post_public"].call(shell, {"body": "post"}),
-            actions["transfer"].call(shell, {"to": "2", "amount": 1}),
-            actions["transfer"].call(shell, {"to": "2", "amount": 0}),
+            bound["write_memory"].call(shell, {"body": "memory"}),
+            bound["send_message_to"].call(shell, {"to": "2", "body": "message"}),
+            bound["post_public"].call(shell, {"body": "post"}),
+            bound["transfer"].call(shell, {"to": "2", "amount": 1}),
+            bound["transfer"].call(shell, {"to": "2", "amount": 0}),
         ]
 
     joined = "\n".join(results)
@@ -109,7 +109,7 @@ def check_tool_summaries_and_failures_expose_no_storage_details():
 
 
 def check_a_tool_only_observation_uses_agent_view_names_not_backing_paths():
-    """A model acting through declared actions sees concepts, not their storage names."""
+    """A model acting through declared tools sees concepts, not their storage names."""
     channels = tables(
         memory={"pushed": True, "restated": True, "agent_view": "memory"},
         board={"restated": True, "agent_view": "board"},
@@ -821,7 +821,7 @@ def check_a_tool_naming_no_path_answers_in_its_own_words():
             for turn in trace_on_disk("t", 1)["turns"]
             for c in turn["tools"]
         ]
-        actions = {
+        bound = {
             item.tool.kind: item
             for item in harness.bind_tools(
                 harness.tools(),
@@ -831,9 +831,9 @@ def check_a_tool_naming_no_path_answers_in_its_own_words():
             )
         }
         not_landed = [
-            actions["send_message_to"].call(BrokenShell(), {"to": "2", "body": "psst"}),
-            actions["post_public"].call(BrokenShell(), {"body": "hello all"}),
-            actions["write_memory"].call(BrokenShell(), {"body": "remember"}),
+            bound["send_message_to"].call(BrokenShell(), {"to": "2", "body": "psst"}),
+            bound["post_public"].call(BrokenShell(), {"body": "hello all"}),
+            bound["write_memory"].call(BrokenShell(), {"body": "remember"}),
         ]
 
     assert said == [
@@ -857,7 +857,7 @@ def check_a_tool_naming_no_path_answers_in_its_own_words():
 def check_the_tools_offered_reach_provenance():
     """The tool table is stamped whole and by sha256, and a change starts a new arm.
 
-    Invariant 9: two agents offered different actions are not comparable, so the
+    Invariant 9: two agents offered different tools are not comparable, so the
     difference has to be on the trace and not only in the manifest.
     """
     with temp_root(tools=[POST]) as root:
@@ -1330,9 +1330,9 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
 
 
 def check_the_shell_can_be_withheld_and_the_tools_still_act():
-    """An experiment may offer its actions and not the shell.
+    """An experiment may offer its tools and not the shell.
 
-    The container and its shell are still there - the harness builds the
+    The sandbox and its shell are still there - the harness builds the
     environment, runs the initial observation and carries out every call through
     them - so what a tool leaves is still the agent's file, mirrored back and
     settled the same way. What the agent loses is commands of its own, and with
@@ -1464,7 +1464,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
 def check_running_one_seat_carries_the_whole_experiment_it_names():
     """harness.py --agent runs one seat of an experiment, so it runs on all of it.
 
-    The manifest decides the environment and the actions together. A run that read
+    The manifest decides the environment and the tools together. A run that read
     it for one and not the other would charge an arm nobody declared, under the
     sha256 of the arm they did - the one difference a trace could not show.
     """

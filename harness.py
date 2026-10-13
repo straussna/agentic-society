@@ -1406,14 +1406,14 @@ class Settings:
     # The harness files' names: the default until a manifest declares its own.
     harness_files: Mapping[str, str] = DEFAULT_HARNESS_FILES
     # The tools: none, until a manifest declares some. config.toml declares no
-    # environment, so it declares no actions on one.
+    # environment, so it declares no tools on one.
     tools: tuple[Tool, ...] = ()
 
     @property
     def bash_declared(self) -> bool:
         """Whether the shell is offered to the agent as a tool: whether bash is declared.
 
-        The container and its shell exist either way - the harness builds the
+        The sandbox and its shell exist either way - the harness builds the
         environment, runs the initial observation and carries out every declared tool
         through them. What this decides is whether the agent may issue commands of its
         own, or reaches its environment only through the tools the experiment declared.
@@ -5790,7 +5790,7 @@ def provenance(
         "harness_files": dict(s.harness_files),
         # Invariant 9 for what the agent can do: the tools offered, bash among them
         # where it is declared, whole and by sha256, so two agents offered
-        # different actions are different arms. What each one says of itself the
+        # different tools are different arms. What each one says of itself the
         # harness generates from this table and the channel table, so nothing else
         # has to be recorded for the wording to be reproducible.
         "tools": [t.as_table() for t in s.tools],
