@@ -2927,7 +2927,7 @@ def render_round_status(account: Account) -> str:
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
     seating = seating_of(account["agent"], account)
     seats_in_play = {seating.seat, *reachable(seating)}
-    in_play = ", ".join(
+    in_play_labels = ", ".join(
         f"{seating.labels[seat]} (you)"
         if seat == seating.seat
         else seating.labels[seat]
@@ -2938,7 +2938,7 @@ def render_round_status(account: Account) -> str:
         lines = [
             f"round: {round}",
             f"you: {seating.label}",
-            f"in play: {in_play}",
+            f"in play: {in_play_labels}",
             "round type: discussion",
         ]
     else:
@@ -2950,7 +2950,7 @@ def render_round_status(account: Account) -> str:
         lines = [
             f"round: {round} (cycle {cycle}, {position}/{vote.every})",
             f"you: {seating.label}",
-            f"in play: {in_play}",
+            f"in play: {in_play_labels}",
         ]
         previous = account.get("last_election") or {}
         if previous.get("round") == round - 1:

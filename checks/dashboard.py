@@ -44,6 +44,7 @@ from checks.lanes import (
     seats_manifest,
     shared,
     serving,
+    tables,
     temp_root,
     trace_on_disk,
     two_seats,
@@ -1405,6 +1406,29 @@ def check_the_view_reads_delivery_off_the_observation():
     d = ev["delivered"]
     assert d["shown_before"] is True, "which is the whole of what delivery is now"
     assert (d["environment"], d["named"], d["clipped"]) == (True, False, False), d
+
+
+def check_the_view_reads_delivery_off_a_letter_heading():
+    """Under the letters view an inbox item is delivered under either heading a trace
+    can carry for it, "Message from <label>" or "Letter from <label>"."""
+    with temp_root(channels=tables(mail={"agent_view": "letters"})) as root:
+        seated(root, other={})
+        episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
+        with quiet():
+            taken = harness.run_once("other", fake(run("cat n2"), say()))
+        assert "=== Message from 1 ===" in taken["observation"], taken["observation"]
+        path = harness.trace_path("other", 1)
+        trace = json.loads(path.read_text(encoding="utf-8"))
+        trace["observation"] = trace["observation"].replace(
+            "=== Message from 1 ===", "=== Letter from 1 ==="
+        )
+        path.write_text(json.dumps(trace), encoding="utf-8")
+        m = view.messages(view.experiment_of("t"))
+        ev = next(e for e in m["events"] if e["path"] == "outbox/2")
+
+    d = ev["delivered"]
+    assert d["shown_as"] == "Message from 1", d
+    assert d["shown_before"] is True, "the letter heading is the same item"
 
 
 def check_the_view_says_delivery_where_the_observation_carried_nothing():

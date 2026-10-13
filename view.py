@@ -375,6 +375,15 @@ def digest_name(agent: str, t: dict, path: str) -> str:
     )
 
 
+def inbox_headings(name: str) -> set[str]:
+    """Every heading a recorded digest can give the inbox item the harness names
+    `name`: that name, and for "Message from <label>" also "Letter from <label>",
+    which traces recorded on an arm whose digest named messages letters carry."""
+    if name.startswith("Message from "):
+        return {name, "Letter from " + name.removeprefix("Message from ")}
+    return {name}
+
+
 def inbox_prefix(mail: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the opening digest."""
     if mail is None:
@@ -1339,7 +1348,9 @@ def delivery_of(
         "episode": nxt["episode"],
         "box": box,
         "shown_as": shown_box,
-        "shown_before": None if paths is None else shown_box in paths,
+        "shown_before": (
+            None if paths is None else bool(inbox_headings(shown_box) & paths)
+        ),
         "environment": any(f["path"] == box for f in analyze.inbox_files(nxt["trace"])),
         "named": any(analyze.names(s, box) for s in analyze.reached(nxt["trace"])),
         "clipped": observation_clipped(nxt["trace"]),
