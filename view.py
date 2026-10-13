@@ -1434,12 +1434,12 @@ def messages(exp: dict, since: int = 0) -> dict:
 
 
 def human_history(exp: dict, agent: str) -> dict:
-    """Board posts and the human's mailbox messages, including accepted sends.
+    """Board posts and the human's mailbox messages, including submitted sends.
 
-    A call the human's submission made is shown from the moment it is accepted, and
+    A call the human's submission made is shown from the moment it is stored, and
     once its episode commits it the trace's record of it is the one shown. The two
     are matched on the human's own episode number, which a request carries, and an
-    accepted call is shown in that episode's round.
+    submitted call is shown in that episode's round.
     """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
@@ -1523,7 +1523,7 @@ def human_history(exp: dict, agent: str) -> dict:
                             "from_agent": agent,
                             "from_label": request.label,
                             "text": text,
-                            "accepted": True,
+                            "submitted": True,
                         }
                     )
                     board_keys.add(key)
@@ -1543,7 +1543,7 @@ def human_history(exp: dict, agent: str) -> dict:
                             "to_label": label,
                             "to_agent": exp["agent_by_seat"].get(seat or ""),
                             "text": text,
-                            "accepted": True,
+                            "submitted": True,
                         }
                     )
                     mailbox_keys.add(key)

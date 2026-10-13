@@ -1729,10 +1729,10 @@ function humanChatHtml(events, humanAgent, isPrivate, deliveredRound) {
     const sender = mine ? "You" : event.from_label;
     const destination = isPrivate ? (mine ? ` → ${event.to_label}` : " → you") : "";
     const updated = at === deliveredRound;
-    const accepted = event.accepted ? `<span class="chat-draft">sent</span>` : "";
+    const submitted = event.submitted ? `<span class="chat-draft">sent</span>` : "";
     html += `<article class="chat-message ${mine ? "mine" : ""}">
       <span class="chat-avatar" aria-hidden="true">${esc(chatInitials(sender))}</span>
-      <div class="chat-bubble"><b>${esc(sender)}${esc(destination)} ${accepted}${updated ? `<span class="chat-update">new</span>` : ""}</b><pre>${esc(event.text)}</pre></div></article>`;
+      <div class="chat-bubble"><b>${esc(sender)}${esc(destination)} ${submitted}${updated ? `<span class="chat-update">new</span>` : ""}</b><pre>${esc(event.text)}</pre></div></article>`;
   }
   return html;
 }

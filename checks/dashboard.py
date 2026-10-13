@@ -911,9 +911,9 @@ def offering_the_human_tools(agents: tuple[str, ...]) -> None:
             path.write_text(json.dumps(trace), encoding="utf-8")
 
 
-def check_the_human_history_adds_each_accepted_human_call_once():
-    """A human seat sees what it said as soon as its submission is accepted, once each:
-    the committed trace and the accepted call are one post, and a message sent again
+def check_the_human_history_adds_each_submitted_human_call_once():
+    """A human seat sees what it said as soon as its submission is stored, once each:
+    the committed trace and the submitted call are one post, and a message sent again
     in the same episode is one message. A submission that does not read is left out
     and the rest is served."""
     committed = [
@@ -969,7 +969,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
 
     # A post is in a round and an episode, under those names, as a message is.
     assert [
-        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        (e["round"], e["episode"], e["text"], e.get("submitted", False))
         for e in history["board"]
     ] == [
         (1, 1, "hello all\n", False),
@@ -977,7 +977,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
     ], history["board"]
     assert not [e for e in history["board"] if "agent_episode" in e], history["board"]
     mailbox = [
-        (e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted"))
+        (e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("submitted"))
         for e in history["mailbox"]
     ]
     assert mailbox == [("psst", "2", "g02", "1", True)], history["mailbox"]
@@ -992,7 +992,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
     """A forked seat inherits the episodes it was forked at and plays on from the round
     after them. What its submission posted and sent in an episode is what the committed
     trace of that episode holds, so each is shown once, in that episode's round, and a
-    call accepted in the episode still in flight is shown in that episode's round."""
+    call submitted in the episode still in flight is shown in that episode's round."""
     said = [
         {
             "path": "1/post.md",
@@ -1052,14 +1052,14 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
         history = view.human_history(c, "g01") if c else {}
 
     assert [
-        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        (e["round"], e["episode"], e["text"], e.get("submitted", False))
         for e in history["board"]
     ] == [
         (3, 3, "hello all\n", False),
         (4, 4, "next round", True),
     ], history["board"]
     assert [
-        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        (e["round"], e["episode"], e["text"], e.get("submitted", False))
         for e in history["mailbox"]
     ] == [
         (3, 3, "psst", False),
