@@ -137,12 +137,13 @@ class Manifest(TypedDict):
 
 
 # What a round tells the experiment's progress record: the phase it has reached, the
-# round's number, and the detail of the event. product.progress bound to one record.
+# round, and the detail of the event. product.progress bound to one record.
 Progress = Callable[[str, int, dict[str, Any] | None], object]
 
 # How a round is driven, sequential_round or simultaneous_round. Called with the agents
-# in seat order, those at the table that act in it, the round's index, the router, the
-# stamp, the labels and the progress record; returns whether any agent took an episode.
+# in seat order, the seated ones that act in it, the round, the router, the stamp, the
+# labels and the progress record; returns whether any agent took an episode. Rounds
+# count from 1, and a seat's episode of a round has the round's number.
 Round = Callable[
     [
         list[str],
@@ -809,8 +810,8 @@ def branch_experiment(
     for seat, entry, parent, index in sources:
         paid = sum(
             amount
-            for number, _, taker, amount in ledger
-            if taker == manifest["labels"][seat] and number <= at_round
+            for round, _, taker, amount in ledger
+            if taker == manifest["labels"][seat] and round <= at_round
         )
         if (standing := branch_standing(parent, index, paid)) is None:
             raise SystemExit(
@@ -843,10 +844,10 @@ def branch_experiment(
             account.update(**totals)
             label = manifest["labels"][seat]
             if carried := [
-                held[number]
-                for number in sorted(held)
-                if label in held[number]["tally"]
-                or label in held[number].get("electors", ())
+                held[round]
+                for round in sorted(held)
+                if label in held[round]["tally"]
+                or label in held[round].get("electors", ())
             ]:
                 account["elections"], account["last_election"] = carried, carried[-1]
             if (eliminated := parent.get("eliminated")) and eliminated[
@@ -1019,19 +1020,19 @@ def unseat_those_out_of_play(agents: list[str], seated: set[str]) -> None:
             unseat(agent, seated)
 
 
-def table_round(accounts: Iterable[Mapping[str, Any]]) -> int:
-    """The table's round: the furthest round any of these agents has played, whether or
-    not it is still in the competition or at this run's table. An agent's episode count
-    is the rounds it has played, so no agent is ever past this round."""
+def furthest_round(accounts: Iterable[Mapping[str, Any]]) -> int:
+    """The current round: the furthest round any of these agents has played, whether or
+    not it is in play or seated in this run. An agent's episode count is the rounds it
+    has played, so no agent is ever past this round."""
     return max((len(account["episodes"]) for account in accounts), default=0)
 
 
-def behind(account: harness.Account, played: int) -> bool:
-    """Whether an agent is more than a round behind the table's round `played`: the round
-    an agent is told it is in is its own episode count plus one, so it cannot sit at the
-    table's round, and the rounds it missed are over. The table's round only grows, so
-    an agent behind stays behind."""
-    return len(account["episodes"]) < played - 1
+def behind(account: harness.Account, current_round: int) -> bool:
+    """Whether an agent is more than a round behind `current_round`: the round an agent
+    is told it is in is its own episode count plus one, so it cannot be seated at the
+    current round, and the rounds it missed are over. The current round only grows,
+    so an agent behind stays behind."""
+    return len(account["episodes"]) < current_round - 1
 
 
 def in_play(agents: list[str]) -> list[str]:
@@ -1046,12 +1047,12 @@ def in_play(agents: list[str]) -> list[str]:
     Every stop is judged the same whichever run judges it.
     """
     accounts = {agent: harness.load_account(agent) for agent in agents}
-    played = table_round(accounts.values())
+    current_round = furthest_round(accounts.values())
     return [
         agent
         for agent in agents
         if harness.why_not_in_play(accounts[agent]) is None
-        and not behind(accounts[agent], played)
+        and not behind(accounts[agent], current_round)
     ]
 
 
@@ -1077,17 +1078,17 @@ def take_seats(agents: list[str], seated: set[str]) -> None:
     """
     unseat_those_out_of_play(agents, seated)
     accounts = {agent: harness.load_account(agent) for agent in agents}
-    played = table_round(accounts.values())
+    current_round = furthest_round(accounts.values())
     for agent in agents:
-        if agent in seated and behind(accounts[agent], played):
+        if agent in seated and behind(accounts[agent], current_round):
             print(
                 f"{agent:<6} sits out: it took {len(accounts[agent]['episodes'])} episodes "
-                f"and the table has played {played} rounds"
+                f"and the table has played {current_round} rounds"
             )
             seated.discard(agent)
 
 
-def unrecorded(phase: str, round_number: int, detail: dict[str, Any] | None) -> None:
+def unrecorded(phase: str, round: int, detail: dict[str, Any] | None) -> None:
     """The progress of a round driven straight from a list of ids, which has no
     experiment record to write to."""
 
@@ -1096,7 +1097,7 @@ def tell(
     progress: Progress,
     held: list[BaseException],
     phase: str,
-    round_number: int,
+    round: int,
     detail: dict[str, Any],
 ) -> None:
     """Write a phase reached between billed episodes and their commit.
@@ -1106,7 +1107,7 @@ def tell(
     episodes are committed and its agents that cannot go on are unseated.
     """
     try:
-        progress(phase, round_number, detail)
+        progress(phase, round, detail)
     except BaseException as e:
         held.append(e)
 
@@ -1114,7 +1115,7 @@ def tell(
 def sequential_round(
     agents: list[str],
     seated: set[str],
-    rnd: int,
+    round: int,
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
@@ -1142,7 +1143,7 @@ def sequential_round(
         )
         progress(
             "waiting_player" if player else "waiting_autonomous",
-            rnd + 1,
+            round,
             {"agents": [agent]},
         )
         ep = attempted(agent, seated, lambda: harness.ready(agent, prepare(agent)))
@@ -1153,9 +1154,9 @@ def sequential_round(
             continue
         out = harness.run_episode(ep, router)
         held: list[BaseException] = []
-        tell(progress, held, "resolving_actions", rnd + 1, {"agents": [agent]})
+        tell(progress, held, "resolving_actions", round, {"agents": [agent]})
         settled = harness.settle_episode(ep, out)
-        tell(progress, held, "settling_round", rnd + 1, {"agents": [agent]})
+        tell(progress, held, "settling_round", round, {"agents": [agent]})
         trace = harness.close_episode(ep, out, settled)
         acted = True
         if unseated_by(trace["stop"]):
@@ -1230,7 +1231,7 @@ def committed(ep: harness.Episode) -> bool:
 def simultaneous_round(
     agents: list[str],
     seated: set[str],
-    rnd: int,
+    round: int,
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
@@ -1290,7 +1291,7 @@ def simultaneous_round(
                 if running
                 else "resolving_actions"
             )
-            tell(progress, held, phase, rnd + 1, {"completed_autonomous": agent})
+            tell(progress, held, phase, round, {"completed_autonomous": agent})
 
     threads = [
         threading.Thread(target=go, args=(agent, ep), name=agent, daemon=True)
@@ -1300,9 +1301,9 @@ def simultaneous_round(
     players = [agent for agent in built if interactive[agent]]
     try:
         if autonomous:
-            progress("waiting_autonomous", rnd + 1, {"agents": autonomous})
+            progress("waiting_autonomous", round, {"agents": autonomous})
         if players:
-            progress("waiting_player", rnd + 1, {"agents": players})
+            progress("waiting_player", round, {"agents": players})
         for t in threads:
             t.start()
     except BaseException:
@@ -1328,7 +1329,7 @@ def simultaneous_round(
         progress,
         held,
         "resolving_actions",
-        rnd + 1,
+        round,
         {"agents": [agent for agent in built if agent in outs]},
     )
     settled: dict[str, dict] = {}
@@ -1339,7 +1340,7 @@ def simultaneous_round(
             settled[agent] = harness.settle_episode(ep, outs[agent], owing(agent))
         except BaseException as e:
             errors.setdefault(agent, e)
-    tell(progress, held, "settling_round", rnd + 1, {"agents": list(settled)})
+    tell(progress, held, "settling_round", round, {"agents": list(settled)})
     traces: dict[str, dict] = {}
     # receiver -> (giver, amount): the credits each receiver closed on.
     carried: dict[str, list[tuple[str, int]]] = {}
@@ -1397,12 +1398,12 @@ def simultaneous_round(
     return True
 
 
-def elector(account: harness.Account, round_number: int) -> bool:
-    """Whether an agent votes in the election that follows `round_number`: it took that
+def elector(account: harness.Account, round: int) -> bool:
+    """Whether an agent votes in the election that follows `round`: it took that
     round's episode and was not unseated by its stop, so it was seated as the round
     ended."""
     episodes = account["episodes"]
-    return len(episodes) == round_number and not unseated_by(episodes[-1]["stop"])
+    return len(episodes) == round and not unseated_by(episodes[-1]["stop"])
 
 
 def elections_of(account: harness.Account) -> list[harness.Election]:
@@ -1413,27 +1414,25 @@ def elections_of(account: harness.Account) -> list[harness.Election]:
     )
 
 
-def recorded(account: harness.Account, round_number: int) -> bool:
-    """Whether an account has been written the election that follows `round_number`: it
-    holds that election, or a later one, or an elimination at or after the round. A later
+def recorded(account: harness.Account, round: int) -> bool:
+    """Whether an account has been written the election that follows `round`: it holds
+    that election, or a later one, or an elimination at or after the round. A later
     record is never taken for this one missing."""
     return (
         max(
             (account.get("last_election") or {}).get("round", 0),
             (account.get("eliminated") or {}).get("round", 0),
         )
-        >= round_number
+        >= round
     )
 
 
-def offered_ballot(agent: str, round_number: int, vote: dict) -> bool:
-    """Whether the agent's episode of `round_number` was offered the ballot, as its trace
+def offered_ballot(agent: str, round: int, vote: dict) -> bool:
+    """Whether the agent's episode of `round` was offered the ballot, as its trace
     records what the episode was offered. One with no peer left to name was offered none.
     A trace that does not say is taken to have offered it."""
     try:
-        trace = json.loads(
-            harness.trace_path(agent, round_number).read_text(encoding="utf-8")
-        )
+        trace = json.loads(harness.trace_path(agent, round).read_text(encoding="utf-8"))
     except OSError, ValueError:
         return True
     return vote["name"] in trace.get("offered", [vote["name"]])
@@ -1472,17 +1471,17 @@ def resolve_vote(
     if vote is None:
         return None
     accounts = {agent: harness.load_account(agent) for agent in agents}
-    round_number = table_round(accounts.values())
-    if not round_number or round_number % vote["every"]:
+    round = furthest_round(accounts.values())
+    if not round or round % vote["every"]:
         return None
-    finished = all(len(accounts[agent]["episodes"]) == round_number for agent in seated)
+    finished = all(len(accounts[agent]["episodes"]) == round for agent in seated)
     label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
     held = next(
         (
             record
             for account in accounts.values()
             if (record := account.get("last_election") or {}).get("round")
-            == round_number
+            == round
         ),
         None,
     )
@@ -1490,7 +1489,7 @@ def resolve_vote(
         if not finished:
             return None
         electorate = [
-            agent for agent in agents if elector(accounts[agent], round_number)
+            agent for agent in agents if elector(accounts[agent], round)
         ]
         candidates = in_play(agents)
     else:
@@ -1500,10 +1499,10 @@ def resolve_vote(
             agent for agent in agents if label_by_agent[agent] in held["tally"]
         ]
         if all(
-            recorded(accounts[agent], round_number)
+            recorded(accounts[agent], round)
             for agent in {*electorate, *candidates}
         ):
-            return round_number if finished else None
+            return round if finished else None
 
     agent_by_label = {label: agent for agent, label in label_by_agent.items()}
     ballots: dict[str, str] = {}
@@ -1525,12 +1524,12 @@ def resolve_vote(
     silent = [
         agent
         for agent in electorate
-        if agent not in ballots and offered_ballot(agent, round_number, vote)
+        if agent not in ballots and offered_ballot(agent, round, vote)
     ]
     stopped = [
         agent
         for agent in silent
-        if accounts[agent]["episodes"][round_number - 1]["stop"]
+        if accounts[agent]["episodes"][round - 1]["stop"]
         in harness.STOPS_THE_EXPERIMENT
     ]
     abstainers = {agent for agent in silent if agent not in stopped}
@@ -1538,17 +1537,19 @@ def resolve_vote(
     leaders = {agent for agent, total in tally.items() if top and total == top}
     if len(leaders) > 1:
         print(
-            f"election after round {round_number}: top vote tied at {top}; no agent is eliminated by the vote"
+            f"election after round {round}: top vote tied at {top}; "
+            "no agent is eliminated by the vote"
         )
     elif leaders and stopped:
         print(
-            f"election after round {round_number}: the stop ended the episode of "
-            f"{', '.join(stopped)} before a ballot was cast; no agent is eliminated by the vote"
+            f"election after round {round}: the stop ended the episode of "
+            f"{', '.join(stopped)} before a ballot was cast; "
+            "no agent is eliminated by the vote"
         )
     voted_out = leaders - abstainers if len(leaders) == 1 and not stopped else set()
     eliminated = abstainers | voted_out
     result: harness.Election = {
-        "round": round_number,
+        "round": round,
         "tally": {label_by_agent[agent]: tally[agent] for agent in candidates},
         "electors": [label_by_agent[agent] for agent in electorate],
         "abstainers": [
@@ -1572,7 +1573,7 @@ def resolve_vote(
             *(
                 record
                 for record in elections_of(account)
-                if record["round"] < round_number
+                if record["round"] < round
             ),
             result,
         ]
@@ -1580,24 +1581,24 @@ def resolve_vote(
         if agent in eliminated:
             total = tally.get(agent, 0)
             reason = (
-                f"did not vote in round {round_number}"
+                f"did not vote in round {round}"
                 if agent in abstainers
-                else f"received the most votes ({total}) in round {round_number}"
+                else f"received the most votes ({total}) in round {round}"
             )
             account["eliminated"] = {
-                "round": round_number,
+                "round": round,
                 "reason": reason,
                 "votes": total,
             }
         harness.save_account(agent, account)
         if agent in eliminated:
             seated.discard(agent)
-            print(f"{agent}: eliminated after round {round_number}: {reason}")
+            print(f"{agent}: eliminated after round {round}: {reason}")
     for path in cast:
         path.unlink(missing_ok=True)
     if not ballots:
-        print(f"election after round {round_number}: no ballots were cast")
-    return round_number if finished else None
+        print(f"election after round {round}: no ballots were cast")
+    return round if finished else None
 
 
 def over(
@@ -1616,14 +1617,14 @@ def over(
 
 
 def concluded(
-    election: int | None,
+    round: int | None,
     agents: list[str],
     seated: set[str],
     labels: dict[str, str],
     stop_when_one_remains: bool,
     stop_when_two_remain_after_tie: bool,
 ) -> str | None:
-    """Why the election that stands after round `election` ends the rounds, or None
+    """Why the election that stands after `round` ends the rounds, or None
     where they go on or there was no election.
 
     Judged on the agents in play, seated in this run or not: over()'s reasons, and
@@ -1634,11 +1635,11 @@ def concluded(
     for the rest of this run does while it is at most a round behind, so an election
     is judged the same whether the rounds go on in this run or in one that resumes it.
     """
-    if election is None:
+    if round is None:
         return None
     unseat_those_out_of_play(agents, seated)
     agents_in_play = in_play(agents)
-    if ended := over(agents_in_play, election, stop_when_one_remains):
+    if ended := over(agents_in_play, round, stop_when_one_remains):
         return ended
     if stop_when_two_remain_after_tie and len(agents_in_play) == 2:
         label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
@@ -1647,7 +1648,7 @@ def concluded(
             for agent in agents_in_play
         }
         if all(
-            result.get("round") == election
+            result.get("round") == round
             and result.get("top_tied")
             and not result.get("interrupted")
             and label_by_agent[agent] in result.get("electors", result.get("tally", {}))
@@ -1685,7 +1686,7 @@ def play_round(
     a_round: Round,
     agents: list[str],
     seated: set[str],
-    rnd: int,
+    round: int,
     router: ProviderRouter,
     stamp: dict[str, Any],
     labels: dict[str, str],
@@ -1725,18 +1726,18 @@ def play_round(
         for agent in agents
         if agent in seated and (finishing is None or agent in finishing)
     ]
-    print(f"--- round {rnd + 1} ({' '.join(acting)}) ---")
+    print(f"--- round {round} ({' '.join(acting)}) ---")
 
     waiting = seated - set(acting)
     seated -= waiting
     try:
-        acted = a_round(agents, seated, rnd, router, stamp, labels, progress)
+        acted = a_round(agents, seated, round, router, stamp, labels, progress)
     finally:
         seated |= waiting
     if not acted and not seated:
         # Every seated agent either takes an episode or is unseated, so a round
         # nobody took one in has left no agent seated.
-        print(f"no agent could take an episode in round {rnd + 1}; the rounds end here")
+        print(f"no agent could take an episode in round {round}; the rounds end here")
         return "none_can_act" if in_play(agents) else "all_eliminated"
     return concluded(
         resolve_vote(agents, seated, labels, vote),
@@ -1896,7 +1897,7 @@ def main(argv: list[str] | None = None) -> int:
     reason = "round_limit"
     code = 0
     # The last round this run prepared.
-    reached = 0
+    prepared_round = 0
     try:
         # A voting round every agent finished before the last run stopped keeps its
         # election, and one already held is not held again; an election that ended the
@@ -1911,16 +1912,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         for _ in range(a.rounds if ended is None else 0):
             accounts = {agent: harness.load_account(agent) for agent in agents}
-            played = table_round(accounts.values())
+            current_round = furthest_round(accounts.values())
             # A round a seated agent missed is finished before the next begins,
             # so every agent is told the round the others are in, and no round is one
             # an agent has already played past.
             finishing = [
                 agent
                 for agent in agents
-                if agent in seated and len(accounts[agent]["episodes"]) < played
+                if agent in seated and len(accounts[agent]["episodes"]) < current_round
             ]
-            round_number = played if finishing else played + 1
+            round = current_round if finishing else current_round + 1
             cost = product.cost(
                 agents, harness.load_account, manifest["cost"], providers.is_interactive
             )
@@ -1929,13 +1930,13 @@ def main(argv: list[str] | None = None) -> int:
             # carry the cost that ends the rounds, and a round being finished is played.
             if not cost["ceiling_reached"] and not finishing:
                 ended = before_round(
-                    agents, seated, played, manifest["stop_when_one_remains"]
+                    agents, seated, current_round, manifest["stop_when_one_remains"]
                 )
                 if ended is not None:
                     break
             progress(
                 "preparing_round",
-                round_number,
+                round,
                 {
                     "cost": cost,
                     "agents": agents,
@@ -1943,7 +1944,7 @@ def main(argv: list[str] | None = None) -> int:
                     **({"finishing": finishing} if finishing else {}),
                 },
             )
-            reached = round_number
+            prepared_round = round
             if cost["ceiling_reached"]:
                 reason = "cost_ceiling"
                 break
@@ -1951,7 +1952,7 @@ def main(argv: list[str] | None = None) -> int:
                 a_round,
                 agents,
                 seated,
-                round_number - 1,
+                round,
                 router,
                 stamp,
                 manifest["labels"],
@@ -1963,7 +1964,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             progress(
                 "round_completed",
-                round_number,
+                round,
                 {"active": [agent for agent in agents if agent in seated]},
             )
             if ended is not None:
@@ -1984,15 +1985,16 @@ def main(argv: list[str] | None = None) -> int:
             manifest["stop_when_two_remain_after_tie"],
         )
         print(
-            f"interrupted; the rounds end here with {len(seated)} agents at the table",
+            f"interrupted; the rounds end here with {len(seated)} agents seated",
             file=sys.stderr,
         )
         reason, code = ended or "interrupted", 130
-    # The round the rounds ended at: the table's, or the one this run last prepared
-    # where no seat played it, so the record's rounds never go back.
+    # The round the rounds ended at: the current round, or the one this run last
+    # prepared where no seat played it, so the record's rounds never go back.
+    current_round = furthest_round(harness.load_account(agent) for agent in agents)
     progress(
         reason if reason in ("interrupted", "cost_ceiling") else "completed",
-        max(reached, table_round(harness.load_account(agent) for agent in agents)),
+        max(prepared_round, current_round),
         {"termination_reason": reason},
     )
     product.outcome(

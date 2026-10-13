@@ -59,8 +59,8 @@ def check_the_experiment_uses_fixed_order_and_validates():
         harness.ready = noted
         seated_ids = set(ids)
         with quiet():
-            for rnd in range(3):
-                experiment.sequential_round(ids, seated_ids, rnd, fake())
+            for round in range(1, 4):
+                experiment.sequential_round(ids, seated_ids, round, fake())
     assert ids == ["g02", "g03", "g01"], ids
     assert built == ids * 3, f"the seats' order, the same every round: {built}"
     for bad in (
@@ -361,7 +361,7 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
         completed = lambda *_args: True
         with quiet() as output:
             ended = experiment.play_round(
-                completed, ids, seated_ids, 4, None, {}, labels, True, vote, True
+                completed, ids, seated_ids, 5, None, {}, labels, True, vote, True
             )
         result = harness.load_account("g01")["last_election"]
 
@@ -495,13 +495,13 @@ def episodes_for(acted: list[tuple[int, str]], stop: bool = False):
     `acted`; with `stop`, the stop lands in the last of them, as it does in a round's last
     seat."""
 
-    def a_round(agents, seated_ids, rnd, *_args):
+    def a_round(agents, seated_ids, round, *_args):
         for agent in agents:
             if agent in seated_ids:
                 account = harness.load_account(agent)
-                account["episodes"].append({"episode": rnd + 1, "stop": "no_tool_call"})
+                account["episodes"].append({"episode": round, "stop": "no_tool_call"})
                 harness.save_account(agent, account)
-                acted.append((rnd + 1, agent))
+                acted.append((round, agent))
         if stop:
             raise KeyboardInterrupt
         return True
@@ -985,10 +985,10 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
     def spending(acted: list[tuple[int, str]], stop: bool = False):
         played = episodes_for(acted, stop)
 
-        def a_round(agents, seated_ids, rnd, *rest):
-            if rnd + 1 == 2:
+        def a_round(agents, seated_ids, round, *rest):
+            if round == 2:
                 exhaust("g03")
-            return played(agents, seated_ids, rnd, *rest)
+            return played(agents, seated_ids, round, *rest)
 
         return a_round
 
@@ -1655,7 +1655,7 @@ def check_an_experiment_gives_a_failed_environment_one_more_go():
         harness.ready = flaky
         seated_ids = set(ids)
         with quiet() as buf:
-            experiment.sequential_round(ids, seated_ids, 0, fake(*DEFAULT))
+            experiment.sequential_round(ids, seated_ids, 1, fake(*DEFAULT))
         took = episodes_taken(ids)
 
     assert seated_ids == {"g01", "g02"}, (
@@ -1681,7 +1681,7 @@ def check_an_interrupt_ends_the_whole_experiment():
         with quiet():
             try:
                 experiment.sequential_round(
-                    ids, seated_ids, 0, fake(run("echo one"), KeyboardInterrupt())
+                    ids, seated_ids, 1, fake(run("echo one"), KeyboardInterrupt())
                 )
             except KeyboardInterrupt:
                 pass
@@ -1700,7 +1700,7 @@ def check_an_interrupt_ends_the_whole_experiment():
         seated_ids = set(ids)
         with quiet():
             experiment.sequential_round(
-                ids, seated_ids, 0, fake(run("echo one"), Err(400))
+                ids, seated_ids, 1, fake(run("echo one"), Err(400))
             )
         took = episodes_taken(ids)
     assert seated_ids == {"g02", "g03"}, sorted(seated_ids)
@@ -1740,7 +1740,7 @@ def check_a_stopped_experiment_ends_the_rounds():
                 experiment.sequential_round(
                     ids,
                     seated_ids,
-                    0,
+                    1,
                     interrupting_at(2, run("echo one"), run("echo two"), say()),
                 )
             except KeyboardInterrupt:
@@ -1842,9 +1842,9 @@ def check_a_resumed_simultaneous_experiment_finishes_a_round_through_its_own_sch
         driven = experiment.simultaneous_round
         rounds = []
 
-        def recorded(agents, seated_ids, rnd, *rest):
-            rounds.append((rnd + 1, sorted(seated_ids)))
-            return driven(agents, seated_ids, rnd, *rest)
+        def recorded(agents, seated_ids, round, *rest):
+            rounds.append((round, sorted(seated_ids)))
+            return driven(agents, seated_ids, round, *rest)
 
         experiment.simultaneous_round = recorded
         try:
@@ -2475,7 +2475,7 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
 
         seated_ids = set(ids)
         with quiet():
-            acted = experiment.simultaneous_round(ids, seated_ids, 0, router)
+            acted = experiment.simultaneous_round(ids, seated_ids, 1, router)
         took = episodes_taken(ids)
     first = next(i for i, (what, _) in enumerate(events) if what == "create")
     before = [what for what, _ in events[:first]]
@@ -2506,7 +2506,7 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
         ids = seated(root, "g01", g02={}, g03={})
         seated_ids = set(ids)
         with quiet():
-            experiment.simultaneous_round(ids, seated_ids, 0, router)
+            experiment.simultaneous_round(ids, seated_ids, 1, router)
         stops = {r: harness.load_account(r)["episodes"][0]["stop"] for r in ids}
     assert set(stops.values()) == {"no_tool_call"}, (
         f"an episode that waited alone would have erred instead: {stops}"
@@ -2534,7 +2534,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
         )
         seated_ids = set(ids)
         with quiet():
-            experiment.simultaneous_round(ids, seated_ids, 0, first)
+            experiment.simultaneous_round(ids, seated_ids, 1, first)
         g02_first = ground_truth("g02")["episodes"][0]
         said, listed = (
             c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"]
@@ -2545,7 +2545,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             g02=(run(f"cat {digest_name()}"), say()),
         )
         with quiet():
-            experiment.simultaneous_round(ids, seated_ids, 1, second)
+            experiment.simultaneous_round(ids, seated_ids, 2, second)
         later = trace_on_disk("g02", 2)
         g02 = ground_truth("g02")
     assert "hello" not in said and "psst" not in said and "RESULT" not in listed, (
@@ -2581,7 +2581,7 @@ def check_a_simultaneous_credit_lands_before_the_floor():
                 experiment.simultaneous_round(
                     ids,
                     seated_ids,
-                    0,
+                    1,
                     per_agent(g01=(run(transfer), say()), g02=(say(),)),
                 )
             m = ground_truth("g02")
@@ -2630,7 +2630,7 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
                 experiment.simultaneous_round(
                     ids,
                     seated_ids,
-                    0,
+                    1,
                     per_agent(
                         g01=(run("echo '2 250' > out/transfer"), say()),
                         default=(say(),),
@@ -2703,7 +2703,7 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                 raised = None
                 try:
                     with quiet():
-                        a_round(ids, set(ids), 0, router())
+                        a_round(ids, set(ids), 1, router())
                 except OSError as e:
                     raised = e
                 accounts = {agent: ground_truth(agent) for agent in ids}
@@ -2754,7 +2754,7 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                         experiment.simultaneous_round(
                             ids,
                             set(ids),
-                            0,
+                            1,
                             per_agent(g01=(say(),), g02=(run(transfer), say())),
                         )
                 except OSError:
@@ -2850,7 +2850,7 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
                     quiet(),
                     contextlib.redirect_stderr(Broken() if broken else sys.stderr),
                 ):
-                    a_round(ids, set(ids), 0, router())
+                    a_round(ids, set(ids), 1, router())
             except (KeyboardInterrupt, OSError) as e:
                 raised = e
             accounts = {agent: ground_truth(agent) for agent in ids}
@@ -2909,7 +2909,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
         seated_ids = set(ids)
         with quiet():
             try:
-                experiment.simultaneous_round(ids, seated_ids, 0, interrupting_router())
+                experiment.simultaneous_round(ids, seated_ids, 1, interrupting_router())
             except KeyboardInterrupt:
                 pass
             else:
@@ -2948,7 +2948,7 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
             experiment.simultaneous_round(
                 ids,
                 seated_ids,
-                0,
+                1,
                 per_agent(default=(run("echo one"), run("echo two"), say())),
             )
     lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
@@ -2980,7 +2980,7 @@ def check_a_simultaneous_round_unseats_only_the_agent_whose_build_fails_twice():
         seated_ids = set(ids)
         with quiet() as buf:
             experiment.simultaneous_round(
-                ids, seated_ids, 0, per_agent(default=DEFAULT)
+                ids, seated_ids, 1, per_agent(default=DEFAULT)
             )
         took = episodes_taken(ids)
     assert seated_ids == {"g01", "g02"}, (
@@ -3016,7 +3016,7 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
 
         with quiet():
             try:
-                experiment.simultaneous_round(ids, seated_ids, 0, router)
+                experiment.simultaneous_round(ids, seated_ids, 1, router)
             except KeyboardInterrupt:
                 pass
             else:

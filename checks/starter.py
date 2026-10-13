@@ -619,7 +619,7 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
             experiment.sequential_round(
                 ids,
                 set(ids),
-                0,
+                1,
                 fake(say(), say()),
                 experiment.stamp_of(source),
                 source["labels"],
@@ -630,7 +630,7 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
             experiment.sequential_round(
                 ["br-01", "br-02"],
                 {"br-01"},
-                1,
+                2,
                 fake(say()),
                 experiment.stamp_of(branch),
                 branch["labels"],

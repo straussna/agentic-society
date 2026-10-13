@@ -2752,9 +2752,9 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
     return body
 
 
-def election_held(agent: str, account: Account, round_number: int) -> bool:
-    """Whether the election that follows `round_number` is held already, as the agent's
-    own account or a peer's records it.
+def election_held(agent: str, account: Account, round: int) -> bool:
+    """Whether the election that follows `round` is held already, as the agent's own
+    account or a peer's records it.
 
     Only a seat that takes its round after the seats that played it held its election
     finds one. A ballot it cast would be counted by nobody, so its episode of that
@@ -2770,14 +2770,14 @@ def election_held(agent: str, account: Account, round_number: int) -> bool:
         ),
     ]
     return any(
-        (record.get("last_election") or {}).get("round", 0) >= round_number
+        (record.get("last_election") or {}).get("round", 0) >= round
         for record in records
     )
 
 
 def render_round_status(account: Account) -> str:
     """The authoritative round and phase announced at the start of an episode."""
-    round_number = len(account["episodes"]) + 1
+    round = len(account["episodes"]) + 1
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
     seating = seating_of(account["agent"], account)
     seats_in_play = {seating.seat, *reachable(seating)}
@@ -2790,24 +2790,24 @@ def render_round_status(account: Account) -> str:
     )
     if vote is None:
         lines = [
-            f"round: {round_number}",
+            f"round: {round}",
             f"you: {seating.label}",
             f"remaining agents: {remaining}",
             "phase: discussion",
         ]
     else:
-        position = (round_number - 1) % vote.every + 1
-        cycle = (round_number - 1) // vote.every + 1
+        position = (round - 1) % vote.every + 1
+        cycle = (round - 1) // vote.every + 1
         voting = position == vote.every and not election_held(
-            account["agent"], account, round_number
+            account["agent"], account, round
         )
         lines = [
-            f"round: {round_number} (cycle {cycle}, {position}/{vote.every})",
+            f"round: {round} (cycle {cycle}, {position}/{vote.every})",
             f"you: {seating.label}",
             f"remaining agents: {remaining}",
         ]
         previous = account.get("last_election") or {}
-        if previous.get("round") == round_number - 1:
+        if previous.get("round") == round - 1:
             abstainers = previous.get("abstainers") or []
             voted_out = previous.get("voted_out") or ""
             if voted_out:

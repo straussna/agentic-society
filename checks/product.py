@@ -244,7 +244,7 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
         ids = seated(root, "g01", g02={})
         with quiet():
             experiment.sequential_round(
-                ids, set(ids), 0, fake(say(), run("echo '1 250' > out/transfer"), say())
+                ids, set(ids), 1, fake(say(), run("echo '1 250' > out/transfer"), say())
             )
         account = harness.load_account("g01")
         account["series"].pop()
@@ -494,9 +494,9 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
             )
             if schedule == "sequential":
                 with quiet():
-                    experiment.sequential_round(ids, set(ids), 0, sequential)
-                    ended[schedule] = {agent: ground_truth(agent) for agent in ids}
                     experiment.sequential_round(ids, set(ids), 1, sequential)
+                    ended[schedule] = {agent: ground_truth(agent) for agent in ids}
+                    experiment.sequential_round(ids, set(ids), 2, sequential)
             else:
                 real = harness.replace_file
 
@@ -514,7 +514,7 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                         experiment.simultaneous_round(
                             ids,
                             set(ids),
-                            0,
+                            1,
                             per_agent(
                                 g01=(run("echo '2 40' > out/transfer"), say()),
                                 g02=(say(),),
@@ -528,7 +528,7 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                     experiment.simultaneous_round(
                         ids,
                         {"g01", "g03"},
-                        0,
+                        1,
                         per_agent(
                             g01=(run("echo '2 30' > out/transfer"), say()), g03=(say(),)
                         ),
@@ -537,7 +537,7 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                     experiment.simultaneous_round(
                         ids,
                         set(ids),
-                        1,
+                        2,
                         per_agent(
                             g01=(run("echo '2 20' > out/transfer"), say()),
                             default=(say(),),
@@ -1020,25 +1020,25 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
 
             harness.ready = noted
 
-            def progress(phase, round_number, detail):
+            def progress(phase, round, detail):
                 def state(agent):
-                    if harness.trace_path(agent, round_number).exists():
+                    if harness.trace_path(agent, round).exists():
                         return "committed"
-                    ep = built.get((agent, round_number))
+                    ep = built.get((agent, round))
                     if ep is not None and len(ep.account["series"]) > len(
                         ep.series_before
                     ):
                         return "settled"
                     return (
                         "ran"
-                        if harness.raw_path(agent, round_number).exists()
+                        if harness.raw_path(agent, round).exists()
                         else "waiting"
                     )
 
                 seen.append(
                     (
                         phase,
-                        round_number,
+                        round,
                         detail,
                         {agent: state(agent) for agent in ids},
                         ground_truth("g02").get("received", 0),
@@ -1056,7 +1056,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                 experiment.sequential_round(
                     ids,
                     seated_ids,
-                    0,
+                    1,
                     fake(run("echo '2 250' > out/transfer"), say()),
                     progress=progress,
                 )
@@ -1065,7 +1065,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                 experiment.simultaneous_round(
                     ids,
                     seated_ids,
-                    1,
+                    2,
                     per_agent(default=(say(),), on_send=after_g01),
                     progress=progress,
                 )
@@ -1185,9 +1185,9 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
             for event in product.records(root, "seats")["progress"]["events"]
         ]
 
-    def played(round_number: int, *agents: str) -> list[tuple]:
+    def played(round: int, *agents: str) -> list[tuple]:
         return [
-            (phase, round_number, [agent])
+            (phase, round, [agent])
             for agent in agents
             for phase in ("waiting_autonomous", "resolving_actions", "settling_round")
         ]
@@ -1223,10 +1223,10 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
 
     driven = experiment.sequential_round
 
-    def stops_as_round_two_starts(agents, seated_ids, rnd, *rest):
-        if rnd == 1:
+    def stops_as_round_two_starts(agents, seated_ids, round, *rest):
+        if round == 2:
             raise KeyboardInterrupt
-        return driven(agents, seated_ids, rnd, *rest)
+        return driven(agents, seated_ids, round, *rest)
 
     experiment.sequential_round = stops_as_round_two_starts
     try:
@@ -1247,8 +1247,8 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
     finally:
         experiment.sequential_round = driven
 
-    def prepared(round_number: int) -> tuple:
-        return ("preparing_round", round_number, ids)
+    def prepared(round: int) -> tuple:
+        return ("preparing_round", round, ids)
 
     first = [prepared(1), *played(1, *ids), ("round_completed", 1, ids)]
     assert ended == {
@@ -1270,10 +1270,10 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
 def check_a_progress_record_that_fails_costs_no_episode_its_spend():
     """A progress write that fails between an episode's billing and its commit, or a
     second Ctrl+C that lands in one, is raised once the round's billed episodes are
-    committed and an agent whose episode put it out has left the table, never in place
-    of either.
+    committed and an agent whose episode unseated it is unseated, never in place of
+    either.
 
-    g01's episode ends on an API error after a billed turn, which drops it out. A
+    g01's episode ends on an API error after a billed turn, which unseats it. A
     simultaneous round also writes from each autonomous episode's own thread as it ends,
     and a write that fails there alone is raised the same way. A second Ctrl+C lands in
     the main thread, never there.
@@ -1298,8 +1298,8 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
     cases.append(("completed_autonomous", ValueError, simultaneous))
     for at, failure, (a_round, router, took) in cases:
 
-        def failing(reached, round_number, detail, at=at, failure=failure):
-            if at == reached or at in (detail or {}):
+        def failing(phase, round, detail, at=at, failure=failure):
+            if at == phase or at in (detail or {}):
                 raise failure("progress.json does not read")
 
         case = (a_round.__name__, at, failure.__name__)
@@ -1309,7 +1309,7 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
             raised: BaseException | None = None
             try:
                 with quiet():
-                    a_round(ids, seated_ids, 0, router(), progress=failing)
+                    a_round(ids, seated_ids, 1, router(), progress=failing)
             except (ValueError, KeyboardInterrupt) as e:
                 raised = e
             taken = episodes_taken(ids)

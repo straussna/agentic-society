@@ -842,7 +842,7 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
 
 
 def table_round(exp: dict) -> int:
-    """The table's round, as experiment.table_round counts it: the furthest round any
+    """The table's round, as experiment.furthest_round counts it: the furthest round any
     seat has committed, by the episodes its account lists.
 
     The account and not the traces, since a forked seat lists the episodes it

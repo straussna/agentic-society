@@ -165,7 +165,7 @@ def progress(
     runtime_root: Path,
     experiment_id: str,
     phase: str,
-    round_number: int,
+    round: int,
     detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record that the experiment has reached `phase`, and return the event.
@@ -178,7 +178,7 @@ def progress(
         raise ValueError(f"unknown progress phase {phase!r}")
     base = directory(runtime_root, experiment_id)
     with _LOCK:
-        event = {"at": now(), "phase": phase, "round": round_number, **(detail or {})}
+        event = {"at": now(), "phase": phase, "round": round, **(detail or {})}
         previous = read(base / "progress.json") or {}
         log = base / "progress.jsonl"
         # A progress.json that holds its own events list starts the log with them.
@@ -284,7 +284,8 @@ def outcome(
         "survivors": survivors,
         "draw": reason == "final_tie",
         "elimination_order": [
-            {"round": rnd, "seat": seat, "reason": why} for rnd, seat, why in eliminated
+            {"round": round, "seat": seat, "reason": why}
+            for round, seat, why in eliminated
         ],
         "scores": {label_by_agent[a]: accounts[a].get("remaining", 0) for a in agents},
         "resources": {

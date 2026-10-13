@@ -386,7 +386,7 @@ def check_mixed_provider_simultaneous_round():
         ran = experiment.simultaneous_round(
             ["claude", "gpt"],
             seated_ids,
-            0,
+            1,
             per_agent(claude=(say("a"),), gpt=(say("o"),)),
         )
         traces = [

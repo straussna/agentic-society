@@ -1223,7 +1223,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     # Exhausted, the seat is not also unseated: the three states are apart.
     assert not past_seats["g03"]["unseated"], past_seats["g03"]
 
-    # Behind is judged against the table's round, the episodes committed, as
+    # Behind is judged against the current round, the episodes committed, as
     # experiment.behind judges it: g01 in flight on round 4 leaves g02, which missed
     # only round 3, a seat the run seats again.
     with rooted(HostSandbox):
