@@ -96,7 +96,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
 | **Receipt** | A status file planted for the next episode of the transfer channel's writer, itemizing the settlement of the episode before. Optional |
-| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. A balance at zero is exhausted either way |
+| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back. What it puts back is recorded as `floored`. A balance at zero is exhausted either way |
 | **Settlement** | What an episode's end does to the balance, in a fixed order: the turns' spend, the transfer and its rebate, and each channel's silence penalty in declaration order, which the settle step applies; then the floor at zero, which closing applies. Recorded in the trace and itemized in a receipt |
 | **Reconciliation** | The identity every account satisfies once an episode is committed: `balance == budget - spent + rebated + received - debited - sum(penalised) + floored`. A receipt states it for the episode it covers |
 

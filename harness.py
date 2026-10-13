@@ -6867,7 +6867,7 @@ def print_context(
     """Render the complete context of fresh agents' first discussion and vote episodes.
 
     Uses a temporary root, so starter files and synthetic accounts can be composed by
-    the same functions that build an episode without touching records, environments,
+    the same functions that build an episode without touching records, mirrors,
     containers or providers. A shell experiment's opening listing depends on the
     container and is therefore shown as its command beside the rendered digest. The
     manifest's settings are in force only while it composes, under that root.
