@@ -952,9 +952,9 @@ def seat_row(
     # The round of its last committed episode, by its account: a forked seat holds
     # no trace of the episodes it inherited.
     last_round = round_of(committed(agent, account))
-    out_reason = harness.why_out(account) if account else None
+    out_reason = harness.why_not_in_play(account) if account else None
     eliminated = account.get("eliminated")
-    exhausted = bool(account) and harness.spent_out(account)
+    exhausted = bool(account) and harness.exhausted(account)
     stopped_by_run = bool(last and last["stop"] in harness.STOPS_THE_AGENT)
     # More than a round behind the table's round, as experiment.behind judges it. Only
     # a seated experiment runs by rounds.
@@ -1002,8 +1002,9 @@ def seat_row(
         ),
         # The three ways a seat leaves the experiment, apart: eliminated by a vote,
         # exhausted with its balance gone, and unseated by the run, which starts no
-        # further episode on it after a stop in STOPS_THE_AGENT, after why_out's
-        # other reason, or once it is more than a round behind. At most one is true.
+        # further episode on it after a stop in STOPS_THE_AGENT, after
+        # why_not_in_play's other reason, or once it is more than a round behind. At
+        # most one is true.
         "out_reason": out_reason,
         "eliminated": eliminated,
         "exhausted": exhausted,
@@ -1633,7 +1634,8 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
     active = {
         agent
         for _, agent in places_of(exp)
-        if not (account := account_of(agent)) or harness.why_out(account) is None
+        if not (account := account_of(agent))
+        or harness.why_not_in_play(account) is None
     }
     acted = {row["agent"] for row in rows if row["round"] == latest}
     return rounds if not active or active <= acted else rounds[:-1]
@@ -1962,7 +1964,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "seat": seating.seat,
         "peers": seating.agent_by_seat,
         "starter_files": account.get("starter_files_landed") or {},
-        "out_reason": harness.why_out(account) if account else None,
+        "out_reason": harness.why_not_in_play(account) if account else None,
         "eliminated": account.get("eliminated"),
         "last_election": account.get("last_election"),
     }

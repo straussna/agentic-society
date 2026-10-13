@@ -402,7 +402,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
         assert first["remaining"] < 0, (
             "the last turn overshoots; that is the value at stake"
         )
-        assert harness.spent_out(ground_truth()), "and below zero is out"
+        assert harness.exhausted(ground_truth()), "and below zero is exhausted"
         with quiet():
             assert harness.run_episodes("t", fake(), 1) == 3, (
                 "so no episode may start on it"

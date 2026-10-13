@@ -939,7 +939,7 @@ def check_refusals_end_the_episode_at_the_cap():
 def check_a_recovered_refusal_is_not_a_refused_episode():
     """Refusals an episode gets past are counted but do not name its stop.
 
-    stalled() reads the episode stop, so an agent that acted must not look like one
+    stuck() reads the episode stop, so an agent that acted must not look like one
     that never got to.
     """
     with temp_root(REFUSAL_TURNS=4):
@@ -949,13 +949,13 @@ def check_a_recovered_refusal_is_not_a_refused_episode():
     assert t["refused_turns"] == 2, t["refused_turns"]
     assert "echo hi > state/note.txt" in t["commands"], "the episode went on to act"
     streak = [{"stop": t["stop"]}] * harness.REFUSAL_STREAK
-    assert not harness.stalled({"episodes": streak}), (
+    assert not harness.stuck({"episodes": streak}), (
         "a recovered episode breaks the streak"
     )
 
 
-def check_a_stalled_agent_stops_itself():
-    """An agent that refuses REFUSAL_STREAK episodes running is not admitted again.
+def check_a_stuck_agent_stops_itself():
+    """An agent that refuses REFUSAL_STREAK episodes running is out of play.
 
     A refusal ends an episode before the agent writes anything, so the next episode
     opens on a near-identical context: the agent never acts, so it cannot escape.
@@ -967,18 +967,18 @@ def check_a_stalled_agent_stops_itself():
     ]
     account = {"remaining": 999_999, "episodes": episodes}
 
-    assert harness.stalled(account), f"{streak} refusals running is stuck"
-    assert not harness.admits(account), (
-        "and a stuck agent is not admitted, whatever its balance"
+    assert harness.stuck(account), f"{streak} refusals running is stuck"
+    assert not harness.in_play(account), (
+        "and a stuck agent is out of play, whatever its balance"
     )
-    assert not harness.stalled({**account, "episodes": episodes[:-1]}), (
+    assert not harness.stuck({**account, "episodes": episodes[:-1]}), (
         "one short is not stuck"
     )
     # A single success anywhere in the window clears it: the agent acted, so its
     # next episode opens on something it wrote and not on the same context.
     broken = [*episodes[:-1], {**episodes[-1], "stop": "end_turn"}]
-    assert not harness.stalled({**account, "episodes": broken})
-    assert harness.admits({**account, "episodes": broken})
+    assert not harness.stuck({**account, "episodes": broken})
+    assert harness.in_play({**account, "episodes": broken})
     # A runaway guard, not a productivity filter: a healthy agent can refuse a
     # few episodes running and recover.
     assert streak > 3, f"REFUSAL_STREAK={streak} would stop an agent that recovers"

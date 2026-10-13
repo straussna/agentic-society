@@ -272,8 +272,9 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
         with quiet():
             assert experiment.resolve_vote(ids, live, labels, vote) == 5
         assert live == {"g02", "g03", "g05"}, live
-        assert "received the most votes" in harness.why_out(harness.load_account("g01"))
-        assert "did not vote" in harness.why_out(harness.load_account("g04"))
+        why = harness.why_not_in_play
+        assert "received the most votes" in why(harness.load_account("g01"))
+        assert "did not vote" in why(harness.load_account("g04"))
         result = harness.load_account("g02")["last_election"]
         assert result == {
             "round": 5,
@@ -743,7 +744,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
             )
         stops = {agent: ground_truth(agent)["episodes"][-1]["stop"] for agent in ids}
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
-        out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
+        out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
         outcome = product.records(root, "seats")["outcome"]
     assert first == 0 and code == 130, (first, code)
     assert set(stops.values()) == {"interrupted"}, stops
@@ -849,7 +850,7 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
             code = experiment.main(
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
-        out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
+        out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
         outcome = product.records(root, "seats")["outcome"]
     assert code == 130 and set(out.values()) == {None}, (code, out, output.getvalue())
     assert outcome["termination_reason"] == "interrupted", outcome
@@ -901,7 +902,7 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
         with quiet() as output:
             code = experiment.main(["--manifest", str(manifest), "--resume"])
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
-        out = {agent: harness.why_out(ground_truth(agent)) for agent in ids}
+        out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
         outcome = product.records(root, "seats")["outcome"]
     assert stopped == 130 and code == 0, (stopped, code, output.getvalue())
     assert all(
@@ -962,7 +963,8 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
     ), election
     assert election["electors"] == ["1", "3"], election
     assert election["top_tied"] and election["remaining"] == ["1", "2", "3"], election
-    assert g02["last_election"] == election and harness.why_out(g02) is None, g02
+    assert g02["last_election"] == election, g02
+    assert harness.why_not_in_play(g02) is None, g02
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert (
         outcome["termination_reason"] == "round_limit"
@@ -1436,7 +1438,7 @@ def check_a_ballot_counts_toward_any_seat_still_in_and_a_total_of_zero_elects_no
         with quiet():
             held = experiment.resolve_vote(ids, live, {"1": "1", "2": "2"}, VOTE)
         g01 = ground_truth("g01")
-    assert held == 2 and live == {"g01"} and harness.why_out(g01) is None, (
+    assert held == 2 and live == {"g01"} and harness.why_not_in_play(g01) is None, (
         held,
         live,
         g01,
@@ -1482,9 +1484,8 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
         if event["kind"] == "session"
     ]
     assert code == 0 and sessions == [offered] == [["bash"]], (sessions, offered)
-    assert harness.why_out(g01) is None and "did not vote" not in output.getvalue(), (
-        output.getvalue()
-    )
+    assert harness.why_not_in_play(g01) is None, g01
+    assert "did not vote" not in output.getvalue(), output.getvalue()
     assert (
         g01["last_election"]["electors"] == ["1"]
         and g01["last_election"]["abstainers"] == []
@@ -1581,7 +1582,7 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_at_the_
     assert code == 0 and election["round"] == 2, (code, election, output.getvalue())
     assert election["electors"] == ["1", "2"] and election["tally"] == {}, election
     assert election["abstainers"] == ["2"] and election["voted_out"] == "", election
-    assert "last_election" not in g03 and harness.why_out(g03) is None, g03
+    assert "last_election" not in g03 and harness.why_not_in_play(g03) is None, g03
     assert (
         outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
     ), outcome
@@ -1897,7 +1898,10 @@ def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
         results = {
             agent: harness.load_account(agent).get("last_election") for agent in ids
         }
-        out = {agent: harness.why_out(harness.load_account(agent)) for agent in ids}
+        out = {
+            agent: harness.why_not_in_play(harness.load_account(agent))
+            for agent in ids
+        }
     assert code == 0, output.getvalue()
     assert acted == [
         (5, "g01"),
@@ -2575,7 +2579,7 @@ def check_a_simultaneous_credit_lands_before_the_floor():
                     ids, live, 0, per_agent(g01=(run(transfer), say()), g02=(say(),))
                 )
             m = ground_truth("g02")
-            results[name] = (m["remaining"], m.get("forgiven", 0), harness.admits(m))
+            results[name] = (m["remaining"], m.get("forgiven", 0), harness.in_play(m))
     assert results["transfer"] == (49, 0, True), (
         f"the credit landed first, so nothing was forgiven and the agent goes on: {results}"
     )

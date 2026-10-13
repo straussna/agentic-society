@@ -741,7 +741,7 @@ def check_an_episode_with_no_turn_settles_nothing():
         account["episodes"]
     )
     assert traced, "the trace is what makes such an episode readable afterwards"
-    assert harness.admits(account), "and the agent is still admitted"
+    assert harness.in_play(account), "and the agent is still in play"
 
     # One turn is all it takes for all three to fall due, whatever ended it.
     with temp_root(channels=ALL_OWED) as root:

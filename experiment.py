@@ -784,7 +784,7 @@ def branch_experiment(
         except OSError, ValueError:
             raise SystemExit(f"{entry['id']} has no readable source account") from None
         index = min(at_round, len(account.get("episodes", [])))
-        if index < at_round and harness.why_out(account) is None:
+        if index < at_round and harness.why_not_in_play(account) is None:
             raise SystemExit(f"{entry['id']} did not reach completed round {at_round}")
         if index < 1 or not harness.trace_path(entry["id"], index).exists():
             raise SystemExit(
@@ -1005,17 +1005,17 @@ def attempted(agent: str, live: set[str], build: Callable[[], T]) -> T | None:
 def drop_out(agent: str, live: set[str]) -> None:
     """Take an agent whose account admits no episode off the table, saying why."""
     print(
-        f"{agent:<6} drops out: {harness.why_out(harness.load_account(agent)) or 'no episode could start on it'}"
+        f"{agent:<6} drops out: {harness.why_not_in_play(harness.load_account(agent)) or 'no episode could start on it'}"
     )
     live.discard(agent)
 
 
 def drop_those_out(agents: list[str], live: set[str]) -> None:
     """Take off the table, in seat order, every agent at it whose account admits no
-    further episode. Every reason why_out gives is final, so the table this leaves is the
-    same whether it is asked as one round ends or as the next begins."""
+    further episode. Every reason why_not_in_play gives is final, so the table this
+    leaves is the same whether it is asked as one round ends or as the next begins."""
     for agent in agents:
-        if agent in live and harness.why_out(harness.load_account(agent)):
+        if agent in live and harness.why_not_in_play(harness.load_account(agent)):
             drop_out(agent, live)
 
 
@@ -1050,7 +1050,7 @@ def remaining(agents: list[str]) -> list[str]:
     return [
         agent
         for agent in agents
-        if harness.why_out(accounts[agent]) is None
+        if harness.why_not_in_play(accounts[agent]) is None
         and not behind(accounts[agent], played)
     ]
 

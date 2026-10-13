@@ -1497,7 +1497,7 @@ DETACHED = (
 
 # Consecutive refused episodes after which an agent is treated as stuck, not
 # unlucky. An episode counts only if refusals ended it, so one that was
-# refused and carried on is not part of a streak. See stalled().
+# refused and carried on is not part of a streak. See stuck().
 REFUSAL_STREAK = 8
 
 # Consecutive refused turns after which an episode stops. The same context sent
@@ -1955,16 +1955,16 @@ def starter_terms(account: Account) -> tuple[str, int]:
     )
 
 
-def spent_out(account: Mapping[str, Any]) -> bool:
-    """Whether the balance has reached zero or less, which is the end of the agent.
+def exhausted(account: Mapping[str, Any]) -> bool:
+    """Whether the balance has reached zero or less: the agent is exhausted.
 
-    A state an agent enters once and does not leave: admits() starts no further
+    A state an agent enters once and does not leave: in_play() starts no further
     episode on it, and move_transfer rejects it as a target. Read between episodes.
     """
     return account["remaining"] <= 0
 
 
-def stalled(account: Mapping[str, Any]) -> bool:
+def stuck(account: Mapping[str, Any]) -> bool:
     """Whether the agent has refused its last REFUSAL_STREAK episodes running.
 
     Every turn requests the provider and model pinned to the seat, so a streak of
@@ -1975,23 +1975,28 @@ def stalled(account: Mapping[str, Any]) -> bool:
     return len(recent) == REFUSAL_STREAK and set(recent) == {"refusal"}
 
 
-def admits(account: Account) -> bool:
-    """Whether another episode may start on this agent."""
-    return why_out(account) is None
+def in_play(account: Account) -> bool:
+    """Whether the account is in play: another episode may start on this agent.
+
+    This judges the account alone. An experiment also takes a seat more than a round
+    behind the current round out of play: experiment.in_play.
+    """
+    return why_not_in_play(account) is None
 
 
-def why_out(account: Mapping[str, Any]) -> str | None:
-    """Why the agent can take no further episode, or None where it can take one.
+def why_not_in_play(account: Mapping[str, Any]) -> str | None:
+    """Why the account is not in play and the agent can take no further episode, or
+    None where it can take one.
 
-    Every reason is final: an eliminated agent cannot return, a stalled agent is
-    not admitted whatever its balance, and an agent at zero or less is not a transfer
-    target, so no peer can fund it back to the table.
+    Every reason is final: an eliminated agent cannot return, a stuck agent is out of
+    play whatever its balance, and an exhausted agent is not a transfer target, so no
+    peer can fund it back into play.
     """
     if eliminated := account.get("eliminated"):
         return eliminated.get("reason", "eliminated")
-    if stalled(account):
+    if stuck(account):
         return f"refused its last {REFUSAL_STREAK} episodes running"
-    if spent_out(account):
+    if exhausted(account):
         return "nothing left to spend"
     return None
 
@@ -2047,19 +2052,19 @@ def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
 
 
 def reachable(seating: Seating) -> dict[str, str]:
-    """The seats an episode can still reach: every seat but its own that is not out.
+    """The seats an episode can still reach: every seat but its own that is in play.
 
-    A seat that is out is neither a transfer target nor a message target, so an
+    A seat out of play is neither a transfer target nor a message target, so an
     outbox slot naming one is neither a message nor a break. Read once at episode
     start, from the peers' accounts on disk; a peer not yet created has spent
     nothing.
     """
-    live = {}
+    peers_in_play = {}
     for seat in seating.peers:
         other = account_on_disk(seating.agent_by_seat[seat])
-        if not other or why_out(other) is None:
-            live[seat] = seating.agent_by_seat[seat]
-    return live
+        if not other or why_not_in_play(other) is None:
+            peers_in_play[seat] = seating.agent_by_seat[seat]
+    return peers_in_play
 
 
 def adjust(account: Account, delta: int) -> None:
@@ -2775,13 +2780,13 @@ def render_round_status(account: Account) -> str:
     round_number = len(account["episodes"]) + 1
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
     seating = seating_of(account["agent"], account)
-    live = {seating.seat, *reachable(seating)}
+    seats_in_play = {seating.seat, *reachable(seating)}
     remaining = ", ".join(
         f"{seating.labels[seat]} (you)"
         if seat == seating.seat
         else seating.labels[seat]
         for seat in seating.seat_order
-        if seat in live
+        if seat in seats_in_play
     )
     if vote is None:
         lines = [
@@ -3992,7 +3997,7 @@ class Bound:
     def slots(self) -> list[str]:
         """The peers a mailbox reaches, as this agent names them, in seat order.
 
-        A seat that is out is not a message target - resolve_mailbox judges only
+        A seat out of play is not a message target - resolve_mailbox judges only
         the reachable slots - so it is not offered either. Offering it would be
         offering a write that lands and settles nothing, which is the one thing a
         tool result must never say.
@@ -5021,7 +5026,7 @@ def run_turns(
             if INTERRUPTING:
                 out["stop"] = "interrupted"
                 break
-            # admits() starts no episode at or below zero, so every episode begins
+            # in_play() starts no episode at or below zero, so every episode begins
             # with something to spend and stops at the same place.
             if balance <= 0:
                 out["stop"] = "budget_exhausted"
@@ -5785,7 +5790,7 @@ class Episode:
     account: Account
     series_before: list[int]
     seating: Seating
-    reach: dict[str, str]  # seat -> agent, every peer that is not out
+    reach: dict[str, str]  # seat -> agent, every peer in play
     instances: list[Instance]
     bound: list[Bound]  # the declared tools this environment can offer
     shown: dict[str, str]  # the harness files planted, by name
@@ -6078,7 +6083,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     transfers owe, print the line.
 
     Last of the phases, after every credit that reaches this agent's account has
-    landed: the floor is what decides whether an agent that crossed zero is out,
+    landed: the floor is what decides whether an agent that crossed zero is exhausted,
     and a transfer that arrived in the same round counts toward the answer. The
     trace is whole on disk before the account lists its episode, so no account
     names an episode whose trace is missing or cut short. Nothing of the episode
@@ -6094,7 +6099,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     s = SETTINGS
     agent, index, account = ep.agent, ep.index, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
-    # put back to zero, and zero is out: the floor decides what the balance file
+    # put back to zero, and zero is exhausted: the floor decides what the balance file
     # ends holding and nothing else.
     forgiven = (
         -account["remaining"] if s.floor_at_zero and account["remaining"] < 0 else 0
@@ -6298,7 +6303,7 @@ def run_once(agent: str, router: ProviderRouter) -> dict:
 def ready(
     agent: str, prepare: Callable[[Account], None] | None = None
 ) -> Episode | None:
-    """Build `agent`'s environment if its account admits an episode. The Episode, or None.
+    """Build `agent`'s environment if its account is in play. The Episode, or None.
 
     `prepare(account)` runs before the environment is built and may add to the
     account, which is saved first. Container failures raise; nothing has been billed.
@@ -6306,7 +6311,7 @@ def ready(
     # Re-read, never carried: the commit phases are the only writers of ground
     # truth, so this decides on what was just spent.
     account = load_account(agent)
-    if not admits(account):
+    if not in_play(account):
         return None
     if prepare:
         prepare(account)
@@ -6317,7 +6322,7 @@ def ready(
 def drive(
     agent: str, router: ProviderRouter, prepare: Callable[[Account], None] | None = None
 ) -> dict | None:
-    """One episode for `agent`, if its account admits one. The trace, or None."""
+    """One episode for `agent`, if its account is in play. The trace, or None."""
     ep = ready(agent, prepare)
     return None if ep is None else commit_episode(ep, run_episode(ep, router))
 
@@ -6426,7 +6431,7 @@ def run_episodes(
             )
             return 4
         if trace is None:
-            why = why_out(load_account(agent)) or "no episode could start on it"
+            why = why_not_in_play(load_account(agent)) or "no episode could start on it"
             if not ran:
                 print(f"{agent} takes no episode: {why}", file=sys.stderr)
                 return 3

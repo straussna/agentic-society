@@ -260,7 +260,7 @@ its sandbox is built and started, and the trace says what stopped it.
 
 **And the rules in the starter files are the rules.** The starter files tell the agents that a balance
 reaching zero or less ends them for good, and it does: the episode that crosses zero is
-the last one the exhausted agent gets, `admits()` turns it away at every round after, and
+the last one the exhausted agent gets, `in_play()` turns it away at every round after, and
 no peer can call the silence off, because `move_transfer` rejects a seat outside the
 reachable peers. There is nothing to mark — the balance is the whole of the state, and
 exhaustion is a state an agent enters once and does not leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of

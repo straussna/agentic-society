@@ -416,7 +416,7 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
 def check_a_negative_balance_is_floored_to_zero():
     """Under floor_at_zero a balance below zero is put back to zero and recorded.
 
-    The shortfall is forgiven and the balance rests at zero, where admits()
+    The shortfall is forgiven and the balance rests at zero, where in_play()
     stops asking. The floor decides what n holds, not whether an episode follows.
     """
     cost = turn_cost()
@@ -424,9 +424,9 @@ def check_a_negative_balance_is_floored_to_zero():
         seated(root, other={})
         t = episode_once(*DEFAULT)
         account = ground_truth("t")
-        # Inside the block: admits() reads the settings in force, and out here
+        # Inside the block: in_play() reads the settings in force, and out here
         # floor_at_zero is back to its default, which is a different question.
-        assert not harness.admits(account), (
+        assert not harness.in_play(account), (
             "and the agent is not asked for another episode"
         )
     assert t["spent"] > account["initial"], (
@@ -454,8 +454,8 @@ def check_an_agent_at_zero_is_not_asked_again():
             assert harness.run_episodes("t", fake(), 4) == 0
         account = ground_truth("t")
         # Inside the block, for the reason the floor check says.
-        assert not harness.admits(account), "and it is not asked for another"
-        assert harness.spent_out(account), "which is the whole of what says it is done"
+        assert not harness.in_play(account), "and it is not asked for another"
+        assert harness.exhausted(account), "which is the whole of what says it is done"
     assert len(account["episodes"]) == 1, "one episode, and the agent is over"
     assert account["remaining"] == 0, account["remaining"]
     assert account["forgiven"] > 0, "the one it did take was floored back"
@@ -488,7 +488,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
             "transfer"
         ]
         assert stays["remaining"] == 0 and not stays.get("received"), stays["remaining"]
-        assert not harness.admits(stays), "and it still cannot act"
+        assert not harness.in_play(stays), "and it still cannot act"
         # Its only peer is out, so there was nobody it could have given to and
         # the share for an episode that made no transfer does not fall on it.
         assert t["transfer"]["penalty"] == 0, t["transfer"]

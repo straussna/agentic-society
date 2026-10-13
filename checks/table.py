@@ -812,9 +812,9 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     with temp_root(harness_files={"balance": "", "digest": "digest"}, budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
-        spent_out = ground_truth()
-    assert 0 < len(spent_out["episodes"]) < 8, spent_out["episodes"]
-    assert spent_out["remaining"] <= 0, spent_out
+        exhausted = ground_truth()
+    assert 0 < len(exhausted["episodes"]) < 8, exhausted["episodes"]
+    assert exhausted["remaining"] <= 0, exhausted
     assert "nothing left to spend" in buf.getvalue(), buf.getvalue()
 
 
