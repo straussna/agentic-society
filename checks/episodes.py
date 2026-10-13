@@ -321,7 +321,7 @@ def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
         analysed = [t["episode"] for t in analyze.load("t")["t"]]
         shown = [t["episode"] for t in view.traces_of("t")]
         latest = view.latest_trace("t")
-        live = view.live_index("t")
+        live = view.running_episode("t")
         watched = view.episode_view("t", 2)
     assert orphaned, "the trace landed and the account did not"
     assert analysed == shown == [1], (analysed, shown)

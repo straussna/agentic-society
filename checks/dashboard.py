@@ -55,7 +55,7 @@ def check_the_view_reads_a_live_episode_from_raw():
     with temp_root():
         episode_once(*DEFAULT)
         unfinished()
-        assert view.live_index("t") == 1, (
+        assert view.running_episode("t") == 1, (
             "a raw log with no trace is an unfinished episode"
         )
         v = view.episode_view("t", 1)
@@ -109,7 +109,7 @@ def check_the_view_prefers_the_trace_once_it_lands():
         episode_once(*DEFAULT)
         v = view.episode_view("t", 1)
         assert (v["source"], v["live"]) == ("trace", False), v["source"]
-        assert view.live_index("t") is None, "an episode with a trace is over"
+        assert view.running_episode("t") is None, "an episode with a trace is over"
         assert all(c["result"] is not None for t in v["turns"] for c in t["tools"]), (
             "the trace carries what every command returned"
         )
@@ -249,7 +249,7 @@ def check_the_view_serves_its_api():
             assert [c["agent"] for c in private] == ["t"]
             assert [f["path"] for f in private[0]["files"]] == ["note.txt"]
             head = got(base, "/api/experiment/t")[1]
-            balances = [s["n"] for s in head["seat_tiles"]]
+            balances = [s["balance"] for s in head["seat_tiles"]]
             assert balances == [ground_truth()["series"][-1]], balances
             assert head["ledger"] == [], (
                 "an experiment of one has given nothing to anyone"
@@ -291,14 +291,14 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
             elif path.startswith("/api/agent/"):
                 out[path] = (
                     status,
-                    body.get("live"),
+                    body.get("running_episode"),
                     [e["episode"] for e in body.get("episodes", [])],
                 )
             else:
                 out[path] = (
                     status,
                     body.get("seats"),
-                    [s["live"] for s in body.get("seat_tiles", [])],
+                    [s["running_episode"] for s in body.get("seat_tiles", [])],
                     body.get("ledger"),
                 )
         return out
@@ -673,7 +673,7 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
             harness.save_account(agent, account)
         head = view.header(c)
 
-    assert head["active"] == 1 and head["vote_every"] == 5
+    assert head["active"] == 1 and head["every"] == 5
     assert head["elections"] == [result], head["elections"]
     second = head["seat_tiles"][1]
     assert second["out_reason"] == "did not vote in round 5"
@@ -743,7 +743,7 @@ def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
 def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     """Committed traces retain public posts each round and ballots only on vote rounds."""
 
-    def files(seat, rnd):
+    def files(seat, round):
         return [
             {
                 "path": f"{seat}/post.md",
@@ -751,7 +751,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
                 "role": "own",
                 "size": 8,
                 "starter": False,
-                "text": f"post {seat}-{rnd}\n",
+                "text": f"post {seat}-{round}\n",
             },
             {
                 "path": "state/vote",
@@ -818,12 +818,12 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
 
 
-# What a human seat is offered in the player history checks: a post and a message.
-PLAYER_POST = {"name": "post", "kind": "post_public", "channel": "blackboard"}
-PLAYER_SEND = {"name": "send", "kind": "send_message_to", "channel": "mail"}
-PLAYER_OFFERED = tuple(
+# What a human seat is offered in the human history checks: a post and a message.
+HUMAN_POST = {"name": "post", "kind": "post_public", "channel": "blackboard"}
+HUMAN_SEND = {"name": "send", "kind": "send_message_to", "channel": "mail"}
+HUMAN_OFFERED = tuple(
     ToolSpec(tool["name"], "", {"type": "object"})
-    for tool in (PLAYER_POST, PLAYER_SEND)
+    for tool in (HUMAN_POST, HUMAN_SEND)
 )
 
 
@@ -832,7 +832,7 @@ def answered(
 ) -> None:
     """g01's request for one turn of `episode`, published and answered with `calls`."""
     request = store.publish(
-        "g01", "1", episode, turn, "", "observation", PLAYER_OFFERED
+        "g01", "1", episode, turn, "", "observation", HUMAN_OFFERED
     )
     store.submit(
         "g01",
@@ -848,16 +848,16 @@ def answered(
     )
 
 
-def offering_the_player_tools(agents: tuple[str, ...]) -> None:
+def offering_the_human_tools(agents: tuple[str, ...]) -> None:
     """Stamp the post and the message into every trace these agents have."""
     for agent in agents:
         for path in harness.trace_paths(agent):
             trace = json.loads(path.read_text(encoding="utf-8"))
-            trace["provenance"]["tools"] = [PLAYER_POST, PLAYER_SEND]
+            trace["provenance"]["tools"] = [HUMAN_POST, HUMAN_SEND]
             path.write_text(json.dumps(trace), encoding="utf-8")
 
 
-def check_the_player_history_adds_each_accepted_human_call_once():
+def check_the_human_history_adds_each_accepted_human_call_once():
     """A human seat sees what it said as soon as its submission is accepted, once each:
     the committed trace and the accepted call are one post, and a message sent again
     in the same episode is one message. A submission that does not read is left out
@@ -879,7 +879,7 @@ def check_the_player_history_adds_each_accepted_human_call_once():
             [("g01", "00:01", {"files": committed}), ("g02", "00:02")],
             agents=("g01", "g02"),
         )
-        offering_the_player_tools(("g01", "g02"))
+        offering_the_human_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
         answered(store, 1, 1, ("post", {"body": "hello all\n"}))
         answered(
@@ -890,7 +890,7 @@ def check_the_player_history_adds_each_accepted_human_call_once():
             ("send", {"to": "2", "body": "psst"}),
         )
         answered(store, 2, 2, ("send", {"to": "2", "body": "psst"}))
-        cut = store.publish("g01", "1", 2, 3, "", "observation", PLAYER_OFFERED)
+        cut = store.publish("g01", "1", 2, 3, "", "observation", HUMAN_OFFERED)
         (
             harness.interactions_root()
             / "submissions"
@@ -900,13 +900,13 @@ def check_the_player_history_adds_each_accepted_human_call_once():
             '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na',
             encoding="utf-8",
         )
-        store.publish("g01", "1", 2, 4, "", "observation", PLAYER_OFFERED)
+        store.publish("g01", "1", 2, 4, "", "observation", HUMAN_OFFERED)
         c = view.experiment_by_id("g")
-        history = view.player_history(c, "g01")
+        history = view.human_history(c, "g01")
         with serving() as base:
-            status, served = got(base, "/api/experiment/g/player-history?agent=g01")
+            status, served = got(base, "/api/experiment/g/human-history?agent=g01")
             try:
-                got(base, "/api/experiment/g/player-history?agent=nobody")
+                got(base, "/api/experiment/g/human-history?agent=nobody")
             except urllib.error.HTTPError as e:
                 outsider = e.code
             else:
@@ -923,12 +923,12 @@ def check_the_player_history_adds_each_accepted_human_call_once():
     assert private == [("psst", "2", "g02", "1", True)], history["private"]
     assert status == 200, "a submission that does not read took the seat's history down"
     assert served == json.loads(json.dumps(history)), (
-        "the route serves what player_history says"
+        "the route serves what human_history says"
     )
     assert outsider == 404, "an agent outside the experiment has no history in it"
 
 
-def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
+def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
     """A request carries the seat's own episode and a round is not one: a forked seat
     plays the branch's first round in an episode past the ones it inherited. What its
     submission posted and sent in that episode is what the committed trace holds, so
@@ -971,7 +971,7 @@ def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
         for agent in ("g01", "g02"):
             for index in (1, 2):
                 harness.trace_path(agent, index).unlink()
-        offering_the_player_tools(("g01", "g02"))
+        offering_the_human_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
         answered(
             store,
@@ -988,7 +988,7 @@ def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
             ("send", {"to": "2", "body": "later"}),
         )
         c = view.experiment_by_id("g")
-        history = view.player_history(c, "g01") if c else {}
+        history = view.human_history(c, "g01") if c else {}
 
     assert [
         (e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]
@@ -1006,7 +1006,8 @@ def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
 
 
 def check_the_view_shows_every_balance_from_its_own_account():
-    """A seat's n is that agent's ground truth, read from no file in any environment.
+    """A seat's balance is that agent's ground truth, read from no file in any
+    environment.
 
     A peer's figure is as authoritative as the watched agent's, both coming from
     the account the harness plants from: 800 is g02's, in no file g01 can read.
@@ -1014,7 +1015,7 @@ def check_the_view_shows_every_balance_from_its_own_account():
     with two_seats() as (c, _):
         h = view.header(c)
 
-    assert [(s["seat"], s["agent"], s["n"]) for s in h["seat_tiles"]] == [
+    assert [(s["seat"], s["agent"], s["balance"]) for s in h["seat_tiles"]] == [
         ("1", "g01", 900),
         ("2", "g02", 800),
     ]
@@ -1082,14 +1083,14 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         with rooted(HostBox):
             c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
-            rnd = view.round_now(c, rows)
-            return rnd, {
-                agent: view.seat_row(seat, agent, rows, rnd)
+            current_round = view.round_now(c, rows)
+            return current_round, {
+                agent: view.seat_row(seat, agent, rows, current_round)
                 for seat, agent in view.places_of(c)
             }
 
     # Round 3 open, g01 has taken it and the other two have not been reached.
-    open_rnd, open_seats = tiles(
+    open_round, open_seats = tiles(
         [
             ("g01", "00:01"),
             ("g02", "00:02"),
@@ -1102,7 +1103,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     )
     # The same shape with g03 having missed round 2, so round 3 finds it a round
     # behind and not a round late.
-    past_rnd, past_seats = tiles(
+    past_round, past_seats = tiles(
         [
             ("g01", "00:01"),
             ("g02", "00:02"),
@@ -1113,7 +1114,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         ]
     )
 
-    assert open_rnd == 3 and past_rnd == 3, (open_rnd, past_rnd)
+    assert open_round == 3 and past_round == 3, (open_round, past_round)
     assert open_seats["g01"]["acted"] and not open_seats["g01"]["pending"], (
         "the seat that took the round is neither waiting nor out of it"
     )
@@ -1146,7 +1147,7 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
         c = view.experiment_of("t")
         m = view.messages(c)
         seen = [e for e in m["events"] if e["path"] == "out/2"]
-        transfers = [e for e in m["events"] if e["kind"] == "transfer"]
+        transfers = [e for e in m["events"] if e["event_type"] == "transfer"]
 
     assert [e["change"] for e in seen] == ["sent", "sent"], [
         (e["round"], e["change"]) for e in seen
@@ -1482,7 +1483,7 @@ def check_the_view_builds_its_tabs_from_the_table():
         ("mailbox", "letters"),
         ("journal", "journal"),
         ("noticeboard", "noticeboard"),
-        ("agent", "transcripts"),
+        ("trace", "trace"),
     ], h["tabs"]
     assert h["balance"] == "balance" and h["labels"] == PERSONA_LABELS
     assert [s["label"] for s in h["seat_tiles"]] == ["Studio", "Game"]
@@ -1524,7 +1525,7 @@ def check_the_view_shows_an_experimenter_channel_once():
         ("notes", "notes"),
         ("blackboard", "blackboard"),
         ("briefing", "briefing"),
-        ("agent", "transcripts"),
+        ("trace", "trace"),
     ]
     assert tree["static"] and [c["agent"] for c in tree["columns"]] == ["experimenter"]
     assert (
@@ -1679,8 +1680,8 @@ def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
     assert 'aria-selected="${S.tab === key}"' in page
     assert 'aria-pressed="${c.experiment_id === S.experiment}"' in page
     assert 'id="mode-toggle"' in page
-    assert '"Switch to observer view" : "Switch to player view"' in page
-    assert "#page.play-mode #top, #page.play-mode #body { display:none; }" in page
+    assert '"Switch to observer view" : "Switch to human view"' in page
+    assert "#page.human-mode #top, #page.human-mode #body { display:none; }" in page
     assert "prefers-reduced-motion:reduce" in page
 
 
@@ -1712,7 +1713,7 @@ def check_the_page_has_one_dismissible_file_inspector():
     assert 'id="close-inspector"' in page
     assert 'aria-label="Close file inspector"' in page
     assert 'e.key !== "Escape"' in page and "closeInspector(S.tab)" in page
-    assert "S.inspect[kind]" in page
+    assert "S.inspect[channel]" in page
     assert "S.open" not in page
 
 
@@ -1723,8 +1724,9 @@ def check_the_page_exposes_ephemeral_round_snapshots():
     assert '"Blackboard round chats" : "Ballot vote-round snapshots"' in page
     assert 'aria-pressed="${d.history.selected == null}"' in page
     assert "S.treeRound = {}" in page, "changing experiments clears the chosen snapshot"
-    assert "&round=${encodeURIComponent(S.treeRound[kind])}" in page
-    assert "renderPublicChat(kind)" in page and "renderBallotAggregate(kind)" in page
+    assert "&round=${encodeURIComponent(S.treeRound[channel])}" in page
+    assert "renderPublicChat(channel)" in page
+    assert "renderBallotAggregate(channel)" in page
     assert 'class="thread public-chat"' in page and 'class="thread ballot-view"' in page
     assert 'class="vote-tally"' in page and 'class="ballot-table"' in page
 

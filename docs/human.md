@@ -37,7 +37,7 @@ quit
 
 The browser uses the same interaction store. A corner toggle switches between two
 presentations. **Observer view** contains the omniscient experiment dashboard and no
-player controls. **Play view** hides the dashboard completely and polls only the
+human-seat controls. **Human view** hides the dashboard completely and polls only the
 interaction endpoint; it shows either the exact pending provider request or a waiting
 screen. It renders schema fields plus a JSON fallback, accepts multiple drafted calls,
 and offers an explicit finish action. Switching back reloads the observer presentation.

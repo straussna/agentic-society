@@ -534,7 +534,7 @@ def check_history_pairs_each_answered_request_with_its_submission_in_turn_order(
 
 
 def check_history_leaves_out_a_turn_whose_request_or_submission_does_not_read():
-    """A seat's history is still served when one of its turns is not: the player page
+    """A seat's history is still served when one of its turns is not: the human view
     asks for it on every poll."""
     with temp_root() as root:
         store = InteractionStore(root / "interactions")
@@ -942,7 +942,7 @@ def posted(base: str, path: str, body: bytes, headers: dict[str, str]) -> int:
 
 
 def check_view_interaction_route_answers_each_refusal_with_its_own_status():
-    """The page reads the status to tell a player whether to fix the turn, refresh or retry."""
+    """The page reads the status to tell a human whether to fix the turn, refresh or retry."""
     with temp_root() as root:
         episode_once()
         store = InteractionStore(root / "interactions")

@@ -238,11 +238,11 @@ def latest_trace(agent: str, account: Mapping[str, Any] | None = None) -> dict |
     return load_trace(harness.trace_path(agent, count)) if count else None
 
 
-def live_index(agent: str, account: Mapping[str, Any] | None = None) -> int | None:
-    """The episode not yet committed, or None if the agent is between starts.
+def running_episode(agent: str, account: Mapping[str, Any] | None = None) -> int | None:
+    """The episode in flight, not yet committed, or None if the agent is between starts.
 
-    Unfinished is exactly a raw log past the episodes committed() counts, which is
-    not the same as running: how long since the log grew is what live_age reports.
+    In flight is exactly a raw log past the episodes committed() counts, which is not
+    the same as moving: how long since the log grew is what live_age reports.
     """
     raws = harness.raw_paths(agent)
     if not raws:
@@ -672,7 +672,7 @@ def experiments() -> list[dict]:
         out = copy.deepcopy(grouping)
     for exp in out:
         exp["running"] = sum(
-            acting(agent, live_index(agent)) for agent in exp["seats"]
+            acting(agent, running_episode(agent)) for agent in exp["seats"]
         )
     return out
 
@@ -804,12 +804,12 @@ def experiment_episodes(exp: dict) -> list[dict]:
         ),
         key=lambda s: (s["at"], s["agent"], s["episode"]),
     )
-    rnd, acted = 0, set()
+    current_round, acted = 0, set()
     for s in rows:
-        if not rnd or s["agent"] in acted:
-            rnd, acted = rnd + 1, set()
+        if not current_round or s["agent"] in acted:
+            current_round, acted = current_round + 1, set()
         acted.add(s["agent"])
-        s["round"] = rnd
+        s["round"] = current_round
         s["live"] = False
     return rows
 
@@ -822,15 +822,15 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     """
     out = []
     for seat, agent in places_of(exp):
-        live = live_index(agent)
-        if live is None:
+        running = running_episode(agent)
+        if running is None:
             continue
         mine = [r["round"] for r in rows if r["agent"] == agent]
         out.append(
             {
                 "seat": seat,
                 "agent": agent,
-                "episode": live,
+                "episode": running,
                 "at": None,
                 "trace": None,
                 "round": (mine[-1] if mine else 0) + 1,
@@ -880,7 +880,10 @@ def obligations(t: dict | None) -> dict[str, bool | None]:
     """
     if t is None:
         return {}
-    return {ch.name: analyze.met_of(ch, rec) for ch, rec in analyze.settled_channels(t)}
+    return {
+        ch.name: analyze.met_of(ch, channel_result)
+        for ch, channel_result in analyze.settled_channels(t)
+    }
 
 
 def unmet(t: dict | None) -> list[dict]:
@@ -894,29 +897,34 @@ def unmet(t: dict | None) -> list[dict]:
     and at a rate of zero.
     """
     out = []
-    for ch, rec in analyze.settled_channels(t or {}):
-        if analyze.met_of(ch, rec) is not False:
+    for ch, channel_result in analyze.settled_channels(t or {}):
+        if analyze.met_of(ch, channel_result) is not False:
             continue
-        why = rec.get("error") or harness.SETTLEMENTS[ch.settles_as].why(rec, ch)
-        out.append({"channel": ch.name, "why": why, "penalty": rec.get("penalty") or 0})
+        why = channel_result.get("error") or harness.SETTLEMENTS[ch.settles_as].why(
+            channel_result, ch
+        )
+        penalty = channel_result.get("penalty") or 0
+        out.append({"channel": ch.name, "why": why, "penalty": penalty})
     return out
 
 
-def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
+def seat_row(
+    seat: str | None, agent: str, rows: list[dict], current_round: int
+) -> dict:
     """One seat's tile: what it holds, what it is doing, and what it has moved."""
     account = account_of(agent)
     ts = traces_of(agent, account)
     last = ts[-1] if ts else None
     episodes = account.get("episodes") or []
     latest = episodes[-1] if episodes else {}
-    live = live_index(agent, account)
+    running = running_episode(agent, account)
     try:
         interaction = InteractionStore(harness.interactions_root()).current(agent)
     except InteractionError:
         # Left out, as /api/interaction leaves it out: the seat's own route reports the
         # file, and the seat's next request is written over it.
         interaction = None
-    going = live_state(agent, live, account)
+    going = live_state(agent, running, account)
     table, _ = agent_environment(last, agent, account)
     mine = [r for r in rows if r["agent"] == agent]
     out_reason = harness.why_out(account) if account else None
@@ -924,10 +932,10 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
     # over to tell them apart: for most of a sequential round some seats have
     # simply not been reached.
     pending = (
-        live is None
+        running is None
         and not account.get("eliminated")
         and latest.get("stop") not in harness.STOPS_THE_AGENT
-        and (mine[-1]["round"] if mine else 0) == rnd - 1
+        and (mine[-1]["round"] if mine else 0) == current_round - 1
     )
     return {
         "seat": seat,
@@ -938,24 +946,25 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         "starter_files": (account.get("starter_files_landed") or {}).get("name")
         or account.get("starter_files")
         or "",
-        "n": account.get("remaining"),
+        "balance": account.get("remaining"),
         "initial": account.get("initial"),
         "series": thin(account.get("series") or []),
         # Derived from the raw log until the trace lands, which is what the
         # header labels it as: the arithmetic is the account's, the commit is not.
-        "live": live,
-        "live_age": live_age(agent, live),
+        "running_episode": running,
+        "live_age": live_age(agent, running),
         "pending_human": interaction.as_dict() if interaction else None,
         "live_turns": len(going["turns"]),
         "live_balance": going["balance"],
         "committed": len(episodes),
         "round": mine[-1]["round"] if mine else 0,
-        "acted": bool(mine and mine[-1]["round"] == rnd) or live is not None,
+        "acted": bool(mine and mine[-1]["round"] == current_round)
+        or running is not None,
         "pending": pending,
         "preparing": bool(
             account
             and not episodes
-            and live is None
+            and running is None
             and (account.get("experiment") or {}).get("manifest_sha256")
         ),
         "out_reason": out_reason,
@@ -966,10 +975,12 @@ def seat_row(seat: str | None, agent: str, rows: list[dict], rnd: int) -> dict:
         # without being spend, so the drop from initial is a different number,
         # which the bar above draws.
         "spent": sum(s["spent"] for s in episodes) + going["spent"],
-        "spent_this_round": sum(r["trace"]["spent"] for r in mine if r["round"] == rnd)
+        "spent_this_round": sum(
+            r["trace"]["spent"] for r in mine if r["round"] == current_round
+        )
         + going["spent"],
         "stop": last["stop"] if last else None,
-        "halted": bool(last and last["stop"] in harness.STOPS_THE_AGENT),
+        "unseated": bool(last and last["stop"] in harness.STOPS_THE_AGENT),
         # What the last committed episode owed and left undone, one entry a
         # channel, each in the words the console line uses.
         "unmet": unmet(last),
@@ -998,14 +1009,16 @@ def header(exp: dict) -> dict:
     mid-poll - shows no ledger and leaves it to the next.
     """
     rows = experiment_episodes(exp)
-    rnd = round_now(exp, rows)
+    current_round = round_now(exp, rows)
     first = exp["seats"][0]
     account = account_of(first)
     last = rows[-1]["trace"] if rows else None
     table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
-    seat_tiles = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
+    seat_tiles = [
+        seat_row(seat, agent, rows, current_round) for seat, agent in places_of(exp)
+    ]
     vote = next(
         (tool for tool in exp.get("tools", []) if tool.get("kind") == "vote"), None
     )
@@ -1017,9 +1030,9 @@ def header(exp: dict) -> dict:
     every = vote.get("every") if vote else None
     phase = (
         "vote complete"
-        if rnd in elections
+        if current_round in elections
         else "vote"
-        if every and rnd and rnd % every == 0
+        if every and current_round and current_round % every == 0
         else "discussion"
     )
     records = product.records(harness.SETTINGS.root, exp["experiment_id"])
@@ -1043,15 +1056,15 @@ def header(exp: dict) -> dict:
         "ledger_name": schema.ledger if schema else "",
         "seat_tiles": seat_tiles,
         "ledger": ledger,
-        "round": rnd,
+        "round": current_round,
         "schedule": (last["provenance"].get("schedule") if last else None)
         or stamp.get("schedule")
         or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
         "active": sum(tile["out_reason"] is None for tile in seat_tiles),
-        "vote_every": every,
+        "every": every,
         "phase": phase,
-        "cycle": ((rnd - 1) // every + 1) if every and rnd else None,
+        "cycle": (current_round - 1) // every + 1 if every and current_round else None,
         "elections": [elections[r] for r in sorted(elections)],
         "progress": records["progress"],
         "outcome": records["outcome"],
@@ -1192,7 +1205,7 @@ def message_event(
         "to_label": label,
         "to_agent": exp["agent_by_seat"].get(seat) if seat else None,
         "path": path,
-        "kind": "transfer" if transfer_path(room, path) else "message",
+        "event_type": "transfer" if transfer_path(room, path) else "message",
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text,
@@ -1204,7 +1217,7 @@ def message_event(
     }
     if change == "edited" and isinstance(before, str) and isinstance(after, str):
         ev["diff"] = analyze.state_changes({path: before}, {path: after})
-    if ev["kind"] == "transfer":
+    if ev["event_type"] == "transfer":
         resolved = (row["trace"] or {}).get("transfer") or {}
         raw = (
             (f"{ev['to_label']} {(text or '').strip()}")
@@ -1239,7 +1252,12 @@ def delivery_of(
     `clipped` says the initial observation ran past its ceiling, which is how a
     section goes missing.
     """
-    if ev["tip"] or ev["kind"] == "transfer" or not ev["to_agent"] or room.mail is None:
+    if (
+        ev["tip"]
+        or ev["event_type"] == "transfer"
+        or not ev["to_agent"]
+        or room.mail is None
+    ):
         return None
     nxt = next(
         (r for r in rows if r["agent"] == ev["to_agent"] and r["at"] > ev["at"]), None
@@ -1332,15 +1350,14 @@ def messages(exp: dict, since: int = 0) -> dict:
     }
 
 
-def player_history(exp: dict, agent: str) -> dict:
-    """Public posts and the player's private conversations, including accepted sends.
+def human_history(exp: dict, agent: str) -> dict:
+    """Board posts and the human's mailbox messages, including accepted sends.
 
-    A call the player's submission made is shown from the moment it is accepted, and
+    A call the human's submission made is shown from the moment it is accepted, and
     once its episode commits it the trace's record of it is the one shown. The two
-    are matched on the player's own episode number, which a request carries and a
-    round is not: a forked seat plays its first round in an episode past the ones it
-    inherited. An accepted call is shown in the round its episode was taken in, or,
-    before that episode commits, in the round after the player's last.
+    are matched on the human's own episode number, which a request carries. An
+    accepted call is shown in the round its episode was taken in, or, before that
+    episode commits, in the round after the human's last.
     """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
@@ -1365,13 +1382,15 @@ def player_history(exp: dict, agent: str) -> dict:
                 or row["agent"]
             )
             prefix = post_channel.path_for(label).strip("/")
-            for rec in row["trace"].get("files") or []:
-                if rec.get("channel") != post_channel.name or rec.get("role") != "own":
+            for file in row["trace"].get("files") or []:
+                if file.get("channel") != post_channel.name:
                     continue
-                path = str(rec.get("path") or "").strip("/")
+                if file.get("role") != "own":
+                    continue
+                path = str(file.get("path") or "").strip("/")
                 if prefix and not path.startswith(prefix + "/"):
                     continue
-                text = rec.get("text")
+                text = file.get("text")
                 if isinstance(text, str) and text:
                     public.append(
                         {
@@ -1385,14 +1404,14 @@ def player_history(exp: dict, agent: str) -> dict:
     private = [
         event
         for event in messages(exp)["events"]
-        if event["kind"] == "message"
+        if event["event_type"] == "message"
         and event["change"] not in ("withdrawn", "standing")
         and agent in (event["from_agent"], event["to_agent"])
         and isinstance(event.get("text"), str)
         and event["text"]
     ]
 
-    player_seat = next(
+    human_seat = next(
         (seat for seat, other in places_of(exp) if other == agent), None
     )
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
@@ -1409,7 +1428,7 @@ def player_history(exp: dict, agent: str) -> dict:
         agent
     ):
         episode = request.episode
-        rnd = rounds.get(episode, ahead)
+        round = rounds.get(episode, ahead)
         for call in submission.tool_calls:
             text = call.input.get("body")
             if not isinstance(text, str) or not text:
@@ -1420,7 +1439,7 @@ def player_history(exp: dict, agent: str) -> dict:
                 if key not in public_keys:
                     public.append(
                         {
-                            "episode": rnd,
+                            "episode": round,
                             "agent_episode": episode,
                             "from_agent": agent,
                             "from_label": request.label,
@@ -1436,9 +1455,9 @@ def player_history(exp: dict, agent: str) -> dict:
                 if isinstance(label, str) and key not in private_keys:
                     private.append(
                         {
-                            "round": rnd,
+                            "round": round,
                             "episode": episode,
-                            "from_seat": player_seat,
+                            "from_seat": human_seat,
                             "from_label": request.label,
                             "from_agent": agent,
                             "to_seat": seat,
@@ -1493,7 +1512,8 @@ def what_of(ch: harness.Channel) -> str:
 
 
 def tabs(exp: dict) -> list[dict]:
-    """The page's tabs: activity, directory declaration order, and transcripts."""
+    """The page's tabs: activity, directory channels in declaration order, and the
+    trace."""
     out = []
     table = experiment_table(exp)
     mail, schema = harness.mailbox_channel(table), harness.schema_channel(table)
@@ -1501,7 +1521,7 @@ def tabs(exp: dict) -> list[dict]:
         activity = " + ".join(ch.name for ch in (mail, schema) if ch)
         out.append({"key": "mailbox", "label": activity})
     out += [{"key": name, "label": name} for name in trees(exp)]
-    return out + [{"key": "agent", "label": "transcripts"}]
+    return out + [{"key": "trace", "label": "trace"}]
 
 
 def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
@@ -1539,13 +1559,13 @@ def given_in(ch: harness.Channel, account: Mapping[str, Any]) -> set[str]:
     return harness.starter_paths(account) if ch.readers == "self" else set()
 
 
-def ephemeral_tool(exp: dict, kind: str) -> dict | None:
+def ephemeral_tool(exp: dict, channel: str) -> dict | None:
     """The tool whose channel is cleared around each episode, if this is one."""
     return next(
         (
             tool
             for tool in exp.get("tools") or []
-            if tool.get("channel") == kind
+            if tool.get("channel") == channel
             and tool.get("kind") in ("post_public", "vote")
         ),
         None,
@@ -1571,17 +1591,17 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
 
 
 def channel_history(
-    exp: dict, kind: str, rows: list[dict] | None = None
+    exp: dict, channel: str, rows: list[dict] | None = None
 ) -> dict | None:
     """The committed round snapshots an episode-scoped channel can show."""
-    tool = ephemeral_tool(exp, kind)
+    tool = ephemeral_tool(exp, channel)
     if tool is None:
         return None
     every = int(tool.get("every") or 1) if tool.get("kind") == "vote" else 1
     available = [
-        rnd
-        for rnd in completed_rounds(exp, rows or experiment_episodes(exp))
-        if rnd % every == 0
+        round
+        for round in completed_rounds(exp, rows or experiment_episodes(exp))
+        if round % every == 0
     ]
     return {
         "kind": "vote" if tool.get("kind") == "vote" else "round",
@@ -1591,17 +1611,17 @@ def channel_history(
 
 
 def historical_listing(
-    row: dict | None, ch: harness.Channel, kind: str, label: str
+    row: dict | None, ch: harness.Channel, channel: str, label: str
 ) -> list[dict]:
     """The files this seat owned when its episode in a round committed."""
     if row is None or not row["trace"].get("state_saved"):
         return []
     prefix = ch.path_for(label).strip("/")
     out = []
-    for rec in row["trace"].get("files") or []:
-        if rec.get("channel") != kind or rec.get("role") != "own":
+    for file in row["trace"].get("files") or []:
+        if file.get("channel") != channel or file.get("role") != "own":
             continue
-        path = str(rec.get("path") or "").strip("/")
+        path = str(file.get("path") or "").strip("/")
         if prefix:
             if not path.startswith(prefix + "/"):
                 continue
@@ -1611,25 +1631,25 @@ def historical_listing(
         out.append(
             {
                 "path": path,
-                "channel": kind,
-                "size": rec.get("size") or 0,
+                "channel": channel,
+                "size": file.get("size") or 0,
                 "mode": None,
-                "starter": bool(rec.get("starter")),
-                "stamp": ["round", row["round"], row["episode"], rec.get("size") or 0],
+                "starter": bool(file.get("starter")),
+                "stamp": ["round", row["round"], row["episode"], file.get("size") or 0],
             }
         )
-    return sorted(out, key=lambda rec: rec["path"])
+    return sorted(out, key=lambda listed: listed["path"])
 
 
-def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
+def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | None:
     """One tree of every seat's environment, a column each.
 
     save_state runs when an episode ends, so each column is current as of that
     agent's last committed episode and two columns can be stamped differently.
     """
-    ch = trees(exp)[kind]
+    ch = trees(exp)[channel]
     rows = experiment_episodes(exp)
-    history = channel_history(exp, kind, rows)
+    history = channel_history(exp, channel, rows)
     if round_at is not None:
         if history is None or round_at not in history["rounds"]:
             return None
@@ -1653,25 +1673,25 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
                     "agent": agent,
                     "label": account.get("label") or seat,
                     "committed": row["episode"] if row else None,
-                    "live": None,
+                    "running_episode": None,
                     "live_age": None,
                     "saved": bool(row and row["trace"].get("state_saved")),
-                    "files": historical_listing(row, ch, kind, label),
+                    "files": historical_listing(row, ch, channel, label),
                 }
             )
         return {
             "experiment_id": exp["experiment_id"],
-            "kind": kind,
+            "channel": channel,
             "what": what_of(ch),
             "static": False,
             "history": {**history, "selected": round_at},
             "columns": columns,
         }
     if ch.writer == "experimenter":
-        files = listing(harness.files_dir(ch.source), kind, set())
+        files = listing(harness.files_dir(ch.source), channel, set())
         return {
             "experiment_id": exp["experiment_id"],
-            "kind": kind,
+            "channel": channel,
             "what": what_of(ch),
             "static": True,
             "columns": [
@@ -1680,7 +1700,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
                     "agent": "experimenter",
                     "label": "experimenter",
                     "committed": None,
-                    "live": None,
+                    "running_episode": None,
                     "live_age": None,
                     "files": files,
                 }
@@ -1689,23 +1709,23 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
     columns = []
     for seat, agent in places_of(exp):
         account = account_of(agent)
-        live = live_index(agent, account)
+        running = running_episode(agent, account)
         columns.append(
             {
                 "seat": seat,
                 "agent": agent,
                 "label": account.get("label") or seat,
                 "committed": len(account.get("episodes") or []),
-                "live": live,
-                "live_age": live_age(agent, live),
+                "running_episode": running,
+                "live_age": live_age(agent, running),
                 "files": listing(
-                    harness.mirror(agent, kind), kind, given_in(ch, account)
+                    harness.mirror(agent, channel), channel, given_in(ch, account)
                 ),
             }
         )
     return {
         "experiment_id": exp["experiment_id"],
-        "kind": kind,
+        "channel": channel,
         "what": what_of(ch),
         "static": False,
         "history": ({**history, "selected": None} if history else None),
@@ -1714,7 +1734,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
 
 
 def file_view(
-    exp: dict, agent: str, kind: str, inner: str, round_at: int | None = None
+    exp: dict, agent: str, channel: str, inner: str, round_at: int | None = None
 ) -> dict | None:
     """One file of one tree of one seat of `exp`, found in a listing and never
     joined onto a root.
@@ -1722,7 +1742,7 @@ def file_view(
     The name off the URL is compared for equality against paths rglob produced
     under the tree, so no request can walk out of it by asking.
     """
-    ch = trees(exp).get(kind)
+    ch = trees(exp).get(channel)
     source = bool(ch and ch.writer == "experimenter")
     if (
         ch is None
@@ -1732,7 +1752,7 @@ def file_view(
         return None
     if round_at is not None:
         rows = experiment_episodes(exp)
-        history = channel_history(exp, kind, rows)
+        history = channel_history(exp, channel, rows)
         if history is None or round_at not in history["rounds"]:
             return None
         row = next(
@@ -1748,46 +1768,54 @@ def file_view(
         )
         account = account_of(agent)
         label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
-        rec = next(
+        listed = next(
             (
                 item
-                for item in historical_listing(row, ch, kind, label)
+                for item in historical_listing(row, ch, channel, label)
                 if item["path"] == inner
             ),
             None,
         )
-        if rec is None or row is None:
+        if listed is None or row is None:
             return None
         prefix = ch.path_for(label).strip("/")
         full = f"{prefix}/{inner}" if prefix else inner
-        source_rec = next(
+        file = next(
             (
                 item
                 for item in row["trace"].get("files") or []
-                if item.get("channel") == kind
+                if item.get("channel") == channel
                 and item.get("role") == "own"
                 and str(item.get("path") or "").strip("/") == full
             ),
             None,
         )
-        if source_rec is None:
+        if file is None:
             return None
         return {
-            **rec,
+            **listed,
             "agent": agent,
-            "kind": kind,
-            "size": source_rec.get("size") or 0,
-            "text": source_rec.get("text"),
+            "channel": channel,
+            "size": file.get("size") or 0,
+            "text": file.get("text"),
         }
-    root = harness.files_dir(ch.source) if source else harness.mirror(agent, kind)
+    root = harness.files_dir(ch.source) if source else harness.mirror(agent, channel)
     given = set() if source else given_in(ch, account_of(agent))
-    rec = next((f for f in listing(root, kind, given) if f["path"] == inner), None)
-    if rec is None:
+    listed = next(
+        (f for f in listing(root, channel, given) if f["path"] == inner), None
+    )
+    if listed is None:
         return None
     got = read_file(root / inner)
     if got is None:
         return None
-    return {**rec, "agent": agent, "kind": kind, "size": got[0], "text": got[1]}
+    return {
+        **listed,
+        "agent": agent,
+        "channel": channel,
+        "size": got[0],
+        "text": got[1],
+    }
 
 
 # --- one agent's transcript -------------------------------------------------
@@ -1798,13 +1826,13 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     the agent sits in, or None for one seated in no experiment."""
     account = account_of(agent)
     rows = experiment_episodes(exp) if exp else []
-    rnd = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
+    rounds = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
     ts = traces_of(agent, account)
-    live = live_index(agent, account)
+    running = running_episode(agent, account)
     episodes = [
         {
             "episode": t["episode"],
-            "round": rnd.get(t["episode"]),
+            "round": rounds.get(t["episode"]),
             "stop": t["stop"],
             "spent": t["spent"],
             "turns": len(t["turns"]),
@@ -1816,17 +1844,17 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "forgiven": t.get("forgiven") or 0,
             "provenance": t["provenance"],
             "drift": t.get("provenance_drift") or [],
-            "halted": t["stop"] in harness.STOPS_THE_AGENT,
+            "unseated": t["stop"] in harness.STOPS_THE_AGENT,
             "live": False,
         }
         for t in ts
     ]
-    if live is not None:
-        going = live_state(agent, live, account)
+    if running is not None:
+        going = live_state(agent, running, account)
         episodes.append(
             {
-                "episode": live,
-                "round": max(rnd.values(), default=0) + 1,
+                "episode": running,
+                "round": max(rounds.values(), default=0) + 1,
                 "stop": None,
                 "spent": going["spent"],
                 "turns": len(going["turns"]),
@@ -1838,7 +1866,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
                 "forgiven": 0,
                 "provenance": {},
                 "drift": [],
-                "halted": False,
+                "unseated": False,
                 "live": True,
             }
         )
@@ -1851,8 +1879,8 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "initial": account.get("initial"),
         "remaining": account.get("remaining"),
         "episodes": episodes,
-        "live": live,
-        "live_age": live_age(agent, live),
+        "running_episode": running,
+        "live_age": live_age(agent, running),
         # The mapping has no gap and holds every seat, this agent's among them, so
         # which one is its own has to be said: absence cannot say it.
         "seat": seating.seat,
@@ -2151,13 +2179,13 @@ class View(http.server.BaseHTTPRequestHandler):
                 return self.send_json(
                     messages(exp, int(since) if since.isdigit() else 0)
                 )
-            if rest == ["player-history"]:
+            if rest == ["human-history"]:
                 agent = query.get("agent", [""])[0]
                 if agent not in exp["seats"]:
                     return self.send_json(
                         {"error": f"no agent {agent} in experiment"}, status=404
                     )
-                return self.send_json(player_history(exp, agent))
+                return self.send_json(human_history(exp, agent))
             if len(rest) == 2 and rest[0] == "tree" and rest[1] in trees(exp):
                 selected = query.get("round", [""])[0]
                 if selected and not selected.isdigit():
@@ -2173,7 +2201,7 @@ class View(http.server.BaseHTTPRequestHandler):
                 return self.send_json(got)
             if rest == ["file"]:
                 agent = query.get("agent", [""])[0]
-                kind = query.get("channel", [""])[0]
+                channel = query.get("channel", [""])[0]
                 inner = query.get("path", [""])[0]
                 selected = query.get("round", [""])[0]
                 if selected and not selected.isdigit():
@@ -2181,11 +2209,11 @@ class View(http.server.BaseHTTPRequestHandler):
                         {"error": f"invalid round {selected}"}, status=404
                     )
                 got = file_view(
-                    exp, agent, kind, inner, int(selected) if selected else None
+                    exp, agent, channel, inner, int(selected) if selected else None
                 )
                 if got is None:
                     return self.send_json(
-                        {"error": f"no {kind} file {inner} in {agent}"}, status=404
+                        {"error": f"no {channel} file {inner} in {agent}"}, status=404
                     )
                 return self.send_json(got)
         if len(parts) >= 3 and parts[:2] == ["api", "agent"]:
@@ -2310,7 +2338,7 @@ def main(argv: list[str] | None = None) -> int:
         f" under {harness.records_root()})"
     )
     print(
-        "observer views are read-only; the player panel submits only to interactive seats"
+        "observer views are read-only; the human view submits only to interactive seats"
     )
     if not a.no_browser:
         webbrowser.open(url)

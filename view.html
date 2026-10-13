@@ -407,14 +407,14 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
   padding:8px 15px; border:1px solid var(--accent); border-radius:999px; cursor:pointer;
   color:var(--ink); background:var(--raise); box-shadow:var(--glow); }
 .mode-toggle:hover { background:var(--panel2); }
-.player { display:none; width:min(920px,calc(100% - 40px)); margin:48px auto 88px;
+.human { display:none; width:min(920px,calc(100% - 40px)); margin:48px auto 88px;
   border:1px solid var(--line); border-radius:var(--r); background:var(--panel); padding:20px;
   box-shadow:var(--glow); }
-#page.play-mode { overflow:auto; }
-#page.play-mode #top, #page.play-mode #body { display:none; }
-#page.play-mode .player { display:block; }
-.player h2 { margin:0 0 4px; font-size:18px; color:var(--live); }
-.player h3 { margin:18px 0 8px; }
+#page.human-mode { overflow:auto; }
+#page.human-mode #top, #page.human-mode #body { display:none; }
+#page.human-mode .human { display:block; }
+.human h2 { margin:0 0 4px; font-size:18px; color:var(--live); }
+.human h3 { margin:18px 0 8px; }
 .peer-strip { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 18px; padding:10px;
   border:1px solid var(--line); border-radius:8px; background:var(--bg); }
 .peer-badge { display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border:1px solid var(--line2);
@@ -428,8 +428,8 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 @keyframes agent-glow {
   50% { border-color:rgba(127,155,176,.95); box-shadow:0 0 16px rgba(127,155,176,.36); background:rgba(127,155,176,.12); }
 }
-.player-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
-.player-column { min-width:0; }
+.human-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.human-column { min-width:0; }
 .prompt-details { border:1px solid var(--line); border-radius:7px; padding:9px 11px; background:var(--bg); }
 .prompt-details pre { max-height:260px; }
 .input-stack { display:grid; gap:9px; }
@@ -444,10 +444,10 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 .input-card-meta { color:var(--faint); font:500 10px/1.2 var(--sans); text-transform:uppercase; letter-spacing:.06em; }
 .input-card pre { margin:0; padding:11px; max-height:none; overflow:visible; white-space:pre-wrap; }
 .input-card.error { border-color:var(--bad); }
-.player-chat { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
-.player-chat-head { display:flex; align-items:center; gap:9px; padding:9px 11px; border-bottom:1px solid var(--line); color:var(--accent);
+.human-chat { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
+.human-chat-head { display:flex; align-items:center; gap:9px; padding:9px 11px; border-bottom:1px solid var(--line); color:var(--accent);
   background:var(--raise); font:600 12px/1.25 var(--sans); letter-spacing:.03em; }
-.player-chat-log { height:420px; overflow-y:auto; padding:12px; background:linear-gradient(180deg,var(--bg),var(--panel)); }
+.human-chat-log { height:420px; overflow-y:auto; padding:12px; background:linear-gradient(180deg,var(--bg),var(--panel)); }
 .private-chat-list { display:grid; gap:9px; }
 .private-thread { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--bg); }
 .private-thread > summary { display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer;
@@ -456,7 +456,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 .private-thread > summary::after { content:"+"; margin-left:auto; color:var(--faint); font-size:16px; }
 .private-thread[open] > summary { border-bottom:1px solid var(--line); }
 .private-thread[open] > summary::after { content:"−"; }
-.private-thread .player-chat-log { height:320px; }
+.private-thread .human-chat-log { height:320px; }
 .private-thread.empty > summary { color:var(--faint); }
 .private-count { color:var(--faint); font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; }
 .chat-update { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1px solid rgba(194,160,107,.7);
@@ -493,10 +493,10 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
   margin-top:3px; padding:8px; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:4px; }
 .message-fields { display:grid; gap:8px; margin-top:8px; }
 .message-fields label { margin-top:0; }
-.player-actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.human-actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
 @media (max-width:900px) {
-  .player { width:min(100% - 24px,720px); margin-top:18px; padding:14px; }
-  .player-grid { grid-template-columns:1fr; }
+  .human { width:min(100% - 24px,720px); margin-top:18px; padding:14px; }
+  .human-grid { grid-template-columns:1fr; }
   .input-stack { max-height:none; }
 }
 </style>
@@ -511,7 +511,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
     <div class="overview-resizer" id="overview-resizer" data-resize="overview" role="separator" aria-label="Resize dashboard" aria-orientation="horizontal" tabindex="0"></div>
     <nav id="tabs" role="tablist" aria-label="Experiment views"></nav>
   </header>
-  <section id="player" class="player" aria-live="polite"></section>
+  <section id="human" class="human" aria-live="polite"></section>
   <main id="body" role="tabpanel"><div class="empty">loading&hellip;</div></main>
   <button id="mode-toggle" class="mode-toggle" aria-pressed="false"></button>
 </div>
@@ -615,15 +615,16 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             mailWidth: heldNumber("mail-width") || 310,
             treeWidth: heldNumber("tree-width"),
             interaction: null, interactionId: null, interactionSubmitted: false,
-            playerExperiment: null, playerExperimentAgent: null,
-            playerMode: held("player-mode", false),
+            humanExperiment: null, humanExperimentAgent: null,
+            humanMode: held("human-mode", false),
             poll: 1500, stale: 180 };
 
 const PENDING = "output arrives when the episode ends";
 
 const ago = (s) => s == null ? "" : s < 90 ? `${Math.round(s)}s ago`
   : s < 5400 ? `${Math.round(s / 60)}m ago` : `${(s / 3600).toFixed(1)}h ago`;
-const running = (d) => d && d.live != null && d.live_age != null && d.live_age < S.stale;
+const running = (d) => d && d.running_episode != null && d.live_age != null
+  && d.live_age < S.stale;
 // Every seat tile of the experiment on the page, and one of them by its number.
 const seatTiles = () => S.head ? S.head.seat_tiles : [];
 const seatOf = (n) => seatTiles().find(x => String(x.seat) === String(n));
@@ -717,8 +718,8 @@ function pickExperiment(id) {
 }
 
 function tileHtml(s, i) {
-  const n = s.live_balance != null ? s.live_balance : s.n;
-  const left = s.initial ? Math.max(0, Math.min(1, n / s.initial)) : 0;
+  const balance = s.live_balance != null ? s.live_balance : s.balance;
+  const left = s.initial ? Math.max(0, Math.min(1, balance / s.initial)) : 0;
   const g = s.transfer;
   const taken = Object.entries(s.penalised || {}).filter(([, v]) => v);
   // A submitted declaration that moved nothing carries settlement's reason here.
@@ -728,11 +729,11 @@ function tileHtml(s, i) {
   const terms = [s.model ? `<span class="tag" title="provider and model">${esc(`${s.provider || ""}/${s.model}`.replace(/^\//, ""))}</span>` : "",
     s.starter_files ? `<span class="tag starter" title="${esc(s.starter_files)}">starter · ${esc(shortPath(s.starter_files))}</span>` : ""].filter(Boolean).join("");
   const state = s.pending_human
-      ? `<span class="tag warn"><i class="dot"></i>waiting for player</span>`
+      ? `<span class="tag warn"><i class="dot"></i>waiting for human</span>`
     : running(s)
-      ? `<span class="tag live"><i class="dot"></i>ep${s.live} · ${s.live_turns}t · derived</span>`
-    : s.live != null
-      ? `<span class="tag warn" title="no trace was ever written for it">ep${s.live} unfinished · ${ago(s.live_age)}</span>`
+      ? `<span class="tag live"><i class="dot"></i>ep${s.running_episode} · ${s.live_turns}t · derived</span>`
+    : s.running_episode != null
+      ? `<span class="tag warn" title="no trace was ever written for it">ep${s.running_episode} unfinished · ${ago(s.live_age)}</span>`
     : s.eliminated
       ? `<span class="tag bad" title="${esc(s.eliminated.reason)}">eliminated · r${s.eliminated.round}</span>`
     : s.out_reason
@@ -747,8 +748,8 @@ function tileHtml(s, i) {
   return `<div class="tile ${s.out_reason || (!s.acted && !s.pending && !s.preparing) ? "idle" : ""}">
     <div class="k"><span style="color:${inkOf(i)}">${s.seat == null ? "agent" : esc(nameOf(s.seat))}</span>
       <b>${esc(s.agent)}</b></div>
-    <div class="v ${n < 0 ? "neg" : ""}">${num(n)}</div>
-    <div class="bar ${n < 0 ? "over" : ""}"><i style="width:${(left * 100).toFixed(1)}%"></i></div>
+    <div class="v ${balance < 0 ? "neg" : ""}">${num(balance)}</div>
+    <div class="bar ${balance < 0 ? "over" : ""}"><i style="width:${(left * 100).toFixed(1)}%"></i></div>
     ${terms ? `<div class="terms">${terms}</div>` : ""}
     <div class="m">${state}<i>|</i>
       <span title="spent this round">round ${num(s.spent_this_round)}</span>
@@ -764,8 +765,8 @@ function tileHtml(s, i) {
         ${taken.map(([name, n]) => `<span title="taken for silence on ${esc(name)}">− ${num(n)} ${esc(name)}</span>`).join(" ")}
         ${s.forgiven ? `<span title="floored back to zero; its environment never says so"
           >floored ${num(s.forgiven)}</span>` : ""}${transfer}` : ""}
-      ${(s.halted || s.drift.length) ? `<i>|</i>
-        ${s.halted ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
+      ${(s.unseated || s.drift.length) ? `<i>|</i>
+        ${s.unseated ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
         ${s.drift.length ? `<span class="tag warn" title="${esc(s.drift.join("; "))}">drift</span>` : ""}` : ""}</div>
   </div>`;
 }
@@ -781,12 +782,12 @@ function renderFold() {
 }
 
 function electionHtml(h) {
-  if (!h.vote_every) return "";
+  if (!h.every) return "";
   const latest = (h.elections || [])[h.elections.length - 1];
-  const next = h.round && h.round % h.vote_every === 0
-    ? h.round : (Math.floor((h.round || 0) / h.vote_every) + 1) * h.vote_every;
+  const next = h.round && h.round % h.every === 0
+    ? h.round : (Math.floor((h.round || 0) / h.every) + 1) * h.every;
   if (!latest) return `<div class="election"><div class="kv"><div class="k">election</div></div>
-    <div class="result">vote every ${h.vote_every} rounds · ${h.phase === "vote"
+    <div class="result">vote every ${h.every} rounds · ${h.phase === "vote"
       ? `voting now` : `next vote r${next}`}</div></div>`;
   const tally = Object.entries(latest.tally || {}).map(([label, votes]) =>
     `<span class="tag">${esc(label)} · ${num(votes)}</span>`).join("");
@@ -808,18 +809,18 @@ function renderHeader() {
   document.getElementById("whosub").innerHTML =
     `${h.active} of ${h.seat_tiles.length} active · round ${h.round}` +
     (h.schedule ? ` · ${esc(h.schedule)}` : "") +
-    (h.vote_every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.phase)}` : "") +
+    (h.every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.phase)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no blackboard or mailbox between them`);
-  const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.n);
+  const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.balance);
   const remaining = current.reduce((sum, n) => sum + Number(n || 0), 0);
   const initial = h.seat_tiles.reduce((sum, s) => sum + Number(s.initial || 0), 0);
   const roundSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
   const totalSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent || 0), 0);
   const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
   const live = h.seat_tiles.filter(running).length;
-  const attention = h.seat_tiles.filter(s => s.halted || (s.drift || []).length || (s.unmet || []).length
-    || (s.live != null && !running(s))).length;
+  const attention = h.seat_tiles.filter(s => s.unseated || (s.drift || []).length || (s.unmet || []).length
+    || (s.running_episode != null && !running(s))).length;
   const pct = initial ? `${Math.max(0, remaining / initial * 100).toFixed(0)}% of initial` : "current balance";
   document.getElementById("metrics").innerHTML = [
     ["remaining", num(remaining), pct, ""],
@@ -828,14 +829,14 @@ function renderHeader() {
       ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
       : `${num(autonomousSpent)} autonomous`, h.cost && h.cost.warning_reached ? "attn" : ""],
     ["active now", `${h.active}/${h.seat_tiles.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
-    ["needs attention", num(attention), attention ? "unfinished, unmet, halted, or drifted" : "no current alerts", attention ? "attn" : ""]
+    ["needs attention", num(attention), attention ? "unfinished, unmet, unseated, or drifted" : "no current alerts", attention ? "attn" : ""]
   ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   document.getElementById("seats").innerHTML = h.seat_tiles.map(tileHtml).join("");
   // The ledger reads the same three bare numbers for everyone, including the
   // agent a transfer was aimed at. The gloss is the page's.
-  const rows = h.ledger.map(([giver, taker, amount]) => `<tr>
-      <td class="num">${esc(giver)} ${esc(taker)} ${num(amount)}</td>
-      <td class="note">${esc(seatName(giver) || "")} → ${esc(seatName(taker) || "")}</td></tr>`).join("");
+  const rows = h.ledger.map(([giver, receiver, amount]) => `<tr>
+      <td class="num">${esc(giver)} ${esc(receiver)} ${num(amount)}</td>
+      <td class="note">${esc(seatName(giver) || "")} → ${esc(seatName(receiver) || "")}</td></tr>`).join("");
   const latest = h.progress && h.progress.latest;
   const terminal = latest && ["completed", "interrupted", "cost_ceiling"].includes(latest.phase);
   const result = terminal ? h.outcome : null;
@@ -916,7 +917,7 @@ function previewOf(t) {
   const all = saidIn(t).concat(t.tips);
   const e = all[all.length - 1];
   if (!e) return "nothing addressed";
-  if (e.kind === "transfer") return `transfer · ${(e.transfer || {}).amount
+  if (e.event_type === "transfer") return `transfer · ${(e.transfer || {}).amount
     ? num(e.transfer.amount) : "moved nothing"}`;
   if (e.change === "withdrawn") return `${nameOf(e.from_seat)} took back ${e.path}`;
   return `${nameOf(e.from_seat)}: ${(e.text || "").trim().split("\n")[0] || "(empty)"}`;
@@ -959,7 +960,7 @@ function gotHtml(d, from) {
 
 function msgHtml(e, t) {
   const g = e.transfer || {};
-  if (e.kind === "transfer") {
+  if (e.event_type === "transfer") {
     const moved = g.amount ? `moved ${num(g.amount)} to ${esc(nameOf(g.seat || e.to_seat))}`
       : `<span style="color:var(--warn)" title="${esc(g.error || "")}">moved nothing</span>`;
     return `<div class="sys">${seatTag(e.from_seat)} ${e.change === "withdrawn"
@@ -1128,9 +1129,9 @@ function wireConversationFilters(el) {
 
 // --- directory channels -------------------------------------------------------
 
-function keyOf(kind, agent) {
-  const round = S.treeRound[kind];
-  return kind + ":" + (round == null ? "live" : "r" + round) + ":" + agent;
+function keyOf(channel, agent) {
+  const round = S.treeRound[channel];
+  return channel + ":" + (round == null ? "live" : "r" + round) + ":" + agent;
 }
 
 function snapshotHtml(d) {
@@ -1144,29 +1145,29 @@ function snapshotHtml(d) {
     </div></div>`;
 }
 
-function wireSnapshots(el, kind) {
+function wireSnapshots(el, channel) {
   el.querySelectorAll(".snapshots [data-round]").forEach(button => button.onclick = () => {
     const selected = button.dataset.round === "" ? null : Number(button.dataset.round);
-    if ((S.treeRound[kind] == null ? null : S.treeRound[kind]) === selected) return;
-    S.treeRound[kind] = selected;
-    S.inspect[kind] = null;
+    if ((S.treeRound[channel] == null ? null : S.treeRound[channel]) === selected) return;
+    S.treeRound[channel] = selected;
+    S.inspect[channel] = null;
     blank(el, `<div class="empty">loading ${selected == null ? "live chat" : `round ${selected}`}&hellip;</div>`);
     renderTab();
   });
 }
 
-function renderPublicChat(kind) {
-  const d = S.tree[kind], el = document.getElementById("body");
+function renderPublicChat(channel) {
+  const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
   const selected = d.history.selected;
   const messages = [];
   for (const [i, c] of d.columns.entries()) {
     for (const f of c.files) {
-      const got = S.body[keyOf(kind, c.agent) + ":" + f.path];
+      const got = S.body[keyOf(channel, c.agent) + ":" + f.path];
       messages.push({c, f, got, color:inkOf(i)});
     }
   }
-  const sig = JSON.stringify([kind, d.history, messages.map(m =>
+  const sig = JSON.stringify([channel, d.history, messages.map(m =>
     [m.c.agent, m.c.committed, m.f.path, m.f.stamp, m.got && m.got.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
@@ -1191,23 +1192,23 @@ function renderPublicChat(kind) {
     <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted in this chat.</div>`}
       ${missing.length && selected != null ? `<div class="sys">No post from ${missing.map(esc).join(", ")}</div>` : ""}</div>
     </section></div>`);
-  wireSnapshots(el, kind);
+  wireSnapshots(el, channel);
 }
 
-function renderBallotAggregate(kind) {
-  const d = S.tree[kind], el = document.getElementById("body");
+function renderBallotAggregate(channel) {
+  const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
   const selected = d.history.selected;
   const ballots = [], missing = [];
   for (const [i, c] of d.columns.entries()) {
     if (!c.files.length) { missing.push(c); continue; }
     for (const f of c.files) {
-      const got = S.body[keyOf(kind, c.agent) + ":" + f.path];
+      const got = S.body[keyOf(channel, c.agent) + ":" + f.path];
       const target = got && got.text != null ? got.text.trim() : null;
       ballots.push({c, f, got, target, color:inkOf(i)});
     }
   }
-  const sig = JSON.stringify([kind, d.history, ballots.map(b =>
+  const sig = JSON.stringify([channel, d.history, ballots.map(b =>
     [b.c.agent, b.c.committed, b.f.stamp, b.got && b.got.stamp, b.target])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
@@ -1232,17 +1233,17 @@ function renderBallotAggregate(kind) {
       <div class="vote-tally">${results || `<div class="empty">No votes to tally.</div>`}</div>
       ${rows ? `<div class="round">submitted ballots<i></i></div><table class="ballot-table"><tbody>${rows}</tbody></table>` : ""}
     </div></section></div>`);
-  wireSnapshots(el, kind);
+  wireSnapshots(el, channel);
 }
 
-function renderTree(kind) {
-  const d = S.tree[kind], el = document.getElementById("body");
+function renderTree(channel) {
+  const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
-  if (d.history && d.history.kind === "round") return renderPublicChat(kind);
-  if (d.history && d.history.kind === "vote") return renderBallotAggregate(kind);
-  const chosen = S.inspect[kind] || null;
-  const sig = JSON.stringify([kind, d.history, d.columns.map(c =>
-    [c.agent, c.committed, c.live, c.files.map(f => [f.path, f.stamp, f.mode])]),
+  if (d.history && d.history.kind === "round") return renderPublicChat(channel);
+  if (d.history && d.history.kind === "vote") return renderBallotAggregate(channel);
+  const chosen = S.inspect[channel] || null;
+  const sig = JSON.stringify([channel, d.history, d.columns.map(c =>
+    [c.agent, c.committed, c.running_episode, c.files.map(f => [f.path, f.stamp, f.mode])]),
     chosen, Object.entries(S.body).map(([k, v]) => [k, v && v.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
@@ -1254,7 +1255,7 @@ function renderTree(kind) {
     if (historical && c.saved) return `end of round ${d.history.selected} · ep${c.committed}`;
     if (historical) return `ep${c.committed} · state was not saved`;
     const seat = c.seat == null ? "" : `${esc(c.agent)} · `;
-    const live = c.live == null ? "" : running(c) ? " · an episode is running" : " · an episode never finished";
+    const live = c.running_episode == null ? "" : running(c) ? " · an episode is running" : " · an episode never finished";
     return `${seat}as of ep${c.committed}${live}`;
   };
   const snapshots = snapshotHtml(d);
@@ -1273,7 +1274,7 @@ function renderTree(kind) {
         : `<div class="note" style="padding:10px 0">empty</div>`}</div></div>`;
   }).join("");
   const selectedColumn = chosen && d.columns.find(c => c.agent === chosen.agent);
-  const got = chosen ? S.body[keyOf(kind, chosen.agent) + ":" + chosen.path] : undefined;
+  const got = chosen ? S.body[keyOf(channel, chosen.agent) + ":" + chosen.path] : undefined;
   const inspector = !chosen ? `<aside class="inspector empty-inspector" aria-label="File inspector">
       Select a file to inspect it here.</aside>`
     : `<aside class="inspector" aria-label="File inspector"><div class="inspector-head">
@@ -1291,51 +1292,51 @@ function renderTree(kind) {
       <div class="splitter" data-resize="tree" role="separator" aria-label="Resize file list" aria-orientation="vertical" tabindex="0"></div>${inspector}</div></div>`);
   el.querySelectorAll(".file-row").forEach(row => row.onclick = () => {
     const same = chosen && chosen.agent === row.dataset.agent && chosen.path === row.dataset.p;
-    S.inspect[kind] = same ? null : {agent:row.dataset.agent, path:row.dataset.p};
+    S.inspect[channel] = same ? null : {agent:row.dataset.agent, path:row.dataset.p};
     el.dataset.sig = "";
-    pullFiles(kind).then(() => renderTree(kind));
+    pullFiles(channel).then(() => renderTree(channel));
   });
   const close = document.getElementById("close-inspector");
-  if (close) close.onclick = () => closeInspector(kind);
-  wireSnapshots(el, kind);
+  if (close) close.onclick = () => closeInspector(channel);
+  wireSnapshots(el, channel);
 }
 
-function closeInspector(kind) {
-  S.inspect[kind] = null;
+function closeInspector(channel) {
+  S.inspect[channel] = null;
   const el = document.getElementById("body");
   el.dataset.sig = "";
-  renderTree(kind);
+  renderTree(channel);
 }
 
 // A file is read when it is opened, and again when its stamp moves. The listing
 // carries the stamp, so a column of files nobody has opened costs nothing.
-function pullFiles(kind) {
-  const d = S.tree[kind];
+function pullFiles(channel) {
+  const d = S.tree[channel];
   if (!d) return Promise.resolve();
-  const chosen = S.inspect[kind];
+  const chosen = S.inspect[channel];
   if (!chosen) return Promise.resolve();
   const c = d.columns.find(column => column.agent === chosen.agent);
-  const key = keyOf(kind, chosen.agent) + ":" + chosen.path;
+  const key = keyOf(channel, chosen.agent) + ":" + chosen.path;
   const f = c && c.files.find(file => file.path === chosen.path);
   if (!f) { S.body[key] = null; return Promise.resolve(); }
   const cached = S.body[key];
   if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) return Promise.resolve();
-  let q = `agent=${encodeURIComponent(chosen.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(chosen.path)}`;
-  if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
+  let q = `agent=${encodeURIComponent(chosen.agent)}&channel=${encodeURIComponent(channel)}&path=${encodeURIComponent(chosen.path)}`;
+  if (S.treeRound[channel] != null) q += `&round=${encodeURIComponent(S.treeRound[channel])}`;
   return get(`/api/experiment/${encodeURIComponent(S.experiment)}/file?${q}`)
     .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; });
 }
 
-function pullChannelFiles(kind) {
-  const d = S.tree[kind];
+function pullChannelFiles(channel) {
+  const d = S.tree[channel];
   if (!d) return Promise.resolve();
   const pulls = [];
   for (const c of d.columns) for (const f of c.files) {
-    const key = keyOf(kind, c.agent) + ":" + f.path;
+    const key = keyOf(channel, c.agent) + ":" + f.path;
     const cached = S.body[key];
     if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) continue;
-    let q = `agent=${encodeURIComponent(c.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(f.path)}`;
-    if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
+    let q = `agent=${encodeURIComponent(c.agent)}&channel=${encodeURIComponent(channel)}&path=${encodeURIComponent(f.path)}`;
+    if (S.treeRound[channel] != null) q += `&round=${encodeURIComponent(S.treeRound[channel])}`;
     pulls.push(get(`/api/experiment/${encodeURIComponent(S.experiment)}/file?${q}`)
       .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; }));
   }
@@ -1355,7 +1356,7 @@ function openAgent(agent) {
   return get(`/api/agent/${agent}`).then(d => {
     S.detail = d;
     if (S.episode == null) {
-      S.episode = d.live != null ? d.live
+      S.episode = d.running_episode != null ? d.running_episode
         : (d.episodes.length ? d.episodes[d.episodes.length - 1].episode : null);
     }
     drawTranscript();
@@ -1402,7 +1403,7 @@ function drawTranscript() {
     const s = byRound[r];
     if (!s) return `<button class="chip off" title="it was out of the experiment by this round">r${r}</button>`;
     const classes = [s.episode === S.episode ? "on" : "", s.live && running(d) ? "live" : "",
-      s.live && !running(d) ? "halt" : "", s.halted ? "halt" : ""].filter(Boolean).join(" ");
+      s.live && !running(d) ? "halt" : "", s.unseated ? "halt" : ""].filter(Boolean).join(" ");
     const state = esc(s.stop || (running(d) ? "running" : "unfinished"));
     return `<button class="chip ${classes}" data-s="${s.episode}" aria-pressed="${s.episode === S.episode}" title="ep${s.episode} · ${state} · ${s.turns} turns · spent ${num(s.spent)}">r${r}</button>`;
   }).join("");
@@ -1574,7 +1575,7 @@ function renderTab() {
       renderMessages();
     }).catch(() => {});
   }
-  if (S.tab !== "agent") {
+  if (S.tab !== "trace") {
     const selected = S.treeRound[S.tab];
     const query = selected == null ? "" : `?round=${encodeURIComponent(selected)}`;
     return get(`/api/experiment/${encodeURIComponent(S.experiment)}/tree/${encodeURIComponent(S.tab)}${query}`).then(d => {
@@ -1599,7 +1600,7 @@ function renderTab() {
   // whose detail never arrived has no scaffold either; a turn can only be
   // appended to a transcript that is on the page.
   const me = at.find(s => s.agent === S.agent);
-  if (!S.detail || (me && me.live !== S.detail.live)
+  if (!S.detail || (me && me.running_episode !== S.detail.running_episode)
       || !document.getElementById("tx")) return openAgent(S.agent);
   return pullTurns(false);
 }
@@ -1675,24 +1676,24 @@ function actionHtml(tool, index) {
 
 function setInteractionSubmitted(submitted, message) {
   S.interactionSubmitted = submitted;
-  const player = document.getElementById("player");
-  player.querySelectorAll("textarea, input, select, #submit-interaction").forEach(field => field.disabled = submitted);
+  const panel = document.getElementById("human");
+  panel.querySelectorAll("textarea, input, select, #submit-interaction").forEach(field => field.disabled = submitted);
   const state = document.getElementById("interaction-state");
   if (state) state.textContent = message || (submitted ? "submitted" : "ready");
 }
 
-function renderPeerStatus(head, playerAgent) {
+function renderPeerStatus(head, humanAgent) {
   const el = document.getElementById("peer-status");
   if (!el || !head) return;
   const completed = new Set((head.progress && head.progress.events || [])
     .filter(event => event.round === head.round && event.completed_autonomous)
     .map(event => event.completed_autonomous));
-  const badges = (head.seat_tiles || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason)
+  const badges = (head.seat_tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason)
     .map(seat => {
       let state = "queued", label = "not started";
-      if (completed.has(seat.agent) || (seat.round === head.round && seat.acted && seat.live == null)) {
+      if (completed.has(seat.agent) || (seat.round === head.round && seat.acted && seat.running_episode == null)) {
         state = "ready"; label = "ready";
-      } else if (seat.live != null) {
+      } else if (seat.running_episode != null) {
         state = "processing"; label = "processing";
       }
       return `<span class="peer-badge ${state}" title="${esc(seat.label)} is ${label}"><i class="dot"></i>${esc(seat.label)} <small>${label}</small></span>`;
@@ -1704,7 +1705,7 @@ function chatInitials(label) {
   return String(label || "?").replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
 }
 
-function playerChatHtml(events, playerAgent, isPrivate, deliveredEpisode) {
+function humanChatHtml(events, humanAgent, isPrivate, deliveredEpisode) {
   if (!events.length) return `<div class="empty">No messages yet.</div>`;
   let episode = null, html = "";
   for (const event of events) {
@@ -1713,7 +1714,7 @@ function playerChatHtml(events, playerAgent, isPrivate, deliveredEpisode) {
       episode = at;
       html += `<div class="episode-divider"><span>Episode ${num(at)}</span></div>`;
     }
-    const mine = event.from_agent === playerAgent;
+    const mine = event.from_agent === humanAgent;
     const sender = mine ? "You" : event.from_label;
     const destination = isPrivate ? (mine ? ` → ${event.to_label}` : " → you") : "";
     const updated = at === deliveredEpisode;
@@ -1733,16 +1734,16 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
       if (field.value) localStorage.setItem(storageKey, field.value);
       else localStorage.removeItem(storageKey);
     }
-    let message = log.querySelector("[data-player-draft]");
+    let message = log.querySelector("[data-human-draft]");
     if (!field.value.trim()) {
       if (message) message.remove();
       return;
     }
     if (!message) {
-      log.insertAdjacentHTML("beforeend", `<article class="chat-message mine pending-message" data-player-draft>
+      log.insertAdjacentHTML("beforeend", `<article class="chat-message mine pending-message" data-human-draft>
         <span class="chat-avatar" aria-hidden="true">YO</span><div class="chat-bubble"><b>You${destination ? ` → ${esc(destination)}` : ""}
         <span class="chat-draft">pending this episode</span></b><pre></pre></div></article>`);
-      message = log.querySelector("[data-player-draft]");
+      message = log.querySelector("[data-human-draft]");
     }
     message.querySelector("pre").textContent = field.value;
     log.scrollTop = log.scrollHeight;
@@ -1751,71 +1752,71 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
   draw();
 }
 
-function renderPlayerHistory(history, playerAgent, tiles, currentEpisode) {
-  const board = document.getElementById("player-board"), publicEvents = history.public || [];
+function renderHumanHistory(history, humanAgent, tiles, currentEpisode) {
+  const board = document.getElementById("human-board"), publicEvents = history.public || [];
   const deliveredEpisode = currentEpisode - 1;
-  const requestKey = `${playerAgent}:${(S.interaction || {}).request_id || currentEpisode}`;
+  const requestKey = `${humanAgent}:${(S.interaction || {}).request_id || currentEpisode}`;
   if (board) {
     const sig = JSON.stringify(publicEvents.map(event => [event.episode, event.from_agent, event.text]));
     if (board.dataset.sig !== sig) {
       board.dataset.sig = sig;
-      board.innerHTML = playerChatHtml(publicEvents, playerAgent, false, deliveredEpisode);
+      board.innerHTML = humanChatHtml(publicEvents, humanAgent, false, deliveredEpisode);
       board.scrollTop = board.scrollHeight;
     }
     wireChatComposer(board.parentElement.querySelector(".chat-compose textarea"), board, "",
-      `player-draft:${requestKey}:board`);
+      `human-draft:${requestKey}:board`);
   }
-  const privateRoot = document.getElementById("player-private"), privateEvents = history.private || [];
+  const privateRoot = document.getElementById("human-private"), privateEvents = history.private || [];
   if (!privateRoot) return;
   const drafts = new Map([...privateRoot.querySelectorAll("[data-recipient]")]
     .map(field => [field.dataset.recipient, field.value]));
   const canMessage = privateRoot.hasAttribute("data-message-tool");
-  const peers = (tiles || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason);
+  const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason);
   const sig = JSON.stringify([currentEpisode, peers.map(peer => [peer.agent, peer.label]),
     privateEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
   if (privateRoot.dataset.sig === sig) return;
   privateRoot.dataset.sig = sig;
   privateRoot.innerHTML = peers.map(peer => {
-    const events = privateEvents.filter(event => peer.agent === (event.from_agent === playerAgent ? event.to_agent : event.from_agent));
+    const events = privateEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
     return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
       <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
-      <div class="player-chat-log" role="log" aria-label="Private chat with ${esc(peer.label)}">${playerChatHtml(events, playerAgent, true, deliveredEpisode)}</div>
+      <div class="human-chat-log" role="log" aria-label="Private chat with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredEpisode)}</div>
       ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
-  privateRoot.querySelectorAll(".player-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
+  privateRoot.querySelectorAll(".human-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
   privateRoot.querySelectorAll("[data-recipient]").forEach(field =>
-    wireChatComposer(field, field.closest(".private-thread").querySelector(".player-chat-log"),
-      field.dataset.recipient, `player-draft:${requestKey}:private:${field.dataset.recipient}`));
+    wireChatComposer(field, field.closest(".private-thread").querySelector(".human-chat-log"),
+      field.dataset.recipient, `human-draft:${requestKey}:private:${field.dataset.recipient}`));
 }
 
 function pullPeerStatus(request) {
-  const findExperiment = S.playerExperimentAgent === request.agent && S.playerExperiment
-    ? Promise.resolve(S.playerExperiment)
+  const findExperiment = S.humanExperimentAgent === request.agent && S.humanExperiment
+    ? Promise.resolve(S.humanExperiment)
     : get("/api/experiments").then(data => {
         S.poll = data.poll; S.stale = data.stale;
         const match = (data.experiments || []).find(experiment => (experiment.seats || []).includes(request.agent));
-        S.playerExperimentAgent = request.agent;
-        S.playerExperiment = match && match.experiment_id;
-        return S.playerExperiment;
+        S.humanExperimentAgent = request.agent;
+        S.humanExperiment = match && match.experiment_id;
+        return S.humanExperiment;
       });
   return findExperiment.then(name => name && Promise.all([
       get(`/api/experiment/${encodeURIComponent(name)}`),
-      get(`/api/experiment/${encodeURIComponent(name)}/player-history?agent=${encodeURIComponent(request.agent)}`)
+      get(`/api/experiment/${encodeURIComponent(name)}/human-history?agent=${encodeURIComponent(request.agent)}`)
     ]))
     .then(result => {
       if (result && S.interaction && S.interaction.request_id === request.request_id) {
         renderPeerStatus(result[0], request.agent);
-        renderPlayerHistory(result[1], request.agent, result[0].seat_tiles, request.episode);
+        renderHumanHistory(result[1], request.agent, result[0].seat_tiles, request.episode);
       }
     }).catch(() => {});
 }
 
 function renderInteraction(request) {
-  const el = document.getElementById("player");
+  const el = document.getElementById("human");
   if (!request) {
-    if (S.interactionId !== null || (!el.innerHTML && S.playerMode))
-      el.innerHTML = S.playerMode ? `<h2>Player view</h2><div class="note">No human episode is waiting. This view will update when an interactive provider request arrives.</div>` : "";
+    if (S.interactionId !== null || (!el.innerHTML && S.humanMode))
+      el.innerHTML = S.humanMode ? `<h2>Human view</h2><div class="note">No human episode is waiting. This view will update when an interactive provider request arrives.</div>` : "";
     S.interaction = null; S.interactionId = null; S.interactionSubmitted = false;
     return;
   }
@@ -1830,17 +1831,17 @@ function renderInteraction(request) {
   el.innerHTML = `<h2>${esc(request.label)} · episode ${request.episode}</h2>
     <div class="note">This is your private view.</div>
     <div id="peer-status" class="peer-strip" aria-label="Other participant status"><span class="note">Loading participant status&hellip;</span></div>
-    <div class="player-grid">
-    <div class="player-column"><details class="prompt-details"><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
-      <h3>Blackboard</h3><section class="player-chat" ${postIndex >= 0 ? `data-tool-index="${postIndex}"` : ""}><div class="player-chat-head">Public room</div>
-        <div id="player-board" class="player-chat-log" role="log" aria-label="Blackboard history"><div class="empty">Loading history&hellip;</div></div>
+    <div class="human-grid">
+    <div class="human-column"><details class="prompt-details"><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
+      <h3>Blackboard</h3><section class="human-chat" ${postIndex >= 0 ? `data-tool-index="${postIndex}"` : ""}><div class="human-chat-head">Public room</div>
+        <div id="human-board" class="human-chat-log" role="log" aria-label="Blackboard history"><div class="empty">Loading history&hellip;</div></div>
         ${postIndex >= 0 ? `<div class="chat-compose"><textarea rows="2" data-field="body" data-type="string"
           aria-label="Post to Blackboard" placeholder="Post to Blackboard…"></textarea></div>` : ""}</section>
-      <h3>Private chats</h3><div id="player-private" class="private-chat-list" aria-label="Private conversations"
+      <h3>Private chats</h3><div id="human-private" class="private-chat-list" aria-label="Private conversations"
         ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
       <h3>Episode information</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
-    <div class="player-column"><h3>Episode actions</h3>${tools || `<div class="note">Use the chat composers, then submit the episode.</div>`}
-      <div class="player-actions"><button id="submit-interaction">Submit episode</button>
+    <div class="human-column"><h3>Episode actions</h3>${tools || `<div class="note">Use the chat composers, then submit the episode.</div>`}
+      <div class="human-actions"><button id="submit-interaction">Submit episode</button>
       <span class="note" id="interaction-state">ready</span></div></div></div>`;
   document.getElementById("submit-interaction").onclick = submitInteraction;
 }
@@ -1898,7 +1899,7 @@ function pullInteraction() {
   return get("/api/interaction").then(value => {
     const requests = value.requests || [];
     const agents = new Set(seatTiles().map(seat => seat.agent));
-    const visible = S.playerMode ? requests : requests.filter(request => agents.has(request.agent));
+    const visible = S.humanMode ? requests : requests.filter(request => agents.has(request.agent));
     const request = visible.find(item => item.agent === (S.interaction || {}).agent)
       || visible.find(item => item.agent === S.agent) || visible[0] || null;
     renderInteraction(request);
@@ -1907,7 +1908,7 @@ function pullInteraction() {
 }
 
 function poll() {
-  if (S.playerMode) {
+  if (S.humanMode) {
     return pullInteraction().then(() => setTimeout(poll, S.poll));
   }
   get("/api/experiments").then(d => {
@@ -1931,11 +1932,11 @@ function poll() {
 
 function renderMode() {
   const page = document.getElementById("page"), toggle = document.getElementById("mode-toggle");
-  page.classList.toggle("play-mode", S.playerMode);
-  toggle.textContent = S.playerMode ? "Observer view" : "Play view";
-  toggle.setAttribute("aria-pressed", String(S.playerMode));
-  toggle.setAttribute("aria-label", S.playerMode ? "Switch to observer view" : "Switch to player view");
-  if (S.playerMode) pullInteraction();
+  page.classList.toggle("human-mode", S.humanMode);
+  toggle.textContent = S.humanMode ? "Observer view" : "Human view";
+  toggle.setAttribute("aria-pressed", String(S.humanMode));
+  toggle.setAttribute("aria-label", S.humanMode ? "Switch to observer view" : "Switch to human view");
+  if (S.humanMode) pullInteraction();
   else {
     renderInteraction(null);
     blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
@@ -1999,8 +2000,8 @@ document.getElementById("fold").onclick = () => {
   S.compact = !S.compact; hold("compact", S.compact); renderFold();
 };
 document.getElementById("mode-toggle").onclick = () => {
-  S.playerMode = !S.playerMode;
-  hold("player-mode", S.playerMode);
+  S.humanMode = !S.humanMode;
+  hold("human-mode", S.humanMode);
   renderMode();
 };
 document.getElementById("body").addEventListener("click", e => {
@@ -2030,7 +2031,7 @@ document.addEventListener("keydown", e => {
     e.preventDefault();
     return;
   }
-  if (e.key !== "Escape" || S.tab === "mailbox" || S.tab === "agent" || !S.inspect[S.tab]) return;
+  if (e.key !== "Escape" || S.tab === "mailbox" || S.tab === "trace" || !S.inspect[S.tab]) return;
   closeInspector(S.tab);
 });
 renderMode();
