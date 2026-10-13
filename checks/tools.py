@@ -29,7 +29,7 @@ from checks.lanes import (
     trace_on_disk,
 )
 
-# One tool of each kind, on the channels the default table already has.
+# One tool of each kind, on the channels the defaults already declare.
 SEND = {"name": "send", "kind": "write_message", "channel": "mailbox"}
 
 POST = {"name": "post", "kind": "write_file", "channel": "board"}
@@ -790,7 +790,7 @@ def check_a_tool_result_says_what_actually_happened():
     assert "memory/secret is not in the 'board' channel" in outside, outside
 
 
-def check_an_action_naming_no_path_answers_in_its_own_words():
+def check_a_tool_naming_no_path_answers_in_its_own_words():
     """A message, a board post and memory name no path, so each answers in
     sentences of its own: done, already so where the body is what is held, rejected
     where the body is not text, and not done where the write did not land. What is

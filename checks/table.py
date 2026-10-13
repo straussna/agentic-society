@@ -295,8 +295,9 @@ def check_retired_keys_are_rejected():
             )
 
 
-def check_the_default_table_is_todays_environment():
-    """config.toml declares the code's default table and moves only the four numbers on it."""
+def check_the_default_channels_are_what_config_toml_declares():
+    """config.toml declares the code's default channels and moves only the four numbers
+    on them."""
     with harness.using(harness.load_config(harness.SETTINGS)[0]):
         declared = harness.channels()
         assert [c.name for c in declared] == [c.name for c in harness.DEFAULT_CHANNELS]
@@ -431,7 +432,8 @@ def check_a_declared_table_reshapes_the_environment():
 
 
 def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
-    """Under the default table a label replaces the seat everywhere the agents look."""
+    """Under the default channels a label replaces the seat everywhere the agents
+    look."""
     labels = {"1": "alpha", "2": "beta"}
     with temp_root() as root:
         seated(
@@ -756,7 +758,7 @@ def check_a_trace_that_names_no_harness_files_is_read_under_the_defaults():
 
     A manifest applied in this process replaces the names in force, so reading an old
     trace through it would name files that episode never had. table_of reads the
-    default table the same way.
+    default channels the same way.
     """
     with pinned():
         harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")

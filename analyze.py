@@ -157,7 +157,7 @@ def label_of(t: dict) -> str:
 
 def harness_files_of(t: dict) -> dict[str, str]:
     """What the harness's own files were called this episode, or the code's default
-    names where the trace predates them, as table_of reads the default table."""
+    names where the trace predates them, as table_of reads the default channels."""
     return t["provenance"].get("harness_files") or dict(harness.DEFAULT_HARNESS_FILES)
 
 
@@ -715,7 +715,7 @@ def rewrote_in_turn(ts: list[dict]) -> str:
 
 
 def peer_lines(ts: list[dict]) -> list[str]:
-    """Where this agent sat, who else was at the table, and what it put out.
+    """Where this agent sat, who else was seated, and what it put out.
 
     An agent with no experiment says so in one line. An experiment that changed
     between episodes is already in provenance_drift; this reports what was in force.

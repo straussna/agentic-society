@@ -334,7 +334,7 @@ def check_provider_tool_schemas_are_identical():
     )
 
 
-def check_openai_usage_prices_cache_reasoning_and_long_context():
+def check_openai_usage_rates_cache_reasoning_and_long_context():
     def response(prefix):
         return NS(
             id=str(prefix),
@@ -363,12 +363,12 @@ def check_openai_usage_prices_cache_reasoning_and_long_context():
     )
 
 
-def check_promotional_price_expiry_is_scoped_to_seated_models():
-    assert not providers.lapsed_prices(
+def check_promotional_rate_expiry_is_scoped_to_seated_models():
+    assert not providers.lapsed_rates(
         [("openai", "gpt-5.6-sol")], dt.date(2026, 11, 21)
     )
-    assert providers.lapsed_prices([("openai", "gpt-5.6-sol")], dt.date(2026, 11, 22))
-    assert not providers.lapsed_prices(
+    assert providers.lapsed_rates([("openai", "gpt-5.6-sol")], dt.date(2026, 11, 22))
+    assert not providers.lapsed_rates(
         [("openai", "gpt-5.6-terra")], dt.date(2099, 1, 1)
     )
 

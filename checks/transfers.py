@@ -110,7 +110,7 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     assert harness.channel("transfer").silence_penalty_percent == 0
 
 
-def check_a_transfer_moves_both_accounts_and_both_series():
+def check_a_transfer_moves_both_accounts_and_both_balance_histories():
     """A transfer credits the receiver in full and rebates the giver, both visible in n.
 
     The receiver's ground truth is written by the giver's episode, so what the

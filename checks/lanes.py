@@ -140,7 +140,7 @@ class HostShell(harness.Shell):
             "env": {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"},
         }
 
-    def republish_balance(self, label: str, series: list[int], expected: str) -> str:
+    def replant_balance(self, label: str, series: list[int], expected: str) -> str:
         n = self.sandbox.work / harness.balance_name(label)
         was = n.read_text(encoding="utf-8") if n.exists() else ""
         n.write_text(harness.render_balance(series), encoding="utf-8", newline="\n")
@@ -320,10 +320,10 @@ def seats_manifest(root: Path, ids: Iterable[str], name: str = "seats.toml") -> 
 
 
 def tables(*extra: dict, **per_name: dict) -> list[dict]:
-    """The default channel table as [[channel]] tables, with fields changed by name.
+    """The default channels as [[channel]] tables, with fields changed by name.
 
-    tables(transfer={"rebate_percent": 50}) is the default table with one field moved;
-    positional dicts are whole extra channels. For temp_root(channels=...).
+    tables(transfer={"rebate_percent": 50}) is the default channels with one field
+    moved; positional dicts are whole extra channels. For temp_root(channels=...).
     """
     declared = [c.declared() for c in harness.DEFAULT_CHANNELS]
     by = {t["name"]: t for t in declared}

@@ -423,7 +423,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
         )
 
 
-def check_bills_once():
+def check_charges_once():
     """A response is charged exactly once, however the duplicate arose.
 
     Two ways it can: the harness retried a 429 that the server had already served,
@@ -559,7 +559,7 @@ def check_tool_result_limit_is_configurable_and_bounded():
     assert t["provenance"]["tool_result_limit"] == 2_000, "and recorded per episode"
 
 
-def check_a_refusal_is_billed_only_if_it_produced_output():
+def check_a_refusal_is_charged_only_if_it_produced_output():
     """A refusal costs what it emitted, and an empty one emitted nothing.
 
     The API reports the tokens of a refusal arriving before any output and does
@@ -577,7 +577,7 @@ def check_a_refusal_is_billed_only_if_it_produced_output():
     assert t["turns"][2]["micros"] > 0, "the turn that answered was billed"
 
 
-def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix():
+def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix():
     """The adapter itself carries the refusal rule and the long-context rates.
 
     A refusal that emitted nothing is not billed, and says why from its stop details;

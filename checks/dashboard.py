@@ -642,7 +642,7 @@ def check_a_grouping_reads_each_account_once_a_poll():
 
 def check_a_trace_that_predates_the_harness_file_names_still_groups():
     """A trace whose provenance names no harness files is read under the code's default
-    names, as one naming no channel table is read under the default table, so its
+    names, as one naming no channel table is read under the default channels, so its
     experiment still groups and its header still opens instead of failing every poll.
     The names in force are another experiment's, and not the ones it ran under."""
     with rooted(HostSandbox, harness_files={"balance": "purse"}):

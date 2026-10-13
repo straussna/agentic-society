@@ -444,7 +444,7 @@ def from_trace(t: dict) -> list[dict]:
 def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     """A running episode's turns from canonical events written after native responses.
 
-    Billed by the rule harness.bill_once applies, restated over the logged dict: a
+    Charged by the rule harness.charge_once applies, restated over the logged dict: a
     response id's charges count once and a replay of it is zeroed, so each balance
     is the one the account commits, counted down from zero where this poll could not
     read the account. Command results are None until the trace lands, and a shell
@@ -525,7 +525,7 @@ def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dic
     }
 
 
-# --- who is at the table ----------------------------------------------------
+# --- who is seated ----------------------------------------------------------
 
 
 def derived_experiment_id(agent: str, account: Mapping[str, Any]) -> str:
@@ -981,8 +981,8 @@ def seat_row(
     eliminated = account.get("eliminated")
     exhausted = bool(account) and harness.exhausted(account)
     stopped_by_run = bool(last and last["stop"] in harness.STOPS_THE_AGENT)
-    # More than a round behind the table's round, as experiment.behind judges it. Only
-    # a seated experiment runs by rounds.
+    # More than a round behind the furthest committed round, as experiment.behind
+    # judges it. Only a seated experiment runs by rounds.
     behind = (
         seat is not None and running is None and last_round < committed_round - 1
     )

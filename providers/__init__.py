@@ -76,7 +76,7 @@ def provenance(provider: str, model: str) -> dict[str, Any]:
     }
 
 
-def lapsed_prices(
+def lapsed_rates(
     requirements: Iterable[tuple[str, str]], today: dt.date | None = None
 ) -> list[str]:
     today = today or dt.date.today()
@@ -151,7 +151,7 @@ __all__ = [
     "USAGE_FIELDS",
     "Usage",
     "is_human",
-    "lapsed_prices",
+    "lapsed_rates",
     "model_spec",
     "provenance",
     "provider_names",

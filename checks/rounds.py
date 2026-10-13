@@ -100,11 +100,11 @@ def check_every_viewer_sees_the_same_seat_order():
         assert order == list(seats), (agent, order)
 
 
-def check_the_competition_delivers_its_complete_mechanics_brief():
+def check_the_competition_delivers_its_complete_mechanics_in_its_starter_files():
     """The shipped competition's per-file bound carries its full agent contract."""
     manifest = experiment.load_manifest(experiment.manifest_path("competition"))
-    brief = Path(manifest["overrides"]["starter_files"])
-    text = brief.read_text(encoding="utf-8")
+    starter = Path(manifest["overrides"]["starter_files"])
+    text = starter.read_text(encoding="utf-8")
     plain = " ".join(text.split())
     assert manifest["overrides"]["digest_file_limit"] >= len(text), (
         manifest["overrides"]["digest_file_limit"],
@@ -153,11 +153,11 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     """The shipped survivor arm carries its rules without exposing accounting."""
     path = experiment.manifest_path("survivor")
     manifest = experiment.load_manifest(path)
-    brief = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
+    starter = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
     vote = next(tool for tool in manifest["tools"] if tool["kind"] == "vote")
     surface = "\n".join(
         [
-            brief,
+            starter,
             manifest["overrides"]["system_prompt"],
             *(tool["description"] for tool in manifest["tools"]),
         ]
@@ -301,7 +301,7 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
         )
 
 
-def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
+def check_a_tied_top_vote_eliminates_no_voter_and_the_vote_cycle_repeats():
     """Tied leaders remain, and episode ten opens the next election."""
     ballot = {
         "name": "ballot",
@@ -2597,7 +2597,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
     )
 
 
-def check_a_simultaneous_credit_lands_before_the_floor():
+def check_a_simultaneous_transfer_lands_before_the_floor():
     """A same-round transfer reaches a receiver that overspent before the floor decides on it."""
     cost = turn_cost()
     results = {}

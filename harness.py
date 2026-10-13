@@ -27,7 +27,7 @@ Sections, in the order an episode meets them:
                                     episode_specs
  11. The API                        with_retries, log_raw, watch
  12. The turn loop                  run_turns
- 13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
+ 13. Settlement                     make_transfer, resolve_transfer, resolve_directory,
                                     resolve_mailbox, SETTLEMENTS
  14. Provenance and the trace       provenance, config_drift, snapshot
  15. The steps of one episode       Episode, build_episode, run_episode, settle_episode,
@@ -2117,7 +2117,7 @@ def exhausted(account: Mapping[str, Any]) -> bool:
     """Whether the balance has reached zero or less: the agent is exhausted.
 
     A state an agent enters once and does not leave: in_play() starts no further
-    episode on it, and move_transfer rejects it as a target. Read between episodes.
+    episode on it, and make_transfer rejects it as a target. Read between episodes.
     """
     return account["balance"] <= 0
 
@@ -3396,7 +3396,7 @@ def plant_harness_files(container: str, files: dict[str, str]) -> None:
     )
 
 
-def publish_balance_live(
+def plant_balance_live(
     container: str, label: str, series: list[int], expected: str
 ) -> str:
     """Rewrite the agent's own balance in a running container.
@@ -3746,9 +3746,9 @@ class Shell:
         """
         return dict(DETACHED)
 
-    def republish_balance(self, label: str, series: list[int], expected: str) -> str:
-        """Rewrite the agent's own balance mid-episode. See publish_balance_live."""
-        return publish_balance_live(self.container, label, series, expected)
+    def replant_balance(self, label: str, series: list[int], expected: str) -> str:
+        """Rewrite the agent's own balance mid-episode. See plant_balance_live."""
+        return plant_balance_live(self.container, label, series, expected)
 
     def restart(self) -> None:
         """Start a fresh shell, losing cwd and exports - which is what restart is."""
@@ -4868,7 +4868,9 @@ def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
 # --- 11. The API -----------------------------------------------------------------
 
 
-def bill_once(response: NormalizedResponse, seen: set[str]) -> tuple[tuple, int, bool]:
+def charge_once(
+    response: NormalizedResponse, seen: set[str]
+) -> tuple[tuple, int, bool]:
     """Return charges and their total once per response id."""
     if response.id in seen:
         return (), 0, True
@@ -5138,7 +5140,7 @@ def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
     What this write replaces is what the last one left: the balance history without
     the element this turn just added.
     """
-    status = shell.republish_balance(
+    status = shell.replant_balance(
         label,
         account["balance_history"] + out["balances"],
         render_balance(account["balance_history"] + out["balances"][:-1]),
@@ -5243,8 +5245,8 @@ def run_turns(
                 response = dataclasses.replace(response, id=rid)
             stop_reason = response.stop_reason
             out["resolved_model"] = out["resolved_model"] or response.resolved_model
-            charges, billed_centi, duplicate = bill_once(response, seen)
-            centi += billed_centi
+            charges, charged_centi, duplicate = charge_once(response, seen)
+            centi += charged_centi
             previous, balance = balance, opening_balance - centi // 100
             calls = list(response.tool_calls)
             turn = turn_record(
@@ -5429,7 +5431,7 @@ def transfer_declaration(
     return TransferParsed(declared, label, int(lines[0]))
 
 
-def move_transfer(
+def make_transfer(
     ep: Episode,
     ch: Channel,
     path: Path,
@@ -5506,7 +5508,7 @@ def resolve_transfer(
     episode with no turn or inside the grace.
     """
     transfer = EMPTY_TRANSFER.copy()
-    move_transfer(ep, inst.channel, inst.host, spent, transfer, credit)
+    make_transfer(ep, inst.channel, inst.host, spent, transfer, credit)
     transfer["changed"] = transfer["declared"] is not None
     if transfer["amount"] > 0 or not settles:
         return transfer
@@ -6590,7 +6592,7 @@ def start(
     requirements = tuple(requirements)
     if not requirements:
         reject("every seated agent needs an explicit provider and model")
-    for line in providers.lapsed_prices(requirements):
+    for line in providers.lapsed_rates(requirements):
         reject(line)
     try:
         router = providers.DirectProviderRouter(requirements)

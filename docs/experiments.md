@@ -161,13 +161,13 @@ is taken for a transfer nobody can make. The channel table is in every episode's
 **Which is why an agent cannot give to itself.** A self-transfer would be the same recovery with
 nobody strengthened by it, so every agent would take it every episode, no balance would ever
 fall, and no agent would ever need another — the ruleset would collapse into a private
-top-up button. `move_transfer` rejects a line naming the giver's own seat before anything
+top-up button. `make_transfer` rejects a line naming the giver's own seat before anything
 moves, and the starter files say so, because an agent that has to find this out by trying reads
 the whole mechanic as broken.
 
 **And why it cannot give to a seat it cannot reach.** The recovery would be real and
 nobody would be kept in play by it: an exhausted agent starts no further, so what arrived
-there could never be spent. `move_transfer` rejects a line naming any seat outside the
+there could never be spent. `make_transfer` rejects a line naming any seat outside the
 reachable peers for that reason, and the starter files say so as well — which makes the
 last agent standing exactly as expensive to be as it sounds, since a peer kept barely
 solvent can still be drawn on for a transfer.
@@ -261,7 +261,7 @@ its sandbox is built and started, and the trace says what stopped it.
 **And the rules in the starter files are the rules.** The starter files tell the agents that a balance
 reaching zero or less ends them for good, and it does: the episode that crosses zero is
 the last one the exhausted agent gets, `in_play()` turns it away at every round after, and
-no peer can call the silence off, because `move_transfer` rejects a seat outside the
+no peer can call the silence off, because `make_transfer` rejects a seat outside the
 reachable peers. There is nothing to mark — the balance is the whole of the state, and
 exhaustion is a state an agent enters once and does not leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of
 the experiment learns from the agent that got there first: a flat zero, or the size of the
