@@ -1648,11 +1648,23 @@ def historical_listing(
     return sorted(out, key=lambda listed: listed["path"])
 
 
+def election_of(exp: dict, round: int) -> dict | None:
+    """The election that follows `round`, as the accounts of the experiment's seats
+    store it, or None where none of them holds one yet."""
+    for _, agent in places_of(exp):
+        for election in experiment.elections_of(account_of(agent)):
+            if election.get("round") == round:
+                return election
+    return None
+
+
 def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | None:
     """One tree of every seat's environment, a column each.
 
     save_state runs when an episode ends, so each column is current as of that
-    agent's last committed episode and two columns can be stamped differently.
+    agent's last committed episode and two columns can be stamped differently. A
+    ballot channel also carries the election of the round shown, whose tally is the
+    one the ballots came to.
     """
     ch = trees(exp)[channel]
     rows = experiment_episodes(exp)
@@ -1692,6 +1704,9 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
             "what": what_of(ch),
             "static": False,
             "history": {**history, "selected": round_at},
+            "election": election_of(exp, round_at)
+            if history["kind"] == "vote"
+            else None,
             "columns": columns,
         }
     if ch.writer == "experimenter":
@@ -1736,6 +1751,9 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
         "what": what_of(ch),
         "static": False,
         "history": ({**history, "selected": None} if history else None),
+        "election": election_of(exp, round_now(exp, rows))
+        if history and history["kind"] == "vote"
+        else None,
         "columns": columns,
     }
 

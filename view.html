@@ -636,6 +636,8 @@ const nameOf = (seat) => {
   const h = S.head || {};
   return (h.balance || "") + ((h.labels || {})[seat] || seat);
 };
+// The same name, from a label: what a ballot and an election's tally hold.
+const labelName = (label) => ((S.head || {}).balance || "") + label;
 // One line of a diff, classed by what it did.
 const diffLine = (l) => `<span class="${l[0] === "+" ? "a" : l[0] === "-" ? "d" : "h"}">${esc(l)}</span>`;
 
@@ -1211,29 +1213,31 @@ function renderBallotAggregate(channel) {
       ballots.push({c, f, got, target, color:inkOf(i)});
     }
   }
-  const sig = JSON.stringify([channel, d.history, ballots.map(b =>
+  const sig = JSON.stringify([channel, d.history, d.election, ballots.map(b =>
     [b.c.agent, b.c.committed, b.f.stamp, b.got && b.got.stamp, b.target])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  const tally = new Map();
-  for (const ballot of ballots) if (ballot.target) {
-    tally.set(ballot.target, (tally.get(ballot.target) || 0) + 1);
-  }
-  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1]
+  // The tally is the election's, as the accounts store it, and not a count of the
+  // files below: a ballot naming no candidate, or the voter itself, counts for nobody.
+  const ranked = Object.entries((d.election || {}).tally || {}).sort((a, b) => b[1] - a[1]
     || a[0].localeCompare(b[0], undefined, {numeric:true}));
   const high = Math.max(1, ...ranked.map(([, count]) => count));
-  const results = ranked.map(([target, count]) => `<div class="vote-result">
-    <span class="target">${esc(nameOf(target) || target)}</span><span class="vote-bar"><i style="width:${count / high * 100}%"></i></span>
+  const results = ranked.map(([label, count]) => `<div class="vote-result">
+    <span class="target">${esc(labelName(label))}</span><span class="vote-bar"><i style="width:${count / high * 100}%"></i></span>
     <span class="count">${count} vote${count === 1 ? "" : "s"}</span></div>`).join("");
+  const untallied = selected == null
+    ? "Not tallied yet: the election is held once every elector has taken the round."
+    : `No election after round ${selected} is on record.`;
   const rows = ballots.map(({c, got, target}) => `<tr><td>${seatTag(c.seat)} · ${esc(c.agent)}</td>
     <td>${got === undefined ? "reading…" : got == null ? "unavailable" : got.text == null ? "binary ballot"
-      : target ? `→ ${esc(nameOf(target) || target)}` : "empty ballot"}</td></tr>`).join("");
+      : target ? `→ ${esc(labelName(target))}` : "empty ballot"}</td></tr>`).join("");
   const roundName = selected == null ? "Live ballot" : `Round ${selected} ballot`;
   const summary = `${ballots.length} submitted · ${missing.length} seat${missing.length === 1 ? "" : "s"} did not act in this round`;
   redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread ballot-view" aria-label="${esc(roundName)} aggregate">
     <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span>
       <span class="note">${summary}</span></div></div><div class="ballot-body">
-      <div class="vote-tally">${results || `<div class="empty">No votes to tally.</div>`}</div>
+      <div class="vote-tally">${!d.election ? `<div class="empty">${untallied}</div>`
+        : results || `<div class="empty">No candidates in this election.</div>`}</div>
       ${rows ? `<div class="round">submitted ballots<i></i></div><table class="ballot-table"><tbody>${rows}</tbody></table>` : ""}
     </div></section></div>`);
   wireSnapshots(el, channel);
