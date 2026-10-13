@@ -4181,14 +4181,14 @@ class Bound:
         Prompt surface, and the experimenter's: a description reaches the model in
         the model call exactly as the system prompt does, so it is theirs to write and
         it is recorded whole and by sha256 in the tool table. An experiment that
-        writes none is given the harness's own account of the action, which is
+        writes none is given the harness's generated description, which is
         computed from the channel and cannot say what the channel does not.
         docs/manifest.md section 4.8.
         """
         return self.tool.description or self.generated()
 
     def generated(self) -> str:
-        """The harness's account of this tool, computed from the channel it points at.
+        """The harness's description of this tool, computed from its channel.
 
         What a tool says of itself when the experiment declares no words of its
         own. Every path, label and reader in it is read out of the channel table.
@@ -4349,7 +4349,7 @@ def text_input(said: str) -> dict:
 
 
 def fixed(said: str) -> Callable[[Bound], str]:
-    """The account of a kind that says the same of itself on every channel."""
+    """The description of a kind that says the same of itself on every channel."""
     return lambda b: said
 
 
@@ -4369,20 +4369,20 @@ def shell_only(*_: Any) -> NoReturn:
     raise TypeError("bash is the episode shell and is bound to no channel")
 
 
-def write_slot_said(b: Bound) -> str:
-    """write_slot's account: the slot it fills, and where that peer reads it."""
+def write_message_said(b: Bound) -> str:
+    """write_message's description: the message it sets and where the peer reads it."""
     ch = b.channel
     return (
-        f"Put text in {ch.outbox}/<to>, one peer's slot of the {ch.name!r} "
+        f"Put a message to one peer at {ch.outbox}/<to> in the {ch.name!r} "
         f"channel, for their next episode. That peer is the only one that can "
         f"read it, at {ch.inbox}/{b.own.label}; it then expires unless they "
-        "retain it in private memory. A later call to the same peer in this "
+        "retain it in their memory. A later call to the same peer in this "
         "episode replaces the earlier one."
     )
 
 
-def write_slot_input_schema(b: Bound) -> dict:
-    """A reachable peer's label, and the text for their slot."""
+def write_message_input_schema(b: Bound) -> dict:
+    """A reachable peer's label, and the text of the message to them."""
     return inputs(
         to={
             "type": "string",
@@ -4393,8 +4393,8 @@ def write_slot_input_schema(b: Bound) -> dict:
     )
 
 
-def write_slot_call(b: Bound, shell: Shell, args: dict) -> str:
-    """Put the text in the named peer's slot, reporting the change by path."""
+def write_message_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Set the message to the named peer, reporting the change by path."""
     to = args.get("to")
     if to not in b.slots:
         return f"{to!r} is not a peer this channel reaches; it reaches {', '.join(b.slots)}. Nothing was written."
@@ -4438,7 +4438,8 @@ def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 def write_file_said(b: Bound) -> str:
-    """write_file's account: where under the agent's own instance it writes, and who reads it."""
+    """write_file's description: where under the agent's own instance it writes, and
+    who reads it."""
     return (
         f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
         f"It replaces whatever that path holds. {b.readers_said()}"
@@ -4493,7 +4494,7 @@ def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 def vote_said(b: Bound) -> str:
-    """vote's account: the cadence it is offered on, and what a ballot reveals."""
+    """vote's description: the cadence it is offered on, and what a ballot reveals."""
     return (
         f"Vote to eliminate one peer. This action is offered only on every "
         f"{b.tool.every}th episode, when peer communication and the shell are "
@@ -4534,7 +4535,7 @@ def vote_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 def transfer_said(b: Bound) -> str:
-    """transfer's account: who funds it, and that it stands for one episode."""
+    """transfer's description: who funds it, and that it stands for one episode."""
     ch = b.channel
     funding = (
         "The amount leaves your balance."
@@ -4617,7 +4618,8 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 def read_path_said(b: Bound) -> str:
-    """read_path's account: what the channel holds, and where a result is clipped."""
+    """read_path's description: what the channel holds, and where a result is
+    clipped."""
     return (
         f"Read one file in the {b.channel.name!r} channel, which holds "
         f"{b.paths_said()}. Returns what that file holds, clipped at "
@@ -4647,12 +4649,12 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "bash": ToolKind(
         "no channel", lambda ch: False, shell_only, shell_only, shell_only, writes=False
     ),
-    "write_slot": ToolKind(
+    "write_message": ToolKind(
         "a mailbox channel",
         unparsed_mailbox,
-        write_slot_said,
-        write_slot_input_schema,
-        write_slot_call,
+        write_message_said,
+        write_message_input_schema,
+        write_message_call,
         needs_peer=True,
     ),
     "send_message": ToolKind(
@@ -7008,7 +7010,7 @@ def show_tools(
 
     A description reaches the model in the model call the way the system prompt does,
     so --print-system audits both. A tool that declares none is named as taking the
-    harness's own account of it, which is computed per agent from the channel and
+    harness's generated description, which is computed per agent from the channel and
     seating and so is not a constant to print here.
     """
     if not declared:
@@ -7022,7 +7024,7 @@ def show_tools(
             print("  bash (built-in shell)")
             continue
         said = raw.get("description", "")
-        words = repr(said) if said else "(the harness's account of the channel)"
+        words = repr(said) if said else "(the harness's generated description)"
         print(f"  {raw['name']} ({raw['kind']} on {raw.get('channel', '')}): {words}")
 
 

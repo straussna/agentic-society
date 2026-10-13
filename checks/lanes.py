@@ -344,7 +344,7 @@ FULL_REBATE = tables(transfer={"rebate_percent": 100})
 def offers(*declared: dict) -> list[dict]:
     """[[tool]] tables, one per (kind, channel) pair given as "kind:channel".
 
-    offers("write_slot:mail") is one tool named after its kind; a dict is a whole
+    offers("write_message:mail") is one tool named after its kind; a dict is a whole
     tool table, for a check that wants its own name. For temp_root(tools=...).
     """
     out = []

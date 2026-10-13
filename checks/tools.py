@@ -29,7 +29,7 @@ from checks.lanes import (
 )
 
 # One tool of each kind, on the channels the default table already has.
-SEND = {"name": "send", "kind": "write_slot", "channel": "mail"}
+SEND = {"name": "send", "kind": "write_message", "channel": "mail"}
 
 POST = {"name": "post", "kind": "write_file", "channel": "blackboard"}
 
@@ -454,7 +454,7 @@ def check_a_tool_table_is_validated():
         (one(kind=3), ["kind must be str"]),
         (one(kind="shout"), ["kind must be one of"]),
         (one(channel="nowhere"), ["is not in the channel table"]),
-        (one(kind="write_slot", channel="blackboard"), ["takes a mailbox channel"]),
+        (one(kind="write_message", channel="blackboard"), ["takes a mailbox channel"]),
         (one(kind="write_file", channel="mail"), ["takes a directory channel"]),
         (one(kind="write_file", channel="transfer"), ["takes a directory channel"]),
         (one(kind="vote", channel="notes"), ["requires every"]),
@@ -475,7 +475,7 @@ def check_a_tool_table_is_validated():
     # A good table comes back in declaration order and sets nothing.
     table = harness.validate_tools([SEND, POST, LOOK], chans, "check")
     assert [t.name for t in table] == ["send", "post", "look"]
-    assert [t.kind for t in table] == ["write_slot", "write_file", "read_path"]
+    assert [t.kind for t in table] == ["write_message", "write_file", "read_path"]
     assert harness.tools() == [], "validating sets nothing"
 
     with temp_root(tools=[SEND]):
@@ -620,12 +620,12 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         assert prov["tools"][0]["description"] == said, "recorded whole"
         assert prov["tools_sha256"] == harness.tools_sha256(harness.tools())
         assert (
-            harness.tools_sha256([harness.Tool("send", "write_slot", "mail")])
+            harness.tools_sha256([harness.Tool("send", "write_message", "mail")])
             != prov["tools_sha256"]
         ), "and by sha256, so two wordings are two arms"
 
-    # Declared none: the harness's own account of the channel, which cannot say
-    # what the channel does not.
+    # Declared none: the harness's generated description, computed from the channel,
+    # which cannot say what the channel does not.
     with temp_root(tools=[SEND, POST, LOOK]) as root:
         seated(root, "t", t={}, o={})
         with quiet():

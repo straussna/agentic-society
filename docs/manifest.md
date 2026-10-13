@@ -72,7 +72,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Schema** | A fixed format the harness parses and acts on, read either from a `self`-written, `harness`-read file or from a `self`-written, `addressee`-read mailbox. A fixed menu in code |
 | **Tool** | A named operation a model call offers an agent, declared as a kind from a fixed menu pointed at a channel, with the description the experimenter gives it. Includes bash only when explicitly declared |
 | **Tool call** | One invocation of a tool that a response asks for: the tool's name and its input. The harness checks the input against the tool's input schema before acting on it |
-| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `read_path`, `transfer`. A fixed menu in code |
+| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_message`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `read_path`, `transfer`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its memory when its balance first falls to its starter threshold |
 | **Starter threshold** | The balance, `starter_files_below`, at or below which an agent's starter files land. At or above the budget, they land at episode 1 |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
@@ -509,7 +509,7 @@ has to find, read and infer a purpose for.
 ```toml
 [[tool]]
 name = "send"               # required; unique; letters, digits, '_' and '-', at most 64
-kind = "write_slot"         # required; from the menu below
+kind = "write_message"      # required; from the menu below
 channel = "mail"            # required; a declared channel the kind can act on
 description = "..."         # optional; prompt surface. Omitted, the harness writes it
 ```
@@ -522,7 +522,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `kind` | Takes | Input | What the harness does |
 |---|---|---|---|
 | `bash` | no channel; name must be `bash` | built-in bash schema | Executes shell commands |
-| `write_slot` | a mailbox channel without a schema | `to` (a peer's label), `body` | Sends one episode-scoped message through `<outbox>/<to>`; a later call to that peer in the episode replaces it |
+| `write_message` | a mailbox channel without a schema | `to` (a peer's label), `body` | Sends one episode-scoped message through `<outbox>/<to>`; a later call to that peer in the episode replaces it |
 | `send_message` | a mailbox channel without a schema; a call succeeds only when exactly one peer is reachable | `body` | Sends one private, episode-scoped message without exposing the mailbox path |
 | `send_message_to` | a mailbox channel without a schema | `to` (a peer label), `body` | Sends one private, episode-scoped message without exposing the mailbox path |
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
@@ -599,7 +599,7 @@ bytes written with `bash` would. It runs no command of the agent's, so the episo
 plant is left out of the model call; a mailbox is not planted for an agent with no peers.
 A seat outside the reachable peers is not a message target either - the mailbox settles
 only messages to reachable peers - so it is not in the `to` enumeration, and a
-`write_slot`, `transfer` or `vote` tool with no reachable peer is not offered at all. Which tools an agent is
+`write_message`, `transfer` or `vote` tool with no reachable peer is not offered at all. Which tools an agent is
 actually offered follows from the tool table and the seating, both in provenance.
 
 #### What a tool says of itself
@@ -634,7 +634,7 @@ channel the tool points at:
 
 | Kind | The generated text names |
 |---|---|
-| `write_slot` | the channel's name, its outbox and inbox paths, the writer's label, and that the addressee alone reads it |
+| `write_message` | the channel's name, its outbox and inbox paths, the writer's label, and that the addressee alone reads it |
 | `write_file` | the channel's name, the agent's own instance path, and whether every agent or nobody else reads it |
 | `read_path` | the channel's name, every path of it this agent can reach with a directory's trailing slash, and the clip |
 | `transfer` | the whole-number amount rule, that the transfer applies to this episode only, the cap at episode spend, and the channel's funding and rebate |
@@ -646,7 +646,7 @@ declaration moves and never otherwise; it cannot say what the channel does not. 
 in provenance as text because it is a function of the harness's sha256, the channel
 table and the seating, all three of which are.
 
-The input schema is generated the same way, declared or not; a `write_slot`'s `to` is an
+The input schema is generated the same way, declared or not; a `write_message`'s `to` is an
 enumeration of the peers that channel actually reaches, as this agent names them.
 
 Every declared tool carries `strict`, which makes the API guarantee the arguments
