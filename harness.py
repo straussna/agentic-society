@@ -1827,10 +1827,23 @@ PINNED_SETTINGS = {
 }
 
 
+# The pinned settings every account holds, whether or not load_account is given them:
+# the provider and model it runs on.
+MODEL_SETTINGS = ("provider", "model")
+
+
 def term_shown(key: str, value: Any) -> str:
     """A pinned setting as a rejection names it: a prompt by sha256, everything else
     whole."""
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
+
+
+def missing_setting(agent: str, key: str) -> str:
+    """The rejection of an account that holds no `key`."""
+    return (
+        f"agent {agent} has an incompatible account missing {key!r}; "
+        "start a fresh agent id"
+    )
 
 
 # The key each record names its version under, and the one version harness.py reads.
@@ -1972,7 +1985,8 @@ def load_account(
     their threshold - are read once and recorded in account.json, which is what the agent
     uses from then on. Provider and model are always explicit; other omitted settings
     use their experiment tunables. A setting given for an existing agent must match what
-    it was created on.
+    it was created on. An account that holds no provider, no model, or no setting it is
+    given is rejected by the key it lacks.
     """
     s = SETTINGS
     given = {
@@ -2047,6 +2061,9 @@ def load_account(
     account = json.loads(f.read_text(encoding="utf-8"))
     if why := stale(account, "account"):
         raise SystemExit(f"agent {agent} has {why}; start a fresh agent id")
+    for key in MODEL_SETTINGS:
+        if key not in account:
+            raise SystemExit(missing_setting(agent, key))
     try:
         providers.model_spec(account["provider"], account["model"])
     except providers.ProviderConfigurationError as error:
@@ -2062,9 +2079,7 @@ def load_account(
                 f"are not one experiment; start a new agent"
             )
         if key not in account:
-            raise SystemExit(
-                f"agent {agent} has an incompatible account missing {key!r}; start a fresh agent id"
-            )
+            raise SystemExit(missing_setting(agent, key))
     return account
 
 

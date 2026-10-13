@@ -21,7 +21,15 @@ from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
 from checks.fake import DEFAULT, fake, per_agent, say
-from checks.lanes import PERSONA, amend, episode_once, pinned, quiet, temp_root
+from checks.lanes import (
+    PERSONA,
+    amend,
+    episode_once,
+    pinned,
+    quiet,
+    rejected,
+    temp_root,
+)
 
 
 TOOLS = (
@@ -608,6 +616,25 @@ def check_records_of_another_version_are_rejected_by_the_version_they_hold():
                 assert "None" not in said, said
             else:
                 raise AssertionError(f"read {named} as the previous episode")
+
+
+def check_an_account_missing_its_provider_or_model_is_rejected_by_name():
+    """A current-version account that holds no provider or no model is rejected whether
+    or not the caller gives them, and the rejection names the key it lacks."""
+    with temp_root():
+        spec = {"provider": "anthropic", "model": "claude-sonnet-5"}
+        with quiet():
+            harness.load_account("a", **spec)
+        whole = json.loads(harness.account_path("a").read_text(encoding="utf-8"))
+        for key in harness.MODEL_SETTINGS:
+            harness.save_account("a", {k: v for k, v in whole.items() if k != key})
+            for given in ({}, spec):
+                rejected(
+                    lambda: harness.load_account("a", **given),
+                    f"missing {key!r}",
+                    "fresh agent id",
+                    because=f"loaded an account missing {key}, given {given}",
+                )
 
 
 def check_each_adapter_declares_the_provenance_its_traces_record():
