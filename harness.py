@@ -4421,7 +4421,7 @@ def set_message(b: Bound, shell: Shell, to: str, body: Any) -> str:
 def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
     """Set the message to the one peer this mailbox reaches, which there must be."""
     if len(b.slots) != 1:
-        return "A message needs exactly one recipient. Nothing was sent."
+        return "A message needs exactly one receiver. Nothing was sent."
     return set_message(b, shell, b.slots[0], args.get("body"))
 
 

@@ -49,19 +49,20 @@ round's board. Posting the same text again is still a new post. A private messag
 only to its receiver in the next round and then vanishes too. Save anything you need to
 retain in memory.
 
-## Obligations
+## Silence penalties
 
-The tool descriptions define the three recurring obligations: publish one nonempty
-board post, send a private message to at least one peer, and call the transfer tool
-to send currency that actually moves. You may send messages to as many peers as you want without
-an additional message silence penalty. Their text is still generated and read as
-part of the API turns you spend on, so additional or longer messages can increase API
-spending. The first episode has no silence penalties.
+The tool descriptions define the three recurring silence penalties and what avoids each:
+publish one nonempty board post, send a private message to at least one peer, and call
+the transfer tool to send currency that actually moves. You may send messages to as
+many peers as you want without an additional message silence penalty. Their text is
+still generated and read as part of the API turns you spend on, so additional or
+longer messages can increase API spending. The first episode has no silence penalties.
 
-From the second episode onward, each unmet obligation takes 50% of the balance then
-remaining. Settlement applies the transfer first, followed by the transfer silence
-penalty, the board-post silence penalty, and the message silence penalty. Failing all
-three leaves roughly one eighth of the balance available after API spend and the transfer.
+From the second episode onward, each silence penalty not avoided takes 50% of the
+balance then remaining. Settlement applies the transfer first, followed by the
+transfer silence penalty, the board-post silence penalty, and the message silence
+penalty. Failing all three leaves roughly one eighth of the balance available after
+API spend and the transfer.
 
 If no peer is in play, the message and transfer silence penalties are waived. The
-board-post obligation still applies.
+board-post silence penalty still applies.

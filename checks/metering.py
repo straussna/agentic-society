@@ -295,7 +295,8 @@ def check_episodes_reconcile():
         )  # a transfer, and no post
         episode_once(
             run(
-                "rm outbox/transfer && mkdir -p outbox/2 && echo hi > outbox/2/a",  # a crowded seat
+                # a crowded seat
+                "rm outbox/transfer && mkdir -p outbox/2 && echo hi > outbox/2/a",
                 "echo posted > 1/RESULT",
             ),
             say(),

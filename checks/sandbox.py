@@ -948,7 +948,10 @@ def check_an_unterminated_heredoc_is_not_probed_for_tools():
     A turn truncated at max_tokens mid-heredoc leaves one, and none of its prose
     reaches probe_missing.
     """
-    cut = "cd /work/memory && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    cut = (
+        "cd /work/memory && cat >> NOTES.md <<'EOF'\n"
+        "BEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    )
     with docker_root(max_turns=1, command_timeout=5):
         t = episode_once(run(cut, stop="max_tokens"))
     assert t["missing_tools"] == [], t["missing_tools"]
@@ -992,7 +995,10 @@ def check_prose_and_programs_are_not_read_as_commands():
     )
 
     # A heredoc whose terminator never arrived is body to the end of the command.
-    cut = "cd /work/memory && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    cut = (
+        "cd /work/memory && cat >> NOTES.md <<'EOF'\n"
+        "BEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    )
     assert harness.invoked(cut) == {"cd", "cat"}, harness.invoked(cut)
     both = "cat <<EOF > f\nbody words here\nEOF\ngrep x f"
     assert harness.invoked(both) == {"cat", "grep"}, (
@@ -1058,7 +1064,8 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     stat, work, listing = (c["result"] for c in t["turns"][0]["tools"])
     assert stat.strip() == "444 root:root n1", stat
     assert sorted(work.split()) == [".", "..", "1", "g", "m", "memory", "n1"], (
-        f"/work holds the balance, the ledger, m, the blackboard, and memory/, and nothing else: {work}"
+        "/work holds the balance, the ledger, m, the board, and memory/, and nothing "
+        f"else: {work}"
     )
     assert sorted(listing.split()) == [".", ".."], f"memory/ starts empty: {listing}"
     assert t["files"] == [], "and nothing the harness wrote is in a mirrored tree"

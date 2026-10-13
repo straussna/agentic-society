@@ -178,6 +178,39 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         assert text in again["observation"], (text, again["observation"])
 
 
+def check_a_memory_view_heads_each_file_by_where_it_came_from():
+    """Under agent_view = "memory" a file is headed by its source: an experimenter
+    channel, the starter files landed in the agent's memory, or the agent itself."""
+    memory = harness.Channel(
+        "notes", "self", "self", path="memory", agent_view="memory"
+    )
+    brief = harness.Channel(
+        "brief",
+        "experimenter",
+        "all",
+        path="brief",
+        source="brief",
+        agent_view="memory",
+    )
+    instances = [
+        harness.Instance(memory, "memory", harness.mirror("t", "notes"), "own", "1"),
+        harness.Instance(
+            brief, "brief", harness.files_dir("brief"), "experimenter", ""
+        ),
+    ]
+    for path, landed, heading in (
+        ("brief/rules.md", (), "Experimenter channel: rules"),
+        ("brief/personas.md", (), "Experimenter channel: personas"),
+        ("memory/rules.md", ("memory/rules.md",), "Starter files: rules"),
+        ("memory/personas.md", ("memory/personas.md",), "Starter files"),
+        ("memory/personas.md", (), "Memory: personas"),
+        ("memory/plans.md", (), "Memory: plans"),
+        ("memory/memory.md", (), "Memory"),
+    ):
+        named = harness.digest_name(path, instances, frozenset(landed))
+        assert named == heading, (path, landed, named)
+
+
 def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     """Semantic records identify transfer rounds and itemize the preceding settlement."""
     channels = tables(

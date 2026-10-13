@@ -1289,7 +1289,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--identity",
         metavar="PATH",
-        help="a captured file to diff episode over episode, as the trace names it, e.g. memory/IDENTITY.md",
+        help=(
+            "a captured file to diff episode over episode, as the trace names it, "
+            "e.g. memory/IDENTITY.md"
+        ),
     )
     a = ap.parse_args(argv)
 

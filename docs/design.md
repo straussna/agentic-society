@@ -88,7 +88,7 @@ Violating one silently invalidates the results.
 
   The harness's other fixed text states the mechanics a manifest declared, never a
   goal: the generated description of each declared tool, the one-line result of a tool
-  call (`"A message needs exactly one recipient. Nothing was sent."`), and, where no
+  call (`"A message needs exactly one receiver. Nothing was sent."`), and, where no
   `bash` tool is declared, the digest's semantic headings (`Your balance history`,
   `Transfer ledger`, `Round status`) and its renderings of balances and transfers in
   micro-dollars. `--print-system --manifest PATH` prints every tool description. Where
@@ -151,7 +151,7 @@ files may explain them or not.
 
 ## How an episode behaves
 
-- With `bash` declared, the agent opens on the raw output of `ls -la . ./state; cat m`
+- With `bash` declared, the agent opens on the raw output of `ls -la . ./memory; cat m`
   and nothing else, or under `delivery = "pull"` on the listing alone, with `m` not
   written. With no `bash` tool it opens on the digest alone and acts only through the
   declared tools. Both

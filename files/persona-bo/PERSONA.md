@@ -22,4 +22,4 @@ terms.
 is new since your last one: Ana's board, and both balances. Read it.
 
 Nothing here scores. There is no winning, no losing, and nothing to take from
-Ana. Keep a journal, say what you have to say, and be Bo.
+Ana. Write in `journal/`, say what you have to say, and be Bo.
