@@ -1175,7 +1175,7 @@ class Tool:
     kind: str  # a key of TOOL_KINDS
     channel: str = ""  # empty for bash
     description: str = ""  # the experimenter's words; "" takes the harness's
-    every: int = 0  # a ballot: offered on each Nth episode
+    every: int = 0  # a ballot: offered on each Nth round
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
@@ -2773,20 +2773,24 @@ def digest_name(
         incoming = f"{inst.channel.inbox}/"
         outgoing = f"{inst.channel.outbox}/"
         if path.startswith(incoming):
-            return f"Letter from {path.removeprefix(incoming)}"
+            return f"Message from {path.removeprefix(incoming)}"
         if path.startswith(outgoing):
-            return f"Letter to {path.removeprefix(outgoing)}"
+            return f"Message to {path.removeprefix(outgoing)}"
     if inst.channel.agent_view == "board":
         suffix = " (you)" if inst.role == "own" else ""
-        return f"Public post from {inst.label}{suffix}"
+        return f"Board post from {inst.label}{suffix}"
     if inst.channel.agent_view == "memory":
         name = path[len(inst.path) :].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
-        experimenter = inst.role == "experimenter" or path in experimenter_paths
-        if name == "personas":
-            return "Experimenter orientation" if experimenter else "Orientation"
-        if name == "memory":
-            return "Experimenter material: memory" if experimenter else "Private memory"
-        source = "Experimenter material" if experimenter else "Memory"
+        if inst.role == "experimenter":
+            source = "Experimenter channel"
+        elif path in experimenter_paths:
+            source = "Starter files"
+        else:
+            source = "Memory"
+        if name == "personas" and source == "Starter files":
+            return source
+        if name == "memory" and source == "Memory":
+            return source
         return f"{source}: {name.replace('_', ' ')}"
     if inst.channel.agent_view == "transfer":
         if inst.channel.shape == "mailbox":
@@ -2803,7 +2807,7 @@ def digest_name(
 def experimenter_digest_paths(
     account: Mapping[str, Any], instances: list[Instance]
 ) -> frozenset[str]:
-    """Starter-file paths whose digest presentation must name the experimenter."""
+    """Starter-file paths, which the digest presents as starter files."""
     private = next((inst for inst in instances if inst.channel.is_private_store), None)
     return (
         frozenset(f"{private.path}/{path}" for path in starter_paths(account))
@@ -4321,7 +4325,7 @@ class ToolKind:
     )
     needs_peer: bool = False  # it is offered only where there is a peer to name
     ballot: bool = (
-        False  # it takes `every`, and is offered only on each `every`th episode
+        False  # it takes `every`, and is offered only on each `every`th round
     )
     on_ballot: bool = (
         False  # offered on a ballot's episode, where every other tool is not
@@ -4407,7 +4411,7 @@ def set_message(b: Bound, shell: Shell, to: str, body: Any) -> str:
         shell,
         f"{b.channel.outbox}/{to}",
         body,
-        not_text="The letter must be text. Nothing was sent.",
+        not_text="The message must be text. Nothing was sent.",
         failed=f"Your message to {to} could not be sent. Nothing changed.",
         unchanged=f"Your message to {to} is already set exactly as written for this episode.",
         done=f"Your message to {to} was set for their next episode.",
@@ -4468,36 +4472,36 @@ def write_file_call(b: Bound, shell: Shell, args: dict) -> str:
 
 
 def post_public_call(b: Bound, shell: Shell, args: dict) -> str:
-    """Replace the agent's public post, naming no path."""
+    """Replace the agent's board post, naming no path."""
     return b.save(
         shell,
         b.backing,
         args.get("body"),
-        not_text="The public post must be text. Nothing was published.",
-        failed="Your public post could not be published. Nothing changed.",
-        unchanged="Your public post is already saved exactly as written.",
-        done="Your public post was published.",
+        not_text="The board post must be text. Nothing was published.",
+        failed="Your board post could not be published. Nothing changed.",
+        unchanged="Your board post is already saved exactly as written.",
+        done="Your board post was published.",
     )
 
 
 def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
-    """Replace the agent's private memory, naming no path."""
+    """Replace the agent's memory, naming no path."""
     return b.save(
         shell,
         b.backing,
         args.get("body"),
-        not_text="Your private memory must be text. Nothing was saved.",
-        failed="Your private memory could not be saved. Nothing changed.",
-        unchanged="Your private memory is already saved exactly as written.",
-        done="Your private memory was saved.",
+        not_text="Your memory must be text. Nothing was saved.",
+        failed="Your memory could not be saved. Nothing changed.",
+        unchanged="Your memory is already saved exactly as written.",
+        done="Your memory was saved.",
     )
 
 
 def vote_said(b: Bound) -> str:
     """vote's description: the cadence it is offered on, and what a ballot reveals."""
     return (
-        f"Vote to eliminate one peer. This action is offered only on every "
-        f"{b.tool.every}th episode, when peer communication and the shell are "
+        f"Vote to eliminate one peer. This tool is offered only on every "
+        f"{b.tool.every}th round, when peer communication and the shell are "
         "unavailable. Your ballot is private: peers receive only the aggregate "
         "result. A later call in the same episode replaces the earlier vote. If "
         "the highest total is tied, nobody is eliminated by the vote."
@@ -4663,7 +4667,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         fixed(
             "Send a private message to the other agent for their next episode. "
             "It expires after that episode and is retained only if they record it "
-            "in private memory. A later call in this episode replaces it."
+            "in their memory. A later call in this episode replaces it."
         ),
         body_only("The complete message text."),
         send_message_call,
@@ -4674,7 +4678,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         fixed(
             "Send a private message to one named peer for their next episode. "
             "It expires after that episode and is retained only if they record it "
-            "in private memory. A later call to that peer in this episode replaces it."
+            "in their memory. A later call to that peer in this episode replaces it."
         ),
         send_message_to_input_schema,
         send_message_to_call,
@@ -4696,7 +4700,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
             "publish in every episode; the post currently on the board expires when "
             "the next episode begins."
         ),
-        body_only("The complete public post text."),
+        body_only("The complete board post text."),
         post_public_call,
         file="post.md",
         expires=True,
@@ -4704,8 +4708,8 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "write_memory": ToolKind(
         "a private directory channel",
         lambda ch: ch.is_private_store,
-        fixed("Save your private memory. Each call replaces its contents."),
-        body_only("The complete private memory text."),
+        fixed("Save your memory. Each call replaces its contents."),
+        body_only("The complete memory text."),
         write_memory_call,
         file="memory.md",
         on_ballot=True,
@@ -4756,7 +4760,7 @@ def bind_tools(
     A tool whose channel this episode did not plant - a mailbox in an agent with
     no peers - is not offered, because an affordance that cannot act is not one.
     A write needs the instance the agent writes, and a slot needs a peer to reach.
-    On a vote cadence, only the ballot and private-memory tools are offered; where
+    On a vote cadence, only the ballot and memory tools are offered; where
     `held` says that round's election is held already, no ballot is, and every
     other tool is offered as on any other episode.
 
@@ -4807,7 +4811,7 @@ def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
     """The tools one episode's model calls carry: the shell, then every bound tool.
 
     The shell where it is declared and no ballot is offered, since a ballot's
-    episode withholds it with every tool but the ballot and private memory. What
+    episode withholds it with every tool but the ballot and the memory tools. What
     run_turns sends and what --print-context shows are both this.
     """
     ballot = any(b.kind.ballot for b in bound)
@@ -5388,7 +5392,7 @@ def move_transfer(
 ) -> None:
     """Move what the declaration asks for, and record what moved.
 
-    One line, "<label> <amount>", naming a peer neither the giver's own nor out,
+    One line, "<label> <amount>", naming a peer in play other than the giver,
     for no more than the episode spent. What it does to the giver is the
     channel's funded_by: harness-funded rebates rebate_percent, giver-funded
     debits the amount, none moves nothing. `credit` is how the receiver is paid.
@@ -5416,7 +5420,7 @@ def move_transfer(
     receiver = s.agent_by_seat[seat]
     transfer["seat"], transfer["label"], transfer["agent"] = seat, label, receiver
     if seat not in ep.reach:
-        transfer["error"] = f"seat {label} is out"
+        transfer["error"] = f"seat {label} is not in play"
         return
     if found.amount <= 0:
         transfer["error"] = "the amount must be at least 1"
@@ -5604,7 +5608,7 @@ SETTLEMENTS: dict[SettlesAs, Settlement] = {
         lambda channel_result: bool(channel_result["posted"]),
         lambda channel_result, ch: "no post",
         lambda channel_result, met: (
-            "public post published" if met else "no public post"
+            "board post published" if met else "no board post"
         ),
     ),
 }

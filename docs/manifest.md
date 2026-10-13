@@ -397,10 +397,10 @@ that wants a memory written and never read back declares `pushed = false` and sa
 
 `agent_view` changes only the presentation in the agent's digest; storage and traces keep
 their native paths and bytes. `"paths"` is the default.
-`"memory"` presents a memory's files as the agent's own memory, naming any the
-experimenter provided as the experimenter's; `"letters"` presents mailbox messages
-under `Letter from` and `Letter to` headings naming the peer; `"board"` presents board
-files as public posts from their authors; and `"transfer"` presents a transfer channel,
+`"memory"` presents a memory's files as the agent's own memory, naming starter files
+and an experimenter channel's files as such; `"letters"` presents mailbox messages
+under `Message from` and `Message to` headings naming the peer; `"board"` presents board
+files as board posts from their authors; and `"transfer"` presents a transfer channel,
 file or mailbox, as outgoing and incoming transfers. Storage and access rules
 remain the same, so an experiment can give agents persistent memory without making a
 filesystem part of their environment.

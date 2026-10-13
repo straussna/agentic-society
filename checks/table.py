@@ -626,12 +626,12 @@ def check_a_receipt_says_what_each_obligation_came_to():
         )
 
     assert met == [
-        "blackboard obligation: met (public post published)",
+        "blackboard obligation: met (board post published)",
         "mail obligation: met (message sent to 2, 3)",
         "transfer obligation: met (transfer moved money)",
     ], met
     assert unmet == [
-        "blackboard obligation: not met (no public post)",
+        "blackboard obligation: not met (no board post)",
         "mail obligation: not met (no message sent)",
         "transfer obligation: not met (no transfer moved money)",
     ], unmet
@@ -688,7 +688,7 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
         first = episode_once(run("echo '2 100' > outbox/transfer"), say())
         second = episode_once(
             run(
-                "stat -c '%U' out",
+                "stat -c '%U' outbox",
                 "echo again > outbox/2 && echo OUTBOX-OK",
                 "cat outbox/receipt",
             ),

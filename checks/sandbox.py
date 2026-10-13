@@ -366,7 +366,7 @@ def check_an_expired_public_post_disappears_silently():
     said = second["turns"][0]["tools"][0]["result"]
 
     assert "withdrawn" not in said, said
-    assert "Public post from 2" not in said and "here for one round" not in said, said
+    assert "Board post from 2" not in said and "here for one round" not in said, said
 
 
 def check_an_agent_with_no_peers_starts_where_it_always_did():

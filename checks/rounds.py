@@ -204,8 +204,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
             "=== Round status ===\nround: 1 (cycle 1, 1/5)\nyou: 1\n"
             "in play: 1 (you), 2\nround type: discussion\n"
         ), first
-        assert "=== Public post from 1 (you) ===" in first, first
-        assert "=== Public post from 2 ===" in first, first
+        assert "=== Board post from 1 (you) ===" in first, first
+        assert "=== Board post from 2 ===" in first, first
         account["episodes"] = [
             {"episode": i, "stop": "no_tool_call"} for i in range(1, 5)
         ]
@@ -234,7 +234,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         "--- episode 1 opening ---" in context
         and "--- episode 5 opening ---" in context
     )
-    assert "Experimenter material: survivor" in context
+    assert "Starter files: survivor" in context
     assert (
         '"name": "send_message"' in context and '"name": "vote_to_eliminate"' in context
     )

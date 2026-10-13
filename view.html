@@ -1634,9 +1634,10 @@ function interactionInputHtml(request) {
     start = heading.lastIndex;
   }
   if (start < text.length || !sections.length) sections.push([title, text.slice(start).trim()]);
-  const present = sections.filter(([name, body]) => body && !name.startsWith("Public post from ") && !name.startsWith("Letter from "));
+  const present = sections.filter(([name, body]) => body && !name.startsWith("Board post from ") && !name.startsWith("Message from "));
   return present.map(([name, body]) => {
-    return inputCardHtml(name, `<pre>${esc(body)}</pre>`, !name.startsWith("Experimenter material:"));
+    const provided = name.startsWith("Experimenter channel:") || name.startsWith("Starter files:");
+    return inputCardHtml(name, `<pre>${esc(body)}</pre>`, !provided);
   }).join("");
 }
 

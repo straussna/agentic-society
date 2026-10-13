@@ -379,7 +379,7 @@ def inbox_prefix(mail: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the opening digest."""
     if mail is None:
         return None
-    return "Letter from " if mail.agent_view == "letters" else f"{mail.inbox}/"
+    return "Message from " if mail.agent_view == "letters" else f"{mail.inbox}/"
 
 
 def shell_offered(provenance: Mapping[str, Any]) -> bool:

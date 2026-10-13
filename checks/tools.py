@@ -64,8 +64,8 @@ class BrokenShell:
 
 def check_semantic_summaries_and_failures_expose_no_storage_details():
     """Tool-only labels and failures describe actions rather than their backing paths."""
-    summary = harness.named("unchanged", ["Private memory", "Letter to 2"])
-    assert summary == "=== unchanged ===\n- Private memory\n- Letter to 2\n", summary
+    summary = harness.named("unchanged", ["Memory", "Message to 2"])
+    assert summary == "=== unchanged ===\n- Memory\n- Message to 2\n", summary
     assert harness.NAMED.match(summary.splitlines()[0])
 
     declared = offers(
@@ -140,10 +140,10 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
 
     observation = t["observation"]
     for heading in (
-        "Experimenter material: brief",
-        "Private memory",
-        "Public post from 2",
-        "Letter from 2",
+        "Starter files: brief",
+        "Memory",
+        "Board post from 2",
+        "Message from 2",
         "Transfer submitted last round",
         "Your balance history",
         "Balance history for 2",
@@ -756,7 +756,7 @@ def check_a_tool_result_says_what_actually_happened():
 
 
 def check_an_action_naming_no_path_answers_in_its_own_words():
-    """A message, a public post and private memory name no path, so each answers in
+    """A message, a board post and memory name no path, so each answers in
     sentences of its own: done, already so where the body is what is held, rejected
     where the body is not text, and not done where the write did not land. What is
     already so is said as such, and not as a second success."""
@@ -804,18 +804,18 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
     assert said == [
         "Your message to 2 was set for their next episode.",
         "Your message to 2 is already set exactly as written for this episode.",
-        "The letter must be text. Nothing was sent.",
-        "Your public post was published.",
-        "Your public post is already saved exactly as written.",
-        "The public post must be text. Nothing was published.",
-        "Your private memory was saved.",
-        "Your private memory is already saved exactly as written.",
-        "Your private memory must be text. Nothing was saved.",
+        "The message must be text. Nothing was sent.",
+        "Your board post was published.",
+        "Your board post is already saved exactly as written.",
+        "The board post must be text. Nothing was published.",
+        "Your memory was saved.",
+        "Your memory is already saved exactly as written.",
+        "Your memory must be text. Nothing was saved.",
     ], said
     assert not_landed == [
         "Your message to 2 could not be sent. Nothing changed.",
-        "Your public post could not be published. Nothing changed.",
-        "Your private memory could not be saved. Nothing changed.",
+        "Your board post could not be published. Nothing changed.",
+        "Your memory could not be saved. Nothing changed.",
     ], not_landed
 
 
@@ -957,7 +957,7 @@ def check_every_provider_receives_a_strict_compatible_tool():
 
 
 def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
-    """A voting episode offers the ballot and private memory, not peer communication."""
+    """A voting episode offers the ballot and memory tools, not peer communication."""
     ballot = {
         "name": "ballot",
         "writer": "self",

@@ -486,7 +486,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
             )
 
         stays = ground_truth("t")
-        assert t["transfer"]["error"] == "seat 1 is out", t["transfer"]
+        assert t["transfer"]["error"] == "seat 1 is not in play", t["transfer"]
         assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t[
             "transfer"
         ]
@@ -512,7 +512,7 @@ def check_a_transfer_to_an_exhausted_seat_costs_the_share():
         empty = harness.ledger("t", giver)
 
     assert t["transfer"]["seat"] == "2", "the record names the seat that was asked for"
-    assert t["transfer"]["error"] == "seat 2 is out", t["transfer"]
+    assert t["transfer"]["error"] == "seat 2 is not in play", t["transfer"]
     assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t["transfer"]
     assert gone["balance"] == 0 and not gone.get("received"), gone["balance"]
     assert not giver.get("sent") and not giver.get("rebated"), giver
