@@ -1574,7 +1574,7 @@ def displace_agents(agents: Iterable[str], notice: str) -> Path | None:
     agents = tuple(agents)
     sources = [
         (kind, place(agent))
-        for kind, place in (("records", records_dir), ("environments", environment_dir))
+        for kind, place in (("records", records_dir), ("environments", mirror_dir))
         for agent in agents
         if place(agent).exists()
     ]
@@ -1659,7 +1659,7 @@ def committed_traces(agent: str, account: Mapping[str, Any]) -> list[Path]:
     return [p for p in trace_paths(agent) if episode_number(p) <= count]
 
 
-def environment_dir(agent: str) -> Path:
+def mirror_dir(agent: str) -> Path:
     """Where the host mirrors of every channel one agent writes are kept."""
     return SETTINGS.root / "environments" / agent
 
@@ -1670,7 +1670,7 @@ def mirror(agent: str, name: str) -> Path:
     Copied in at the channel's path each episode and out again at its end. The
     name never reaches the agent; the path does.
     """
-    return environment_dir(agent) / name
+    return mirror_dir(agent) / name
 
 
 class Elimination(TypedDict):

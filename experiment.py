@@ -799,7 +799,7 @@ def branch_experiment(
             )
         if (
             harness.records_dir(new_ids[seat]).exists()
-            or harness.environment_dir(new_ids[seat]).exists()
+            or harness.mirror_dir(new_ids[seat]).exists()
         ):
             raise SystemExit(f"branch target {new_ids[seat]!r} already exists")
         trace = json.loads(

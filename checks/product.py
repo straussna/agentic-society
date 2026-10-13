@@ -303,7 +303,7 @@ def check_a_branch_that_fails_partway_can_be_made_again():
                 agent
                 for agent in ("takeover-01", "takeover-02")
                 if harness.records_dir(agent).exists()
-                or harness.environment_dir(agent).exists()
+                or harness.mirror_dir(agent).exists()
             ]
             written = output.exists() or product.directory(root, "takeover").exists()
             failed.append((refused_branch, left, written, said.getvalue()))

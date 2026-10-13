@@ -553,8 +553,8 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
         with quiet() as said:
             assert harness.fork("p", 1, "f") == 2, "forked a record no tree holds"
         assert "elsewhere/b.txt" in said.getvalue(), said.getvalue()
-        assert not harness.environment_dir("f").exists(), (
-            f"a refused fork left mirrors behind: {sorted(harness.environment_dir('f').rglob('*'))}"
+        assert not harness.mirror_dir("f").exists(), (
+            f"a refused fork left mirrors behind: {sorted(harness.mirror_dir('f').rglob('*'))}"
         )
         assert not harness.records_dir("f").exists(), "and records"
 
