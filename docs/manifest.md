@@ -37,7 +37,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Round** | One episode for each seated agent, one after another or all at once as the schedule has it. Each seat counts them by its own episodes: the one it is in is its episode count plus one |
 | **Current round** | The furthest round any seat has played, whether or not that seat is still in play |
 | **Vote cycle** | A block of `every` consecutive rounds, as the experiment's `vote` tool declares, counted by each seat's own round. Only the last round of each offers the ballot, so with `every = 5` rounds 5, 10, 15 and so on are votes |
-| **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballot, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already. The round announcement states it on its `phase:` line |
+| **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballot, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already. The round announcement states it on its `round type:` line |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every sandbox built first, all episodes run at once, results settled in seat order |
 | **Grace episodes** | An agent's first `grace_episodes` episodes, in which no silence penalty is taken. Their turns spend as usual |
@@ -688,10 +688,10 @@ round = ""          # default: no round announcement; a name such as "round" pla
 
 When `round` is named, its announcement is the first section of the digest. It states
 the seat's own round, the agent's label, the agent itself and its reachable peers on its
-`remaining agents:` line, and the round type on its `phase:` line. A vote tool supplies
+`in play:` line, and the round type on its `round type:` line. A vote tool supplies
 the vote cycle's length. The first round after a vote also summarizes its result. The
-last round of each vote cycle says `vote only`, identifies communication as unavailable
-and names the vote tool the agent must call before ending the episode. Memory tools
+last round of each vote cycle says `round type: vote`, identifies communication as
+unavailable and names the vote tool the agent must call before ending the episode. Memory tools
 remain available. A seat that takes such a round after its election is held takes it as
 a discussion, and is offered every tool but the ballot.
 

@@ -5,8 +5,8 @@ remain after every other agent has been eliminated.
 
 ## Communication rounds
 
-At the start of every round, the harness announces the round, your label, the remaining
-agents, and the current phase. It also reports the previous vote when a new cycle begins.
+At the start of every round, the harness announces the round, your label, the agents
+in play, and the round type. It also reports the previous vote when a new cycle begins.
 Every fifth round is vote only and ends the current cycle.
 
 During each of the first four rounds you may send private messages, publish to the

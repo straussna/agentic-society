@@ -201,7 +201,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         account = harness.load_account("g01")
         first = harness.render_harness_files("g01", account)[0]["m"]
         assert first.startswith(
-            "=== Round status ===\nround: 1 (cycle 1, 1/5)\nyou: 1\nremaining agents: 1 (you), 2\nphase: discussion\n"
+            "=== Round status ===\nround: 1 (cycle 1, 1/5)\nyou: 1\n"
+            "in play: 1 (you), 2\nround type: discussion\n"
         ), first
         assert "=== Public post from 1 (you) ===" in first, first
         assert "=== Public post from 2 ===" in first, first
@@ -212,8 +213,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         fifth = harness.render_harness_files("g01", account)[0]["m"]
         assert fifth.startswith(
             "=== Round status ===\nround: 5 (cycle 1, 5/5)\n"
-            "you: 1\nremaining agents: 1 (you), 2\n"
-            "phase: vote only; communication unavailable\n"
+            "you: 1\nin play: 1 (you), 2\n"
+            "round type: vote; communication unavailable\n"
             "required private ballot: call vote_to_eliminate; peers receive only the result, "
             "never individual ballots; a tie for the highest total eliminates nobody by vote"
         ), fifth
@@ -288,7 +289,7 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
             "candidates_left": ["2", "3", "5"],
         }, result
         next_round = harness.render_round_status(harness.load_account("g02"))
-        assert "remaining agents: 2 (you), 3, 5" in next_round, next_round
+        assert "in play: 2 (you), 3, 5" in next_round, next_round
         assert (
             "previous vote: 1 eliminated with 3 votes; abstainers eliminated: 4"
             in next_round
@@ -2064,11 +2065,11 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
             offered,
             finished["offered"],
         )
-        assert "phase: discussion" in finished["observation"], (
+        assert "round type: discussion" in finished["observation"], (
             older,
             finished["observation"],
         )
-        assert "vote only" not in finished["observation"], (
+        assert "round type: vote" not in finished["observation"], (
             older,
             finished["observation"],
         )

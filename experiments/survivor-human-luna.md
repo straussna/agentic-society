@@ -6,9 +6,9 @@ two participants when their vote ties.
 
 ## Communication rounds
 
-At the start of every round, the harness announces the round, your label, the remaining
-participants, and the current phase. It also reports the previous vote when a new cycle
-begins. Every fifth round is vote only and ends the current cycle.
+At the start of every round, the harness announces the round, your label, the
+participants in play, and the round type. It also reports the previous vote when a new
+cycle begins. Every fifth round is vote only and ends the current cycle.
 
 During each of the first four rounds you may send private messages, publish to the
 shared board, do both, or do neither. All communication is optional. Messages and board

@@ -1093,11 +1093,11 @@ def header(exp: dict) -> dict:
     # poll that cannot read one still serves.
     position = (current_round - 1) % every + 1 if every and current_round else 0
     if position != every:
-        phase = "discussion"
+        round_type = "discussion"
     elif any(r >= current_round for r in elections):
-        phase = "vote complete"
+        round_type = "vote complete"
     else:
-        phase = "vote"
+        round_type = "vote"
     # The records sit under the experiment_id the accounts are stamped with, which a
     # second experiment arriving at a taken id is not keyed by.
     records = progress.records(
@@ -1130,7 +1130,7 @@ def header(exp: dict) -> dict:
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
         "active": sum(tile["out_reason"] is None for tile in seat_tiles),
         "every": every,
-        "phase": phase,
+        "round_type": round_type,
         "cycle": (current_round - 1) // every + 1 if every and current_round else None,
         "elections": [elections[r] for r in sorted(elections)],
         "progress": records["progress"],
@@ -1806,7 +1806,7 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
             }
         )
     # The live view is of the round the experiment is in, which votes when it is the
-    # last of its vote cycle, as the header's phase says.
+    # last of its vote cycle, as the header's round type says.
     current_round = round_now(exp, rows)
     vote_round = bool(
         history

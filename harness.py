@@ -2918,12 +2918,12 @@ def election_held(agent: str, account: Account, round: int) -> bool:
 
 
 def render_round_status(account: Account) -> str:
-    """The authoritative round and phase announced at the start of an episode."""
+    """The authoritative round and round type announced at the start of an episode."""
     round = len(account["episodes"]) + 1
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
     seating = seating_of(account["agent"], account)
     seats_in_play = {seating.seat, *reachable(seating)}
-    remaining = ", ".join(
+    in_play = ", ".join(
         f"{seating.labels[seat]} (you)"
         if seat == seating.seat
         else seating.labels[seat]
@@ -2934,8 +2934,8 @@ def render_round_status(account: Account) -> str:
         lines = [
             f"round: {round}",
             f"you: {seating.label}",
-            f"remaining agents: {remaining}",
-            "phase: discussion",
+            f"in play: {in_play}",
+            "round type: discussion",
         ]
     else:
         position = (round - 1) % vote.every + 1
@@ -2946,7 +2946,7 @@ def render_round_status(account: Account) -> str:
         lines = [
             f"round: {round} (cycle {cycle}, {position}/{vote.every})",
             f"you: {seating.label}",
-            f"remaining agents: {remaining}",
+            f"in play: {in_play}",
         ]
         previous = account.get("last_election") or {}
         if previous.get("round") == round - 1:
@@ -2965,12 +2965,12 @@ def render_round_status(account: Account) -> str:
             lines.append(f"previous vote: {outcome}")
         if voting:
             lines += [
-                "phase: vote only; communication unavailable",
+                "round type: vote; communication unavailable",
                 f"required private ballot: call {vote.name}; peers receive only the result, "
                 "never individual ballots; a tie for the highest total eliminates nobody by vote",
             ]
         else:
-            lines.append("phase: discussion")
+            lines.append("round type: discussion")
     return "\n".join(lines) + "\n"
 
 
