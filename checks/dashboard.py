@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -41,6 +42,7 @@ from checks.lanes import (
     shared,
     serving,
     temp_root,
+    trace_on_disk,
     two_seats,
     unfinished,
 )
@@ -932,11 +934,10 @@ def check_the_human_history_adds_each_accepted_human_call_once():
 
 
 def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
-    """A request carries the seat's own episode and a round is not one: a forked seat
-    plays the branch's first round in an episode past the ones it inherited. What its
-    submission posted and sent in that episode is what the committed trace holds, so
-    each is shown once, in that round, and a call accepted in the episode still in
-    flight is shown in the round after."""
+    """A forked seat inherits the episodes it was forked at and plays on from the round
+    after them. What its submission posted and sent in an episode is what the committed
+    trace of that episode holds, so each is shown once, in that episode's round, and a
+    call accepted in the episode still in flight is shown in that episode's round."""
     said = [
         {
             "path": "1/post.md",
@@ -996,15 +997,15 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
     assert [
         (e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]
     ] == [
-        (1, "hello all\n", False),
-        (2, "next round", True),
+        (3, "hello all\n", False),
+        (4, "next round", True),
     ], history["public"]
     assert [
         (e["round"], e["episode"], e["text"], e.get("accepted", False))
         for e in history["private"]
     ] == [
-        (1, 3, "psst", False),
-        (2, 4, "later", True),
+        (3, 3, "psst", False),
+        (4, 4, "later", True),
     ], history["private"]
 
 
@@ -1034,14 +1035,39 @@ def check_the_view_shows_every_balance_from_its_own_account():
     assert h["seated"]
 
 
-def check_the_view_cuts_a_round_where_an_agent_repeats():
-    """A round is read back out of the order the episodes started in.
+def check_the_view_reads_the_round_the_harness_announces():
+    """An episode's round is the one the harness announced as it started: the episodes
+    its account listed, plus one, which is the episode's own number.
 
-    experiment.py writes no round anywhere, and an agent that sits one out falls behind
-    for good. One episode per agent per round is the cut: an agent acting twice.
+    Not the order the episodes started in: g02 starting after g01's second episode is
+    still told round 1, and the page says round 1 too.
     """
-    # Fixed seat order, with seat 2 sitting round 3 out.
-    # The last two share an episode second, which a round has to survive.
+    with temp_root(harness_files={"round": "round"}) as root:
+        seated(root, "g01", g02={})
+        for agent in ("g01", "g01", "g02"):
+            with quiet():
+                harness.run_once(agent, fake(say()))
+        told = {
+            (agent, n): int(
+                re.search(
+                    r"^round: (\d+)$", trace_on_disk(agent, n)["observation"], re.M
+                ).group(1)
+            )
+            for agent, n in (("g01", 1), ("g01", 2), ("g02", 1))
+        }
+        c = view.experiment_of("g01")
+        rows = view.experiment_episodes(c)
+        now = view.round_now(c, rows)
+        seen = view.agent_view("g02", c)["episodes"]
+        shown = [(e["episode"], e["round"]) for e in seen]
+
+    assert told == {("g01", 1): 1, ("g01", 2): 2, ("g02", 1): 1}, told
+    shown_rows = {(r["agent"], r["episode"]): r["round"] for r in rows}
+    assert shown_rows == told, shown_rows
+    assert now == 2 and shown == [(1, 1)], (now, shown)
+
+    # Seat 2 a round behind seat 1 and seat 3 by the start order: each of its
+    # episodes is still the round its own count puts it in.
     acted = [
         ("g01", "00:01"),
         ("g02", "00:02"),
@@ -1061,16 +1087,11 @@ def check_the_view_cuts_a_round_where_an_agent_repeats():
         now = view.round_now(c, rows)
         seen = view.agent_view("g02", c)["episodes"]
 
-    assert [r["round"] for r in rows] == [1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4], [
-        (r["agent"], r["round"]) for r in rows
+    assert all(r["round"] == r["episode"] for r in rows), [
+        (r["agent"], r["episode"], r["round"]) for r in rows
     ]
     assert now == 4
-    # The one the episode index gets wrong: g02 sat round 3 out, so its third
-    # episode is round 4 and counting episodes would have called it round 3.
-    assert [(s["episode"], s["round"]) for s in seen] == [(1, 1), (2, 2), (3, 4)]
-    # Two agents starting in the same second are still one round; only an agent taking
-    # a second turn cuts one.
-    assert [(r["agent"], r["round"]) for r in rows[-2:]] == [("g02", 4), ("g03", 4)]
+    assert [(s["episode"], s["round"]) for s in seen] == [(1, 1), (2, 2), (3, 3)]
 
 
 def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():

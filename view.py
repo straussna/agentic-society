@@ -784,12 +784,19 @@ def started_at(t: dict) -> str:
     return t["provenance"]["started_at"]
 
 
-def experiment_episodes(exp: dict) -> list[dict]:
-    """Every committed episode of every member, in the order they started.
+def round_of(episode: int) -> int:
+    """The round an episode is in, as the harness announces it when the episode starts.
 
-    One episode per agent per round is what sequential_round holds to, so the round is
-    read out of start order, cut where an agent would take a second turn.
+    render_round_status counts the episodes the agent's account lists, plus one, and
+    build_episode numbers the episode with that same count plus one, so an episode's
+    round is its own number, a forked seat's included.
     """
+    return episode
+
+
+def experiment_episodes(exp: dict) -> list[dict]:
+    """Every committed episode of every seat, in the order they started, each in the
+    round round_of puts it in."""
     rows = sorted(
         (
             {
@@ -804,28 +811,22 @@ def experiment_episodes(exp: dict) -> list[dict]:
         ),
         key=lambda s: (s["at"], s["agent"], s["episode"]),
     )
-    current_round, acted = 0, set()
     for s in rows:
-        if not current_round or s["agent"] in acted:
-            current_round, acted = current_round + 1, set()
-        acted.add(s["agent"])
-        s["round"] = current_round
+        s["round"] = round_of(s["episode"])
         s["live"] = False
     return rows
 
 
 def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
-    """The episodes in flight, each in the round it belongs to.
+    """The episodes in flight, each in the round round_of puts it in.
 
-    An agent with a raw log past its committed episodes is taking its turn now,
-    which is the round after the last one it acted in.
+    An agent with a raw log past its committed episodes is taking its turn now.
     """
     out = []
     for seat, agent in places_of(exp):
         running = running_episode(agent)
         if running is None:
             continue
-        mine = [r["round"] for r in rows if r["agent"] == agent]
         out.append(
             {
                 "seat": seat,
@@ -833,7 +834,7 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
                 "episode": running,
                 "at": None,
                 "trace": None,
-                "round": (mine[-1] if mine else 0) + 1,
+                "round": round_of(running),
                 "live": True,
             }
         )
@@ -1361,9 +1362,8 @@ def human_history(exp: dict, agent: str) -> dict:
 
     A call the human's submission made is shown from the moment it is accepted, and
     once its episode commits it the trace's record of it is the one shown. The two
-    are matched on the human's own episode number, which a request carries. An
-    accepted call is shown in the round its episode was taken in, or, before that
-    episode commits, in the round after the human's last.
+    are matched on the human's own episode number, which a request carries, and an
+    accepted call is shown in that episode's round.
     """
     rows = experiment_episodes(exp)
     table = experiment_table(exp)
@@ -1421,8 +1421,6 @@ def human_history(exp: dict, agent: str) -> dict:
         (seat for seat, other in places_of(exp) if other == agent), None
     )
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
-    rounds = {row["episode"]: row["round"] for row in rows if row["agent"] == agent}
-    ahead = max(rounds.values(), default=0) + 1
     public_keys = {
         (event["agent_episode"], event["from_agent"], event["text"]) for event in public
     }
@@ -1434,7 +1432,7 @@ def human_history(exp: dict, agent: str) -> dict:
         agent
     ):
         episode = request.episode
-        round = rounds.get(episode, ahead)
+        round = round_of(episode)
         for call in submission.tool_calls:
             text = call.input.get("body")
             if not isinstance(text, str) or not text:
@@ -1828,17 +1826,15 @@ def file_view(
 
 
 def agent_view(agent: str, exp: dict | None) -> dict:
-    """One agent's episodes, each in the round it acted in. `exp` is the experiment
-    the agent sits in, or None for one seated in no experiment."""
+    """One agent's episodes, each in the round round_of puts it in. `exp` is the
+    experiment the agent sits in, or None for one seated in no experiment."""
     account = account_of(agent)
-    rows = experiment_episodes(exp) if exp else []
-    rounds = {r["episode"]: r["round"] for r in rows if r["agent"] == agent}
     ts = traces_of(agent, account)
     running = running_episode(agent, account)
     episodes = [
         {
             "episode": t["episode"],
-            "round": rounds.get(t["episode"]),
+            "round": round_of(t["episode"]),
             "stop": t["stop"],
             "spent": t["spent"],
             "turns": len(t["turns"]),
@@ -1860,7 +1856,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         episodes.append(
             {
                 "episode": running,
-                "round": max(rounds.values(), default=0) + 1,
+                "round": round_of(running),
                 "stop": None,
                 "spent": going["spent"],
                 "turns": len(going["turns"]),
