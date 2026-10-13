@@ -233,7 +233,7 @@ class InteractionStore:
     def submit(self, agent: str, request_id: str, value: dict[str, Any]) -> Submission:
         """Answer a pending request with the envelope `value`; the first to land wins it.
 
-        An envelope Submission.parse refuses raises InvalidSubmission, a request no
+        An envelope Submission.parse rejects raises InvalidSubmission, a request no
         longer pending StaleRequest, and any submission but the winner InteractionConflict;
         the winner sent again is returned. A request, pending pointer or submission that
         is there and does not read raises UnreadableRecord.

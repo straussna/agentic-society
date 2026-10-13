@@ -22,7 +22,7 @@ from .base import (
     classify_error,
     field,
     native_dict,
-    refuse_custom_endpoint,
+    reject_custom_endpoint,
     require_key,
 )
 
@@ -272,9 +272,9 @@ class OpenAIProvider:
     }
 
     def __init__(self, client: Any | None = None):
-        refuse_custom_endpoint("OPENAI_BASE_URL", self.name)
+        reject_custom_endpoint("OPENAI_BASE_URL", self.name)
         if client is None:
-            # Before the SDK builds a client, which may refuse a missing key in
+            # Before the SDK builds a client, which may reject a missing key in
             # words of its own that do not say where the key goes.
             require_key(self.key_variable, self.name)
             try:

@@ -191,7 +191,7 @@ def classify_error(
     401 and 403, or a class named for authentication or a denied permission, are
     authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
     is permanent. With no status, a class named in RETRYABLE is a request that got
-    no answer, and is retried; anything else is the adapter's. A refused key - 401,
+    no answer, and is retried; anything else is the adapter's. A rejected key - 401,
     or a class named for authentication - says where `key_variable` goes, when one
     is given. A denied permission does not: the key was accepted, and is not
     allowed what was asked.
@@ -221,8 +221,9 @@ def classify_error(
     )
 
 
-def refuse_custom_endpoint(variable: str, provider: str) -> None:
-    """Refuse an endpoint redirected through `variable`: the adapters speak first-party only."""
+def reject_custom_endpoint(variable: str, provider: str) -> None:
+    """Reject an endpoint redirected through `variable`: the adapters speak first-party
+    only."""
     if os.environ.get(variable):
         raise ProviderConfigurationError(
             f"{variable} is not supported; provider adapters use first-party endpoints",
@@ -235,7 +236,8 @@ def where_key_goes(variable: str) -> str:
 
 
 def require_key(variable: str, provider: str) -> None:
-    """Refuse a provider whose API key is not in the environment, saying where it goes."""
+    """Reject a provider whose API key is not in the environment, saying where it
+    goes."""
     if not os.environ.get(variable):
         raise ProviderError(
             f"{variable} is not set. {where_key_goes(variable)}",

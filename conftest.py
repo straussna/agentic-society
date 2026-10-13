@@ -34,7 +34,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    # The provider adapters refuse a redirected endpoint, and every check hands
+    # The provider adapters reject a redirected endpoint, and every check hands
     # them a fake client.
     for variable in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
         os.environ.pop(variable, None)

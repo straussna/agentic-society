@@ -87,7 +87,7 @@ class Submission:
     def parse(cls, value: dict[str, Any], request: InteractionRequest) -> "Submission":
         """A client's envelope as its submission to `request`, stamped now.
 
-        Refused with a ValueError naming the first fault: a version other than VERSION,
+        Rejected with a ValueError naming the first fault: a version other than VERSION,
         another request's id, no submission_id, an action other than tool_calls or
         end_turn, calls that do not fit the action, or a call to a tool not offered.
         """
