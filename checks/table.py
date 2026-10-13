@@ -32,9 +32,10 @@ from checks.lanes import (
 
 
 def check_a_channel_table_is_validated():
-    """Every rule of docs/manifest.md section 10 refuses, naming the source, the channel and the key.
+    """Every rule of docs/manifest.md section 10 rejects, naming the source, the channel
+    and the key.
 
-    validate_channels is pure: a refusal sets nothing, and a good table comes back
+    validate_channels is pure: a rejection sets nothing, and a good table comes back
     as Channel objects in declaration order with the harness files overlaid.
     """
 
@@ -212,7 +213,7 @@ def check_a_channel_table_is_validated():
             rejected(
                 lambda: harness.validate_channels(None, hf, "check"), "check:", *words
             )
-        # A label is a path too: one that lands on a channel's path is refused.
+        # A label is a path too: one that lands on a channel's path is rejected.
         rejected(
             lambda: harness.validate_channels(
                 None, None, "check", labels=("state", "2")
@@ -263,9 +264,9 @@ def check_a_channel_table_is_validated():
         ], "validating sets nothing"
 
 
-def check_retired_keys_are_refused():
-    """Every key RETIRED names is refused by name, in config.toml and in a manifest,
-    and the refusal says where that setting is declared."""
+def check_retired_keys_are_rejected():
+    """Every key RETIRED names is rejected by name, in config.toml and in a manifest,
+    and the rejection says where that setting is declared."""
     with rooted(HostSandbox) as root:
         f = root / "config.toml"
         for key in harness.RETIRED:
@@ -834,7 +835,7 @@ def check_an_unpushed_public_channel_stays_out_of_the_digest():
 
 def check_an_experimenter_channels_digest_reaches_provenance():
     """Each experimenter channel's files are digested into provenance, and a
-    change between episodes refuses."""
+    change between episodes is rejected."""
     with temp_root() as root:
         plant(root, "brief", BRIEF="read me\n")
         plant(root, "rules", RULES="play fair\n")

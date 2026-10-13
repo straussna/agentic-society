@@ -430,10 +430,10 @@ def check_declared_bash_and_channel_tools_are_offered_together():
 
 
 def check_a_tool_table_is_validated():
-    """Every rule refuses, naming the source, the tool and the key.
+    """Every rule rejects, naming the source, the tool and the key.
 
     validate_tools is pure and is held against a channel table given to it, so a
-    tool is refused for pointing nowhere before any episode is built.
+    tool is rejected for pointing nowhere before any episode is built.
     """
     chans = list(harness.DEFAULT_CHANNELS)
 
@@ -482,7 +482,7 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
     """`every` is a ballot's cadence, read off the menu and not off a kind's name.
 
     A second kind that holds a ballot takes `every` and is held to it as a vote
-    is, is named wherever a refusal says who takes it, and counts against the one
+    is, is named wherever a rejection says who takes it, and counts against the one
     ballot an experiment declares.
     """
     chans = list(harness.DEFAULT_CHANNELS)
@@ -550,7 +550,7 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
         )
 
         # Held against the channel table this manifest declares, not the one in
-        # force, so a tool pointing at a channel it dropped is refused here.
+        # force, so a tool pointing at a channel it dropped is rejected here.
         without = [
             c.declared()
             for c in harness.DEFAULT_CHANNELS
@@ -576,7 +576,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
     A description reaches the model in the request the way a system prompt does,
     so it is the experiment's to write and is recorded whole and by digest. The
     input schema is the contract a call is held to - a manifest that could write
-    it could describe fields the harness ignores - so naming one is refused.
+    it could describe fields the harness ignores - so naming one is rejected.
     """
     assert "description" in harness.TOOL_KEYS, "the words are the experimenter's"
     for held in ("input_schema", "schema", "properties", "required"):
@@ -706,7 +706,7 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
 
 
 def check_a_tool_result_says_what_actually_happened():
-    """New, replaced, unchanged and refused each read differently.
+    """New, replaced, unchanged and rejected each read differently.
 
     A tool that reported success for a no-op would teach the agent that it had met
     an obligation it had not, which is the silence the shell leaves today.
@@ -749,9 +749,9 @@ def check_a_tool_result_says_what_actually_happened():
 
 def check_an_action_naming_no_path_answers_in_its_own_words():
     """A message, a public post and private memory name no path, so each answers in
-    sentences of its own: done, already so where the body is what is held, refused where
-    the body is not text, and not done where the write did not land. What is already so
-    is said as such, and not as a second success."""
+    sentences of its own: done, already so where the body is what is held, rejected
+    where the body is not text, and not done where the write did not land. What is
+    already so is said as such, and not as a second success."""
     declared = offers(
         "send_message_to:mail", "post_public:blackboard", "write_memory:notes"
     )
@@ -844,7 +844,7 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
 
     A mailbox is not planted for an agent with no peers, so a tool that writes one
     of its slots has nowhere to write and is left out of the request rather than
-    offered and refused on every call.
+    offered and rejected on every call.
     """
     with temp_root(tools=[SEND, POST, LOOK]) as root:
         # Alone: no peers, so no mailbox and no transfer file in the environment.
@@ -1233,7 +1233,7 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
     """A kind that writes is bound to the agent's own instance or not bound at all.
 
     bind_tools leaves such a tool out where the channel planted nothing the agent
-    writes, and a Bound made anywhere else without one is refused as it is made,
+    writes, and a Bound made anywhere else without one is rejected as it is made,
     not inside a billed turn. read_path writes nothing, is built with nothing to
     write even on a channel the agent writes, and reads what was planted.
     """
@@ -1343,7 +1343,8 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
 
 
 def check_withholding_the_shell_needs_something_to_act_with():
-    """An agent offered nothing, or opening on nothing, is refused before it costs anything.
+    """An agent offered nothing, or opening on nothing, is rejected before it costs
+    anything.
 
     Both are experiments that would end every episode on its first turn: one with
     an empty tool set, which is not a request the API takes, and one whose first
@@ -1441,12 +1442,12 @@ def check_running_one_seat_carries_the_whole_experiment_it_names():
         )
 
 
-def check_a_seat_with_no_shell_and_nothing_that_can_act_is_refused():
+def check_a_seat_with_no_shell_and_nothing_that_can_act_is_rejected():
     """A tool table can be full and the request it comes to still empty.
 
     apply_tools holds the declared table against shell_tool, but which of those
     tools can act is the seating's to decide: a mailbox tool alone, in a seat with
-    no peers, is left out and leaves nothing behind it. Refused as the environment
+    no peers, is left out and leaves nothing behind it. Rejected as the environment
     is built, before the container starts and before anything is billed.
     """
     with temp_root(tools=[SEND]) as root:

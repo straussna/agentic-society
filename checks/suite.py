@@ -85,7 +85,7 @@ def check_every_harness_global_a_check_moves_is_restored():
 
     `pinned()` restores the names in `SEAMS` and no others, and one worker
     runs many checks, so that set is what keeps a check's override out of the
-    next one. `temp_root` refuses an override outside it, and an assignment
+    next one. `temp_root` rejects an override outside it, and an assignment
     straight onto the module is held to the same set here: read off the syntax
     tree, so one target of several and a setattr naming it are found too. A
     setting is a field of harness.SETTINGS, moved by amend().
@@ -150,7 +150,7 @@ def check_no_setting_is_given_in_two_places():
     holds them in one place.
 
     A setting given in both files is a run whose terms depend on which was read last.
-    Each file refuses the other's keys by name; this asserts the two halves cover
+    Each file rejects the other's keys by name; this asserts the two halves cover
     every tunable exactly once, and that the files the repo ships keep to them. In a
     process every tunable is a field of the one frozen Settings, spelled as the files
     spell it and stated in every episode's provenance. No module global spells a

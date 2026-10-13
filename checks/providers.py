@@ -396,7 +396,7 @@ def check_mixed_provider_simultaneous_round():
     ]
 
 
-def check_unknown_providers_and_models_are_refused():
+def check_unknown_providers_and_models_are_rejected():
     for provider, model in (
         ("gateway", "x"),
         ("anthropic", "gpt-5.6-terra"),
@@ -421,7 +421,7 @@ def check_cli_provider_and_model_overrides_are_paired():
 
 
 def check_provider_preflight_requires_only_its_own_key():
-    """A provider without its key, or whose key is refused, says where the key goes.
+    """A provider without its key, or whose key is rejected, says where the key goes.
 
     A preflight that got no answer is not about the key, and does not say so; nor is
     one the key was accepted for and not permitted, whose key is already set.
@@ -476,11 +476,11 @@ def check_provider_preflight_requires_only_its_own_key():
                     raise AssertionError(f"{variable}: preflight passed {error!r}")
 
 
-def check_start_refuses_a_missing_key_before_any_client_is_built():
+def check_start_rejects_a_missing_key_before_any_client_is_built():
     """An experiment launched without a seat's key is told which key and where it goes.
 
-    The refusal comes before either SDK builds a client, since one may refuse a
-    missing key itself, in words that say nothing of the shell. A start that refuses
+    The rejection comes before either SDK builds a client, since one may reject a
+    missing key itself, in words that say nothing of the shell. A start that rejects
     installs none of the settings it read: the tool table it was given included.
     That table reaches the preflight held to the manifest's own channel table, one
     the settings in force do not have. A start that passes installs every one of
@@ -520,13 +520,13 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
             else:
                 raise AssertionError(f"{provider} started without {variable}")
             assert harness.SETTINGS is before, (
-                "a refused start leaves the settings as it found them"
+                "a rejected start leaves the settings as it found them"
             )
-        refusal = out.getvalue().strip().splitlines()[-1]
-        assert refusal == (
+        rejection = out.getvalue().strip().splitlines()[-1]
+        assert rejection == (
             f"{provider} preflight failed: {variable} is not set. Set {variable} "
             "in the shell this experiment is launched from."
-        ), refusal
+        ), rejection
 
     made = fake()
     with (
@@ -552,7 +552,7 @@ def check_start_refuses_a_missing_key_before_any_client_is_built():
         assert [t.name for t in s.tools] == ["bash", "jot"], s.tools
 
 
-def check_custom_provider_endpoints_are_refused():
+def check_custom_provider_endpoints_are_rejected():
     for variable, build in (
         ("ANTHROPIC_BASE_URL", lambda: AnthropicProvider(NS())),
         ("OPENAI_BASE_URL", lambda: OpenAIProvider(NS())),
@@ -566,7 +566,7 @@ def check_custom_provider_endpoints_are_refused():
                 raise AssertionError(f"accepted {variable}")
 
 
-def check_version_three_accounts_are_refused():
+def check_version_three_accounts_are_rejected():
     with temp_root() as root:
         path = root / "records" / "old" / "account.json"
         path.parent.mkdir(parents=True)

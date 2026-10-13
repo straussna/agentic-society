@@ -197,10 +197,10 @@ def branch_source(root: Path) -> Path:
     return source
 
 
-def check_a_branch_refuses_a_boundary_it_cannot_fork():
+def check_a_branch_rejects_a_boundary_it_cannot_fork():
     """A branch needs a positive round every seat completed, a seat to hand over, an id,
     manifest and agents nothing else holds, and a series in every seat's account that
-    holds what the ledger had paid it by that round. Each refusal makes nothing."""
+    holds what the ledger had paid it by that round. Each rejection makes nothing."""
     with temp_root() as root:
         source = branch_source(root)
         output = root / "experiments" / "branches" / "takeover.toml"
@@ -218,7 +218,7 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
                 rejected(
                     lambda: experiment.branch_experiment(source, *args),
                     why,
-                    because=f"branched what it should refuse: {why}",
+                    because=f"branched what it should reject: {why}",
                 )
             made = sorted(p.name for p in harness.records_root().iterdir())
             assert made == ["other-01", "source-a", "source-b"], made

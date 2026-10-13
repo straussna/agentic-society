@@ -1664,8 +1664,8 @@ def check_a_long_series_is_thinned_to_its_ends():
     assert view.thin([7, 8, 9]) == [7, 8, 9] and view.thin([]) == []
 
 
-def check_the_view_cli_refuses_what_is_not_there():
-    """An agent or an experiment that is not on disk is refused by the parser, and
+def check_the_view_cli_rejects_what_is_not_there():
+    """An agent or an experiment that is not on disk is rejected by the parser, and
     a port that cannot be bound is reported and not served.
 
     The port is held by a socket that refuses to share it, which is what a

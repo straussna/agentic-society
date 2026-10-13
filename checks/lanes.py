@@ -405,7 +405,7 @@ def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) 
 
 # Every harness name a check is allowed to move, and therefore every one pinned()
 # puts back: the settings, the seams a check stands a double in, and the constants
-# and flags it sets. temp_root refuses any other.
+# and flags it sets. temp_root rejects any other.
 SEAMS = {
     "SETTINGS",
     "SANDBOX",
@@ -482,7 +482,7 @@ def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
             prefix="mtr-check-", ignore_cleanup_errors=True
         ) as d,
     ):
-        # Before the tables: a tool table is refused or not by the delivery and the
+        # Before the tables: a tool table is rejected or not by the delivery and the
         # digest in force.
         amend(root=Path(d), **fields)
         harness.SANDBOX = sandbox

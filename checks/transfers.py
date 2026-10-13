@@ -192,7 +192,7 @@ def check_an_agent_cannot_transfer_to_itself():
     ban is what makes this an exchange and not a rebate with extra steps.
     """
     with temp_root(channels=FULL_REBATE) as root:
-        # Second of three, so what is refused is this agent's own seat and not a
+        # Second of three, so what is rejected is this agent's own seat and not a
         # seat number that happens to be the first one.
         seated(root, "t", first={}, t={}, third={})
         assert harness.load_account("t")["seat"] == "2", (

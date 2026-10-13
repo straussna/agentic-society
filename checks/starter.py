@@ -1,7 +1,7 @@
 """Starter files, and forks.
 
 When the starter files land, what they are in the record, the terms pinned at
-creation, and what a fork rebuilds and refuses."""
+creation, and what a fork rebuilds and rejects."""
 
 from __future__ import annotations
 
@@ -158,7 +158,7 @@ def check_starter_files_are_not_the_agents():
     )
 
 
-def check_starter_files_refuse_to_overwrite_the_agents_work():
+def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
     """A starter-files path the agent already wrote stops the agent instead of clobbering it."""
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
@@ -181,7 +181,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
     """The starter-files terms are pinned in the account at creation, and the config cannot move them.
 
     Four things about one account: the terms are pinned, a config that moves on
-    is ignored, other terms are refused, and an account from before the terms
+    is ignored, other terms are rejected, and an account from before the terms
     were pinned adopts the config at its next episode.
     """
     with temp_root(
@@ -210,7 +210,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert not (harness.mirror("t", "notes") / "m9").exists()
         assert second["provenance_drift"] == [], "nothing about this agent changed"
 
-        # Asking the agent to be something it was not created as is refused.
+        # Asking the agent to be something it was not created as is rejected.
         rejected(
             lambda: harness.load_account("t", starter_files="other"),
             "starter_files",
@@ -268,7 +268,8 @@ def check_starter_files_config_is_validated():
         plant(root, "ok")
 
         def declared(**values):
-            """Starter file terms as a manifest states them; config.toml refuses them."""
+            """Starter file terms as a manifest states them; config.toml rejects
+            them."""
             harness.apply_config(
                 values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
             )
@@ -399,7 +400,7 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         assert "theirs" not in rebuilt, sorted(rebuilt)
 
 
-def check_fork_refuses_what_it_cannot_rebuild():
+def check_fork_rejects_what_it_cannot_rebuild():
     """Anything the trace did not store exactly stops the fork."""
     with rooted(HostSandbox):
         priv = harness.records_dir("p") / "traces"
@@ -476,7 +477,7 @@ def check_fork_refuses_what_it_cannot_rebuild():
                     f"forked a {name} episode"
                 )
             assert not (harness.records_dir(f"x-{name}") / "account.json").exists(), (
-                f"a refused fork left a {name} agent behind"
+                f"a rejected fork left a {name} agent behind"
             )
 
         # A trace whose episode the account never came to list: the commit stopped
@@ -490,7 +491,7 @@ def check_fork_refuses_what_it_cannot_rebuild():
             )
         assert "never committed" in said.getvalue(), said.getvalue()
         assert not harness.records_dir("x-orphan").exists(), (
-            "a refused fork left an agent behind"
+            "a rejected fork left an agent behind"
         )
 
         harness.trace_path("p", 1).write_text(json.dumps(trace()), encoding="utf-8")
@@ -510,7 +511,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
     """A record outside every tree the agent writes stops the fork before anything is written.
 
     Otherwise the records ahead of it would sit in the new id's mirrors, and the
-    corrected fork under the same id would be refused as an agent that exists.
+    corrected fork under the same id would be rejected as an agent that exists.
     """
     with rooted(HostSandbox):
         (harness.records_dir("p") / "traces").mkdir(parents=True)
@@ -554,7 +555,8 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
             assert harness.fork("p", 1, "f") == 2, "forked a record no tree holds"
         assert "elsewhere/b.txt" in said.getvalue(), said.getvalue()
         assert not harness.mirror_dir("f").exists(), (
-            f"a refused fork left mirrors behind: {sorted(harness.mirror_dir('f').rglob('*'))}"
+            "a rejected fork left mirrors behind: "
+            f"{sorted(harness.mirror_dir('f').rglob('*'))}"
         )
         assert not harness.records_dir("f").exists(), "and records"
 
@@ -575,7 +577,7 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
     A fork is given its parent's episodes without their traces, so its first episode is
     compared with the parent's trace of the episode it was forked at, and every later
     one with its own. An episode whose previous trace is absent reports nothing and is
-    not refused: an account can list a history no trace here recorded.
+    not rejected: an account can list a history no trace here recorded.
     """
     with temp_root():
         episode_once(say())

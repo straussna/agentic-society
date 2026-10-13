@@ -99,7 +99,7 @@ def check_balance_is_bare_integers_with_no_host_in_them():
 
 
 def check_config_is_validated():
-    """The real config.toml is valid, and bad keys, types, and values are refused.
+    """The real config.toml is valid, and bad keys, types, and values are rejected.
 
     Unknown keys, wrong types, out-of-range values, and a --config path that
     does not exist all exit nonzero.
@@ -127,7 +127,7 @@ def check_config_is_validated():
 
     with tempfile.TemporaryDirectory(prefix="mtr-cfg-") as tmp:
         f = Path(tmp) / "config.toml"
-        # config.toml holds the process parameters and refuses everything else by name:
+        # config.toml holds the process parameters and rejects everything else by name:
         # an unknown key, a wrong type, a value out of range, a key that became a channel
         # field, and every setting an experiment owns.
         for bad in (
@@ -153,7 +153,7 @@ def check_config_is_validated():
                     because=f"accepted bad config: {bad}",
                 )
 
-        # A named file that is not there is refused, not quietly skipped.
+        # A named file that is not there is rejected, not quietly skipped.
         with pinned():
             rejected(
                 lambda: harness.load_config(Path(tmp) / "confg.toml"),
@@ -183,7 +183,7 @@ def check_config_is_validated():
         # The initial observation carries the whole digest and is never smaller
         # than what one ordinary call may return.
         {"observation_limit": harness.SETTINGS.tool_result_limit - 1},
-        # The process parameters are refused here, saying where they live.
+        # The process parameters are rejected here, saying where they live.
         {"max_turns": 7},
         {"image": "x"},
         {"tool_result_limit": 2000},
@@ -199,7 +199,7 @@ def check_config_is_validated():
         assert harness.SETTINGS.context_fraction == 1.0, (
             "an int must widen into a float field"
         )
-    # A refusal installs nothing, the good key given beside the refused one included.
+    # A rejection installs nothing, the good key given beside the rejected one included.
     with pinned():
         before = harness.SETTINGS
         rejected(
@@ -208,7 +208,7 @@ def check_config_is_validated():
             because="a manifest accepted delivery = 'fetch'",
         )
         assert harness.SETTINGS is before, (
-            "a refused manifest left part of itself in force"
+            "a rejected manifest left part of itself in force"
         )
 
     # A transfer is the giver's own budget moving; a rebate on top would mint. No
@@ -477,7 +477,7 @@ def check_per_turn_micros_partition_the_spend():
 
 
 def check_the_safety_stops_are_held_to_their_ranges():
-    """config.toml's max_turns and command_timeout are refused outside their ranges.
+    """config.toml's max_turns and command_timeout are rejected outside their ranges.
 
     Each bound itself is accepted and applied. A stop a check amends directly is not
     a value config.toml gave, so a manifest applied after it stands.
@@ -631,7 +631,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
 
     The system_prompt in force is what the harness says and SYSTEM is what it ships.
-    A declaration moves the first and never the second, so start() still refuses a
+    A declaration moves the first and never the second, so start() still rejects a
     shipped string that has drifted from its digest while one is in force. An
     experiment that declares "" is told nothing at all, and has that recorded like
     any other prompt.

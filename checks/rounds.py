@@ -46,7 +46,7 @@ from checks.lanes import (
 
 def check_the_experiment_uses_fixed_order_and_validates():
     """Every round runs its agents in seat order, and an experiment with no manifest or
-    no rounds is refused."""
+    no rounds is rejected."""
     with temp_root() as root:
         ids = seated(root, "g02", g03={}, g01={})
         built = []
@@ -2261,7 +2261,8 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
 
 
 def check_a_manifest_is_validated():
-    """A manifest names a schedule, the experiment's defaults, and each agent's terms, or is refused."""
+    """A manifest names a schedule, the experiment's defaults, and each agent's terms,
+    or is rejected."""
     other_model = "claude-opus-5"
     good = (
         f'schedule = "simultaneous"\ngrace_episodes = 1\nsystem_prompt = ""\n'
@@ -2375,7 +2376,7 @@ def check_a_manifest_is_validated():
 
 def check_a_manifest_gives_each_agent_its_own_starter_files():
     """Each agent is created on its own terms, the experiment's defaults apply to all, and the
-    terms are pinned: a manifest that later says otherwise is refused."""
+    terms are pinned: a manifest that later says otherwise is rejected."""
     text = (
         'grace_episodes = 2\nsystem_prompt = ""\n'
         '[[agent]]\nid = "g01"\nstarter_files = "a"\nstarter_files_below = 500000\n'
@@ -3090,7 +3091,7 @@ def check_a_manifest_declares_what_the_harness_says():
     told is stated and never inherited, and "" is the declaration that says nothing.
     The experiment's own is what a seat is told unless the seat declares its own, and
     the prompt is pinned like the other four settings: an agent asked to run on a
-    different one is refused, episodes either side of it not being one experiment.
+    different one is rejected, episodes either side of it not being one experiment.
     """
     mine, ours = "You are studio 1.", "You are one of several studios."
     text = (
@@ -3101,7 +3102,7 @@ def check_a_manifest_declares_what_the_harness_says():
         + '"\n[[agent]]\nid = "g02"\n'
     )
     with temp_root() as root:
-        # Declared and never inherited: a manifest silent on it is refused, and the
+        # Declared and never inherited: a manifest silent on it is rejected, and the
         # empty string is the declaration that says nothing.
         silent = manifest_file(root, '[[agent]]\nid = "g01"\n', name="s.toml")
         rejected(

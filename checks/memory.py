@@ -91,12 +91,13 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         )
 
 
-def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
-    """Every memory_from that cannot give the exact recorded memory is refused, and leaves
-    the new agent's memory as it found it and nothing recorded as inherited: a changed
-    source on an agent that already has one, a missing trace, another trace version, an
-    episode that did not save its state, unmatched write_memory tools, two memories for
-    one tool, a text copy that is not the file, and a memory already there that differs.
+def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
+    """Every memory_from that cannot give the exact recorded memory is rejected, and
+    leaves the new agent's memory as it found it and nothing recorded as inherited: a
+    changed source on an agent that already has one, a missing trace, another trace
+    version, an episode that did not save its state, unmatched write_memory tools, two
+    memories for one tool, a text copy that is not the file, and a memory already there
+    that differs.
     """
     body = "A complete inherited memory.\n"
 
@@ -147,7 +148,7 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
             rejected(
                 lambda: experiment.inherit_memory(entry, harness.load_account("new")),
                 why,
-                because=f"inherited from a source it should refuse: {why}",
+                because=f"inherited from a source it should reject: {why}",
             )
             now = destination.read_bytes() if destination.exists() else None
             recorded = harness.account_on_disk("new")

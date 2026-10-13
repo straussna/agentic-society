@@ -181,7 +181,7 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
         assert store.current("a") == request, "and what was there before is still there"
 
 
-def check_every_malformed_submission_envelope_is_refused_and_the_request_stays_pending():
+def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pending():
     """The envelope is all that stands between a browser POST and a human seat's turn."""
     with temp_root() as root:
         store = InteractionStore(root / "interactions")
@@ -225,7 +225,7 @@ def check_every_malformed_submission_envelope_is_refused_and_the_request_stays_p
             )
             assert store.current("a") == request, f"{case} moved the request on"
         assert not (root / "interactions" / "submissions").exists(), (
-            "a refused envelope left a submission behind"
+            "a rejected envelope left a submission behind"
         )
         assert (
             store.submit("a", request.request_id, good).submission_id == "human-call-1"
@@ -599,7 +599,7 @@ def check_human_cli_drafts_and_submits_declared_calls():
         assert submitted.tool_calls[0].input == {"body": "from terminal"}
 
 
-def check_human_cli_refuses_what_it_cannot_send_and_ends_a_turn_without_calls():
+def check_human_cli_rejects_what_it_cannot_send_and_ends_a_turn_without_calls():
     with temp_root() as root:
         store = InteractionStore(root / "interactions")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -868,14 +868,14 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
                     == pending.request_id
                 )
             data = json.dumps(submission(pending)).encode("utf-8")
-            refused = urllib.request.Request(
+            rejected = urllib.request.Request(
                 base + f"/api/interaction/t/{pending.request_id}",
                 data=data,
                 method="POST",
                 headers={"Content-Type": "application/json"},
             )
             try:
-                urllib.request.urlopen(refused)
+                urllib.request.urlopen(rejected)
             except urllib.error.HTTPError as error:
                 assert error.code == 403
             else:
@@ -930,7 +930,8 @@ def check_view_interaction_route_requires_origin_token_and_pending_request():
 
 
 def posted(base: str, path: str, body: bytes, headers: dict[str, str]) -> int:
-    """The status one POST against the served API is answered with, refusals included."""
+    """The status one POST against the served API is answered with, rejections
+    included."""
     request = urllib.request.Request(
         base + path, data=body, method="POST", headers=headers
     )
@@ -941,7 +942,7 @@ def posted(base: str, path: str, body: bytes, headers: dict[str, str]) -> int:
         return error.code
 
 
-def check_view_interaction_route_answers_each_refusal_with_its_own_status():
+def check_view_interaction_route_answers_each_rejection_with_its_own_status():
     """The page reads the status to tell a human whether to fix the turn, refresh or
     retry."""
     with temp_root() as root:

@@ -112,7 +112,7 @@ def check_a_fault_ends_the_loop():
 
 
 def check_episodes_flag_is_validated():
-    """--episodes below one is refused before anything is created or billed."""
+    """--episodes below one is rejected before anything is created or billed."""
     with rooted(NoSandbox):
         harness.start = never_start
         for bad in ("0", "-1"):
@@ -128,7 +128,7 @@ def check_print_system_and_print_files_audit_without_starting():
     """The static audits and --fork-from run and stop before start() is reached.
 
     None calls start(), opens a provider or builds a real environment. A fork without
-    an episode to fork at is refused by the parser. --print-system reads config.toml
+    an episode to fork at is rejected by the parser. --print-system reads config.toml
     and installs none of it.
     """
     with temp_root() as root:
@@ -812,7 +812,7 @@ def check_the_refusal_notice_is_pinned():
         harness.REFUSAL_NOTICE,
         harness.REFUSAL_NOTICE_SHA256,
     ) in harness.PINNED, (
-        "start() refuses on what --print-system audits, so both read PINNED"
+        "start() rejects a run on what --print-system audits, so both read PINNED"
     )
     low = harness.REFUSAL_NOTICE.lower()
     for word in (
