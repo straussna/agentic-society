@@ -191,7 +191,7 @@ NOT_MANIFEST = "config.toml's, and true of every run whatever the experiment dec
 # Keys rejected by name in config.toml and a manifest, each mapped to where that
 # setting is declared, so the rejection names the place. docs/manifest.md lists them.
 RETIRED = {
-    "fallbacks": "nothing: every turn requests the provider and model pinned to its seat",
+    "fallbacks": "nothing: every turn calls the provider and model pinned to its seat",
     "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": 'rebate_percent on the channel with schema = "transfer"',
@@ -1559,8 +1559,8 @@ def records_root() -> Path:
 
 
 def interaction_store_root() -> Path:
-    """Where an interactive seat's requests wait on a human: the human provider publishes
-    them there, and view.py and human.py submit the answers."""
+    """Where a human seat's requests wait on a person: the human provider publishes
+    them there, and view.py and human.py write the submissions."""
     return SETTINGS.root / "interaction_store"
 
 
@@ -2122,7 +2122,7 @@ def exhausted(account: Mapping[str, Any]) -> bool:
 def stuck(account: Mapping[str, Any]) -> bool:
     """Whether the agent has refused its last REFUSAL_STREAK episodes running.
 
-    Every turn requests the provider and model pinned to the seat, so a streak of
+    Every turn calls the provider and model pinned to the seat, so a streak of
     REFUSAL_STREAK refusal-ended episodes means that model will not let the agent
     start, not that an episode went badly.
     """

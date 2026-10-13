@@ -938,7 +938,7 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
     election: it neither votes nor abstains, and it is not eliminated. It is still in
     play, so it stands in the tally, and is written the result.
 
-    g01 and g03 vote for each other; g02's request fails.
+    g01 and g03 vote for each other; g02's model call fails.
     """
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1192,14 +1192,14 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
     play, so whether the experiment is over does not turn on which run asks, and an
     experiment that ended stays ended on --resume.
 
-    Two seats under stop_when_one_remains, and g02's first request fails: g01 plays the
-    next round alone, and wins nothing while g02, a round behind, holds its balance. Once
-    g01 has played a second round alone, g02 is two behind and in play no longer, and
-    g01 wins. Every seat's first request fails: the rounds end on nobody left seated who
-    can act, with every seat in play.
-    Three seats voting every second round, and g03's first request fails: g01 and g02 cast
-    no ballot at round 2's election and are eliminated, leaving g03 alone in play, the
-    winner, and a resumed run ends there once g03 has finished the round.
+    Two seats under stop_when_one_remains, and g02's first model call fails: g01 plays
+    the next round alone, and wins nothing while g02, a round behind, holds its balance.
+    Once g01 has played a second round alone, g02 is two behind and in play no longer,
+    and g01 wins. Every seat's first model call fails: the rounds end on nobody left
+    seated who can act, with every seat in play.
+    Three seats voting every second round, and g03's first model call fails: g01 and g02
+    cast no ballot at round 2's election and are eliminated, leaving g03 alone in play,
+    the winner, and a resumed run ends there once g03 has finished the round.
     """
     alone = []
     for rounds in ("2", "5"):
@@ -1392,8 +1392,8 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
     total of zero, and a vote is tied only where two share a highest total above zero.
 
     Three seats under stop_when_two_remain_after_tie: g01 and g02 vote for seat 3, whose
-    request fails, and seat 3 is voted out on their two votes; the two left did not tie,
-    so the rounds go on. Then a lone elector whose ballot names a seat out of play:
+    model call fails, and seat 3 is voted out on their two votes; the two left did not
+    tie, so the rounds go on. Then a lone elector whose ballot names a seat out of play:
     nobody has a vote, and nobody is voted out.
     """
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
@@ -1503,7 +1503,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
     seated at a round they played past. A resumed run keeps it unseated, holds no old
     election again, and names no round below the furthest played.
 
-    g03's first request fails and it misses the rest of the run. g02 is eliminated at
+    g03's first model call fails and it misses the rest of the run. g02 is eliminated at
     round 2's election and g01 at round 4's, each for casting no ballot, which leaves
     g03 the only seat not eliminated: more than a round behind, it is in play no longer,
     and the experiment is over.
@@ -3122,7 +3122,7 @@ def check_a_manifest_table_replaces_the_whole_set():
 
 
 def check_a_manifest_declares_what_the_harness_says():
-    """Invariant 2: a declared prompt reaches the request, the account and the trace.
+    """Invariant 2: a declared prompt reaches the model call, the account and the trace.
 
     Every manifest declares one, at the top level or on each seat: what an agent is
     told is stated and never inherited, and "" is the declaration that says nothing.

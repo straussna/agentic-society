@@ -1,4 +1,5 @@
-"""The tool table: the bare arm, validation, what reaches the request, and what a call does."""
+"""The tool table: the bare arm, validation, what reaches the model call, and what a
+call does."""
 
 from __future__ import annotations
 
@@ -154,14 +155,14 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         "memory/", "outbox/", "inbox/", "=== n1 ===", "=== n2 ===", "=== g ==="
     ):
         assert path not in observation, (path, observation)
-    request = next(item for item in seen if item["call"] == "session")
-    descriptions = "\n".join(tool["description"] for tool in request["tools"])
+    session = next(item for item in seen if item["call"] == "session")
+    descriptions = "\n".join(tool["description"] for tool in session["tools"])
     assert "outbox/transfer" not in descriptions and " n1" not in descriptions, (
         descriptions
     )
     body_descriptions = [
         tool["input_schema"]["properties"]["body"]["description"]
-        for tool in request["tools"]
+        for tool in session["tools"]
         if "body" in tool["input_schema"]["properties"]
     ]
     assert body_descriptions and not any(
@@ -413,7 +414,7 @@ def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
 
 
 def check_bash_requires_an_explicit_declaration():
-    """Only a declared bash tool enables shell requests, including across manifests."""
+    """Only a declared bash tool enables the shell, including across manifests."""
     with temp_root():
         chans = harness.channels()
         harness.apply_tools([BASH], chans, "manifest")
@@ -614,7 +615,7 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
 def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
     """The words are prompt surface and declarable; the input schema never is.
 
-    A description reaches the model in the request the way a system prompt does,
+    A description reaches the model in each model call the way a system prompt does,
     so it is the experiment's to write and is recorded whole and by sha256. The
     input schema is the contract a call is held to - a manifest that could write
     it could describe fields the harness ignores - so naming one is rejected.
@@ -636,7 +637,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         "description must be str",
     )
 
-    # Declared: those words, and no others, reach the request.
+    # Declared: those words, and no others, reach the model call.
     said = "Write to your peer. Do this before anything else."
     with temp_root(tools=[SEND | {"description": said}]) as root:
         seated(root, "t", t={}, o={})
@@ -882,8 +883,8 @@ def check_the_tools_offered_reach_provenance():
 def check_a_tool_is_offered_only_where_its_channel_can_act():
     """An affordance that cannot act is not offered at all.
 
-    A mailbox is not planted for an agent with no peers, so a tool that writes one
-    of its slots has nowhere to write and is left out of the request rather than
+    A mailbox is not planted for an agent with no peers, so a tool that writes a
+    message there has nowhere to write and is left out of the model call rather than
     offered and rejected on every call.
     """
     with temp_root(tools=[SEND, POST, LOOK]) as root:
@@ -969,7 +970,8 @@ def check_every_provider_receives_a_strict_compatible_tool():
 
     assert harness.SHELL_SPEC.input_schema["additionalProperties"] is False
 
-    # Tool execution validates arguments independently of request-schema enforcement.
+    # Tool execution validates arguments independently of the provider's input-schema
+    # enforcement.
     with temp_root(tools=[SEND]) as root:
         seated(root, "t", t={}, o={})
         with quiet():
@@ -1089,7 +1091,7 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
 
     The audit exists to show exactly what an agent is sent, so the shell it
     withholds on a ballot's episode and the tools it offers there are the ones the
-    request carries, and a description stating a setting states config.toml's.
+    model call carries, and a description stating a setting states config.toml's.
     """
     ballot = {
         "name": "ballot",
@@ -1391,7 +1393,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
     anything.
 
     Both are experiments that would end every episode on its first turn: one with
-    an empty tool set, which is not a request the API takes, and one whose first
+    an empty tool set, which is not a model call the API takes, and one whose first
     user turn would be empty because the listing is gone and no digest replaces it.
     The second is held to the settings the table is declared under, and not to the
     ones in force: start() builds the whole before it replaces any of them.
@@ -1487,7 +1489,7 @@ def check_running_one_seat_carries_the_whole_experiment_it_names():
 
 
 def check_a_seat_with_no_shell_and_nothing_that_can_act_is_rejected():
-    """A tool table can be full and the request it comes to still empty.
+    """A tool table can be full and the model call it comes to still empty.
 
     apply_tools holds the declared table against shell_tool, but which of those
     tools can act is the seating's to decide: a mailbox tool alone, in a seat with

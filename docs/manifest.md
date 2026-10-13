@@ -321,7 +321,7 @@ where the setting is declared.
 
 | Key | Declared as |
 |---|---|
-| `fallbacks` | nothing: every turn requests the seat's pinned provider and model |
+| `fallbacks` | nothing: every turn calls the seat's pinned provider and model |
 | `shell_tool` | a `[[tool]]` with `name = "bash"` and `kind = "bash"` |
 | `transfer_funded_by`, `rebate_percent`, `transfer_silence_penalty_percent` | `funded_by`, `rebate_percent`, `silence_penalty_percent` on the channel with `schema = "transfer"` |
 | `blackboard_silence_penalty_percent` | `silence_penalty_percent` on the board channel |

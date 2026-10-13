@@ -671,7 +671,7 @@ def without_listing_drift(x):
 
 
 def differs(a, b) -> str:
-    """The first few lines on which two request records disagree."""
+    """The first few lines on which two records disagree."""
 
     def lines(x) -> list[str]:
         return json.dumps(x, indent=1, default=str, sort_keys=True).splitlines()

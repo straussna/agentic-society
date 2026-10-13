@@ -450,7 +450,7 @@ def load_manifest(path: Path) -> Manifest:
         raise SystemExit(
             f"{path}: declare system_prompt, at the top level or on every "
             f"[[agent]]. What an agent is told is the experiment's and reaches "
-            f'every request, so it is stated and never inherited; system_prompt = ""'
+            f'every model call, so it is stated and never inherited; system_prompt = ""'
             f" is the declaration that says nothing"
         )
 
