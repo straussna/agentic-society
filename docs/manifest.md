@@ -311,8 +311,8 @@ Both clips are bounded against `tool_result_limit`, which `config.toml` owns.
 `image`, `max_tokens`, `max_turns`, `command_timeout` and `tool_result_limit` are the
 process parameters: the machine, the API and the limits, true
 of every run whatever the experiment is. They live in `config.toml`, and a manifest
-naming one is rejected saying so — no setting is given in two places, and no run's terms
-depend on which file was read last.
+naming one is rejected saying so — no setting is given in two places, and no run's
+settings depend on which file was read last.
 
 ### Rejected: retired keys
 

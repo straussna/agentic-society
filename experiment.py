@@ -3,7 +3,8 @@
     .venv/Scripts/python.exe experiment.py sandbox -r 20
 
 One round is one episode for each agent; a seat names a board and a balance.
-Every run names its manifest: the schedule, the environment, and each agent's terms.
+Every run names its manifest: the schedule, the environment, and each agent's pinned
+settings.
 config.toml holds only what is true of every run whatever the experiment."""
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ def check_ids(ids: list[str], where: str) -> None:
 
 
 def check_agent(path: Path, entry: dict) -> None:
-    """Reject an [[agent]] table with an unknown key, a wrong type, or terms that do
+    """Reject an [[agent]] table with an unknown key, a wrong type, or settings that do
     not go together."""
     reject = rejecter(path)
     check_keys(reject, "", entry, AGENT_KEYS, AGENT_TYPES)
@@ -237,7 +238,7 @@ def check_agent(path: Path, entry: dict) -> None:
             reject(
                 f"{agent}: memory_from: episode must be a positive integer, got {episode!r}"
             )
-    harness.validate_terms(
+    harness.validate_settings(
         str(path),
         who=agent,
         provider=entry.get("provider"),
@@ -284,9 +285,10 @@ def manifest_path(named: str) -> Path:
 
 
 def load_manifest(path: Path) -> Manifest:
-    """Read an experiment manifest: the schedule, the experiment's defaults, and each agent's terms.
+    """Read an experiment manifest: the schedule, the experiment's defaults, and each
+    agent's pinned settings.
 
-    Returns a Manifest. Unknown keys, wrong types, and terms that do not go together
+    Returns a Manifest. Unknown keys, wrong types, and settings that do not go together
     exit with a message naming the file, the way load_config does. The overrides' own
     types and ranges are checked when start() applies them, so one set of rules
     holds for both.
@@ -380,12 +382,12 @@ def load_manifest(path: Path) -> Manifest:
         isinstance(r, dict) for r in definitions
     ):
         raise SystemExit(f"{path}: agents are [[agent]] tables, each with an id")
-    for terms in [top, *definitions]:
-        starter = terms.get("starter_files")
+    for settings in [top, *definitions]:
+        starter = settings.get("starter_files")
         if isinstance(starter, str) and starter.startswith(
             ("./", "../", ".\\", "..\\")
         ):
-            terms["starter_files"] = str((path.parent / starter).resolve())
+            settings["starter_files"] = str((path.parent / starter).resolve())
     default_provider, default_model = top.get("provider"), top.get("model")
     if (default_provider is None) != (default_model is None):
         raise SystemExit(f"{path}: top-level provider and model must be set together")
@@ -474,7 +476,7 @@ def load_manifest(path: Path) -> Manifest:
     }
 
 
-def terms_of(entry: dict) -> dict[str, Any]:
+def pinned_settings_of(entry: dict) -> dict[str, Any]:
     """One agent's pinned settings as load_account's keywords, None where the manifest is silent."""
     return {
         k: entry.get(k)
@@ -1775,10 +1777,10 @@ def main(argv: list[str] | None = None) -> int:
         "name",
         nargs="?",
         metavar="NAME",
-        help="an experiment manifest: the schedule, the experiment's defaults, and each "
-        "agent's own terms. Every run names the experiment it is part of. A bare "
-        "name is looked for under experiments/ and experiments/examples/; anything "
-        "with a suffix or a directory in it is taken as the path it is",
+        help="an experiment manifest: the schedule, the experiment's defaults, and "
+        "each agent's own pinned settings. Every run names the experiment it is part "
+        "of. A bare name is looked for under experiments/ and experiments/examples/; "
+        "anything with a suffix or a directory in it is taken as the path it is",
     )
     ap.add_argument(
         "-m",
@@ -1854,7 +1856,7 @@ def main(argv: list[str] | None = None) -> int:
     if (a.provider is None) != (a.model is None):
         ap.error("--provider and --model must be supplied together")
     if a.model is not None:
-        harness.validate_terms(
+        harness.validate_settings(
             "command line",
             provider=a.provider,
             model=a.model,
@@ -1892,10 +1894,10 @@ def main(argv: list[str] | None = None) -> int:
         bundle = harness.archive_agents(agents, harness.FRESH_START)
         progress.archive(harness.SETTINGS.root, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
-    # peers' boards in place. Each is created on its own terms, and one that
+    # peers' boards in place. Each is created with its own pinned settings, and one that
     # exists must have been created on the same.
     for entry in manifest["agents"]:
-        account = harness.load_account(entry["id"], **terms_of(entry))
+        account = harness.load_account(entry["id"], **pinned_settings_of(entry))
         account["product"] = {
             "quality_tier": entry.get(
                 "quality_tier",

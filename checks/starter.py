@@ -1,6 +1,6 @@
 """Starter files, and forks.
 
-When the starter files land, what they are in the record, the terms pinned at
+When the starter files land, what they are in the record, the settings pinned at
 creation, and what a fork rebuilds and rejects."""
 
 from __future__ import annotations
@@ -180,11 +180,12 @@ def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
 
 
 def check_an_agent_keeps_the_starter_files_it_was_created_with():
-    """The starter-files terms are pinned in the account at creation, and the config cannot move them.
+    """The starter-files settings are pinned in the account at creation, and the config
+    cannot move them.
 
-    Four things about one account: the terms are pinned, a config that moves on
-    is ignored, other terms are rejected, and an account from before the terms
-    were pinned adopts the config at its next episode.
+    Four things about one account: the settings are pinned, a config that moves on
+    is ignored, other settings are rejected, and an account that holds no starter
+    settings adopts the config at its next episode.
     """
     with temp_root(
         budget=500_000, starter_files="s", starter_files_below=499_000
@@ -216,16 +217,17 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         rejected(
             lambda: harness.load_account("t", starter_files="other"),
             "starter_files",
-            because="an agent was re-created on different terms",
+            because="an agent was re-created with different pinned settings",
         )
         assert (
             harness.load_account("t", starter_files="s", starter_files_below=499_000)[
                 "starter_files"
             ]
             == "s"
-        ), "the terms it was created on are accepted"
+        ), "the settings it was created with are accepted"
 
-        # An account from before the terms were pinned adopts the config at its next episode.
+        # An account that holds no starter settings adopts the config at its next
+        # episode.
         m = ground_truth()
         del m["starter_files"], m["starter_files_below"]
         harness.save_account("t", m)
@@ -234,8 +236,8 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert ground_truth()["starter_files"] == "s"
 
 
-def check_a_fork_carries_the_starter_files_terms_it_had():
-    """A fork of an episode the starter files had landed on carries the terms.
+def check_a_fork_carries_the_starter_files_settings_it_had():
+    """A fork of an episode the starter files had landed on carries their settings.
 
     A fork from before they landed carries none, and takes the config it is next
     run under.
@@ -270,7 +272,7 @@ def check_starter_files_config_is_validated():
         plant(root, "ok")
 
         def declared(**values):
-            """Starter file terms as a manifest states them; config.toml rejects
+            """Starter file settings as a manifest states them; config.toml rejects
             them."""
             harness.apply_config(
                 values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
@@ -288,7 +290,7 @@ def check_starter_files_config_is_validated():
                 rejected(
                     lambda: declared(**bad),
                     "starter_files",
-                    because=f"accepted bad starter_files terms: {bad!r}",
+                    because=f"accepted bad starter_files settings: {bad!r}",
                 )
 
         with pinned():

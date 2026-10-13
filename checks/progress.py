@@ -281,10 +281,10 @@ def check_a_branch_that_fails_partway_can_be_made_again():
         output = root / "experiments" / "branches" / "takeover.toml"
         loading, replacing = harness.load_account, progress.replace
 
-        def full(agent, **terms):
+        def full(agent, **settings):
             if agent == "takeover-02":
                 raise OSError("no space left on device")
-            return loading(agent, **terms)
+            return loading(agent, **settings)
 
         def unwritable(temporary, destination):
             if destination.name == "lineage.json":

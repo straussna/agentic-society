@@ -134,7 +134,7 @@ and the `[[tool]]` tables that declare every tool an agent has, the shell includ
 ([docs/manifest.md](manifest.md)).
 
 The two sets are disjoint and each file rejects the other's keys by name, so no setting
-is given in two places and no run's terms depend on which file was read last. Unknown
+is given in two places and no run's settings depend on which file was read last. Unknown
 keys, wrong types, values outside their range, and pairings that do not go together
 (starter files without a threshold, giver-funded transfers with a rebate, no transfers
 with a transfer penalty, a retired key that a channel field replaces) are rejected at startup, as

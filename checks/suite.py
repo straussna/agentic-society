@@ -149,7 +149,7 @@ def check_no_setting_is_given_in_two_places():
     """config.toml and an experiment own disjoint halves of the settings, and a process
     holds them in one place.
 
-    A setting given in both files is a run whose terms depend on which was read last.
+    A setting given in both files is a run whose settings depend on which was read last.
     Each file rejects the other's keys by name; this asserts the two halves cover
     every tunable exactly once, and that the files the repo ships keep to them. In a
     process every tunable is a field of the one frozen Settings, spelled as the files

@@ -2278,8 +2278,8 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
 
 
 def check_a_manifest_is_validated():
-    """A manifest names a schedule, the experiment's defaults, and each agent's terms,
-    or is rejected."""
+    """A manifest names a schedule, the experiment's defaults, and each agent's pinned
+    settings, or is rejected."""
     other_model = "claude-opus-5"
     good = (
         f'schedule = "simultaneous"\ngrace_episodes = 1\nsystem_prompt = ""\n'
@@ -2351,7 +2351,7 @@ def check_a_manifest_is_validated():
     assert m["overrides"] == want, "everything else is an experiment default"
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
     assert m["sha256"] == expected_sha
-    assert experiment.terms_of(m["agents"][0]) == {
+    assert experiment.pinned_settings_of(m["agents"][0]) == {
         "provider": "anthropic",
         "model": "claude-sonnet-5",
         "budget": None,
@@ -2359,7 +2359,7 @@ def check_a_manifest_is_validated():
         "starter_files_below": 400000,
         "system_prompt": None,
     }
-    assert experiment.terms_of(m["agents"][1]) == {
+    assert experiment.pinned_settings_of(m["agents"][1]) == {
         "provider": "anthropic",
         "model": other_model,
         "budget": 7,
@@ -2392,8 +2392,9 @@ def check_a_manifest_is_validated():
 
 
 def check_a_manifest_gives_each_agent_its_own_starter_files():
-    """Each agent is created on its own terms, the experiment's defaults apply to all, and the
-    terms are pinned: a manifest that later says otherwise is rejected."""
+    """Each agent is created with its own settings, the experiment's defaults apply to
+    all, and those settings are pinned: a manifest that later says otherwise is
+    rejected."""
     text = (
         'grace_episodes = 2\nsystem_prompt = ""\n'
         '[[agent]]\nid = "g01"\nstarter_files = "a"\nstarter_files_below = 500000\n'
@@ -2437,7 +2438,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
                     ["--manifest", str(p), "--rounds", "1", "--resume"]
                 ),
                 "starter_files",
-                because="an agent was re-created on different terms",
+                because="an agent was re-created with different pinned settings",
             )
     assert code == 0, buf.getvalue()
     assert (

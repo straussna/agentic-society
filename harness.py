@@ -342,7 +342,7 @@ def overlay(
             )
         changes[key] = value
     s = dataclasses.replace(base, **changes)
-    validate_terms(
+    validate_settings(
         source,
         provider=None,
         model=None,
@@ -417,7 +417,7 @@ def apply_config(
     SETTINGS = overlay(SETTINGS, values, source, allowed, elsewhere)
 
 
-def validate_terms(
+def validate_settings(
     source: str,
     *,
     provider: str | None,
@@ -430,7 +430,7 @@ def validate_terms(
     """Reject pinned settings that cannot stand, naming the file and the key.
 
     The one set of rules for config.toml, a manifest's defaults and a manifest's
-    per-agent terms. None is a term the caller did not set.
+    per-agent settings. None is a setting the caller did not set.
     """
     lead = f"{source}: {who}: " if who else f"{source}: "
     if (provider is None) != (model is None):
@@ -1477,7 +1477,7 @@ FILE_CONTENT_LIMIT = 100_000
 # channels by name.
 TRACE_VERSION = 5
 
-# The shape of an account: provider-neutral, its pinned terms beside the balance
+# The shape of an account: provider-neutral, its pinned settings beside the balance
 # history.
 ACCOUNT_VERSION = 3
 
@@ -1743,13 +1743,13 @@ class Account(TypedDict):
     """One agent's account.json, which save_account writes whole.
 
     load_account and fork create it with every required key. load_account pins the
-    starter terms and the system prompt beside them; fork carries the starter terms
-    only where the parent's starter files had landed by the episode it forks, and the
-    prompt only where the parent holds one, so build_episode pins the tunables for
-    starter terms an account lacks and system_of tells one without a prompt the one
-    in force. The rest are added as they first happen. account_on_disk and the
-    viewer read an account as it stands on disk, {} where there is none, so what they
-    hand one to takes a Mapping.
+    starter settings and the system prompt beside them; fork carries the starter
+    settings only where the parent's starter files had landed by the episode it forks,
+    and the prompt only where the parent holds one, so build_episode pins the settings
+    in force for starter settings an account lacks and system_of tells one without a
+    prompt the one in force. The rest are added as they first happen. account_on_disk
+    and the viewer read an account as it stands on disk, {} where there is none, so
+    what they hand one to takes a Mapping.
     """
 
     account_version: int
@@ -1834,7 +1834,7 @@ PINNED_SETTINGS = {
 MODEL_SETTINGS = ("provider", "model")
 
 
-def term_shown(key: str, value: Any) -> str:
+def setting_shown(key: str, value: Any) -> str:
     """A pinned setting as a rejection names it: a prompt by sha256, everything else
     whole."""
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
@@ -2013,7 +2013,7 @@ def load_account(
             else starter_files_below
         )
         prompt = s.system_prompt if system_prompt is None else system_prompt
-        validate_terms(
+        validate_settings(
             "account",
             provider=provider,
             model=model,
@@ -2076,8 +2076,8 @@ def load_account(
         if key in account and account[key] != given[setting]:
             raise SystemExit(
                 f"agent {agent} was created with {key}="
-                f"{term_shown(key, account[key])}, and is now asked to run with "
-                f"{term_shown(key, given[setting])}. Episodes either side of that "
+                f"{setting_shown(key, account[key])}, and is now asked to run with "
+                f"{setting_shown(key, given[setting])}. Episodes either side of that "
                 f"are not one experiment; start a new agent"
             )
         if key not in account:
@@ -2099,10 +2099,11 @@ def balance_history_on_disk(agent: str) -> list[int]:
     return account_on_disk(agent).get("balance_history") or []
 
 
-def starter_terms(account: Account) -> tuple[str, int]:
+def starter_settings(account: Account) -> tuple[str, int]:
     """The starter files this agent receives and the balance they land at or below.
 
-    Pinned in the account at creation; an account without them reads the tunables.
+    Pinned in the account at creation; an account without them reads the settings in
+    force.
     """
     return (
         account.get("starter_files", SETTINGS.starter_files),
@@ -2315,7 +2316,7 @@ def plant_starter_files(
     Rejects starter files whose sha256 no longer matches, or that would overwrite a
     path the agent has written.
     """
-    name, below = starter_terms(account)
+    name, below = starter_settings(account)
     planted = account.get("starter_files_landed")
     if planted and name and planted["sha256"] != files_sha256(name):
         raise SystemExit(
@@ -6077,7 +6078,7 @@ def build_episode(agent: str) -> Episode:
     # planted is not read as something this episode wrote.
     before = before_sha256(channel_instances, reach, seating.labels)
     if "starter_files" not in account:
-        # An account without pinned starter terms takes the tunables.
+        # An account without pinned starter settings takes the settings in force.
         account["starter_files"], account["starter_files_below"] = (
             s.starter_files,
             s.starter_files_below,
@@ -6089,7 +6090,7 @@ def build_episode(agent: str) -> Episode:
     # Invariant 1: before plant_trees, so the starter files are in the agent's
     # memory by the time the listing names it.
     memory = memory_channel(s.channels)
-    if memory is None and starter_terms(account)[0]:
+    if memory is None and starter_settings(account)[0]:
         raise SystemExit(
             f"agent {agent} has starter files and the channel table has no memory "
             f"channel to put them in"
@@ -6107,7 +6108,7 @@ def build_episode(agent: str) -> Episode:
         account["provider"],
         account["model"],
         seating,
-        starter_terms(account),
+        starter_settings(account),
         account.get("experiment_stamp"),
         system_of(account),
     )
@@ -6740,7 +6741,7 @@ def fork(
     if "system_prompt" in parent_account:
         account["system_prompt"] = parent_account["system_prompt"]
     # Starter files the parent had already received are part of the environment
-    # being copied, and so are the terms they landed on. A fork behind that episode
+    # being copied, and so are the settings they landed on. A fork behind that episode
     # carries neither, and is given starter files by whatever it is run under.
     if (planted := parent_account.get("starter_files_landed")) and planted[
         "episode"
@@ -6973,7 +6974,9 @@ def print_context(
         stamp = experiment.stamp_of(m)
         with contextlib.redirect_stdout(io.StringIO()):
             for entry in agents:
-                account = load_account(entry["id"], **experiment.terms_of(entry))
+                account = load_account(
+                    entry["id"], **experiment.pinned_settings_of(entry)
+                )
                 experiment.inherit_memory(entry, account)
                 experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
                 save_account(entry["id"], account)
@@ -6987,7 +6990,7 @@ def print_context(
             channel_instances = instances(entry["id"], account)
             ensure_mirrors(channel_instances)
             memory = memory_channel(s.channels)
-            if memory is None and starter_terms(account)[0]:
+            if memory is None and starter_settings(account)[0]:
                 raise SystemExit(
                     f"agent {entry['id']} has starter files and the channel table "
                     f"has no memory channel to put them in"
@@ -7109,7 +7112,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         metavar="PATH",
         help="the experiment this agent is part of: its environment, its settings "
-        "and this agent's own terms. Required to run an episode",
+        "and this agent's own pinned settings. Required to run an episode",
     )
     ap.add_argument(
         "--print-files",
@@ -7174,7 +7177,7 @@ def main(argv: list[str] | None = None) -> int:
     if not a.manifest:
         ap.error(
             "--manifest is required: an agent runs as part of an experiment, and the "
-            "manifest is what declares its environment and its terms"
+            "manifest is what declares its environment and its settings"
         )
     # Deferred, so harness.py is fully imported before experiment.py imports it.
     import experiment
@@ -7200,7 +7203,7 @@ def main(argv: list[str] | None = None) -> int:
     catch_signals()
     if not a.resume:
         archive_agents([a.agent], FRESH_START)
-    account = load_account(a.agent, **experiment.terms_of(entry))
+    account = load_account(a.agent, **experiment.pinned_settings_of(entry))
     experiment.inherit_memory(entry, account)
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
     return run_episodes(a.agent, router, a.episodes, seat(a.agent))

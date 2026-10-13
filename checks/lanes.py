@@ -488,11 +488,11 @@ def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
         harness.SANDBOX = sandbox
         load_account = harness.load_account
 
-        def load_test_account(agent, **terms):
+        def load_test_account(agent, **settings):
             existing = harness.account_on_disk(agent)
-            terms.setdefault("provider", existing.get("provider", provider))
-            terms.setdefault("model", existing.get("model", model))
-            return load_account(agent, **terms)
+            settings.setdefault("provider", existing.get("provider", provider))
+            settings.setdefault("model", existing.get("model", model))
+            return load_account(agent, **settings)
 
         harness.load_account = load_test_account
         for k, v in seams.items():

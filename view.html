@@ -129,8 +129,8 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .tile .m { color:var(--dim); font-size:12px; display:flex; gap:6px 9px; flex-wrap:wrap;
            align-items:center; margin-top:5px; }
 .tile .m i { font-style:normal; color:var(--line2); }
-.tile .terms { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; }
-.tile .terms .tag { max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+.tile .pinned { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; }
+.tile .pinned .tag { max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 
 /* Collapsed, the header is the balances and the tabs: the rows under each
    number are the round's detail, and a reader watching a transcript is not
@@ -727,7 +727,7 @@ function tileHtml(s, i) {
   const transfer = g && g.submitted && !g.amount
     ? `<span class="tag warn" title="${esc(g.error || "")}">transfer declared, moved nothing</span>`
     : g && g.amount ? `<span class="tag">transfer ${num(g.amount)} → ${esc(g.label || g.seat)}</span>` : "";
-  const terms = [s.model ? `<span class="tag" title="provider and model">${esc(`${s.provider || ""}/${s.model}`.replace(/^\//, ""))}</span>` : "",
+  const pinned = [s.model ? `<span class="tag" title="provider and model">${esc(`${s.provider || ""}/${s.model}`.replace(/^\//, ""))}</span>` : "",
     s.starter_files ? `<span class="tag starter" title="${esc(s.starter_files)}">starter · ${esc(shortPath(s.starter_files))}</span>` : ""].filter(Boolean).join("");
   const state = s.pending_human
       ? `<span class="tag warn"><i class="dot"></i>waiting for a human</span>`
@@ -756,7 +756,7 @@ function tileHtml(s, i) {
       <b>${esc(s.agent)}</b></div>
     <div class="v ${balance < 0 ? "neg" : ""}">${num(balance)}</div>
     <div class="bar ${balance < 0 ? "over" : ""}"><i style="width:${(left * 100).toFixed(1)}%"></i></div>
-    ${terms ? `<div class="terms">${terms}</div>` : ""}
+    ${pinned ? `<div class="pinned">${pinned}</div>` : ""}
     <div class="m">${state}<i>|</i>
       <span title="spent this round">round ${num(s.spent_this_round)}</span>
       <span title="spent in all, summed from its episodes; the bar above is how
