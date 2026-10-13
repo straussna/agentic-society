@@ -11,6 +11,7 @@ import view
 from checks.fake import refuse, run, say, usage
 from checks.lanes import (
     HALF,
+    PERSONA_LABELS,
     episode_once,
     ground_truth,
     plant,
@@ -55,7 +56,7 @@ def busy_episodes(root) -> list[dict]:
     return [first, second]
 
 
-def check_the_identity_delta_counts_changed_lines():
+def check_the_persona_delta_counts_changed_lines():
     """analyze --identity diffs one named file episode over episode, and says so."""
     one = {
         "episode": 1,
@@ -78,14 +79,14 @@ def check_the_identity_delta_counts_changed_lines():
         "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}],
     }
     path = "state/IDENTITY.md"
-    assert analyze.identity_delta(None, one, path) == 2, (
+    assert analyze.persona_delta(None, one, path) == 2, (
         "at first sight the whole file is new"
     )
-    assert analyze.identity_delta(one, two, path) == 3, "one line gone, two arrived"
-    assert analyze.identity_delta(two, three, path) is None, (
+    assert analyze.persona_delta(one, two, path) == 3, "one line gone, two arrived"
+    assert analyze.persona_delta(two, three, path) is None, (
         "absent is no figure, not zero"
     )
-    assert analyze.identity_delta(two, same, path) == 0, "and unchanged is zero"
+    assert analyze.persona_delta(two, same, path) == 0, "and unchanged is zero"
     assert [analyze.text_chars(t) for t in (one, two, three, same)] == [5, 2, 0, 0]
     lines = analyze.identity_lines([one, two, three, same], path)
     assert lines[0].endswith("first present ep1, changed in 1 of 2 later episodes"), (
@@ -102,9 +103,9 @@ def check_the_identity_delta_counts_changed_lines():
         episode_once(run("printf 'a\\nb\\n' > state/IDENTITY.md"), say())
         episode_once(run("printf 'a\\nc\\nd\\n' > state/IDENTITY.md"), say())
         ts = analyze.load("t")["t"]
-        assert analyze.row(ts[1], ts[0], path)["identity_delta"] == 3
-        assert analyze.row(ts[1])["identity_delta"] == "", "blank without a path"
-        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["identity_delta"] == "", (
+        assert analyze.row(ts[1], ts[0], path)["persona_delta"] == 3
+        assert analyze.row(ts[1])["persona_delta"] == "", "blank without a path"
+        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["persona_delta"] == "", (
             "and blank where the file is absent"
         )
         with quiet() as buf:
@@ -114,8 +115,8 @@ def check_the_identity_delta_counts_changed_lines():
         )
     assert "ep1:2 ep2:3" in buf.getvalue(), buf.getvalue()
     rows = list(csv.DictReader(io.StringIO(csv_text)))
-    assert rows[0]["identity_delta"] == "2"
-    assert rows[1]["identity_delta"] == "3"
+    assert rows[0]["persona_delta"] == "2"
+    assert rows[1]["persona_delta"] == "3"
 
 
 def check_the_report_names_what_the_traces_hold():
@@ -198,7 +199,7 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, (
         "the declaration is the schema channel's, not a slot"
     )
-    assert (r1["transfer_to"], r1["transfer_amount"], r1["transfer_rebate"]) == (
+    assert (r1["transfer_to_seat"], r1["transfer_amount"], r1["transfer_rebate"]) == (
         "2",
         100,
         100,
@@ -206,7 +207,7 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["transfer_error"] == "" and r1["transfer_penalised"] == 0, r1
     assert r1["starter_files"] == "s" and r1["starter_files_count"] == 2, r1
     assert r1["touched_starter"] is True, r1
-    assert r1["peers"] == "1=t;2=other" and r1["identity_delta"] == "", r1
+    assert r1["peers"] == "1=t;2=other" and r1["persona_delta"] == "", r1
     assert r1["turns"] == 4 and r1["spent"] == first["spent"], r1
     assert sum(r1[k] for k in analyze.USAGE_FIELDS) == sum(
         x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS
@@ -214,7 +215,7 @@ def check_the_csv_row_flattens_a_trace():
 
     # The first episode's message has expired and the second sent none.
     assert r2["sent_to"] == "" and r2["mail_addressed"] == "", r2
-    assert r2["transfer_amount"] == 0 and r2["transfer_to"] == "", r2
+    assert r2["transfer_amount"] == 0 and r2["transfer_to_seat"] == "", r2
     assert (
         r2["refusal_category"] == ""
         and r2["served_models"] == "claude-sonnet-5-20990101"
@@ -229,6 +230,16 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["changed_starter"] is True and r2["changed_starter"] is True, (
         r1["changed_starter"],
         r2["changed_starter"],
+    )
+
+    # The receiver's seat, where a label that is not the seat number tells the two apart.
+    with temp_root() as root:
+        seated(root, labels=PERSONA_LABELS, other={})
+        given = episode_once(run("echo 'Game 100' > out/transfer"), say())
+        labelled = analyze.row(given)
+    assert given["transfer"]["label"] == "Game", given["transfer"]
+    assert (labelled["transfer_to_seat"], labelled["transfer_amount"]) == ("2", 100), (
+        labelled
     )
 
 
@@ -322,7 +333,7 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
 
     shown = ["ls", "(restart)", "post(body='hi')", "ls"]
-    assert [analyze.tool_call(rec) for rec in records] == shown
+    assert [analyze.tool_call(call) for call in records] == shown
     assert [c["call"] for c in traced] == shown and [
         c["call"] for c in live
     ] == shown, (traced, live)

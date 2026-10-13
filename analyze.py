@@ -164,16 +164,16 @@ def settled_channels(t: dict) -> list[tuple[harness.Channel, dict]]:
     return [(c, records[c.name]) for c in harness.table_of(t) if c.name in records]
 
 
-def met_of(ch: harness.Channel, rec: dict) -> bool | None:
+def met_of(ch: harness.Channel, channel_result: dict) -> bool | None:
     """Whether one settled channel's obligation was met, by its rule in harness.SETTLEMENTS.
 
     None where the record is empty, which is a channel that settled nothing. What
     was met and what was charged are two questions: a share is taken only from an
     episode the API answered, past the grace, at a rate above zero.
     """
-    if not rec:
+    if not channel_result:
         return None
-    return harness.SETTLEMENTS[ch.settles_as].met(rec)
+    return harness.SETTLEMENTS[ch.settles_as].met(channel_result)
 
 
 def mailbox_channel_of(t: dict) -> harness.Channel | None:
@@ -228,9 +228,9 @@ def call_shown(name: str | None, command: str | None, args: dict | None) -> str:
     return "(restart)" if command is None else command
 
 
-def tool_call(rec: dict) -> str:
+def tool_call(call: dict) -> str:
     """One tool call of a trace, as the transcript shows it."""
-    return call_shown(rec.get("tool"), rec["command"], rec.get("input"))
+    return call_shown(call.get("tool"), call["command"], call.get("input"))
 
 
 # What a tool call names a place with. A body is content and names nothing.
@@ -251,9 +251,9 @@ def reached(t: dict) -> list[str]:
     """Every string this episode named a place with: the commands it ran, and the
     path and addressee arguments of the tools it called.
 
-    A declared tool runs no command of its own, so an arm acting through tools names
-    nothing in `commands`. Anything asking what an episode reached asks this, so the
-    answer does not depend on which of the two an experiment offered.
+    A declared tool runs no command of its own, so under the tools-only tool mode an
+    episode names nothing in `commands`. Anything asking what an episode reached asks
+    this, so the answer does not depend on which tool mode an experiment offered.
     """
     return list(t.get("commands") or []) + [
         str(c["input"][k])
@@ -350,7 +350,7 @@ def file_text(t: dict, path: str) -> str | None:
     )
 
 
-def identity_delta(prev: dict | None, t: dict, path: str) -> int | None:
+def persona_delta(prev: dict | None, t: dict, path: str) -> int | None:
     """Lines of the designated identity file changed since `prev` last held it.
 
     None where the file is absent this episode. At the episode it first
@@ -394,7 +394,7 @@ def identity_lines(ts: list[dict], path: str | None) -> list[str]:
     if not path:
         return []
     deltas = [
-        (t["episode"], identity_delta(prev, t, path))
+        (t["episode"], persona_delta(prev, t, path))
         for prev, t in against_last(ts, path)
     ]
     present = [(s, d) for s, d in deltas if d is not None]
@@ -455,8 +455,8 @@ def episode_cols(t: dict) -> dict:
         "spent": t["spent"],
         "remaining": t["remaining"],
         "turns": len(t["turns"]),
-        # The two ways an episode acts, counted apart: an arm offered only tools
-        # runs no commands, and one offered only the shell makes no tool calls.
+        # The two ways an episode acts, counted apart: under the tools-only tool mode
+        # it runs no commands, and under the shell-only one it makes no tool calls.
         "commands": len(t["commands"]),
         "tool_calls": len(tool_calls(t)),
         "retries": len(t["retries"]),
@@ -511,7 +511,7 @@ def transfer_cols(t: dict) -> dict:
     """What it gave, which is the one thing it did that the whole experiment saw."""
     transfer = t["transfer"]
     return {
-        "transfer_to": transfer["seat"] or "",
+        "transfer_to_seat": transfer["seat"] or "",
         "transfer_amount": transfer["amount"],
         "transfer_rebate": transfer["rebate"],
         "transfer_error": transfer["error"] or "",
@@ -529,16 +529,16 @@ def channel_cols(t: dict) -> dict:
     was alone; blank means the record settled nothing.
     """
     cols: dict = {}
-    for ch, rec in settled_channels(t):
-        met = met_of(ch, rec)
+    for ch, channel_result in settled_channels(t):
+        met = met_of(ch, channel_result)
         cols[f"{ch.name}_met"] = "" if met is None else met
-        cols[f"{ch.name}_penalised"] = rec.get("penalty", "")
+        cols[f"{ch.name}_penalised"] = channel_result.get("penalty", "")
         if ch.settles_as == "mailbox":
             # Which labels this episode newly said something to, against which of
             # them it left holding anything but one file. One of these is the
             # obligation and the other is the break.
-            cols[f"{ch.name}_addressed"] = ";".join(rec["addressed"])
-            cols[f"{ch.name}_crowded"] = ";".join(rec["broken"])
+            cols[f"{ch.name}_addressed"] = ";".join(channel_result["addressed"])
+            cols[f"{ch.name}_crowded"] = ";".join(channel_result["broken"])
     cols["forgiven"] = t.get("forgiven", 0)
     return cols
 
@@ -546,13 +546,13 @@ def channel_cols(t: dict) -> dict:
 def voice_cols(t: dict, prev: dict | None, identity: str | None) -> dict:
     """What the agent wrote about its balance, how much it said in its own words, and
     how far the identity file moved since the episode before."""
-    delta = identity_delta(prev, t, identity) if identity else None
+    delta = persona_delta(prev, t, identity) if identity else None
     return {
         "wrote_number": t["mentions"]["number"],
         "wrote_balance_path": t["mentions"]["balance_path"],
         "wrote_cost": t["mentions"]["cost"],
         "text_chars": text_chars(t),
-        "identity_delta": "" if delta is None else delta,
+        "persona_delta": "" if delta is None else delta,
     }
 
 
@@ -596,7 +596,7 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
             # overwrote.
             report_line("rewrote n, seen in turn", rewrote_in_turn(ts)),
             report_line("stop reasons", stops),
-            *segment_lines(ts),
+            *arm_lines(ts),
             *refusal_lines(ts),
             report_line("files the agent made", made or "none"),
             report_line("reached for, absent", absent(ts)),
@@ -612,11 +612,11 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
     return "\n".join(out)
 
 
-def segments(ts: list[dict]) -> list[list[dict]]:
-    """The agent's episodes, split where the harness that ran them changed.
+def arms(ts: list[dict]) -> list[list[dict]]:
+    """The agent's episodes, split into arms where the harness that ran them changed.
 
-    Episodes either side of such a seam are not one record, so the totals above
-    them are not one total either.
+    Episodes either side of such a seam are not one arm, so the totals above them are
+    not one total either.
     """
     out: list[list[dict]] = []
     for t in ts:
@@ -628,17 +628,18 @@ def segments(ts: list[dict]) -> list[list[dict]]:
     return out
 
 
-def segment_lines(ts: list[dict]) -> list[str]:
-    """Per-harness totals, when an agent spans more than one. Silent when it does not."""
-    segs = segments(ts)
-    if len(segs) < 2:
+def arm_lines(ts: list[dict]) -> list[str]:
+    """Per-arm totals, when an agent spans more than one harness. Silent when it does
+    not."""
+    split = arms(ts)
+    if len(split) < 2:
         return []
-    out = [f"  ran under {len(segs)} harnesses; the totals above span the seam"]
-    for seg in segs:
-        digest = seg[0]["provenance"]["harness_sha256"][:12]
+    out = [f"  ran in {len(split)} arms, one per harness; the totals above span them"]
+    for arm in split:
+        digest = arm[0]["provenance"]["harness_sha256"][:12]
         out.append(
-            f"    {digest}  episodes {seg[0]['episode']}-{seg[-1]['episode']}, "
-            f"{sum(t['spent'] for t in seg)} micro-dollars"
+            f"    {digest}  episodes {arm[0]['episode']}-{arm[-1]['episode']}, "
+            f"{sum(t['spent'] for t in arm)} micro-dollars"
         )
     return out
 
@@ -733,8 +734,8 @@ def met_lines(ts: list[dict]) -> list[str]:
     """
     seen: dict[str, list[bool | None]] = {}
     for t in ts:
-        for ch, rec in settled_channels(t):
-            seen.setdefault(ch.name, []).append(met_of(ch, rec))
+        for ch, channel_result in settled_channels(t):
+            seen.setdefault(ch.name, []).append(met_of(ch, channel_result))
     return [
         report_line(
             f"episodes that met {name}", f"{sum(1 for m in mets if m)} of {len(mets)}"
@@ -754,11 +755,11 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     # over all of them would say an agent went quiet but never on what.
     taken: dict[str, int] = collections.Counter()
     for t in ts:
-        for ch, rec in settled_channels(t):
-            taken[ch.name] += rec.get("penalty") or 0
+        for ch, channel_result in settled_channels(t):
+            taken[ch.name] += channel_result.get("penalty") or 0
     forgiven = sum(t.get("forgiven") or 0 for t in ts)
     ledger = ts[-1].get("ledger") or []
-    received = sum(a for _, taker, a in ledger if taker == label_of(ts[-1]))
+    received = sum(a for _, receiver, a in ledger if receiver == label_of(ts[-1]))
     if not (given or received or any(taken.values()) or forgiven):
         return [report_line("transfers", "none given, none received")]
     lines = [
@@ -802,7 +803,7 @@ def ledger_lines(ts: list[dict]) -> list[str]:
     if not rows:
         return []
     return [report_line("the experiment's transfers", "giver -> receiver, amount")] + [
-        f"      {giver} -> {taker}  {amount}" for giver, taker, amount in rows
+        f"      {giver} -> {receiver}  {amount}" for giver, receiver, amount in rows
     ]
 
 
@@ -973,8 +974,8 @@ def bands(ts: list[dict]) -> dict[int, tuple[int, int]]:
     }
 
 
-def step_costs(series: list[int]) -> list[int]:
-    """What each step of the series cost, indexed to the element it produced.
+def turn_costs(series: list[int]) -> list[int]:
+    """What each element of the series cost, indexed to the element it produced.
 
     Mostly a billed turn. A rebate, a penalty and a floor each add an element at
     an episode's end, so a negative delta is one of those three.
@@ -986,7 +987,7 @@ def charts(
     agents: dict[str, list[dict]], out_dir: Path, identity: str | None = None
 ) -> list[str]:
     """Five figures: the balance series, and everything that moved it. A sixth,
-    the identity file's drift, where a path was given.
+    persona drift in the identity file, where a path was given.
 
     matplotlib is the only optional dependency in the project, and it gates
     nothing but these files, so its absence is reported and not raised.
@@ -1012,8 +1013,8 @@ def charts(
     if identity:
         figures.append(
             (
-                "identity-drift",
-                lambda plt, agents: identity_drift_chart(plt, agents, identity),
+                "persona-drift",
+                lambda plt, agents: persona_drift_chart(plt, agents, identity),
             )
         )
     for name, draw in figures:
@@ -1055,14 +1056,14 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
                 linestyle=":",
                 label=f"starter_files lands, episode {landed}",
             )
-        # Likewise where the harness changed: one line, two experiments.
-        for seg in segments(ts)[1:]:
+        # Likewise where the harness changed: one line, two arms.
+        for arm in arms(ts)[1:]:
             ax.axvline(
-                at[seg[0]["episode"]][0],
+                at[arm[0]["episode"]][0],
                 color="C1",
                 linewidth=1.4,
                 linestyle="-.",
-                label=f"harness changed, episode {seg[0]['episode']}",
+                label=f"harness changed, episode {arm[0]['episode']}",
             )
         crossing = next((i for i, v in enumerate(series) if v < 0), None)
         if crossing is not None:
@@ -1087,14 +1088,14 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
 
 
 def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
-    """What each turn cost, against the floor it could not go below.
+    """What each turn cost, against the baseline it could not go below.
 
     A symlog axis puts a turn that dumped a file and a turn that said nothing on
     the same plot, and keeps a zero-cost retry visible instead of dropped.
     """
     fig, ax = plt.subplots(figsize=(11, 5))
     for name, ts in agents.items():
-        d = step_costs(series_of(ts))
+        d = turn_costs(series_of(ts))
         ax.plot(
             range(1, len(d) + 1),
             d,
@@ -1103,14 +1104,14 @@ def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
             linewidth=1,
             label=f"{name}: turn cost",
         )
-        floor_x, floor_y = [], []
+        baseline_x, baseline_y = [], []
         for lo, hi in bands(ts).values():
             if hi > lo:
-                floor_x.append((lo + hi) / 2)
-                floor_y.append(min(d[lo:hi]))
+                baseline_x.append((lo + hi) / 2)
+                baseline_y.append(min(d[lo:hi]))
         ax.plot(
-            floor_x,
-            floor_y,
+            baseline_x,
+            baseline_y,
             marker="o",
             markersize=4,
             linewidth=1.4,
@@ -1130,7 +1131,7 @@ def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
     ax.set_yscale("symlog", linthresh=1000)
     ax.set_xlabel("billed turn")
     ax.set_ylabel("cost of that turn (micro-dollars, symlog)")
-    ax.set_title("Cost per turn, and the floor rising under it")
+    ax.set_title("Cost per turn, and the baseline rising under it")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     return fig
@@ -1228,19 +1229,20 @@ def notes_size_chart(plt, agents: dict[str, list[dict]]):
     return fig
 
 
-def identity_drift_chart(plt, agents: dict[str, list[dict]], path: str):
-    """How far the identity file moved each episode, against how much the agent said."""
+def persona_drift_chart(plt, agents: dict[str, list[dict]], path: str):
+    """Persona drift: how far the identity file moved each episode, against how much the
+    agent said."""
     fig, axes = per_agent_axes(plt, agents, 4.5)
     for ax, (name, ts) in zip(axes, agents.items()):
         x = episode_axis(ax, ts)
         deltas = [
-            identity_delta(prev, t, path) or 0 for prev, t in against_last(ts, path)
+            persona_delta(prev, t, path) or 0 for prev, t in against_last(ts, path)
         ]
         said = [text_chars(t) for t in ts]
         ax.bar(x, deltas, color="C3", label=f"lines of {path} changed")
         ax.set_ylabel("lines")
         ax.set_ylim(0, max(deltas + [1]) * 1.35)
-        ax.set_title(f"{name}: the identity file's drift against what the agent said")
+        ax.set_title(f"{name}: persona drift against what the agent said")
         ax.grid(alpha=0.3, axis="y")
         voice = ax.twinx()
         voice.plot(
