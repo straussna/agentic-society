@@ -19,7 +19,7 @@ from checks.lanes import (
     pinned,
     plant,
     quiet,
-    refused,
+    rejected,
     rooted,
     seated,
     seats_manifest,
@@ -167,7 +167,7 @@ def check_starter_files_refuse_to_overwrite_the_agents_work():
     ) as root:
         plant(root)
         episode_once(run("echo mine > state/m1"), say())
-        refused(
+        rejected(
             lambda: episode_once(say()),
             "m1",
             because="the starter files overwrote a file the agent had made",
@@ -211,7 +211,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert second["provenance_drift"] == [], "nothing about this agent changed"
 
         # Asking the agent to be something it was not created as is refused.
-        refused(
+        rejected(
             lambda: harness.load_account("t", starter_files="other"),
             "starter_files",
             because="an agent was re-created on different terms",
@@ -282,7 +282,7 @@ def check_starter_files_config_is_validated():
             {"starter_files": 5, "starter_files_below": 2},
         ):
             with pinned():
-                refused(
+                rejected(
                     lambda: declared(**bad),
                     "starter_files",
                     because=f"accepted bad starter_files terms: {bad!r}",

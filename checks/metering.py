@@ -25,7 +25,7 @@ from checks.lanes import (
     pinned,
     quiet,
     reconciled,
-    refused,
+    rejected,
     seated,
     span_of,
     tables,
@@ -148,14 +148,14 @@ def check_config_is_validated():
         ):
             f.write_text(bad, encoding="utf-8")
             with pinned():
-                refused(
+                rejected(
                     lambda: harness.load_config(f),
                     because=f"accepted bad config: {bad}",
                 )
 
         # A named file that is not there is refused, not quietly skipped.
         with pinned():
-            refused(
+            rejected(
                 lambda: harness.load_config(Path(tmp) / "confg.toml"),
                 "no such config",
                 because="a missing --config path was ignored",
@@ -189,7 +189,7 @@ def check_config_is_validated():
         {"tool_result_limit": 2000},
     ):
         with pinned():
-            refused(
+            rejected(
                 lambda: declared(**bad),
                 "manifest",
                 because=f"a manifest accepted {bad}",
@@ -202,7 +202,7 @@ def check_config_is_validated():
     # A refusal installs nothing, the good key given beside the refused one included.
     with pinned():
         before = harness.SETTINGS
-        refused(
+        rejected(
             lambda: declared(budget=7, delivery="fetch"),
             "delivery",
             because="a manifest accepted delivery = 'fetch'",
@@ -221,7 +221,7 @@ def check_config_is_validated():
         tables(transfer={"rebate_percent": 101}),
     ):
         with pinned():
-            refused(
+            rejected(
                 lambda: harness.apply_channels(table, None, "manifest"),
                 "manifest:",
                 because="a bad channel table was accepted",
@@ -496,7 +496,7 @@ def check_the_safety_stops_are_held_to_their_ranges():
             for bad in (floor - 1, ceiling + 1):
                 f.write_text(f"{key} = {bad}\n", encoding="utf-8")
                 with pinned():
-                    refused(
+                    rejected(
                         lambda: harness.load_config(f),
                         str(f),
                         key,
@@ -534,7 +534,7 @@ def check_tool_result_limit_is_tunable_and_bounded():
         ):
             f.write_text(bad, encoding="utf-8")
             with pinned():
-                refused(
+                rejected(
                     lambda: harness.load_config(f),
                     "tool_result_limit",
                     because=f"accepted bad tool_result_limit: {bad!r}",
@@ -659,7 +659,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
         # The pin is on what the harness ships, so a declaration does not lift it.
         harness.PINNED = (("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),)
         with quiet() as buf:
-            refused(
+            rejected(
                 harness.start,
                 code=2,
                 because="started on a shipped prompt that had drifted",

@@ -20,7 +20,7 @@ from checks.lanes import (
     manifest_file,
     quiet,
     reconciled,
-    refused,
+    rejected,
     seated,
     seats_manifest,
     tables,
@@ -215,7 +215,7 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
                     "branch target 'other-01' already exists",
                 ),
             ):
-                refused(
+                rejected(
                     lambda: experiment.branch_experiment(source, *args),
                     why,
                     because=f"branched what it should refuse: {why}",
@@ -225,13 +225,13 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
             assert not (root / "other.toml").exists() and not output.exists()
             assert product.records(root, "takeover")["lineage"] is None
             experiment.branch_experiment(source, 1, "takeover", "2", output)
-            refused(
+            rejected(
                 lambda: experiment.branch_experiment(
                     source, 1, "takeover", "2", output
                 ),
                 f"branch manifest {output} already exists",
             )
-            refused(
+            rejected(
                 lambda: experiment.branch_experiment(
                     source, 1, "takeover", "2", root / "again.toml"
                 ),
@@ -251,7 +251,7 @@ def check_a_branch_refuses_a_boundary_it_cannot_fork():
         account["remaining"], account["received"] = account["series"][-1], 0
         harness.save_account("g01", account)
         with quiet():
-            refused(
+            rejected(
                 lambda: experiment.branch_experiment(
                     seats_manifest(root, ids), 1, "lost", "2", root / "lost.toml"
                 ),

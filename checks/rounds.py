@@ -33,7 +33,7 @@ from checks.lanes import (
     quiet,
     reconciled,
     recording,
-    refused,
+    rejected,
     rooted,
     seated,
     seats_manifest,
@@ -69,13 +69,13 @@ def check_the_experiment_uses_fixed_order_and_validates():
         ["--manifest", "c.toml", "--rounds", "0"],
     ):
         with quiet():
-            refused(
+            rejected(
                 lambda: experiment.main(bad),
                 code=2,
                 because=f"accepted bad experiment: {bad}",
             )
     with quiet():
-        refused(
+        rejected(
             lambda: experiment.main(["--manifest", "no-such-experiment.toml"]),
             "no such manifest",
             because="a manifest that is not there was accepted",
@@ -2296,12 +2296,12 @@ def check_a_manifest_is_validated():
             "not toml ==\n",
         ):
             p = manifest_file(root, bad)
-            refused(
+            rejected(
                 lambda: experiment.load_manifest(p),
                 str(p),
                 because=f"accepted bad manifest: {bad!r}",
             )
-        refused(
+        rejected(
             lambda: experiment.load_manifest(root / "experiments" / "missing.toml"),
             because="a missing manifest was ignored",
         )
@@ -2312,7 +2312,7 @@ def check_a_manifest_is_validated():
             p = manifest_file(
                 root, f'{key} = {value}\nsystem_prompt = ""\n' + two, f"{key}.toml"
             )
-            refused(
+            rejected(
                 lambda: experiment.load_manifest(p),
                 str(p),
                 f"{key} must be bool, got {kind}",
@@ -2414,7 +2414,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
             newline="\n",
         )
         with quiet():
-            refused(
+            rejected(
                 lambda: experiment.main(
                     ["--manifest", str(p), "--rounds", "1", "--resume"]
                 ),
@@ -3031,7 +3031,7 @@ def check_labels_are_validated():
             two('label = ""\n'),
             two('label = ".."\n'),
         ):
-            refused(
+            rejected(
                 lambda: experiment.load_manifest(manifest_file(root, bad)),
                 "label",
                 because=f"accepted a bad label: {bad!r}",
@@ -3104,7 +3104,7 @@ def check_a_manifest_declares_what_the_harness_says():
         # Declared and never inherited: a manifest silent on it is refused, and the
         # empty string is the declaration that says nothing.
         silent = manifest_file(root, '[[agent]]\nid = "g01"\n', name="s.toml")
-        refused(
+        rejected(
             lambda: experiment.load_manifest(silent),
             "system_prompt",
             because="a manifest declaring no prompt was accepted",
@@ -3134,7 +3134,7 @@ def check_a_manifest_declares_what_the_harness_says():
             original.replace(mine, mine + " Again."), encoding="utf-8", newline="\n"
         )
         with quiet():
-            refused(
+            rejected(
                 lambda: experiment.main(
                     ["--manifest", str(p), "--rounds", "1", "--resume"]
                 ),

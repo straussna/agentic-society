@@ -903,10 +903,10 @@ PERSONA_FILES = {"balance": "balance", "digest": "digest"}
 PERSONA_LABELS = {"1": "Studio", "2": "Game"}
 
 
-def refused(
+def rejected(
     call,
     *words: str,
-    because: str = "accepted what should have been refused",
+    because: str = "accepted what should have been rejected",
     code: int | None = None,
 ) -> None:
     """Run `call`, which must exit naming every word given, and with `code` where one is given."""

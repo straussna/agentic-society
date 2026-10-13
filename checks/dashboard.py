@@ -36,7 +36,7 @@ from checks.lanes import (
     ledger_name,
     manifest_file,
     quiet,
-    refused,
+    rejected,
     rooted,
     seated,
     shared,
@@ -1673,12 +1673,12 @@ def check_the_view_cli_refuses_what_is_not_there():
     """
     with temp_root():
         with quiet():
-            refused(
+            rejected(
                 lambda: view.main(["--agent", "nope", "--no-browser"]),
                 code=2,
                 because="an agent that is not there was opened on",
             )
-            refused(
+            rejected(
                 lambda: view.main(["--experiment", "nope", "--no-browser"]),
                 code=2,
                 because="an experiment that is not there was opened on",

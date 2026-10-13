@@ -21,7 +21,7 @@ from checks.lanes import (
     manifest_file,
     pinned,
     plant,
-    refused,
+    rejected,
     rooted,
     quiet,
     seated,
@@ -195,7 +195,7 @@ def check_a_channel_table_is_validated():
             ),
             (one(path="n{label}"), ["is also"]),
         ):
-            refused(
+            rejected(
                 lambda: harness.validate_channels(declared, None, "check"),
                 "check:",
                 *words,
@@ -209,18 +209,18 @@ def check_a_channel_table_is_validated():
             ({"round": "a/b"}, ["round must be one path segment"]),
             ({"digest": "state"}, ["is also"]),
         ):
-            refused(
+            rejected(
                 lambda: harness.validate_channels(None, hf, "check"), "check:", *words
             )
         # A label is a path too: one that lands on a channel's path is refused.
-        refused(
+        rejected(
             lambda: harness.validate_channels(
                 None, None, "check", labels=("state", "2")
             ),
             "check:",
             "state",
         )
-        refused(
+        rejected(
             lambda: harness.validate_channels(None, None, "check", labels=("1", "n1")),
             "check:",
             "n1",
@@ -273,7 +273,7 @@ def check_retired_keys_are_refused():
                 f"{key} = 1\n" if "percent" in key else f'{key} = "x"\n',
                 encoding="utf-8",
             )
-            refused(
+            rejected(
                 lambda: harness.load_config(f),
                 key,
                 "it is now",
@@ -285,7 +285,7 @@ def check_retired_keys_are_refused():
             p = manifest_file(
                 root, f'{key} = {value}\n[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
             )
-            refused(
+            rejected(
                 lambda: experiment.load_manifest(p),
                 key,
                 "it is now",
@@ -864,7 +864,7 @@ def check_an_experimenter_channels_digest_reaches_provenance():
         (root / "files" / "brief" / "BRIEF").write_text(
             "read me again\n", encoding="utf-8"
         )
-        refused(
+        rejected(
             lambda: episode_once(run("ls"), say()),
             "not one experiment",
             because="an experimenter channel changed under the agent and the episode ran",
@@ -904,7 +904,7 @@ def check_an_experimenter_channel_can_stand_in_front_of_every_episode():
             ({"measured": True}, "measured"),
             ({"restated": True, "pushed": False}, "restated without pushed"),
         ):
-            refused(
+            rejected(
                 lambda: harness.apply_channels(
                     tables({**declared, **bad}), None, "check"
                 ),

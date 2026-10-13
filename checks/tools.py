@@ -21,7 +21,7 @@ from checks.lanes import (
     offers,
     put_out,
     quiet,
-    refused,
+    rejected,
     seated,
     tables,
     temp_root,
@@ -305,7 +305,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         assert all("at least 1" in result for result in results[4:])
 
     chans = list(harness.DEFAULT_CHANNELS)
-    refused(
+    rejected(
         lambda: harness.validate_tools(
             [transfer | {"channel": "notes"}], chans, "check"
         ),
@@ -364,7 +364,7 @@ def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
     assert "1 -> 3 (you); actual amount moved:" in received["observation"]
     assert "actual amount moved: 1000000 micro-dollars" not in received["observation"]
 
-    refused(
+    rejected(
         lambda: harness.validate_tools(
             [{"name": "wrong", "kind": "send_message_to", "channel": "transfer"}],
             harness.validate_channels(channels, None, "check", ("1", "2", "3"))[0],
@@ -383,11 +383,11 @@ def check_bash_requires_an_explicit_declaration():
         harness.apply_tools([POST], chans, "manifest")
         assert harness.SETTINGS.shell_tool is False
         assert harness.validate_tools(None, chans, "manifest") == []
-        refused(
+        rejected(
             lambda: harness.apply_tools(None, chans, "manifest"),
             "no [[tool]] is declared",
         )
-        refused(
+        rejected(
             lambda: harness.apply_tools([], chans, "manifest"),
             "no [[tool]] is declared",
         )
@@ -402,7 +402,7 @@ def check_declared_bash_and_channel_tools_are_offered_together():
             harness.run_once("t", fake(run("ls"), say(), seen=seen))
     for params in (x for x in seen if x["kind"] == "session"):
         assert [t["name"] for t in params["tools"]] == ["bash", "post"]
-    refused(
+    rejected(
         lambda: harness.validate_tools(
             [BASH | {"kind": "read_path", "channel": "notes"}],
             list(harness.DEFAULT_CHANNELS),
@@ -415,13 +415,13 @@ def check_declared_bash_and_channel_tools_are_offered_together():
         BASH | {"channel": "notes"},
         BASH | {"description": "commands"},
     ):
-        refused(
+        rejected(
             lambda: harness.validate_tools(
                 [raw], list(harness.DEFAULT_CHANNELS), "check"
             ),
             "bash requires",
         )
-    refused(
+    rejected(
         lambda: harness.validate_tools(
             [BASH, BASH], list(harness.DEFAULT_CHANNELS), "check"
         ),
@@ -464,7 +464,7 @@ def check_a_tool_table_is_validated():
             ["at most one vote tool"],
         ),
     ):
-        refused(
+        rejected(
             lambda: harness.validate_tools(declared, chans, "check"), "check:", *words
         )
 
@@ -494,12 +494,12 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
     try:
         table = harness.validate_tools([poll(every=3)], chans, "check")
         assert [(t.kind, t.every) for t in table] == [("poll", 3)], table
-        refused(
+        rejected(
             lambda: harness.validate_tools([poll()], chans, "check"),
             "check:",
             "kind 'poll' requires every",
         )
-        refused(
+        rejected(
             lambda: harness.validate_tools(
                 [{"name": "x", "kind": "read_path", "channel": "notes", "every": 5}],
                 chans,
@@ -508,7 +508,7 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
             "check:",
             "every belongs to kind 'vote' or 'poll'",
         )
-        refused(
+        rejected(
             lambda: harness.validate_tools(
                 [
                     {"name": "v", "kind": "vote", "channel": "notes", "every": 5},
@@ -559,7 +559,7 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
         bad = manifest_file(
             root, seats + channel_toml(without) + "\n" + tool_toml(SEND), "bad.toml"
         )
-        refused(
+        rejected(
             lambda: experiment.load_manifest(bad),
             "bad.toml",
             "is not in the channel table",
@@ -567,7 +567,7 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
 
         cfg = root / "config.toml"
         cfg.write_text(tool_toml(SEND), encoding="utf-8", newline="\n")
-        refused(lambda: harness.load_config(cfg), "tool is an experiment's")
+        rejected(lambda: harness.load_config(cfg), "tool is an experiment's")
 
 
 def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
@@ -580,14 +580,14 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
     """
     assert "description" in harness.TOOL_KEYS, "the words are the experimenter's"
     for held in ("input_schema", "schema", "properties", "required"):
-        refused(
+        rejected(
             lambda: harness.validate_tools(
                 [SEND | {held: {}}], list(harness.DEFAULT_CHANNELS), "check"
             ),
             "check:",
             f"{held} is the harness's",
         )
-    refused(
+    rejected(
         lambda: harness.validate_tools(
             [SEND | {"description": 3}], list(harness.DEFAULT_CHANNELS), "check"
         ),
@@ -1353,19 +1353,19 @@ def check_withholding_the_shell_needs_something_to_act_with():
     """
     chans = list(harness.DEFAULT_CHANNELS)
     with temp_root():
-        refused(
+        rejected(
             lambda: harness.apply_tools([], chans, "manifest"),
             "manifest:",
             "no [[tool]] is declared",
             "nothing to act with",
         )
-        refused(
+        rejected(
             lambda: harness.apply_tools(None, chans, "manifest"),
             "manifest:",
             "no [[tool]] is declared",
         )
         pull = dataclasses.replace(harness.SETTINGS, delivery="pull")
-        refused(
+        rejected(
             lambda: harness.with_tools(pull, [POST], chans, "manifest"),
             "manifest:",
             "opens on the digest",
@@ -1375,14 +1375,14 @@ def check_withholding_the_shell_needs_something_to_act_with():
             harness.SETTINGS,
             harness_files={**harness.SETTINGS.harness_files, "digest": ""},
         )
-        refused(
+        rejected(
             lambda: harness.with_tools(undigested, [POST], chans, "manifest"),
             "manifest:",
             "opens on the digest",
         )
 
     with temp_root(delivery="pull"):
-        refused(
+        rejected(
             lambda: harness.apply_tools([POST], chans, "manifest"),
             "manifest:",
             "opens on the digest",
@@ -1397,7 +1397,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
         )
 
     with temp_root(harness_files={"digest": ""}):
-        refused(
+        rejected(
             lambda: harness.apply_tools([POST], chans, "manifest"),
             "manifest:",
             "opens on the digest",
@@ -1453,7 +1453,7 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_refused():
         # Accepted at declaration: the table is not empty and the digest is pushed.
         assert [t.name for t in harness.tools()] == ["send"]
         with quiet():
-            refused(
+            rejected(
                 lambda: harness.run_once("t", fake(say())),
                 "offered no shell",
                 "nothing for it to do",

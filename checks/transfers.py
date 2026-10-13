@@ -17,7 +17,7 @@ from checks.lanes import (
     ledger_name,
     put_out,
     quiet,
-    refused,
+    rejected,
     rooted,
     seated,
     tables,
@@ -238,7 +238,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
     # Above 100 an agent mints budget out of a transfer it gets back in full.
     for bad in (101, -1):
         with rooted(HostSandbox):
-            refused(
+            rejected(
                 lambda: harness.apply_channels(
                     tables(transfer={"rebate_percent": bad}), None, "manifest"
                 ),

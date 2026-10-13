@@ -30,7 +30,7 @@ from checks.lanes import (
     pinned,
     plant,
     quiet,
-    refused,
+    rejected,
     rooted,
     seated,
     temp_root,
@@ -117,7 +117,7 @@ def check_episodes_flag_is_validated():
         harness.start = never_start
         for bad in ("0", "-1"):
             with quiet():
-                refused(
+                rejected(
                     lambda: harness.main(["--agent", "t", "--episodes", bad]),
                     code=2,
                     because=f"accepted --episodes {bad}",
@@ -156,18 +156,18 @@ def check_print_system_and_print_files_audit_without_starting():
             assert harness.main(["--print-files", "nope"]) == 2
         assert str(harness.SETTINGS.root / "files") in buf.getvalue(), buf.getvalue()
         with quiet():
-            refused(
+            rejected(
                 lambda: harness.main(["--print-context"]),
                 code=2,
                 because="--print-context without a manifest was accepted",
             )
         with quiet():
-            refused(
+            rejected(
                 lambda: harness.main(["--agent", "f", "--fork-from", "t"]),
                 code=2,
                 because="--fork-from without --at was accepted",
             )
-            refused(
+            rejected(
                 lambda: harness.main(["--agent", "f", "--fork-from", "t", "--at", "0"]),
                 code=2,
                 because="--at 0 was accepted",

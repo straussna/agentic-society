@@ -15,7 +15,7 @@ from checks.lanes import (
     offers,
     plant,
     quiet,
-    refused,
+    rejected,
     rooted,
 )
 
@@ -144,7 +144,7 @@ def check_memory_from_refuses_any_source_it_cannot_copy_exactly():
             destination = harness.mirror("new", "notes") / "memory.md"
             held = destination.read_bytes() if destination.exists() else None
             entry = {"id": "new", "memory_from": {"agent": "old", "episode": 7}}
-            refused(
+            rejected(
                 lambda: experiment.inherit_memory(entry, harness.load_account("new")),
                 why,
                 because=f"inherited from a source it should refuse: {why}",
