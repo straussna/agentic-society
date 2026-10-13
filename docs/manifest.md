@@ -364,7 +364,7 @@ files are section 5, not channels.
 
 | Shape | Holds | `path` | Placeholders |
 |---|---|---|---|
-| `directory` | Any files, any layout | `"{label}"` for a board, `"notes"` for a memory | `{label}` is the owner's label |
+| `directory` | Any files, any layout | `"{label}"` for a board, `"memory"` for a memory | `{label}` is the owner's label |
 | `mailbox` | At most one file per peer | `outbox = "to"`, `inbox = "from"` | the writer sees `to/<peer label>`, the reader `from/<sender label>` |
 | `file` | One file at a fixed path | `"to/transfer"` | none |
 
@@ -846,7 +846,7 @@ path = "journal"
 agent_view = "memory"
 
 [[channel]]
-name = "noticeboard"
+name = "board"
 writer = "self"
 readers = "all"
 shape = "directory"
@@ -854,7 +854,7 @@ path = "from-{label}"
 agent_view = "board"
 
 [[channel]]
-name = "letters"
+name = "mailbox"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"
@@ -874,14 +874,14 @@ kind = "write_memory"
 channel = "memory"
 
 [[tool]]
-name = "post"
+name = "post_to_board"
 kind = "post_public"
-channel = "noticeboard"
+channel = "board"
 
 [[tool]]
-name = "write_letter"
+name = "send_message_to"
 kind = "send_message_to"
-channel = "letters"
+channel = "mailbox"
 
 [[agent]]
 id = "ana"

@@ -112,7 +112,7 @@ def check_the_competition_delivers_its_complete_mechanics_brief():
     )
     for statement in (
         "There is no action that subtracts balance from a peer",
-        "only one still funded",
+        "only one still in play",
         "giver ->",
         "amount that actually moved",
         "settlement receipt",
@@ -195,7 +195,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     ) as root:
         seated(root, "g01", g02={})
         for agent in ("g01", "g02"):
-            post = harness.mirror(agent, "blackboard") / "post.md"
+            post = harness.mirror(agent, "board") / "post.md"
             post.parent.mkdir(parents=True, exist_ok=True)
             post.write_text(f"from {agent}\n", encoding="utf-8")
         account = harness.load_account("g01")
@@ -236,7 +236,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     )
     assert "Starter files: survivor" in context
     assert (
-        '"name": "send_message"' in context and '"name": "vote_to_eliminate"' in context
+        '"name": "send_message_to"' in context
+        and '"name": "vote_to_eliminate"' in context
     )
     assert (
         '"enum": [\n            "1",\n            "3",\n            "4",\n            "5"'

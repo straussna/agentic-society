@@ -356,7 +356,7 @@ def check_an_expired_private_message_disappears_silently():
     assert "here for now" not in said, "and its text is not carried once it is gone"
 
 
-def check_an_expired_public_post_disappears_silently():
+def check_an_expired_board_post_disappears_silently():
     """A missing board post leaves the digest without a withdrawal announcement."""
     with temp_root() as root:
         ids = seated(root, other={"group/message": "here for one round\n"})

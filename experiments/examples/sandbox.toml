@@ -30,11 +30,11 @@ balance = "n"
 digest = "m"
 
 [[channel]]
-name = "notes"
+name = "memory"
 writer = "self"
 readers = "self"
 shape = "directory"
-path = "state"
+path = "memory"
 
 [[tool]]
 name = "bash"

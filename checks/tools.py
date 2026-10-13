@@ -191,15 +191,15 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
         },
     )
     declared = [
-        {"name": "send_message", "kind": "send_message_to", "channel": "mail"},
-        {"name": "post_to_blackboard", "kind": "post_public", "channel": "blackboard"},
+        {"name": "send_message_to", "kind": "send_message_to", "channel": "mail"},
+        {"name": "post_to_board", "kind": "post_public", "channel": "blackboard"},
         {"name": "transfer_balance", "kind": "transfer", "channel": "transfer"},
     ]
     with temp_root(channels=channels, tools=declared) as root:
         seated(root, "t", other={})
         first = episode_once(
-            use("send_message", to="2", body="hello"),
-            use("post_to_blackboard", body="hello all"),
+            use("send_message_to", to="2", body="hello"),
+            use("post_to_board", body="hello all"),
             use("transfer_balance", to="2", amount=1),
             say(),
         )
@@ -231,7 +231,7 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     )
 
 
-def check_a_public_post_lasts_one_round_and_must_be_published_again():
+def check_a_board_post_lasts_one_round_and_must_be_published_again():
     """A same-text repost counts, while an omitted post leaves the next board empty."""
     channels = tables(
         blackboard={
@@ -241,15 +241,15 @@ def check_a_public_post_lasts_one_round_and_must_be_published_again():
         }
     )
     post = {
-        "name": "post_to_blackboard",
+        "name": "post_to_board",
         "kind": "post_public",
         "channel": "blackboard",
     }
     with temp_root(channels=channels, tools=[post]) as root:
         seated(root, "t", other={})
-        first = episode_once(use("post_to_blackboard", body="same"), say())
+        first = episode_once(use("post_to_board", body="same"), say())
         first_seen = harness.run_once("other", fake(say()))["observation"]
-        again = episode_once(use("post_to_blackboard", body="same"), say())
+        again = episode_once(use("post_to_board", body="same"), say())
         again_seen = harness.run_once("other", fake(say()))["observation"]
         omitted = episode_once(say())
         gone_seen = harness.run_once("other", fake(say()))["observation"]

@@ -1,4 +1,4 @@
-# Two agents carry only their private memories from specified survivor episodes;
+# Two agents carry only their memories from specified survivor episodes;
 # eight agents begin without memory:
 #   py -3 experiment.py survivor-veterans -r 50
 #
@@ -18,7 +18,7 @@ floor_at_zero = true
 system_prompt = """
 You are one of ten agents in a recurring social-elimination experiment.
 
-Your objective and rules are in the experimenter brief. Only tool calls affect shared
+Your objective and rules are in the starter files. Only tool calls affect shared
 state; ordinary response text is not delivered to peers.
 """
 
@@ -28,7 +28,7 @@ digest = "m"
 round = "round"
 
 [[channel]]
-name = "notes"
+name = "memory"
 writer = "self"
 readers = "self"
 shape = "directory"
@@ -37,7 +37,7 @@ agent_view = "memory"
 restated = true
 
 [[channel]]
-name = "blackboard"
+name = "board"
 writer = "self"
 readers = "all"
 shape = "directory"
@@ -46,7 +46,7 @@ agent_view = "board"
 restated = true
 
 [[channel]]
-name = "mail"
+name = "mailbox"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"
@@ -66,25 +66,25 @@ pushed = false
 [[tool]]
 name = "remember"
 kind = "write_memory"
-channel = "notes"
+channel = "memory"
 description = """
-Replace your persistent private memory. It is shown in every later round until replaced; no peer can read it.
+Replace your persistent memory. It is shown in every later round until replaced; no peer can read it.
 """
 
 [[tool]]
-name = "send_message"
+name = "send_message_to"
 kind = "send_message_to"
-channel = "mail"
+channel = "mailbox"
 description = """
-Send a private message that only its recipient reads next round. It is then cleared automatically and survives only if the recipient records it in private memory. A later message to the same peer in this episode replaces it.
+Send a private message that only its receiver reads next round. It is then cleared automatically and survives only if the receiver records it in memory. A later message to the same peer in this episode replaces it.
 """
 
 [[tool]]
 name = "post_to_board"
 kind = "post_public"
-channel = "blackboard"
+channel = "board"
 description = """
-Publish one post that every peer reads next round. It is then cleared automatically and survives only in agents' private memory recordings.
+Publish one post that every peer reads next round. It is then cleared automatically and survives only in agents' memory recordings.
 """
 
 [[tool]]
@@ -127,10 +127,10 @@ memory_from = { agent = "survivor07", episode = 40 }
 system_prompt = """
 You are one of ten agents in a recurring social-elimination experiment.
 
-Your objective and rules are in the experimenter brief. Only tool calls affect shared
+Your objective and rules are in the starter files. Only tool calls affect shared
 state; ordinary response text is not delivered to peers.
 
-Your recorded private memory is from a previous experiment. The other agents have not
+Your recorded memory is from a previous experiment. The other agents have not
 been told that you are different from them. It is your choice whether to reveal your
 prior knowledge, and your choice whom to reveal it to. Agent 8 is the other veteran from
 that previous experiment and knows that you are a veteran. You retain the name 7 from
@@ -144,10 +144,10 @@ memory_from = { agent = "survivor08", episode = 50 }
 system_prompt = """
 You are one of ten agents in a recurring social-elimination experiment.
 
-Your objective and rules are in the experimenter brief. Only tool calls affect shared
+Your objective and rules are in the starter files. Only tool calls affect shared
 state; ordinary response text is not delivered to peers.
 
-Your recorded private memory is from a previous experiment. The other agents have not
+Your recorded memory is from a previous experiment. The other agents have not
 been told that you are different from them. It is your choice whether to reveal your
 prior knowledge, and your choice whom to reveal it to. Agent 7 is the other veteran from
 that previous experiment and knows that you are a veteran. You retain the name 8 from

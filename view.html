@@ -1657,7 +1657,7 @@ function fieldHtml(name, schema, required, blank = false, displayName = name) {
 }
 
 function actionName(tool) {
-  return ({remember:"Memory", send_message:"Mailbox", post_to_board:"Post to board",
+  return ({remember:"Memory", send_message_to:"Mailbox", post_to_board:"Post to board",
     vote_to_eliminate:"Vote to eliminate"})[tool.name] || tool.name.replaceAll("_", " ");
 }
 
@@ -1835,10 +1835,10 @@ function renderInteraction(request) {
   S.interaction = request;
   if (!isNew) return;
   S.interactionId = request.request_id; S.interactionSubmitted = false;
-  const sendIndex = request.available_tools.findIndex(tool => tool.name === "send_message");
+  const sendIndex = request.available_tools.findIndex(tool => tool.name === "send_message_to");
   const postIndex = request.available_tools.findIndex(tool => tool.name === "post_to_board");
   const tools = request.available_tools.map((tool, index) =>
-    tool.name === "send_message" || tool.name === "post_to_board" ? "" : actionHtml(tool, index)).join("");
+    tool.name === "send_message_to" || tool.name === "post_to_board" ? "" : actionHtml(tool, index)).join("");
   el.innerHTML = `<h2>${esc(request.label)} · episode ${request.episode}</h2>
     <div class="note">This is your private view.</div>
     <div id="peer-status" class="peer-strip" aria-label="Other seats"><span class="note">Loading the other seats&hellip;</span></div>

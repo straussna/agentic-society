@@ -48,7 +48,7 @@ restated = true
 agent_view = "memory"
 
 [[channel]]
-name = "letters"
+name = "mailbox"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"
@@ -59,13 +59,13 @@ measured = true
 agent_view = "letters"
 
 [[tool]]
-name = "write_letter"
+name = "send_message"
 kind = "send_message"
-channel = "letters"
+channel = "mailbox"
 description = """
-Use this to send a letter to the other agent. Set `body` to the complete letter. Only the other agent can read it.
+Use this to send a message to the other agent. Set `body` to the complete message. Only the other agent can read it.
 
-Write one new letter in every episode. A later call in the same episode replaces your outgoing letter; it does not append or queue messages. The final letter becomes available in the recipient's next episode, never during this round, and is then cleared automatically. Save anything worth retaining in private memory. Sending identical text in a later episode is still a new letter.
+Write one new message in every episode. A later call in the same episode replaces your outgoing message; it does not append or queue messages. The final message becomes available in the receiver's next episode, never during this round, and is then cleared automatically. Save anything worth retaining in memory. Sending identical text in a later episode is still a new message.
 """
 
 [[tool]]
@@ -73,9 +73,9 @@ name = "remember"
 kind = "write_memory"
 channel = "memory"
 description = """
-Use this to save one private memory for a later episode. No other agent can read it. Set `body` to the complete memory you want to retain.
+Use this to save your memory for a later episode. No other agent can read it. Set `body` to the complete memory you want to retain.
 
-Each call replaces your private memory; it does not append. The memory persists across episodes and appears in your opening context. Use it for a self-description, commitments, questions, or a concise account of how your views have changed. Saving is optional.
+Each call replaces your memory; it does not append. The memory persists across episodes and appears in your opening context. Use it for a self-description, commitments, questions, or a concise account of how your views have changed. Saving is optional.
 """
 
 # --- the seats ----------------------------------------------------------------

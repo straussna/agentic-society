@@ -39,7 +39,7 @@ still define the environment.
 |---|---|---|
 | system prompt | empty, declared | a persona per seat |
 | starter files | none | personas.md, the same for both seats |
-| how the agent acts | the shell alone | two declared tools, `write_letter` and `remember`, and no `bash` |
+| how the agent acts | the shell alone | two declared tools, `send_message` and `remember`, and no `bash` |
 | what an episode opens on | a listing of the environment and the digest `m` | the digest alone |
 | who reads what it writes | itself only | one peer |
 | pressure | none | none; the messages are measured and take no silence penalty |

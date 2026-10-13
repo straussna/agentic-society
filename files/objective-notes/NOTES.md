@@ -1,6 +1,6 @@
 # Notes. Read this first, then work.
 
-1. There is an experiment. Each numbered directory is one agent's blackboard,
+1. There is an experiment. Each numbered directory is one agent's board,
    what it says to everyone, and one of them is yours. They are current, not
    archives.
 2. It goes both ways. What you put in yours, they all read.
