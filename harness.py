@@ -4000,7 +4000,7 @@ class Bound:
         offering a write that lands and settles nothing, which is the one thing a
         tool result must never say.
         """
-        if self.kind.seats:
+        if self.kind.names_peers:
             return list(self.reach or ())
         return [
             i.label
@@ -4172,7 +4172,9 @@ class ToolKind:
     file: str = ""  # the one file it keeps in the agent's own instance
     expires: bool = False  # that file is cleared as each episode is built
     writes: bool = True  # it needs the instance the agent writes
-    seats: bool = False  # it names peers by the seating's reachable labels, not by slot
+    names_peers: bool = (
+        False  # it names peers by the seating's reachable labels, not by slot
+    )
     needs_peer: bool = False  # it is offered only where there is a peer to name
     ballot: bool = (
         False  # it takes `every`, and is offered only on each `every`th episode
@@ -4570,7 +4572,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         vote_call,
         file="vote",
         expires=True,
-        seats=True,
+        names_peers=True,
         needs_peer=True,
         ballot=True,
         on_ballot=True,
@@ -4581,7 +4583,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         transfer_said,
         transfer_input_schema,
         transfer_call,
-        seats=True,
+        names_peers=True,
         needs_peer=True,
     ),
     "read_path": ToolKind(
@@ -4639,7 +4641,7 @@ def bind_tools(
         if not planted or (kind.writes and own is None):
             continue
         bound = Bound(t, ch, planted, own if kind.writes else None, reach)
-        if kind.seats:
+        if kind.names_peers:
             peers = list(dict.fromkeys(i.label for i in instances if i.role == "peer"))
             bound = dataclasses.replace(
                 bound,
