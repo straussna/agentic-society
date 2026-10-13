@@ -6850,8 +6850,8 @@ def show_tools(
         print("tools: none declared (no bash)")
         return
     print()
-    sha256 = f", sha256={tools_sha256(validated)}" if validated is not None else ""
-    print(f"tools: {len(declared)} declared{sha256}")
+    stamp = f", sha256={tools_sha256(validated)}" if validated is not None else ""
+    print(f"tools: {len(declared)} declared{stamp}")
     for raw in declared:
         if raw["kind"] == "bash":
             print("  bash (built-in shell)")
