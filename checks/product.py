@@ -1015,7 +1015,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
 
             def noted(agent, prepare=None):
                 ep = ready(agent, prepare)
-                built[agent, ep.index] = ep
+                built[agent, ep.episode] = ep
                 return ep
 
             harness.ready = noted

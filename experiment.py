@@ -684,11 +684,11 @@ class Totals(TypedDict):
 
 
 def branch_standing(
-    account: harness.Account, index: int, received: int
+    account: harness.Account, episode: int, received: int
 ) -> tuple[list[int], Totals] | None:
-    """The series and running totals an account stood on as the round of its episode
-    `index` ended, the ledger having paid it `received` by then; None where its series
-    does not bear that out.
+    """The series and running totals an account stood on as the round of its
+    `episode` ended, the ledger having paid it `received` by then; None where its
+    series does not bear that out.
 
     Inside an episode, what moves the balance is in its record: its turns, what its
     transfer rebated or debited, each channel's penalty, the floor, and a credit from a
@@ -720,21 +720,23 @@ def branch_standing(
         totals["forgiven" if floored(at) else "received"] += series[at] - series[at - 1]
 
     ended = 0
-    for episode in episodes[:index]:
-        for at in range(ended + 1, episode["series_from"] + 1):
+    for earlier in episodes[:episode]:
+        for at in range(ended + 1, earlier["series_from"] + 1):
             between(at)
-        transfer = episode.get("transfer") or {}
+        transfer = earlier.get("transfer") or {}
         totals["sent"] += int(transfer.get("amount", 0))
         totals["rebated"] += int(transfer.get("rebate", 0))
         totals["debited"] += int(transfer.get("debit", 0))
-        totals["received"] += int(episode.get("received", 0))
-        totals["forgiven"] += int(episode.get("forgiven", 0))
-        for name, record in (episode.get("channels") or {}).items():
+        totals["received"] += int(earlier.get("received", 0))
+        totals["forgiven"] += int(earlier.get("forgiven", 0))
+        for name, record in (earlier.get("channels") or {}).items():
             penalty = int(record.get("penalty", 0))
             if penalty:
                 totals["penalised"][name] = totals["penalised"].get(name, 0) + penalty
-        ended = episode["series_to"]
-    last = episodes[index]["series_from"] if index < len(episodes) else len(series) - 1
+        ended = earlier["series_to"]
+    last = (
+        episodes[episode]["series_from"] if episode < len(episodes) else len(series) - 1
+    )
     held = max(
         (
             at
@@ -784,10 +786,10 @@ def branch_experiment(
             )
         except OSError, ValueError:
             raise SystemExit(f"{entry['id']} has no readable source account") from None
-        index = min(at_round, len(account.get("episodes", [])))
-        if index < at_round and harness.why_not_in_play(account) is None:
+        episode = min(at_round, len(account.get("episodes", [])))
+        if episode < at_round and harness.why_not_in_play(account) is None:
             raise SystemExit(f"{entry['id']} did not reach completed round {at_round}")
-        if index < 1 or not harness.trace_path(entry["id"], index).exists():
+        if episode < 1 or not harness.trace_path(entry["id"], episode).exists():
             raise SystemExit(
                 f"{entry['id']} has no completed state at round {at_round}"
             )
@@ -797,23 +799,23 @@ def branch_experiment(
         ):
             raise SystemExit(f"branch target {new_ids[seat]!r} already exists")
         trace = json.loads(
-            harness.trace_path(entry["id"], index).read_text(encoding="utf-8")
+            harness.trace_path(entry["id"], episode).read_text(encoding="utf-8")
         )
-        if harness.rebuildable(trace, entry["id"], index) is None:
+        if harness.rebuildable(trace, entry["id"], episode) is None:
             raise SystemExit(f"{entry['id']} cannot be rebuilt at round {at_round}")
-        sources.append((seat, entry, account, index))
+        sources.append((seat, entry, account, episode))
     # Each fork stands where its seat stood as the round ended, which is past its own
     # episode by whatever reached it after that: the ledger says what the round's
     # transfers had paid it by then.
     ledger = harness.ledger_events(sources[0][1]["id"], sources[0][2])
     standings: dict[str, tuple[list[int], Totals]] = {}
-    for seat, entry, parent, index in sources:
+    for seat, entry, parent, episode in sources:
         paid = sum(
             amount
             for round, _, taker, amount in ledger
             if taker == manifest["labels"][seat] and round <= at_round
         )
-        if (standing := branch_standing(parent, index, paid)) is None:
+        if (standing := branch_standing(parent, episode, paid)) is None:
             raise SystemExit(
                 f"{entry['id']} cannot be carried as it stood at round {at_round}: "
                 f"its series does not hold the {paid} the ledger paid it by then"
@@ -834,11 +836,11 @@ def branch_experiment(
     created: list[str] = []
     try:
         entries, evidence = [], []
-        for seat, entry, parent, index in sources:
+        for seat, entry, parent, episode in sources:
             new = new_ids[seat]
             created.append(new)
             series, totals = standings[seat]
-            if harness.fork(entry["id"], index, new, series):
+            if harness.fork(entry["id"], episode, new, series):
                 raise SystemExit(f"could not fork {entry['id']}")
             account = harness.load_account(new)
             account.update(**totals)
@@ -858,7 +860,7 @@ def branch_experiment(
                 "experiment_id": experiment_id,
                 "source_experiment_id": manifest["experiment_id"],
                 "source_agent": entry["id"],
-                "source_episode": index,
+                "source_episode": episode,
                 "source_round": at_round,
             }
             if seat == takeover_seat:
@@ -885,12 +887,12 @@ def branch_experiment(
                 if key in account:
                     generated[key] = account[key]
             entries.append(generated)
-            trace_path = harness.trace_path(entry["id"], index)
+            trace_path = harness.trace_path(entry["id"], episode)
             evidence.append(
                 {
                     "seat": seat,
                     "source_agent": entry["id"],
-                    "source_episode": index,
+                    "source_episode": episode,
                     "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
                     "new_agent": new,
                     "provider": account["provider"],
@@ -982,7 +984,7 @@ def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
     agent.
 
     Building an environment precedes the first API call, so nothing here is
-    billed. The container name is the agent and episode index, so the next
+    billed. The container name is the agent and episode, so the next
     attempt reaps the last one's leavings by name.
     """
     for attempt in range(1, ATTEMPTS + 1):
@@ -1225,7 +1227,7 @@ def committed(ep: harness.Episode) -> bool:
     """Whether an episode's commit reached its account on disk. A close that raised can
     have raised after the save as well as before it, so this is read from what was saved
     and not from whether close_episode returned."""
-    return len(harness.account_on_disk(ep.agent).get("episodes") or []) >= ep.index
+    return len(harness.account_on_disk(ep.agent).get("episodes") or []) >= ep.episode
 
 
 def simultaneous_round(

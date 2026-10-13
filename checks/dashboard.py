@@ -178,16 +178,16 @@ def check_the_view_costs_a_live_turn_like_the_account():
 
 
 def check_the_view_reads_only_the_last_attempt_at_an_episode():
-    """An episode index reused after an episode died shows the attempt still running.
+    """An episode reused after an episode died shows the attempt still running.
 
-    An index is len(episodes) + 1, so an episode that wrote no trace leaves its own
+    An episode is len(episodes) + 1, so an episode that wrote no trace leaves its own
     free and the next appends to the same log. Both shown would be one episode.
     """
     with temp_root():
         episode_once(*DEFAULT)
         unfinished()
         first = view.raw_lines(harness.raw_path("t", 1))
-        # A second attempt at the same index, as the next episode would write it.
+        # A second attempt at the same episode, as the next episode would write it.
         with harness.raw_path("t", 1).open("a", encoding="utf-8") as f:
             for line in first[:2]:
                 f.write(json.dumps(line) + "\n")

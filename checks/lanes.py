@@ -270,7 +270,7 @@ def never_start(*args, **kwargs) -> Callable:
 
 
 def agent_of(container: str) -> str:
-    """The agent a container name belongs to: the prefix and the episode index removed."""
+    """The agent a container name belongs to: the prefix and the episode removed."""
     return container[len(harness.CONTAINER_PREFIX) :].rsplit("-", 1)[0]
 
 

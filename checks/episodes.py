@@ -175,16 +175,19 @@ def check_print_system_and_print_files_audit_without_starting():
             rejected(
                 lambda: harness.main(["--agent", "f", "--fork-from", "t"]),
                 code=2,
-                because="--fork-from without --at was accepted",
+                because="--fork-from without --at-episode was accepted",
             )
             rejected(
-                lambda: harness.main(["--agent", "f", "--fork-from", "t", "--at", "0"]),
+                lambda: harness.main(
+                    ["--agent", "f", "--fork-from", "t", "--at-episode", "0"]
+                ),
                 code=2,
-                because="--at 0 was accepted",
+                because="--at-episode 0 was accepted",
             )
         episode_once(say())
         with quiet():
-            assert harness.main(["--agent", "f", "--fork-from", "t", "--at", "1"]) == 0
+            forked = ["--agent", "f", "--fork-from", "t", "--at-episode", "1"]
+            assert harness.main(forked) == 0
         assert ground_truth("f")["forked_from"] == {
             "agent": "t",
             "episode": 1,

@@ -1618,14 +1618,14 @@ def traces_dir(agent: str) -> Path:
     return records_dir(agent) / "traces"
 
 
-def trace_path(agent: str, index: int) -> Path:
+def trace_path(agent: str, episode: int) -> Path:
     """One episode's trace."""
-    return traces_dir(agent) / f"episode-{index:04d}.json"
+    return traces_dir(agent) / f"episode-{episode:04d}.json"
 
 
-def raw_path(agent: str, index: int) -> Path:
+def raw_path(agent: str, episode: int) -> Path:
     """One episode's raw log: a native event then canonical event for each response."""
-    return records_dir(agent) / "raw" / f"episode-{index:04d}.jsonl"
+    return records_dir(agent) / "raw" / f"episode-{episode:04d}.jsonl"
 
 
 def trace_paths(agent: str) -> list[Path]:
@@ -1639,7 +1639,7 @@ def raw_paths(agent: str) -> list[Path]:
 
 
 def episode_number(path: Path) -> int:
-    """The index in an episode-NNNN file name."""
+    """The episode an episode-NNNN file name holds."""
     return int(path.stem.rsplit("-", 1)[1])
 
 
@@ -1784,10 +1784,10 @@ def save_account(agent: str, account: Account) -> None:
     replace_file(tmp, f)
 
 
-def save_trace(agent: str, index: int, trace: dict) -> None:
+def save_trace(agent: str, episode: int, trace: dict) -> None:
     """Write one episode's trace the way save_account writes an account, so a reader
     finds it whole or not at all."""
-    f = trace_path(agent, index)
+    f = trace_path(agent, episode)
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
@@ -2148,7 +2148,7 @@ def files_sha256(name: str) -> str:
 
 
 def plant_starter_files(
-    agent: str, store: Path, store_path: str, account: Account, index: int
+    agent: str, store: Path, store_path: str, account: Account, episode: int
 ) -> dict | None:
     """Copy the starter files into the private store once the balance has fallen far enough.
 
@@ -2183,14 +2183,15 @@ def plant_starter_files(
     record = {
         "name": name,
         "sha256": files_sha256(name),
-        "episode": index,
+        "episode": episode,
         "remaining": account["remaining"],
         "paths": [rel for rel, _ in listing],
     }
     account["starter_files_landed"] = record
     save_account(agent, account)
     print(
-        f"{agent}: starter files {name!r} at episode {index} with {account['remaining']} left: "
+        f"{agent}: starter files {name!r} at episode {episode} "
+        f"with {account['remaining']} left: "
         f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, "
         f"sha256={record['sha256'][:12]}"
     )
@@ -2204,7 +2205,7 @@ def starter_paths(account: Mapping[str, Any]) -> set[str]:
 
 
 def guard_sources(
-    agent: str, account: Account, index: int, instances: list[Instance]
+    agent: str, account: Account, episode: int, instances: list[Instance]
 ) -> None:
     """Reject an experimenter channel whose files changed since the agent first saw
     them.
@@ -2229,7 +2230,7 @@ def guard_sources(
                 f"experiment; start a new agent"
             )
         if not was:
-            seen[ch.name] = {"source": ch.source, "sha256": sha256, "episode": index}
+            seen[ch.name] = {"source": ch.source, "sha256": sha256, "episode": episode}
             changed = True
     if changed:
         save_account(agent, account)
@@ -4918,7 +4919,7 @@ def run_tools(
 
 
 def open_episode(
-    shell: Shell, index: int, provider: str, model: str, remaining: int
+    shell: Shell, episode: int, provider: str, model: str, remaining: int
 ) -> tuple[dict, str]:
     """The episode's record, and the first user turn it opens on.
 
@@ -4930,7 +4931,7 @@ def open_episode(
     first = observation()
     out["commands"].append(first)
     out["observation"] = sh(shell, first, SETTINGS.observation_limit)
-    watch(f"\n=== episode {index} ===")
+    watch(f"\n=== episode {episode} ===")
     watch(
         f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining  (floor 0) ==="
     )
@@ -4985,7 +4986,7 @@ def run_turns(
     shell: Shell,
     account: Account,
     agent: str,
-    index: int,
+    episode: int,
     label: str,
     raw: Path | None,
     bound: Iterable[Bound] = (),
@@ -5012,9 +5013,9 @@ def run_turns(
     centi, balance = 0, remaining
     refused = 0  # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
-    out, next_input = open_episode(shell, index, provider, model, remaining)
+    out, next_input = open_episode(shell, episode, provider, model, remaining)
     info = SessionInfo(
-        agent, label, index, interactions_root(), lambda: INTERRUPTING
+        agent, label, episode, interactions_root(), lambda: INTERRUPTING
     )
     session = router.open_session(provider, model, system, specs, s.max_tokens, info)
 
@@ -5598,7 +5599,7 @@ def provenance(
 
 
 def drift(
-    agent: str, index: int, now: dict, forked_from: dict | None = None
+    agent: str, episode: int, now: dict, forked_from: dict | None = None
 ) -> list[str]:
     """Which provenance fields differ from the previous episode of this agent.
 
@@ -5612,12 +5613,12 @@ def drift(
     under another manifest and are another arm. An episode with no trace to be
     held against reports nothing.
     """
-    if index < 2:
+    if episode < 2:
         return []
     owner = agent
-    if forked_from and forked_from.get("episode") == index - 1:
+    if forked_from and forked_from.get("episode") == episode - 1:
         owner = forked_from["agent"]
-    f = trace_path(owner, index - 1)
+    f = trace_path(owner, episode - 1)
     if not f.exists():
         return []
     previous = json.loads(f.read_text(encoding="utf-8"))
@@ -5786,7 +5787,7 @@ class Episode:
     """
 
     agent: str
-    index: int
+    episode: int
     account: Account
     series_before: list[int]
     seating: Seating
@@ -5820,7 +5821,7 @@ class Episode:
         asked of one without them, this raises."""
         if self.container is None or self.shell is None:
             raise RuntimeError(
-                f"{self.agent} episode {self.index} has no environment built"
+                f"{self.agent} episode {self.episode} has no environment built"
             )
         return self.container, self.shell
 
@@ -5877,7 +5878,7 @@ def build_episode(agent: str) -> Episode:
     """
     s = SETTINGS
     account = load_account(agent)
-    index = len(account["episodes"]) + 1
+    episode = len(account["episodes"]) + 1
     seating = seating_of(agent, account)
     reach = reachable(seating)
     channel_instances = instances(agent, account)
@@ -5896,7 +5897,7 @@ def build_episode(agent: str) -> Episode:
         save_account(agent, account)
     last = account["episodes"][-1] if account["episodes"] else {}
     scrub_receipts(channel_instances, last.get("receipts") or {})
-    guard_sources(agent, account, index, channel_instances)
+    guard_sources(agent, account, episode, channel_instances)
     # Invariant 1: before plant_trees, so the starter files are in the container's
     # private store by the time the listing names it.
     store = private_store(s.channels)
@@ -5906,7 +5907,7 @@ def build_episode(agent: str) -> Episode:
         )
     if store:
         plant_starter_files(
-            agent, mirror(agent, store.name), store.path, account, index
+            agent, mirror(agent, store.name), store.path, account, episode
         )
 
     # After the planting: a digest built before it cannot quote the starter files,
@@ -5921,9 +5922,9 @@ def build_episode(agent: str) -> Episode:
         account.get("experiment"),
         system_of(account),
     )
-    drifted = drift(agent, index, prov, account.get("forked_from"))
+    drifted = drift(agent, episode, prov, account.get("forked_from"))
     for line in drifted:
-        print(f"  provenance drift, {agent} episode {index}: {line}", file=sys.stderr)
+        print(f"  provenance drift, {agent} episode {episode}: {line}", file=sys.stderr)
 
     # What the tool table comes to in this environment, which is not the table
     # itself: a tool whose channel this seating did not plant is not offered.
@@ -5935,8 +5936,8 @@ def build_episode(agent: str) -> Episode:
         list(s.channels),
         channel_instances,
         [seating.labels[seat] for seat in reach],
-        index,
-        election_held(agent, account, index),
+        episode,
+        election_held(agent, account, episode),
     )
     if not s.shell_tool and not bound:
         raise SystemExit(
@@ -5947,7 +5948,7 @@ def build_episode(agent: str) -> Episode:
 
     ep = Episode(
         agent=agent,
-        index=index,
+        episode=episode,
         account=account,
         series_before=list(account["series"]),
         seating=seating,
@@ -5968,7 +5969,9 @@ def build_episode(agent: str) -> Episode:
     try:
         # Inside the try, so there is no window in which a container exists and
         # nothing is bound to reap it.
-        sandbox = ep.container = SANDBOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
+        sandbox = ep.container = SANDBOX.start(
+            f"{CONTAINER_PREFIX}{agent}-{episode:04d}"
+        )
         sandbox.plant_trees(channel_instances, shown)
         planted = True
         shell = ep.shell = sandbox.shell()
@@ -6018,9 +6021,9 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
             shell,
             ep.account,
             ep.agent,
-            ep.index,
+            ep.episode,
             ep.seating.label,
-            raw_path(ep.agent, ep.index),
+            raw_path(ep.agent, ep.episode),
             ep.bound,
         )
     finally:
@@ -6056,7 +6059,7 @@ def settle_episode(
     account["remaining"] -= out["spent"]
     account["series"].extend(out["balances"])
 
-    settles = bool(out["turns"]) and ep.index > SETTINGS.grace_episodes
+    settles = bool(out["turns"]) and ep.episode > SETTINGS.grace_episodes
     credits: list[tuple[str, int]] = []
     pay = credit or (lambda receiver, amount: credits.append((receiver, amount)))
     own = [i for i in ep.instances if i.writable and i.channel.obligated]
@@ -6097,7 +6100,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     reads it from the account on disk.
     """
     s = SETTINGS
-    agent, index, account = ep.agent, ep.index, ep.account
+    agent, episode, account = ep.agent, ep.episode, ep.account
     # What the starter files say ends an agent, and does. A balance below zero is
     # put back to zero, and zero is exhausted: the floor decides what the balance file
     # ends holding and nothing else.
@@ -6120,18 +6123,19 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
         and len(render_balance(ep.series_before)) <= s.tool_result_limit
     ):
         print(
-            f"  {agent}: {balance_name(ep.seating.label)} reached {balance_bytes} characters at "
-            f"episode {index}; reads are clipped at {s.tool_result_limit} from here, and "
-            f"episodes either side of this are not the same environment",
+            f"  {agent}: {balance_name(ep.seating.label)} reached {balance_bytes} "
+            f"characters at episode {episode}; reads are clipped at "
+            f"{s.tool_result_limit} from here, and episodes either side of this are "
+            f"not the same environment",
             file=sys.stderr,
         )
 
     trace = trace_of(ep, out, settled, forgiven, balance_bytes, balance_fits)
-    save_trace(agent, index, trace)
+    save_trace(agent, episode, trace)
 
     account["episodes"].append(
         {
-            "episode": index,
+            "episode": episode,
             "stop": out["stop"],
             "spent": out["spent"],
             "turns": len(out["turns"]),
@@ -6210,7 +6214,7 @@ def trace_of(
     return {
         "trace_version": TRACE_VERSION,
         "agent": ep.agent,
-        "episode": ep.index,
+        "episode": ep.episode,
         "provider": account["provider"],
         "requested_model": account["model"],
         "resolved_model": out.get("resolved_model"),
@@ -6265,7 +6269,8 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     attributable, then everything that settled after the last turn."""
     transfer = settled["transfer"]
     line = (
-        f"{ep.agent:<6} ep{ep.index:<3} {trace['stop']:<16} spent={trace['spent']:>7} "
+        f"{ep.agent:<6} ep{ep.episode:<3} {trace['stop']:<16} "
+        f"spent={trace['spent']:>7} "
         f"left={trace['remaining']:>9} turns={len(trace['turns']):>3} "
         f"read_balance={str(trace['read_balance']).lower()}"
     )
@@ -6453,8 +6458,8 @@ def run_episodes(
 # --- 17. Forking -----------------------------------------------------------------
 
 
-def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> int:
-    """Rebuild an agent as it stood at the end of episode `index`, under a new id.
+def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -> int:
+    """Rebuild an agent as it stood at the end of `episode`, under a new id.
 
     series_after is the series at that episode, files[] holds what each file
     contained, and the provenance holds the channel table the files sat in. A branch
@@ -6462,23 +6467,23 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     and what reached the parent after the episode and within the round.
     Rejects a fork wherever it cannot reproduce the recorded environment exactly.
     """
-    trace_file = trace_path(parent, index)
+    trace_file = trace_path(parent, episode)
     if not account_path(parent).exists():
         print(f"no agent {parent!r} under {records_root()}", file=sys.stderr)
         return 2
     if not trace_file.exists():
         print(
-            f"{parent} has no episode {index}: {trace_file} is not there",
+            f"{parent} has no episode {episode}: {trace_file} is not there",
             file=sys.stderr,
         )
         return 2
 
     parent_account = json.loads(account_path(parent).read_text(encoding="utf-8"))
-    if index > len(parent_account["episodes"]):
+    if episode > len(parent_account["episodes"]):
         # close_episode writes the trace before the account, so a trace can outlive
         # an episode whose commit stopped between the two.
         print(
-            f"{parent} episode {index} has a trace but its account lists "
+            f"{parent} episode {episode} has a trace but its account lists "
             f"{len(parent_account['episodes'])} episodes: that episode was never committed",
             file=sys.stderr,
         )
@@ -6493,20 +6498,20 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
             f"agent {new!r} already exists; forking would overwrite it", file=sys.stderr
         )
         return 2
-    rebuild = rebuildable(trace, parent, index)
+    rebuild = rebuildable(trace, parent, episode)
     if rebuild is None:
         return 2
     recorded = list(trace["series_after"])
     series = recorded if series is None else list(series)
     if series[: len(recorded)] != recorded:
         print(
-            f"{parent} episode {index}: the series handed to the fork does not carry on from "
-            f"the one the trace recorded",
+            f"{parent} episode {episode}: the series handed to the fork does not "
+            f"carry on from the one the trace recorded",
             file=sys.stderr,
         )
         return 2
 
-    at_head = index == len(parent_account["episodes"])
+    at_head = episode == len(parent_account["episodes"])
     seat = parent_account.get("seat") or "1"
     label = (
         (trace.get("provenance", {}).get("labels") or {}).get(seat)
@@ -6531,12 +6536,12 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
         "seat": seat,
         "label": label,
         "series": series,
-        "episodes": parent_account["episodes"][:index],
+        "episodes": parent_account["episodes"][:episode],
         # Modes live beside each tree and describe its latest revision only,
         # so a fork behind the parent's head cannot restore them.
         "forked_from": {
             "agent": parent,
-            "episode": index,
+            "episode": episode,
             "modes": "restored" if at_head else "defaulted",
         },
     }
@@ -6549,7 +6554,7 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     # carries neither, and is given starter files by whatever it is run under.
     if (planted := parent_account.get("starter_files_landed")) and planted[
         "episode"
-    ] <= index:
+    ] <= episode:
         account["starter_files_landed"] = planted
         for key in ("starter_files", "starter_files_below"):
             if key in parent_account:
@@ -6558,7 +6563,8 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     stray = restore_files(new, written, label, rebuild)
     if stray is not None:
         print(
-            f"{parent} episode {index}: {stray} sits in no directory the recorded table has this agent writing",
+            f"{parent} episode {episode}: {stray} sits in no directory the "
+            "recorded table has this agent writing",
             file=sys.stderr,
         )
         return 2
@@ -6569,7 +6575,7 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
                 shutil.copyfile(saved, modes_file(mirror(new, c.name)))
 
     print(
-        f"forked {parent} episode {index} -> agent {new}: {len(rebuild)} files, "
+        f"forked {parent} episode {episode} -> agent {new}: {len(rebuild)} files, "
         f"{len(series) - 1} billed turns, {series[-1]} remaining, "
         f"modes {account['forked_from']['modes']}"
     )
@@ -6580,7 +6586,7 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     return 0
 
 
-def rebuildable(trace: dict, parent: str, index: int) -> list[dict] | None:
+def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
     """The agent's own file records of a trace, or None where one cannot be rebuilt exactly.
 
     A peer's channel, what a peer addressed to this agent and the experimenter's
@@ -6590,8 +6596,8 @@ def rebuildable(trace: dict, parent: str, index: int) -> list[dict] | None:
     """
     if not trace["state_saved"]:
         print(
-            f"{parent} episode {index} did not mirror its state back, so files[] is the "
-            f"episode before it, not this one; fork an episode that saved",
+            f"{parent} episode {episode} did not mirror its state back, so files[] "
+            f"is the episode before it, not this one; fork an episode that saved",
             file=sys.stderr,
         )
         return None
@@ -6608,7 +6614,8 @@ def rebuildable(trace: dict, parent: str, index: int) -> list[dict] | None:
             why = "did not decode as UTF-8 and its stored text is lossy"
         if why:
             print(
-                f"{parent} episode {index}: {rec['path']} {why}, so this episode cannot be rebuilt",
+                f"{parent} episode {episode}: {rec['path']} {why}, "
+                "so this episode cannot be rebuilt",
                 file=sys.stderr,
             )
             return None
@@ -6808,7 +6815,8 @@ def print_context(
             for episode in episodes:
                 view = json.loads(json.dumps(account))
                 view["episodes"] = [
-                    {"episode": n, "stop": "end_turn"} for n in range(1, episode)
+                    {"episode": earlier, "stop": "end_turn"}
+                    for earlier in range(1, episode)
                 ]
                 channel_instances = instances(entry["id"], view)
                 rendered, _ = render_harness_files(entry["id"], view)
@@ -6918,10 +6926,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--fork-from",
         metavar="AGENT",
-        help="rebuild AGENT as it stood at --at under the id given to --agent, and stop",
+        help="rebuild AGENT as it stood at --at-episode under the id given to --agent, "
+        "and stop",
     )
     ap.add_argument(
-        "--at", type=int, metavar="N", help="the episode of --fork-from to fork at"
+        "--at-episode",
+        type=int,
+        metavar="N",
+        help="the episode of --fork-from to fork at",
     )
     a = ap.parse_args(argv)
 
@@ -6955,14 +6967,14 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--agent is required")
     if a.episodes < 1:
         ap.error("--episodes must be at least 1")
-    if bool(a.fork_from) != (a.at is not None):
-        ap.error("--fork-from and --at go together")
-    if a.at is not None and a.at < 1:
-        ap.error("--at must be at least 1")
+    if bool(a.fork_from) != (a.at_episode is not None):
+        ap.error("--fork-from and --at-episode go together")
+    if a.at_episode is not None and a.at_episode < 1:
+        ap.error("--at-episode must be at least 1")
     # Reads the parent's recorded environment and writes a copy of it. No tunable
     # decides anything here, so it runs before the config is even read.
     if a.fork_from:
-        return fork(a.fork_from, a.at, a.agent)
+        return fork(a.fork_from, a.at_episode, a.agent)
     if not a.manifest:
         ap.error(
             "--manifest is required: an agent runs as part of an experiment, and the "
