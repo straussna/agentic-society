@@ -696,10 +696,10 @@ def plant(root: Path, name: str = "s", **files: str) -> Path:
 def lay_out(**agents: dict[str, str]) -> list[str]:
     """Lay out an experiment's directories under the root in force, for the experiment checks to use.
 
-    "group/" goes on that agent's blackboard, "out/" in its outbox where only the seat
-    it names reads it, and anything else in its private store.
+    "group/" goes on that agent's blackboard, "outbox/" in its outbox where only the
+    seat it names reads it, and anything else in its private store.
     """
-    trees = {"group/": "blackboard", "out/": "mail"}
+    trees = {"group/": "blackboard", "outbox/": "mail"}
     for agent, files in agents.items():
         for where in ("notes", "blackboard", "mail"):
             harness.mirror(agent, where).mkdir(parents=True, exist_ok=True)

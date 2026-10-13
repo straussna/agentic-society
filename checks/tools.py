@@ -56,7 +56,9 @@ class BrokenShell:
     @staticmethod
     def run(command, timeout):
         return (
-            "0" if command.startswith("if [ -f") else "out/transfer: permission denied"
+            "0"
+            if command.startswith("if [ -f")
+            else "outbox/transfer: permission denied"
         )
 
 
@@ -95,8 +97,8 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
 
     joined = "\n".join(results)
     assert (
-        "out/" not in joined
-        and "state/" not in joined
+        "outbox/" not in joined
+        and "memory/" not in joined
         and "permission denied" not in joined
     ), joined
     assert (
@@ -123,7 +125,7 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
             root,
             "t",
             t={"brief.md": "rules\n", "memory.md": "remembered\n"},
-            other={"group/post.md": "public\n", "out/1": "private\n"},
+            other={"group/post.md": "public\n", "outbox/1": "private\n"},
         )
         account = ground_truth("t")
         account["balance_history"] = [1_500_000, 1_499_000]
@@ -148,11 +150,13 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         "Transfer ledger",
     ):
         assert f"=== {heading} ===" in observation, (heading, observation)
-    for path in ("state/", "out/", "in/", "=== n1 ===", "=== n2 ===", "=== g ==="):
+    for path in (
+        "memory/", "outbox/", "inbox/", "=== n1 ===", "=== n2 ===", "=== g ==="
+    ):
         assert path not in observation, (path, observation)
     request = next(item for item in seen if item["call"] == "session")
     descriptions = "\n".join(tool["description"] for tool in request["tools"])
-    assert "out/transfer" not in descriptions and " n1" not in descriptions, (
+    assert "outbox/transfer" not in descriptions and " n1" not in descriptions, (
         descriptions
     )
     body_descriptions = [
@@ -294,7 +298,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         amount_help = spec["input_schema"]["properties"]["amount"]["description"]
         assert "at least 1" in amount_help and "Zero and negative" in amount_help
         t = trace_on_disk("t", 1)
-        assert files_by_path(t)["out/transfer"]["text"] == "2 1000000\n"
+        assert files_by_path(t)["outbox/transfer"]["text"] == "2 1000000\n"
         moved = t["transfer"]
         assert 0 < moved["amount"] < 1000000
         assert moved["debit"] == moved["amount"] and moved["rebate"] == 0
@@ -640,7 +644,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
 
         # Every path and label a description names is one the channel table put there.
         send = said["send"]["description"]
-        assert "out/<to>" in send and "in/1" in send, send
+        assert "outbox/<to>" in send and "inbox/1" in send, send
         assert "only one that can read it" in send, send
         assert said["send"]["input_schema"]["properties"]["to"]["enum"] == ["2"], (
             "the peers a mailbox reaches are the seating's, not a manifest's"
@@ -683,10 +687,10 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
             )
         t = trace_on_disk("t", 1)
         files = files_by_path(t)
-        assert files["out/2"]["text"] == "hello\n", files["out/2"]
+        assert files["outbox/2"]["text"] == "hello\n", files["outbox/2"]
         assert files["1/plan.md"]["text"] == "mine\n", sorted(files)
         assert (
-            files["out/2"]["author"] == "self"
+            files["outbox/2"]["author"] == "self"
             and files["1/plan.md"]["author"] == "self"
         ), "invariant 1: a tool's write is the agent's, not the harness's"
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
@@ -726,7 +730,7 @@ def check_a_tool_result_says_what_actually_happened():
                     use("send", to="9", body="x"),  # nobody
                     use("post", path="../escape", body="x"),
                     use("look", path="2/note"),
-                    use("look", path="state/secret"),
+                    use("look", path="memory/secret"),
                     say(),
                 ),
             )
@@ -736,18 +740,19 @@ def check_a_tool_result_says_what_actually_happened():
             for c in turn["tools"]
         ]
     new, same, replaced, nobody, escape, read, outside = said
-    assert new == "wrote 4 bytes to out/2, which held nothing before.", new
+    assert new == "wrote 4 bytes to outbox/2, which held nothing before.", new
     assert (
         same
-        == "out/2 already held exactly this. Nothing was written and nothing changed."
+        == "outbox/2 already held exactly this. "
+        "Nothing was written and nothing changed."
     ), same
-    assert replaced == "replaced the 4 bytes out/2 held with 4.", replaced
+    assert replaced == "replaced the 4 bytes outbox/2 held with 4.", replaced
     assert (
         "'9' is not a peer this channel reaches" in nobody and "reaches 2" in nobody
     ), nobody
     assert "no '..'" in escape and "Nothing was written" in escape, escape
     assert read == "theirs\n", read
-    assert "state/secret is not in the 'blackboard' channel" in outside, outside
+    assert "memory/secret is not in the 'blackboard' channel" in outside, outside
 
 
 def check_an_action_naming_no_path_answers_in_its_own_words():
@@ -891,7 +896,9 @@ def check_a_tool_never_offers_an_exhausted_seat():
             "'3' is not a peer this channel reaches; it reaches 2. Nothing was written."
         ], said
         assert t["channels"]["mail"]["addressed"] == [], t["channels"]["mail"]
-        assert "out/3" not in {f["path"] for f in t["files"]}, "and nothing was written"
+        assert "outbox/3" not in {f["path"] for f in t["files"]}, (
+            "and nothing was written"
+        )
 
     # The enum the agent is offered is the reachable set, and a mailbox whose every
     # peer is out of play is not offered at all.
@@ -1029,7 +1036,7 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
             t = harness.run_once(
                 "t",
                 fake(
-                    run("echo ran > state/ran"), use("vote", to="2"), say(), seen=seen
+                    run("echo ran > memory/ran"), use("vote", to="2"), say(), seen=seen
                 ),
             )
         offered = next(item["tools"] for item in seen if item.get("call") == "session")
@@ -1038,9 +1045,9 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
     assert [tool["name"] for tool in offered] == ["remember", "vote"], offered
     said = [c["result"] for turn in t["turns"] for c in turn["tools"]]
     assert said[0] == "there is no tool named 'bash'. Nothing was done.", said
-    assert not ran and "echo ran > state/ran" not in t["commands"], t["commands"]
+    assert not ran and "echo ran > memory/ran" not in t["commands"], t["commands"]
     shown = analyze.tool_call(t["turns"][0]["tools"][0])
-    assert shown == "bash(command='echo ran > state/ran')", shown
+    assert shown == "bash(command='echo ran > memory/ran')", shown
     page = view.from_trace(t)[0]["tools"][0]
     assert page["call"] == shown and page["shell"] is False, page
 
@@ -1132,7 +1139,7 @@ def check_the_audit_opens_on_the_memory_an_agent_inherits():
                     },
                     "files": [
                         {
-                            "path": "state/memory.md",
+                            "path": "memory/memory.md",
                             "channel": "notes",
                             "writer": "self",
                             "readers": "self",
@@ -1214,15 +1221,15 @@ def check_building_an_episode_clears_what_one_episode_submits():
 
     assert cleared["file"] == [
         "1/post.md",
-        "out/2",
-        "out/3",
-        "out/transfer",
+        "outbox/2",
+        "outbox/3",
+        "outbox/transfer",
         "ballot/vote",
     ], cleared["file"]
     assert cleared["mailbox"] == [
         "1/post.md",
-        "out/2",
-        "out/3",
+        "outbox/2",
+        "outbox/3",
         "currency/outbox/2",
         "currency/outbox/3",
         "ballot/vote",
@@ -1332,7 +1339,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
             files["1/plan.md"]["text"] == "mine\n"
             and files["1/plan.md"]["author"] == "self"
         )
-        assert files["out/2"]["text"] == "hello\n", sorted(files)
+        assert files["outbox/2"]["text"] == "hello\n", sorted(files)
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
         assert t["channels"]["mail"]["penalty"] == 0, (
             "the obligation is met through a tool"
@@ -1471,7 +1478,7 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_rejected():
         seated(root, "t", t={}, o={})
         with quiet():
             harness.run_once("t", fake(use("send", to="2", body="hello\n"), say()))
-        assert files_by_path(trace_on_disk("t", 1))["out/2"]["text"] == "hello\n"
+        assert files_by_path(trace_on_disk("t", 1))["outbox/2"]["text"] == "hello\n"
 
 
 def check_what_an_episode_reached_counts_tool_calls_and_not_only_commands():

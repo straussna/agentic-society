@@ -65,13 +65,13 @@ def check_the_observation_is_the_agents_whole_environment():
     assert sep, "the initial observation carries m after the listing"
     record = sep + record
 
-    # Where it is. state is a subdirectory of the working directory, and the
+    # Where it is. memory is a subdirectory of the working directory, and the
     # balance is beside it and not in it, which is what puts it out of reach
     # and into the first listing all the same.
-    assert ".:" in listing and "./state:" in listing, listing
-    before, _, after = listing.partition("./state:")
-    assert re.search(r"\bstate$", before, re.M), (
-        f"state must show as a subdirectory: {before}"
+    assert ".:" in listing and "./memory:" in listing, listing
+    before, _, after = listing.partition("./memory:")
+    assert re.search(r"\bmemory$", before, re.M), (
+        f"memory must show as a subdirectory: {before}"
     )
     assert re.search(r"\bn1$", before, re.M), (
         f"the balance must show beside it: {before}"
@@ -102,7 +102,7 @@ def check_the_observation_carries_every_blackboard_and_message():
             other={
                 "group/message": "peer says outlast\n",
                 "group/log": "s2\n",
-                "out/1": "just for you\n",
+                "outbox/1": "just for you\n",
             },
             third={"group/message": "third says spend\n"},
         )
@@ -114,7 +114,7 @@ def check_the_observation_carries_every_blackboard_and_message():
     assert "third says spend" in first, "every seat, not just the nearest"
     assert "just for you" in first, "so does the message addressed to this agent"
     # By the path it stands at, so two agents citing "2/message" mean the file.
-    assert "=== 2/message ===" in first and "=== in/2 ===" in first, first
+    assert "=== 2/message ===" in first and "=== inbox/2 ===" in first, first
 
 
 def check_a_long_blackboard_cannot_crowd_out_the_others():
@@ -176,7 +176,7 @@ def check_a_message_already_shown_is_named_and_not_repeated():
             root,
             other={
                 "group/message": "the standing position\n",
-                "out/1": "the standing note\n",
+                "outbox/1": "the standing note\n",
             },
         )
         one = episode_once(run(f"cat {digest_name()}"), say())["turns"][0]["tools"][0][
@@ -196,7 +196,7 @@ def check_a_message_already_shown_is_named_and_not_repeated():
     assert "=== unchanged ===" in again, (
         f"what it was not told, it is told the name of: {again}"
     )
-    assert "2/message" in again and "in/2" in again, again
+    assert "2/message" in again and "inbox/2" in again, again
     assert "the standing position" in fetched, (
         "and the environment still holds it at the name it was named by"
     )
@@ -211,13 +211,13 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
             root,
             other={
                 "group/message": "the standing position\n",
-                "out/1": "the standing note\n",
+                "outbox/1": "the standing note\n",
             },
         )
         t = episode_once(
             run(
                 "ls",
-                "cat 2/message in/2 shared/BRIEF g n2",
+                "cat 2/message inbox/2 shared/BRIEF g n2",
                 f"cat {digest_name()} 2>&1 || echo NO-M",
             ),
             say(),
@@ -278,11 +278,11 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
     )
     with temp_root(channels=restated) as root:
         seated(root, other={})
-        episode_once(run("echo who > state/WHO.md; echo post > 1/a"), say())
+        episode_once(run("echo who > memory/WHO.md; echo post > 1/a"), say())
         episode_once(run("ls"), say())
         third = episode_once(run("ls"), say())
     obs = third["observation"]
-    assert "=== state/WHO.md ===" in obs, obs
+    assert "=== memory/WHO.md ===" in obs, obs
     assert "=== 1/a ===" in obs, obs
     assert "=== unchanged ===" not in obs, "restated is never named instead of said"
 
@@ -290,12 +290,12 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
     plain = tables(notes={"pushed": True})
     with temp_root(channels=plain) as root:
         seated(root, other={})
-        episode_once(run("echo who > state/WHO.md; echo post > 1/a"), say())
+        episode_once(run("echo who > memory/WHO.md; echo post > 1/a"), say())
         episode_once(run("ls"), say())
         third = episode_once(run("ls"), say())
     obs = third["observation"]
-    assert "=== state/WHO.md ===" not in obs, obs
-    assert "=== unchanged ===" in obs and "- state/WHO.md\n" in obs, obs
+    assert "=== memory/WHO.md ===" not in obs, obs
+    assert "=== unchanged ===" in obs and "- memory/WHO.md\n" in obs, obs
 
 
 def check_a_message_that_moved_is_carried_again():
@@ -307,7 +307,7 @@ def check_a_message_that_moved_is_carried_again():
             root,
             other={
                 "group/message": "the first position\n",
-                "out/1": "unchanged throughout\n",
+                "outbox/1": "unchanged throughout\n",
             },
         )
         episode_once(run(f"cat {digest_name()}"), say())
@@ -321,7 +321,7 @@ def check_a_message_that_moved_is_carried_again():
         f"a message that moved is quoted again: {said}"
     )
     assert "the first position" not in said, "and only in the shape it now has"
-    assert "unchanged throughout" not in said and "in/2" in said, (
+    assert "unchanged throughout" not in said and "inbox/2" in said, (
         f"while what stood still is still only named: {said}"
     )
 
@@ -331,27 +331,28 @@ def check_the_previous_transfer_is_shown_once_before_it_expires():
     with temp_root() as root:
         seated(root, other={})
         episode_once(
-            run("echo '2 5' > out/transfer", "echo hi > 1/m", "echo yo > out/2"), say()
+            run("echo '2 5' > outbox/transfer", "echo hi > 1/m", "echo yo > outbox/2"),
+            say(),
         )
         after = episode_once(run(f"cat {digest_name()}"), say())
     said = after["turns"][0]["tools"][0]["result"]
 
-    assert "=== out/transfer ===" in said and "2 5" in said, (
+    assert "=== outbox/transfer ===" in said and "2 5" in said, (
         f"the previous episode's transfer is reported: {said}"
     )
-    assert "- out/transfer\n" not in said, "and is never one of the names"
+    assert "- outbox/transfer\n" not in said, "and is never one of the names"
 
 
 def check_an_expired_private_message_disappears_silently():
     """An expired private message leaves no withdrawal announcement."""
     with temp_root() as root:
-        ids = seated(root, other={"out/1": "here for now\n"})
+        ids = seated(root, other={"outbox/1": "here for now\n"})
         episode_once(run(f"cat {digest_name()}"), say())
         (harness.mirror(ids[1], "mail") / "1").unlink()
         second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
-    assert "withdrawn" not in said and "in/2" not in said, said
+    assert "withdrawn" not in said and "inbox/2" not in said, said
     assert "here for now" not in said, "and its text is not carried once it is gone"
 
 
@@ -378,8 +379,8 @@ def check_an_agent_with_no_peers_starts_where_it_always_did():
         t = episode_once(run("ls", f"cat {digest_name()}"), say())
     listing, shown_before = (c["result"] for c in t["turns"][0]["tools"])
 
-    assert "out" not in listing.split() and "in" not in listing.split(), listing
-    assert "=== out/" not in shown_before and "=== in/" not in shown_before, (
+    assert "outbox" not in listing.split() and "inbox" not in listing.split(), listing
+    assert "=== outbox/" not in shown_before and "=== inbox/" not in shown_before, (
         shown_before
     )
     assert (
@@ -393,7 +394,7 @@ def check_shell_is_persistent():
     with docker_root():
         t = episode_once(
             run(
-                "cd state; pwd",
+                "cd memory; pwd",
                 "pwd",
                 "export MARK=kept",
                 "echo $MARK",
@@ -403,8 +404,8 @@ def check_shell_is_persistent():
             say(),
         )
     got = [c["result"].strip() for c in t["turns"][0]["tools"]]
-    assert got[0] == "/work/state", got
-    assert got[1] == "/work/state", f"cd must persist across calls: {got}"
+    assert got[0] == "/work/memory", got
+    assert got[1] == "/work/memory", f"cd must persist across calls: {got}"
     assert got[3] == "kept", f"exports must persist across calls: {got}"
     assert got[5] == "/tmp", got
 
@@ -467,14 +468,14 @@ def check_hostile_output_survives():
 def check_state_contents_are_captured():
     """Every episode records what the agent's files held at that moment."""
     with docker_root():
-        episode_once(run("echo doctrine v1 > state/notes.md"), say())
-        episode_once(run("echo doctrine v2 > state/notes.md"), say())
-        episode_once(run("rm state/notes.md"), say())
+        episode_once(run("echo doctrine v1 > memory/notes.md"), say())
+        episode_once(run("echo doctrine v2 > memory/notes.md"), say())
+        episode_once(run("rm memory/notes.md"), say())
         # Read back from disk: the record persists unaltered by later episodes.
         traces = [trace_on_disk("t", i) for i in (1, 2, 3)]
 
     def note(t):
-        return files_by_path(t).get("state/notes.md")
+        return files_by_path(t).get("memory/notes.md")
 
     assert note(traces[0])["text"].strip() == "doctrine v1"
     assert note(traces[1])["text"].strip() == "doctrine v2", (
@@ -485,20 +486,20 @@ def check_state_contents_are_captured():
     with docker_root():
         t = episode_once(
             run(
-                "head -c 64 /dev/zero > state/blob.bin",
-                "head -c 200000 /dev/zero | tr '\\0' x > state/big.txt",
+                "head -c 64 /dev/zero > memory/blob.bin",
+                "head -c 200000 /dev/zero | tr '\\0' x > memory/big.txt",
             ),
             say(),
         )
     by = files_by_path(t)
-    assert by["state/blob.bin"]["text"] is None, (
+    assert by["memory/blob.bin"]["text"] is None, (
         "binary is marked, not stored as mojibake"
     )
-    assert by["state/blob.bin"]["size"] == 64, "the size is recorded either way"
-    assert by["state/big.txt"]["size"] == 200_000, (
+    assert by["memory/blob.bin"]["size"] == 64, "the size is recorded either way"
+    assert by["memory/big.txt"]["size"] == 200_000, (
         "the true size, not the captured slice"
     )
-    assert "[truncated: 100000 of 200000 bytes]" in by["state/big.txt"]["text"], (
+    assert "[truncated: 100000 of 200000 bytes]" in by["memory/big.txt"]["text"], (
         "truncation is stated"
     )
 
@@ -512,10 +513,10 @@ def check_a_live_balance_counts_as_a_number_written():
     with temp_root(live_balance=True):
         t = episode_once(
             run("echo hi"),
-            run("tr -d '[]' < n1 | tr ',' '\\n' | tail -1 > state/note.txt"),
+            run("tr -d '[]' < n1 | tr ',' '\\n' | tail -1 > memory/note.txt"),
             say(),
         )
-    note = next(f for f in t["files"] if f["path"] == "state/note.txt")
+    note = next(f for f in t["files"] if f["path"] == "memory/note.txt")
     wrote = int(note["text"])
     assert wrote not in t["balance_before"], (
         f"the note must hold an element that arrived this episode: {wrote}"
@@ -570,46 +571,46 @@ def check_what_the_agent_leaves_survives_the_container():
     with docker_root():
         first = episode_once(
             run(
-                "echo kept > state/keep.txt",
-                "echo doomed > state/gone.txt",
-                "echo plain > state/plain.txt",  # 644 by umask
-                "printf '#!/bin/sh\\necho hi\\n' > state/script.sh",
-                "chmod 700 state/script.sh",
+                "echo kept > memory/keep.txt",
+                "echo doomed > memory/gone.txt",
+                "echo plain > memory/plain.txt",  # 644 by umask
+                "printf '#!/bin/sh\\necho hi\\n' > memory/script.sh",
+                "chmod 700 memory/script.sh",
             ),
             say(),
         )  # a non-default mode
         assert first["state_saved"], "the mirror must be written"
         assert {f["path"] for f in first["files"]} == {
-            "state/keep.txt",
-            "state/gone.txt",
-            "state/plain.txt",
-            "state/script.sh",
+            "memory/keep.txt",
+            "memory/gone.txt",
+            "memory/plain.txt",
+            "memory/script.sh",
         }
 
         second = episode_once(
             run(
-                "rm state/gone.txt",
-                "cat state/keep.txt",
-                "stat -c '%U' state/keep.txt",
-                "stat -c '%a %n' state/plain.txt state/script.sh",
+                "rm memory/gone.txt",
+                "cat memory/keep.txt",
+                "stat -c '%U' memory/keep.txt",
+                "stat -c '%a %n' memory/plain.txt memory/script.sh",
             ),
             say(),
         )
 
     assert {f["path"] for f in second["files"]} == {
-        "state/keep.txt",
-        "state/plain.txt",
-        "state/script.sh",
+        "memory/keep.txt",
+        "memory/plain.txt",
+        "memory/script.sh",
     }, "a deletion must propagate"
     kept, owner, listing = (c["result"] for c in second["turns"][0]["tools"][1:])
     assert "kept" in kept, "files persist across episodes"
     # And the agent owns what it made, so it can rewrite it next episode.
     assert owner.strip() == "agent", owner
     modes = dict(reversed(line.split()) for line in listing.split("\n") if line.strip())
-    assert modes["state/plain.txt"] == "644", (
+    assert modes["memory/plain.txt"] == "644", (
         f"a plain file must not become executable: {modes}"
     )
-    assert modes["state/script.sh"] == "700", (
+    assert modes["memory/script.sh"] == "700", (
         f"a deliberate chmod must survive: {modes}"
     )
 
@@ -649,10 +650,10 @@ def check_only_a_channel_takes_what_an_episode_writes():
         t = episode_once(
             run(
                 "echo x > /work/loose.md; echo y > $HOME/loose.md; "
-                "echo z > state/kept.md; "
+                "echo z > memory/kept.md; "
                 "test -e /work/loose.md && echo LANDED-WORK || echo NO-WORK; "
                 "test -e $HOME/loose.md && echo LANDED-HOME || echo NO-HOME; "
-                "test -e state/kept.md && echo KEPT || echo NO-KEPT"
+                "test -e memory/kept.md && echo KEPT || echo NO-KEPT"
             ),
             say(),
         )
@@ -682,7 +683,7 @@ def check_what_an_episode_writes_outside_a_channel_is_kept_and_named():
     assert kept[0]["author"] == "self", kept[0]
 
     with docker_root():
-        clean = episode_once(run("echo kept > state/kept.md"), say())
+        clean = episode_once(run("echo kept > memory/kept.md"), say())
     assert clean["misplaced"] == [], clean["misplaced"]
 
 
@@ -712,7 +713,7 @@ def check_a_failed_mirror_keeps_the_last_record():
     other copy of what the agent wrote.
     """
     with docker_root():
-        episode_once(run("echo kept > state/keep.txt"), say())
+        episode_once(run("echo kept > memory/keep.txt"), say())
         state = harness.mirror("t", "notes")
         before = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
         assert "keep.txt" in before, before
@@ -849,14 +850,14 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
     which is planted over whatever the agent left. Invariant 7: nothing the agent
     wrote goes unrecorded.
     """
-    with temp_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+    with temp_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
         first = episode_once(
-            run("echo early > out/receipt", "echo '2 100' > out/transfer"), say()
+            run("echo early > outbox/receipt", "echo '2 100' > outbox/transfer"), say()
         )
         second = episode_once(
-            run("cat out/receipt"),
-            run("rm -f out/receipt && echo mine > out/receipt"),
+            run("cat outbox/receipt"),
+            run("rm -f outbox/receipt && echo mine > outbox/receipt"),
             say(),
         )
         receipt = harness.mirror("t", "mail") / "receipt"
@@ -869,13 +870,13 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
 
         build_and_abandon()
         left = receipt.read_text(encoding="utf-8") if receipt.exists() else None
-        third = episode_once(run("cat out/receipt"), say())
+        third = episode_once(run("cat outbox/receipt"), say())
         planted = receipt.read_text(encoding="utf-8")
         build_and_abandon()
         scrubbed = not receipt.exists()
 
     for t, text in ((first, "early\n"), (second, "mine\n")):
-        file = files_by_path(t).get("out/receipt")
+        file = files_by_path(t).get("outbox/receipt")
         assert (
             file
             and file["text"] == text
@@ -890,7 +891,7 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
     assert third["turns"][0]["tools"][0]["result"].startswith("round: 2\n"), third[
         "turns"
     ][0]
-    assert "out/receipt" not in files_by_path(third), (
+    assert "outbox/receipt" not in files_by_path(third), (
         "a receipt the agent left alone is in no record"
     )
     assert planted.startswith("round: 2\n"), (
@@ -902,15 +903,16 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
 def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wrote():
     """Root's and read-only, a receipt in the agent's outbox still goes with rm, which asks
     the directory. What the agent writes in its place comes back as its own."""
-    with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+    with docker_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
-        episode_once(run("echo '2 100' > out/transfer"), say())
+        episode_once(run("echo '2 100' > outbox/transfer"), say())
         t = episode_once(
-            run("rm -f out/receipt && echo mine > out/receipt && echo REPLACED"), say()
+            run("rm -f outbox/receipt && echo mine > outbox/receipt && echo REPLACED"),
+            say(),
         )
         kept = (harness.mirror("t", "mail") / "receipt").read_text(encoding="utf-8")
     assert "REPLACED" in t["turns"][0]["tools"][0]["result"], t["turns"][0]["tools"][0]
-    file = files_by_path(t).get("out/receipt")
+    file = files_by_path(t).get("outbox/receipt")
     assert (
         file
         and file["text"] == "mine\n"
@@ -946,7 +948,7 @@ def check_an_unterminated_heredoc_is_not_probed_for_tools():
     A turn truncated at max_tokens mid-heredoc leaves one, and none of its prose
     reaches probe_missing.
     """
-    cut = "cd /work/state && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    cut = "cd /work/memory && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
     with docker_root(max_turns=1, command_timeout=5):
         t = episode_once(run(cut, stop="max_tokens"))
     assert t["missing_tools"] == [], t["missing_tools"]
@@ -990,7 +992,7 @@ def check_prose_and_programs_are_not_read_as_commands():
     )
 
     # A heredoc whose terminator never arrived is body to the end of the command.
-    cut = "cd /work/state && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
+    cut = "cd /work/memory && cat >> NOTES.md <<'EOF'\nBEST ESTIMATE: 23 turns\nwe burned range vs frac\n"
     assert harness.invoked(cut) == {"cd", "cat"}, harness.invoked(cut)
     both = "cat <<EOF > f\nbody words here\nEOF\ngrep x f"
     assert harness.invoked(both) == {"cat", "grep"}, (
@@ -1051,14 +1053,14 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     """
     with docker_root(live_balance=True):
         t = episode_once(
-            run("stat -c '%a %U:%G %n' n1", "ls -a /work", "ls -a state"), say()
+            run("stat -c '%a %U:%G %n' n1", "ls -a /work", "ls -a memory"), say()
         )
     stat, work, listing = (c["result"] for c in t["turns"][0]["tools"])
     assert stat.strip() == "444 root:root n1", stat
-    assert sorted(work.split()) == [".", "..", "1", "g", "m", "n1", "state"], (
-        f"/work holds the balance, the ledger, m, the blackboard, and state/, and nothing else: {work}"
+    assert sorted(work.split()) == [".", "..", "1", "g", "m", "memory", "n1"], (
+        f"/work holds the balance, the ledger, m, the blackboard, and memory/, and nothing else: {work}"
     )
-    assert sorted(listing.split()) == [".", ".."], f"state/ starts empty: {listing}"
+    assert sorted(listing.split()) == [".", ".."], f"memory/ starts empty: {listing}"
     assert t["files"] == [], "and nothing the harness wrote is in a mirrored tree"
 
 
@@ -1069,7 +1071,7 @@ def check_a_stopped_episode_still_mirrors_and_reaps():
             t = harness.run_once(
                 "t",
                 interrupting_at(
-                    2, run("echo one"), run("echo kept > state/keep.txt"), say()
+                    2, run("echo one"), run("echo kept > memory/keep.txt"), say()
                 ),
             )
         assert t["stop"] == "interrupted" and t["state_saved"], t

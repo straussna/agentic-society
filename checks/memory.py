@@ -34,7 +34,7 @@ def source_trace(agent: str, episode: int, body: str) -> None:
         },
         "files": [
             {
-                "path": "state/memory.md",
+                "path": "memory/memory.md",
                 "channel": "notes",
                 "writer": "self",
                 "readers": "self",

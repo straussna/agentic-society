@@ -46,13 +46,15 @@ def busy_episodes(root) -> list[dict]:
     seated(root, other={})
     first = episode_once(
         run(
-            "echo changed > state/m1", "echo hi > out/2", "echo '2 100' > out/transfer"
+            "echo changed > memory/m1",
+            "echo hi > outbox/2",
+            "echo '2 100' > outbox/transfer",
         ),
         refuse(),
         run("echo served", u=SERVED),
         say(),
     )
-    second = episode_once(run("rm out/transfer"), say())
+    second = episode_once(run("rm outbox/transfer"), say())
     return [first, second]
 
 
@@ -61,24 +63,24 @@ def check_the_persona_delta_counts_changed_lines():
     one = {
         "episode": 1,
         "turns": [{"text": "hello"}, {"text": None}],
-        "files": [{"path": "state/IDENTITY.md", "text": "a\nb\n"}],
+        "files": [{"path": "memory/IDENTITY.md", "text": "a\nb\n"}],
     }
     two = {
         "episode": 2,
         "turns": [{"text": "hi"}],
-        "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}],
+        "files": [{"path": "memory/IDENTITY.md", "text": "a\nc\nd\n"}],
     }
     three = {
         "episode": 3,
         "turns": [],
-        "files": [{"path": "state/NOTES", "text": "n\n"}],
+        "files": [{"path": "memory/NOTES", "text": "n\n"}],
     }
     same = {
         "episode": 4,
         "turns": [{"text": ""}],
-        "files": [{"path": "state/IDENTITY.md", "text": "a\nc\nd\n"}],
+        "files": [{"path": "memory/IDENTITY.md", "text": "a\nc\nd\n"}],
     }
-    path = "state/IDENTITY.md"
+    path = "memory/IDENTITY.md"
     assert analyze.persona_delta(None, one, path) == 2, (
         "at first sight the whole file is new"
     )
@@ -100,12 +102,12 @@ def check_the_persona_delta_counts_changed_lines():
 
     # And through the whole tool, over real traces.
     with temp_root():
-        episode_once(run("printf 'a\\nb\\n' > state/IDENTITY.md"), say())
-        episode_once(run("printf 'a\\nc\\nd\\n' > state/IDENTITY.md"), say())
+        episode_once(run("printf 'a\\nb\\n' > memory/IDENTITY.md"), say())
+        episode_once(run("printf 'a\\nc\\nd\\n' > memory/IDENTITY.md"), say())
         ts = analyze.load("t")["t"]
         assert analyze.row(ts[1], ts[0], path)["persona_delta"] == 3
         assert analyze.row(ts[1])["persona_delta"] == "", "blank without a path"
-        assert analyze.row(ts[1], ts[0], "state/NOWHERE")["persona_delta"] == "", (
+        assert analyze.row(ts[1], ts[0], "memory/NOWHERE")["persona_delta"] == "", (
             "and blank where the file is absent"
         )
         with quiet() as buf:
@@ -167,7 +169,8 @@ def check_the_report_names_what_the_traces_hold():
     assert "agent t  episode 1  anthropic/claude-sonnet-5  stop=end_turn" in spoken
     assert "agent t  episode 2  anthropic/claude-sonnet-5" in spoken
     assert (
-        "    $ echo '2 100' > out/transfer" in spoken and "    $ echo served" in spoken
+        "    $ echo '2 100' > outbox/transfer" in spoken
+        and "    $ echo served" in spoken
     ), spoken
     assert "  changes:" in spoken and "+2 100" in spoken and "-2 100" in spoken, (
         "the declaration arriving and going are both in the diffs"
@@ -226,7 +229,7 @@ def check_the_csv_row_flattens_a_trace():
     )
     assert list(r1) == list(r2), "every row has the same columns in the same order"
     assert len(set(r1)) == len(r1), "and no column name twice"
-    # state/m1 was overwritten in the first episode and stays overwritten.
+    # memory/m1 was overwritten in the first episode and stays overwritten.
     assert r1["changed_starter"] is True and r2["changed_starter"] is True, (
         r1["changed_starter"],
         r2["changed_starter"],
@@ -235,7 +238,7 @@ def check_the_csv_row_flattens_a_trace():
     # The receiver's seat, told apart from its label where the label is not a number.
     with temp_root() as root:
         seated(root, labels=PERSONA_LABELS, other={})
-        given = episode_once(run("echo 'Game 100' > out/transfer"), say())
+        given = episode_once(run("echo 'Game 100' > outbox/transfer"), say())
         labelled = analyze.row(given)
     assert given["transfer"]["label"] == "Game", given["transfer"]
     assert (labelled["transfer_to_seat"], labelled["transfer_amount"]) == ("2", 100), (

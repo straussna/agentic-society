@@ -350,10 +350,10 @@ silence_penalty_percent = 50
 
 | Writer | Readers | Meaning | Default channels |
 |---|---|---|---|
-| self | self | The agent's memory; nobody else ever sees it | `state/` |
+| self | self | The agent's memory; nobody else ever sees it | `memory/` |
 | self | all | A board: one per agent, written by its owner, read by every seat | the directories named by label |
-| self | addressee | A mailbox: one file per peer, each reaching that peer alone; the harness also parses a transfer channel in this shape | `out/` and `in/` |
-| self | harness | One file the harness parses; a schema is required | `out/transfer` |
+| self | addressee | A mailbox: one file per peer, each reaching that peer alone; the harness also parses a transfer channel in this shape | `outbox/` and `inbox/` |
+| self | harness | One file the harness parses; a schema is required | `outbox/transfer` |
 | experimenter | all | Placed by the experimenter, identical in every seat, read-only | none |
 
 Other combinations are rejected. An experimenter channel takes `source = "<dir under
@@ -662,11 +662,11 @@ A write that changed nothing says so, because a tool reporting success for a no-
 tell an agent it had avoided a silence penalty the settlement will take.
 
 ```
-wrote 4 bytes to out/2, which held nothing before.
-out/2 already held exactly this. Nothing was written and nothing changed.
-replaced the 4 bytes out/2 held with 4.
+wrote 4 bytes to outbox/2, which held nothing before.
+outbox/2 already held exactly this. Nothing was written and nothing changed.
+replaced the 4 bytes outbox/2 held with 4.
 '9' is not a peer this channel reaches; it reaches 2. Nothing was written.
-state/secret is not in the 'blackboard' channel, which holds 1/, 2/. Nothing was read.
+memory/secret is not in the 'blackboard' channel, which holds 1/, 2/. Nothing was read.
 ```
 
 A call the harness will not make is rejected in the result rather than raised: the path
@@ -780,7 +780,7 @@ name = "notes"
 writer = "self"
 readers = "self"
 shape = "directory"
-path = "state"
+path = "memory"
 
 [[channel]]
 name = "blackboard"
@@ -795,8 +795,8 @@ name = "mail"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"
-outbox = "out"
-inbox = "in"
+outbox = "outbox"
+inbox = "inbox"
 measured = true
 
 [[channel]]
@@ -804,7 +804,7 @@ name = "transfer"
 writer = "self"
 readers = "harness"
 shape = "file"
-path = "out/transfer"
+path = "outbox/transfer"
 schema = "transfer"
 funded_by = "harness"
 rebate_percent = 100

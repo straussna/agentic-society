@@ -65,7 +65,7 @@ def check_a_channel_table_is_validated():
                 "writer": "self",
                 "readers": "harness",
                 "shape": "file",
-                "path": "out/x",
+                "path": "outbox/x",
                 "schema": "transfer",
             }
             | fields
@@ -190,9 +190,9 @@ def check_a_channel_table_is_validated():
             ),
             (
                 tables(
-                    {"name": "x", "writer": "self", "readers": "self", "path": "state"}
+                    {"name": "x", "writer": "self", "readers": "self", "path": "memory"}
                 ),
-                ["path 'state' is also"],
+                ["path 'memory' is also"],
             ),
             (one(path="n{label}"), ["is also"]),
         ):
@@ -208,7 +208,7 @@ def check_a_channel_table_is_validated():
             ({"balance": "a/b"}, ["balance must be one path segment"]),
             ({"digest": "a/b"}, ["digest must be one path segment"]),
             ({"round": "a/b"}, ["round must be one path segment"]),
-            ({"digest": "state"}, ["is also"]),
+            ({"digest": "memory"}, ["is also"]),
         ):
             rejected(
                 lambda: harness.validate_channels(None, hf, "check"), "check:", *words
@@ -216,10 +216,10 @@ def check_a_channel_table_is_validated():
         # A label is a path too: one that lands on a channel's path is rejected.
         rejected(
             lambda: harness.validate_channels(
-                None, None, "check", labels=("state", "2")
+                None, None, "check", labels=("memory", "2")
             ),
             "check:",
-            "state",
+            "memory",
         )
         rejected(
             lambda: harness.validate_channels(None, None, "check", labels=("1", "n1")),
@@ -306,9 +306,9 @@ def check_the_default_table_is_todays_environment():
                 moved,
             )
         assert harness.SETTINGS.harness_files == {"balance": "n", "digest": "m"}
-        assert harness.observation(shell=True) == "ls -la . ./state; cat m"
+        assert harness.observation(shell=True) == "ls -la . ./memory; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
-        {"name": "notes", "writer": "self", "readers": "self", "path": "state"},
+        {"name": "notes", "writer": "self", "readers": "self", "path": "memory"},
         {
             "name": "blackboard",
             "writer": "self",
@@ -321,8 +321,8 @@ def check_the_default_table_is_todays_environment():
             "writer": "self",
             "readers": "addressee",
             "shape": "mailbox",
-            "outbox": "out",
-            "inbox": "in",
+            "outbox": "outbox",
+            "inbox": "inbox",
             "measured": True,
         },
         {
@@ -330,7 +330,7 @@ def check_the_default_table_is_todays_environment():
             "writer": "self",
             "readers": "harness",
             "shape": "file",
-            "path": "out/transfer",
+            "path": "outbox/transfer",
             "schema": "transfer",
             "ledger": "g",
         },
@@ -388,7 +388,7 @@ def check_a_declared_table_reshapes_the_environment():
         "=== balanceGame ===",
     ):
         assert section in said, (section, said)
-    for absent in ("=== g ===", "n1", "state", "out/transfer", "=== m ==="):
+    for absent in ("=== g ===", "n1", "memory", "outbox/transfer", "=== m ==="):
         assert absent not in said, (absent, said)
     by = files_by_path(t)
     assert set(by) == {
@@ -436,22 +436,26 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         seated(
             root,
             labels=labels,
-            other={"out/alpha": "for alpha\n", "group/post": "theirs\n"},
+            other={"outbox/alpha": "for alpha\n", "group/post": "theirs\n"},
         )
         t = episode_once(
-            run("cat nalpha", "echo 'beta 100' > out/transfer", "echo p > alpha/post"),
+            run(
+                "cat nalpha",
+                "echo 'beta 100' > outbox/transfer",
+                "echo p > alpha/post",
+            ),
             say(),
         )
         account = ground_truth()
         env = [(i.path, i.name, i.role) for i in harness.instances("t", account)]
         rows = harness.ledger("t", account)
     assert env == [
-        ("state", "notes", "own"),
+        ("memory", "notes", "own"),
         ("alpha", "blackboard", "own"),
         ("beta", "blackboard", "peer"),
-        ("out", "mail", "own"),
-        ("out/transfer", "transfer", "own"),
-        ("in/beta", "mail", "peer"),
+        ("outbox", "mail", "own"),
+        ("outbox/transfer", "transfer", "own"),
+        ("inbox/beta", "mail", "peer"),
     ], env
     assert "=== nalpha ===" in t["observation"] and "=== nbeta ===" in t["observation"]
     assert "n1" not in t["observation"] and "n2" not in t["observation"]
@@ -459,7 +463,7 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         "the balance is found under its label"
     )
     by = files_by_path(t)
-    assert by["beta/post"]["author"] == by["in/beta"]["author"] == "peer:beta"
+    assert by["beta/post"]["author"] == by["inbox/beta"]["author"] == "peer:beta"
     assert (t["transfer"]["label"], t["transfer"]["seat"], t["transfer"]["amount"]) == (
         "beta",
         "2",
@@ -511,7 +515,9 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
     with temp_root(channels=table) as root:
         seated(root, other={})
         before = harness.load_account("other")["balance"]
-        t = episode_once(run("echo '2 100' > out/transfer", "echo hi > out/2"), say())
+        t = episode_once(
+            run("echo '2 100' > outbox/transfer", "echo hi > outbox/2"), say()
+        )
         account = ground_truth()
         planted = set(harness.render_harness_files("t", account)[0])
         other = harness.load_account("other")["balance"]
@@ -524,7 +530,7 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
     assert t["channels"]["mail"]["addressed"] == ["2"], (
         "a file called transfer is just a file"
     )
-    assert files_by_path(t)["out/transfer"]["channel"] == "mail", (
+    assert files_by_path(t)["outbox/transfer"]["channel"] == "mail", (
         "and it is recorded as one"
     )
 
@@ -535,17 +541,17 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     Quoted in the digest the first time, named as unchanged after, never the
     agent's in the record, and absent before there is anything to report.
     """
-    with temp_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+    with temp_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
-        first = episode_once(run("ls out", "echo '2 100' > out/transfer"), say())
-        second = episode_once(run("cat out/receipt"), run("ls out"), say())
-        third = episode_once(run("cat out/receipt"), say())
-    assert "out/receipt" not in first["observation"], "nothing to report yet"
+        first = episode_once(run("ls outbox", "echo '2 100' > outbox/transfer"), say())
+        second = episode_once(run("cat outbox/receipt"), run("ls outbox"), say())
+        third = episode_once(run("cat outbox/receipt"), say())
+    assert "outbox/receipt" not in first["observation"], "nothing to report yet"
     assert "receipt" not in first["turns"][0]["tools"][0]["result"], first["turns"][0][
         "tools"
     ][0]
     text = second["turns"][0]["tools"][0]["result"]
-    assert f"=== out/receipt ===\n{text}" in second["observation"], second[
+    assert f"=== outbox/receipt ===\n{text}" in second["observation"], second[
         "observation"
     ]
     for item in (
@@ -564,11 +570,13 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     assert "receipt" in second["turns"][1]["tools"][0]["result"], (
         "it is in the environment"
     )
-    assert "out/receipt" not in files_by_path(second), "and not in the agent's record"
+    assert "outbox/receipt" not in files_by_path(second), (
+        "and not in the agent's record"
+    )
     assert second["channels"]["mail"]["addressed"] == [], "nor a message"
     updated = third["turns"][0]["tools"][0]["result"]
     assert updated != text and updated.startswith("round: 2\n"), updated
-    assert f"=== out/receipt ===\n{updated}" in third["observation"], third[
+    assert f"=== outbox/receipt ===\n{updated}" in third["observation"], third[
         "observation"
     ]
 
@@ -632,13 +640,13 @@ def check_a_receipt_says_what_each_obligation_came_to():
 def check_a_receipt_is_roots_in_the_container():
     """In a container the receipt is root's and denies a write, like every status
     file."""
-    with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+    with docker_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
-        episode_once(run("echo '2 100' > out/transfer"), say())
+        episode_once(run("echo '2 100' > outbox/transfer"), say())
         t = episode_once(
-            run("ls -l out/receipt"),
-            run("echo x > out/receipt 2>&1; echo rc=$?"),
-            run("cat out/receipt"),
+            run("ls -l outbox/receipt"),
+            run("echo x > outbox/receipt 2>&1; echo rc=$?"),
+            run("cat outbox/receipt"),
             say(),
         )
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
@@ -656,7 +664,7 @@ def check_a_harness_file_makes_its_own_directory_in_the_container():
     """A harness file declared under a directory nothing else makes is planted there, root's."""
     with docker_root(channels=tables(transfer={"receipt": "receipts/last"})) as root:
         seated(root, other={})
-        episode_once(run("echo '2 100' > out/transfer"), say())
+        episode_once(run("echo '2 100' > outbox/transfer"), say())
         t = episode_once(run("ls -ld receipts"), run("cat receipts/last"), say())
     results = [turn["tools"][0]["result"] for turn in t["turns"] if turn["tools"]]
     assert "root root" in results[0] and results[0].startswith("d"), results[0]
@@ -675,14 +683,14 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     directory the agent writes leaves that directory's owner alone, and the
     episode after the receipt lands starts and writes there as before.
     """
-    with docker_root(channels=tables(transfer={"receipt": "out/receipt"})) as root:
+    with docker_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
-        first = episode_once(run("echo '2 100' > out/transfer"), say())
+        first = episode_once(run("echo '2 100' > outbox/transfer"), say())
         second = episode_once(
             run(
                 "stat -c '%U' out",
-                "echo again > out/2 && echo OUTBOX-OK",
-                "cat out/receipt",
+                "echo again > outbox/2 && echo OUTBOX-OK",
+                "cat outbox/receipt",
             ),
             say(),
         )
@@ -707,7 +715,7 @@ def check_harness_files_can_be_renamed():
         seated(root, other={})
         t = episode_once(run("cat bal1", "cat say"), say())
         planted = set(harness.render_harness_files("t", ground_truth())[0])
-    assert t["commands"][0] == "ls -la . ./state; cat say", t["commands"]
+    assert t["commands"][0] == "ls -la . ./memory; cat say", t["commands"]
     assert planted == {"bal1", "bal2", "g", "say"}, planted
     assert "=== bal1 ===" in t["observation"] and "=== bal2 ===" in t["observation"]
     assert " m\n" not in t["observation"] and "n1" not in t["observation"]
@@ -718,7 +726,7 @@ def check_harness_files_can_be_renamed():
         seated(root, other={"group/post": "theirs\n"})
         t = episode_once(run("cat 2/post"), say())
         planted = set(harness.render_harness_files("t", ground_truth())[0])
-    assert t["commands"][0] == "ls -la . ./state", "no digest, so nothing to cat"
+    assert t["commands"][0] == "ls -la . ./memory", "no digest, so nothing to cat"
     assert planted == {"n1", "n2", "g"}, planted
     assert "===" not in t["observation"], "the listing alone"
     assert t["turns"][0]["tools"][0]["result"] == "theirs\n", (
@@ -797,7 +805,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
         account = ground_truth()
     assert planted == {"g", "digest"}, planted
     assert not any(p.startswith("n") for p in planted), planted
-    assert t["commands"][0] == "ls -la . ./state; cat digest", t["commands"]
+    assert t["commands"][0] == "ls -la . ./memory; cat digest", t["commands"]
     assert not t["touched_balance"] and not t["read_balance"], (
         "no balance to touch or read"
     )
@@ -822,10 +830,10 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
 def check_an_unpushed_public_channel_stays_out_of_the_digest():
     """pushed = false leaves a channel in the environment and out of the digest."""
     with temp_root(channels=tables(blackboard={"pushed": False})) as root:
-        seated(root, other={"group/post": "theirs\n", "out/1": "for you\n"})
+        seated(root, other={"group/post": "theirs\n", "outbox/1": "for you\n"})
         t = episode_once(run("cat 2/post"), say())
     assert "=== 2/post ===" not in t["observation"], t["observation"]
-    assert "=== in/2 ===" in t["observation"], "the mailbox is still pushed"
+    assert "=== inbox/2 ===" in t["observation"], "the mailbox is still pushed"
     assert t["turns"][0]["tools"][0]["result"] == "theirs\n", (
         "and the board is there to read"
     )

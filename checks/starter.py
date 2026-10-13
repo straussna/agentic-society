@@ -75,7 +75,7 @@ def check_starter_files_land_when_the_balance_falls():
     )
     assert "m1" not in before["observation"], before["observation"]
     starter = sorted(f["path"] for f in after["files"] if f.get("starter"))
-    assert starter == ["state/d/m2", "state/m1"], starter
+    assert starter == ["memory/d/m2", "memory/m1"], starter
     assert "m1" in after["observation"], (
         "the starter files are in the listing the agent opens on"
     )
@@ -122,14 +122,14 @@ def check_starter_files_are_recorded_and_idempotent():
         budget=500_000, starter_files="s", starter_files_below=500_000
     ) as root:
         plant(root)
-        episode_once(run("echo mine > state/m1"), say())  # the agent overwrites it
+        episode_once(run("echo mine > memory/m1"), say())  # the agent overwrites it
         after = episode_once(say())
         record = ground_truth()["starter_files_landed"]
 
     assert record["name"] == "s" and record["episode"] == 1, record
     assert record["balance"] == 500_000, "and the balance it landed on"
     assert sorted(record["paths"]) == ["d/m2", "m1"], record
-    kept = files_by_path(after)["state/m1"]
+    kept = files_by_path(after)["memory/m1"]
     assert kept["text"].strip() == "mine", (
         "a second episode must not restore what the agent changed"
     )
@@ -142,15 +142,17 @@ def check_starter_files_are_not_the_agents():
         budget=500_000, starter_files="s", starter_files_below=500_000
     ) as root:
         plant(root)
-        t = episode_once(run("echo doctrine > state/NOTES.md"), say())
+        t = episode_once(run("echo doctrine > memory/NOTES.md"), say())
 
     by = files_by_path(t)
-    assert by["state/m1"]["planted"] and by["state/m1"]["starter"], by["state/m1"]
-    assert by["state/m1"]["text"].strip() == "alpha", (
+    assert by["memory/m1"]["planted"] and by["memory/m1"]["starter"], by["memory/m1"]
+    assert by["memory/m1"]["text"].strip() == "alpha", (
         "a starter file's contents are captured, so an edit to it is legible"
     )
-    assert not by["state/NOTES.md"]["planted"], "the agent's own file stays the agent's"
-    assert [f["path"] for f in t["files"] if not f["planted"]] == ["state/NOTES.md"], (
+    assert not by["memory/NOTES.md"]["planted"], (
+        "the agent's own file stays the agent's"
+    )
+    assert [f["path"] for f in t["files"] if not f["planted"]] == ["memory/NOTES.md"], (
         "everything the agent did not invent is out of what analyze.py counts as its own"
     )
     assert not [f for f in t["files"] if f["channel"] != "notes"], (
@@ -166,7 +168,7 @@ def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
         budget=500_000, starter_files="s", starter_files_below=499_000
     ) as root:
         plant(root)
-        episode_once(run("echo mine > state/m1"), say())
+        episode_once(run("echo mine > memory/m1"), say())
         rejected(
             lambda: episode_once(say()),
             "m1",
@@ -307,8 +309,8 @@ def check_starter_files_config_is_validated():
 def check_fork_reproduces_state_and_account():
     """A fork rebuilds the recorded episode exactly, and runs nothing."""
     with temp_root():
-        episode_once(run("echo v1 > state/NOTES.md"), say())
-        episode_once(run("echo v2 > state/NOTES.md"), say())
+        episode_once(run("echo v1 > memory/NOTES.md"), say())
+        episode_once(run("echo v2 > memory/NOTES.md"), say())
         parent = ground_truth()
         trace = trace_on_disk("t", 1)
         with quiet():
@@ -316,8 +318,8 @@ def check_fork_reproduces_state_and_account():
         forked = ground_truth("f")
         notes = (harness.mirror("f", "notes") / "NOTES.md").read_bytes()
 
-        was = files_by_path(trace)["state/NOTES.md"]
-        assert notes.decode() == was["text"], "state/ is the episode it forked at"
+        was = files_by_path(trace)["memory/NOTES.md"]
+        assert notes.decode() == was["text"], "memory/ is the episode it forked at"
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
         assert forked["balance_history"] == trace["balance_after"], (
@@ -360,12 +362,12 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
     the next episode, so copying them would deliver the same post twice.
     """
     with temp_root() as root:
-        seated(root, other={"group/theirs": "not mine\n", "out/1": "for you\n"})
+        seated(root, other={"group/theirs": "not mine\n", "outbox/1": "for you\n"})
         episode_once(
             run(
-                "echo mine > state/NOTES.md",
+                "echo mine > memory/NOTES.md",
                 "echo posted > 1/RESULT",
-                "echo psst > out/2 && echo '2 50' > out/transfer",
+                "echo psst > outbox/2 && echo '2 50' > outbox/transfer",
             ),
             say(),
         )
@@ -444,7 +446,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
                         "text": None,
                     },
                     {
-                        "path": "state/a.txt",
+                        "path": "memory/a.txt",
                         "channel": "notes",
                         "writer": "self",
                         "readers": "self",
@@ -531,7 +533,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
             },
         )
         mine = {
-            "path": "state/a.txt",
+            "path": "memory/a.txt",
             "channel": "notes",
             "writer": "self",
             "readers": "self",

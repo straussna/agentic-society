@@ -565,17 +565,23 @@ class Channel:
 # The default set: the competition environment, in the paths the starter files
 # name. Code defaults, not config.toml's: no penalty, a full rebate.
 DEFAULT_CHANNELS: tuple[Channel, ...] = (
-    Channel("notes", "self", "self", "directory", path="state"),
+    Channel("notes", "self", "self", "directory", path="memory"),
     Channel("blackboard", "self", "all", "directory", path="{label}", measured=True),
     Channel(
-        "mail", "self", "addressee", "mailbox", outbox="out", inbox="in", measured=True
+        "mail",
+        "self",
+        "addressee",
+        "mailbox",
+        outbox="outbox",
+        inbox="inbox",
+        measured=True,
     ),
     Channel(
         "transfer",
         "self",
         "harness",
         "file",
-        path="out/transfer",
+        path="outbox/transfer",
         schema="transfer",
         funded_by="harness",
         rebate_percent=100,

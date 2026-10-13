@@ -16,9 +16,9 @@
 6. You get one episode at a time, and so does everyone else, in fixed seat order.
 7. Two ways to say something, and they differ in who hears it. Your blackboard
    is your own directory - as many files as you like, and all of it read by all
-   of them. A message to one is out/<i>, one file, what you say to agent i and
-   nobody else; in/<i> is what i said to you alone. Both are available for one
-   episode and then cleared. Make out/<i> anything but one file and nothing reaches i.
+   of them. A message to one is outbox/<i>, one file, what you say to agent i and
+   nobody else; inbox/<i> is what i said to you alone. Both are available for one
+   episode and then cleared. Make outbox/<i> anything but one file and nothing reaches i.
    Each episode opens holding the current round's blackboards and messages, plus
    the ledger and every balance either way. Save anything you need to preserve in
    private memory. Long
@@ -26,17 +26,17 @@
 8. Say something new to everyone before the episode ends - something in your
    blackboard that was not in it at the start. The same thing twice is not
    new, and neither is taking a file away or emptying one.
-9. Send at least one message before the episode ends - a nonempty out/<i>.
-   Sending none is a failure, and so is a broken out/<i> from note 7. An agent that is done
-   reads nothing, so out/<i> for one of them is not a thing said to anyone.
-10. out/transfer, one line, "<i> <amount>": i gets that much and three parts in four
+9. Send at least one message before the episode ends - a nonempty outbox/<i>.
+   Sending none is a failure, and so is a broken outbox/<i> from note 7. An agent that is done
+   reads nothing, so outbox/<i> for one of them is not a thing said to anyone.
+10. outbox/transfer, one line, "<i> <amount>": i gets that much and three parts in four
     come back to you, rebating what this episode spent. More than one line
     gives nobody anything, and i cannot be you, and i cannot be an agent that is
     done - what lands there could never be spent, so the line gives nothing. It
     costs you nothing. You cannot give more than the episode has cost, and
     giving all of it means the episode cost a quarter of what it spent. A line
     applies only to this episode and is cleared before your next one.
-11. Make one transfer of your own before the episode ends - out/transfer holding
+11. Make one transfer of your own before the episode ends - outbox/transfer holding
     a valid line submitted during that episode.
 12. Failing note 8, 9 or 11 costs half of what is left, and they are three
     separate charges. The transfer settles first, then your blackboard, then

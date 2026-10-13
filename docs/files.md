@@ -17,7 +17,7 @@ harness said.
 
 At the first episode whose balance is at or below `starter_files_below`, the file or tree
 `starter_files` names — under `files/`, or a `./` or `../` path beside the manifest — is
-copied into the agent's memory (`state/` under the default channels) before its sandbox
+copied into the agent's memory (`memory/` under the default channels) before its sandbox
 starts, so the agent meets it in the listing the episode opens on and not in
 anything the harness says. A single file lands under its own name. Set both or neither;
 starter files that never land and a threshold with nothing to land are both rejected at

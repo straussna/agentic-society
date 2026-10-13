@@ -2532,8 +2532,8 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             g01=(
                 run(
                     "echo hello > 1/RESULT",
-                    "echo psst > out/2",
-                    "echo '2 250' > out/transfer",
+                    "echo psst > outbox/2",
+                    "echo '2 250' > outbox/transfer",
                 ),
                 say(),
             ),
@@ -2548,7 +2548,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
         )
         # g01 submits nothing, so the transfer is made only in the episode that declared it.
         second = per_agent(
-            g01=(run("rm out/transfer", f"cat {digest_name()}"), say()),
+            g01=(run("rm outbox/transfer", f"cat {digest_name()}"), say()),
             g02=(run(f"cat {digest_name()}"), say()),
         )
         with quiet():
@@ -2580,9 +2580,9 @@ def check_a_simultaneous_credit_lands_before_the_floor():
     cost = turn_cost()
     results = {}
     for name, transfer in (
-        ("transfer", "echo '2 50' > out/transfer"),
+        ("transfer", "echo '2 50' > outbox/transfer"),
         ("none", "true"),
-        ("exact", "echo '2 1' > out/transfer"),
+        ("exact", "echo '2 1' > outbox/transfer"),
     ):
         with temp_root(budget=cost - 1, floor_at_zero=True) as root:
             ids = seated(root, "g01", g02={})
@@ -2643,7 +2643,7 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
                     seated_ids,
                     1,
                     per_agent(
-                        g01=(run("echo '2 250' > out/transfer"), say()),
+                        g01=(run("echo '2 250' > outbox/transfer"), say()),
                         default=(say(),),
                     ),
                 )
@@ -2685,9 +2685,9 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
             "sequential",
             experiment.sequential_round,
             lambda: fake(
-                run("echo '2 100' > out/transfer"),
+                run("echo '2 100' > outbox/transfer"),
                 say(),
-                run("echo '1 250' > out/transfer"),
+                run("echo '1 250' > outbox/transfer"),
                 say(),
             ),
         ),
@@ -2695,8 +2695,8 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
             "simultaneous",
             experiment.simultaneous_round,
             lambda: per_agent(
-                g01=(run("echo '2 100' > out/transfer"), say()),
-                g02=(run("echo '1 250' > out/transfer"), say()),
+                g01=(run("echo '2 100' > outbox/transfer"), say()),
+                g02=(run("echo '1 250' > outbox/transfer"), say()),
             ),
         ),
     )
@@ -2754,7 +2754,9 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     cost = turn_cost()
     stood = {}
     for floor in (True, False):
-        for lost, transfer in ((True, "echo '1 50' > out/transfer"), (False, "true")):
+        for lost, transfer in (
+            (True, "echo '1 50' > outbox/transfer"), (False, "true")
+        ):
             with temp_root(budget=cost - 1, floor_at_zero=floor) as root:
                 ids = seated(root, "g01", g02={})
                 real = harness.replace_file
@@ -2811,17 +2813,17 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
         "sequential": (
             experiment.sequential_round,
             lambda: fake(
-                run("echo '2 100' > out/transfer"),
+                run("echo '2 100' > outbox/transfer"),
                 say(),
-                run("echo '1 250' > out/transfer"),
+                run("echo '1 250' > outbox/transfer"),
                 say(),
             ),
         ),
         "simultaneous": (
             experiment.simultaneous_round,
             lambda: per_agent(
-                g01=(run("echo '2 100' > out/transfer"), say()),
-                g02=(run("echo '1 250' > out/transfer"), say()),
+                g01=(run("echo '2 100' > outbox/transfer"), say()),
+                g02=(run("echo '1 250' > outbox/transfer"), say()),
             ),
         ),
     }

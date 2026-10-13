@@ -248,7 +248,10 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
         ids = seated(root, "g01", g02={})
         with quiet():
             experiment.sequential_round(
-                ids, set(ids), 1, fake(say(), run("echo '1 250' > out/transfer"), say())
+                ids,
+                set(ids),
+                1,
+                fake(say(), run("echo '1 250' > outbox/transfer"), say()),
             )
         account = harness.load_account("g01")
         account["balance_history"].pop()
@@ -476,13 +479,13 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
     seat 2 30, which reaches g02 after its own episode, and a round 2 follows.
     """
     sequential = fake(
-        run("echo '2 250' > out/transfer"),
+        run("echo '2 250' > outbox/transfer"),
         say(),
-        run("echo '1 100' > out/transfer"),
+        run("echo '1 100' > outbox/transfer"),
         say(),
-        run("echo '2 40' > out/transfer"),
+        run("echo '2 40' > outbox/transfer"),
         say(),
-        run("echo '1 70' > out/transfer"),
+        run("echo '1 70' > outbox/transfer"),
         say(),
     )
     keys = (
@@ -529,9 +532,9 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                             set(ids),
                             1,
                             per_agent(
-                                g01=(run("echo '2 40' > out/transfer"), say()),
+                                g01=(run("echo '2 40' > outbox/transfer"), say()),
                                 g02=(say(),),
-                                g03=(run("echo '2 250' > out/transfer"), say()),
+                                g03=(run("echo '2 250' > outbox/transfer"), say()),
                             ),
                         )
                 except OSError:
@@ -543,7 +546,8 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                         {"g01", "g03"},
                         1,
                         per_agent(
-                            g01=(run("echo '2 30' > out/transfer"), say()), g03=(say(),)
+                            g01=(run("echo '2 30' > outbox/transfer"), say()),
+                            g03=(say(),),
                         ),
                     )
                     ended[schedule] = {agent: ground_truth(agent) for agent in ids}
@@ -552,7 +556,7 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                         set(ids),
                         2,
                         per_agent(
-                            g01=(run("echo '2 20' > out/transfer"), say()),
+                            g01=(run("echo '2 20' > outbox/transfer"), say()),
                             default=(say(),),
                         ),
                     )
@@ -1072,7 +1076,7 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                     ids,
                     seated_ids,
                     1,
-                    fake(run("echo '2 250' > out/transfer"), say()),
+                    fake(run("echo '2 250' > outbox/transfer"), say()),
                     log_stage=log_stage,
                 )
                 sequential = seen[:]

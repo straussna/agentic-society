@@ -296,4 +296,4 @@ def interrupting_at(at: int, *turns):
     return FakeRouter(turns, on_send=interrupt)
 
 
-DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())
+DEFAULT = (run("cat n1"), run("echo hi > memory/note.txt", "ls memory"), say())

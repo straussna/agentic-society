@@ -63,7 +63,7 @@ interaction_store/                    the interaction store: pending and complet
 ```
 
 Each trace stores what the agent's files *held* that episode, not just their names.
-`state/` keeps only the latest revision, so this is the only record of how what the
+`memory/` keeps only the latest revision, so this is the only record of how what the
 agent wrote to itself changed — and the only trace of a file it later deleted. Text
 is captured up to 100,000 bytes per file with the true size and an explicit
 truncation marker; binaries are listed and sized but not stored. Every file record
@@ -104,8 +104,8 @@ run the same commands with its `python`.
 | `py -3 check.py --sweep-all` | Also remove containers other suite runs left, dead ones included; a plain run removes only its own. |
 | `py -3 view.py` | A page on `127.0.0.1:8765` with a corner toggle between two presentations. Observer view shows one experiment: a log of what its agents have addressed to each other through the mailbox channel, one tab per directory channel with every seat side by side, and one agent's trace at a time, picked by round, beneath each seat's balance, spend, live or pending-human state, the experiment's progress or outcome, and the transfer ledger `g`. It refreshes as episodes go: an episode in flight is read from its raw log and metered by the same arithmetic the account uses, what lands only with the trace is marked pending rather than guessed, and an episode whose process died shows as unfinished with its age. Human view is described in [human.md](human.md). `--experiment` opens on one experiment by its experiment_id, `--agent` on the experiment holding that agent; `--port 0` picks a free port. |
 | `py -3 view.py --no-browser` | Serve without opening a browser. |
-| `py -3 analyze.py --agent live01` | Traces → `episodes.csv`, `report.txt`, `transcript.txt` (what it said, ran, and changed in `state/`, as a per-episode diff), and `charts/`: the balance series with the episodes shaded under it, spend per turn with the baseline, the cheapest turn of each episode, rising beneath it, spend and turns per episode, tokens per episode, and the bytes the agent keeps in `state/` against what its episodes spend. Omit `--agent` to load every agent and compare. Charts need matplotlib; without it the other three are written anyway. |
-| `py -3 analyze.py --agent live01 --identity state/IDENTITY.md` | Diff one captured file episode over episode, as the trace names it. |
+| `py -3 analyze.py --agent live01` | Traces → `episodes.csv`, `report.txt`, `transcript.txt` (what it said, ran, and changed in `memory/`, as a per-episode diff), and `charts/`: the balance series with the episodes shaded under it, spend per turn with the baseline, the cheapest turn of each episode, rising beneath it, spend and turns per episode, tokens per episode, and the bytes the agent keeps in `memory/` against what its episodes spend. Omit `--agent` to load every agent and compare. Charts need matplotlib; without it the other three are written anyway. |
+| `py -3 analyze.py --agent live01 --identity memory/IDENTITY.md` | Diff one captured file episode over episode, as the trace names it. |
 
 **Parallel agents.** One agent is one roll of the dice: whatever episode 1 writes is received
 doctrine for every later episode of that agent. `--agent` namespaces everything. Agents

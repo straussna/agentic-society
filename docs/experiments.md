@@ -12,16 +12,16 @@ An agent acts across episodes, carrying its account, memory and consequences for
 order or simultaneously, and each seat names both a directory and a balance.
 
 ```
-g01 opens on                     g02 opens on
-  state/  memory, rw               state/  memory, rw
-  1/      its board, rw            1/      g01's board, r
-  2/      g02's board, r           2/      its board, rw
-  3/      g03's board, r           3/      g03's board, r
-  out/    one file a seat, rw      out/    one file a seat, rw
-  in/2 in/3  a file each, r        in/1 in/3  a file each, r
-  n1 n2 n3            r            n1 n2 n3            r
-  g       every transfer, r        g       every transfer, r
-  m       all of it,  r            m       all of it,  r
+g01 opens on                          g02 opens on
+  memory/  memory, rw                   memory/  memory, rw
+  1/       its board, rw                1/       g01's board, r
+  2/       g02's board, r               2/       its board, rw
+  3/       g03's board, r               3/       g03's board, r
+  outbox/  one file a seat, rw          outbox/  one file a seat, rw
+  inbox/2 inbox/3  a file each, r       inbox/1 inbox/3  a file each, r
+  n1 n2 n3         r                    n1 n2 n3         r
+  g        every transfer, r            g        every transfer, r
+  m        all of it,  r                m        all of it,  r
 ```
 
 **Numbering is absolute and complete.** Directory 2 is `g02` to every reader, so a post
@@ -81,7 +81,7 @@ empty starter files leave both. The same goes for `m`: the mechanics starter fil
 the agent is told what it started holding, and the objective starter files do not, so an agent on
 that arm has to work out what the file in front of it is.
 
-Each agent's **memory** is `state/` under the default channels, and no other agent ever
+Each agent's **memory** is `memory/` under the default channels, and no other agent ever
 sees it — it is not copied anywhere, and an episode that goes looking finds nothing of
 anyone else's. Its **board** is what it says to the whole experiment: the seat it sits
 in, the one numbered directory it can write, and a copy of it is what every other agent
@@ -91,11 +91,11 @@ copied into a tree the agent can write, so there is nothing to revert and nothin
 audit.
 
 What one agent says to the experiment reaches the others at the next round, and it is the one
-tree an agent chooses the whole contents of. Beside it sits **`out/`**, the
+tree an agent chooses the whole contents of. Beside it sits **`outbox/`**, the
 same act aimed at a single agent — the other tree the agent writes, and the only one
-that is addressed. **A message to one is a file**: `out/<i>` is one file,
+that is addressed. **A message to one is a file**: `outbox/<i>` is one file,
 the message to the agent at seat `i`, and it arrives there as the file
-`in/<sender>`, root's and read-only, and reaches nobody else — so the mailbox's
+`inbox/<sender>`, root's and read-only, and reaches nobody else — so the mailbox's
 outbox and inbox are the same flat
 shape read from either end, and an episode says one thing to each agent and hears one thing
 from each. It is an episode-scoped delivery, not an archive: the harness clears every
@@ -137,7 +137,7 @@ Which arm an agent is on is the `delivery` setting in its provenance, and the tw
 not comparable on any question about what the experiment knew.
 
 **A transfer is one declaration an episode.** Under the default channels it is one line
-`<label> <amount>` in `out/transfer`; under a transfer channel in mailbox form, as in the
+`<label> <amount>` in `outbox/transfer`; under a transfer channel in mailbox form, as in the
 shipped competition, it is one message in `currency/outbox/<label>` containing
 `<amount>`, which appears as `currency/inbox/<giver>` for its receiver in the next
 episode. Either way it moves no more than the episode has spent and credits that label.
@@ -213,7 +213,7 @@ the series like everything else, so the agent sees the silence penalty in `n` wi
 being told which movement it is.
 
 **And a mailbox can carry the other.** Under a mailbox silence penalty, an episode must
-leave at least one `out/<i>` holding a nonempty message. An episode that sends no message
+leave at least one `outbox/<i>` holding a nonempty message. An episode that sends no message
 loses the mailbox channel's `silence_penalty_percent` of what is left. The two differ only
 in shape and in who hears them: what an agent says to everyone may be as many files as it
 likes, and each message is one file addressed to one peer. Any number of peers may be

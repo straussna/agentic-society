@@ -878,8 +878,8 @@ function renderHeader() {
 
 // --- mailbox and schema activity ----------------------------------------
 
-// A thread is the pair of seats a channel runs between: out/1 written by seat 0
-// and out/0 written by seat 1 are the two directions of one conversation, so
+// A thread is the pair of seats a channel runs between: outbox/1 written by seat 0
+// and outbox/0 written by seat 1 are the two directions of one conversation, so
 // events are keyed on the pair, not on the sender.
 const pairKey = (a, b) => [a, b].sort((x, y) => Number(x) - Number(y)).join("·");
 
@@ -948,7 +948,7 @@ const whenOf = (e) => e.tip ? "not traced yet" : `round ${e.round}`;
 // Naming the inbox in a command is a second thing either way - a turn spent on
 // a read, beside a delivery that cost nothing.
 function gotHtml(d, from) {
-  const box = esc(d.shown_as || d.box || `in/${from}`);
+  const box = esc(d.shown_as || d.box || `inbox/${from}`);
   const again = d.named ? ` · <span class="tag">read ${box}${
     d.shown_before === true ? " again" : ""}</span>` : "";
   if (d.shown_before === true) {

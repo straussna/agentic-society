@@ -33,9 +33,9 @@ def check_a_transfer_applies_only_to_the_episode_that_submits_it():
     """A transfer expires after settlement and must be submitted again."""
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
-        first = episode_once(run("echo '2 120' > out/transfer"), say())
+        first = episode_once(run("echo '2 120' > outbox/transfer"), say())
         expired = episode_once(run("true"), say())
-        again = episode_once(run("echo '2 120' > out/transfer"), say())
+        again = episode_once(run("echo '2 120' > outbox/transfer"), say())
         taker = ground_truth("other")
     assert first["transfer"]["amount"] == again["transfer"]["amount"] == 120, (
         first,
@@ -53,10 +53,10 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
-        gave = episode_once(run("echo '2 100' > out/transfer"), say())
+        gave = episode_once(run("echo '2 100' > outbox/transfer"), say())
         stood = episode_once(run("true"), say())
-        raised = episode_once(run("echo '2 200' > out/transfer"), say())
-        withdrawn = episode_once(run("rm out/transfer"), say())
+        raised = episode_once(run("echo '2 200' > outbox/transfer"), say())
+        withdrawn = episode_once(run("rm outbox/transfer"), say())
         taker = ground_truth("other")
     assert [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)] == [
         100,
@@ -75,8 +75,8 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     # The same transfer may be submitted again in a later episode.
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
-        wrote = episode_once(run("echo '2 100' > out/transfer"), say())
-        again = episode_once(run("echo '2 100' > out/transfer"), say())
+        wrote = episode_once(run("echo '2 100' > outbox/transfer"), say())
+        again = episode_once(run("echo '2 100' > outbox/transfer"), say())
         taker = ground_truth("other")
     assert wrote["transfer"]["penalty"] == 0, "the line was not there at its start"
     assert again["transfer"]["amount"] == 100
@@ -84,12 +84,12 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     assert taker["received"] == 200, "both episodes submitted a transfer"
 
     # A declaration the episode wrote that moves nothing is not a transfer. Each of
-    # these changes out/transfer and none of them gives, so each is charged.
+    # these changes outbox/transfer and none of them gives, so each is charged.
     for name, cmd in (
-        ("two lines", "printf '2 5\\n2 6\\n' > out/transfer"),
-        ("its own seat", "echo '1 5' > out/transfer"),
-        ("no such seat", "echo '9 5' > out/transfer"),
-        ("nothing at all", "echo 'please take some' > out/transfer"),
+        ("two lines", "printf '2 5\\n2 6\\n' > outbox/transfer"),
+        ("its own seat", "echo '1 5' > outbox/transfer"),
+        ("no such seat", "echo '9 5' > outbox/transfer"),
+        ("nothing at all", "echo 'please take some' > outbox/transfer"),
     ):
         with temp_root(channels=tables(transfer=HALF)) as root:
             seated(root, other={})
@@ -119,7 +119,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
         before = harness.load_account("other")["balance"]
-        t = episode_once(run("echo '2 400' > out/transfer"), say())
+        t = episode_once(run("echo '2 400' > outbox/transfer"), say())
 
         giver, taker = ground_truth("t"), ground_truth("other")
         transfer = t["transfer"]
@@ -146,7 +146,7 @@ def check_a_transfer_is_capped_by_the_episode_spend():
     """An agent cannot give away more than the episode it is giving out of spent."""
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
-        t = episode_once(run("echo '2 99999999' > out/transfer"), say())
+        t = episode_once(run("echo '2 99999999' > outbox/transfer"), say())
     assert t["transfer"]["amount"] == t["spent"], (t["transfer"], t["spent"])
     assert t["transfer"]["amount"] > 0, "and the cap is the spend, not zero"
 
@@ -161,7 +161,7 @@ def check_a_transfer_never_costs_the_giver():
         for amount in ("120", "99999999"):
             with temp_root(channels=tables(transfer={"rebate_percent": rate})) as root:
                 seated(root, other={})
-                t = episode_once(run(f"echo '2 {amount}' > out/transfer"), say())
+                t = episode_once(run(f"echo '2 {amount}' > outbox/transfer"), say())
                 account = ground_truth("t")
             floor = account["budget"] - t["spent"]
             assert account["balance"] >= floor, (
@@ -179,7 +179,7 @@ def check_a_transfer_never_costs_the_giver():
     # episode: it ends having cost nothing at all.
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
-        t = episode_once(run("echo '2 99999999' > out/transfer"), say())
+        t = episode_once(run("echo '2 99999999' > outbox/transfer"), say())
         account = ground_truth("t")
     assert account["balance"] == account["budget"], (
         f"{account['balance']} != {account['budget']}; "
@@ -201,7 +201,7 @@ def check_an_agent_cannot_transfer_to_itself():
         assert harness.load_account("t")["seat"] == "2", (
             "the agent under test is not seat 1"
         )
-        t = episode_once(run("echo '2 400' > out/transfer"), say())
+        t = episode_once(run("echo '2 400' > outbox/transfer"), say())
         account = ground_truth("t")
         others = [ground_truth(r) for r in ("first", "third")]
 
@@ -224,7 +224,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
     for rate, rebate in ((100, 200), (50, 100), (0, 0)):
         with temp_root(channels=tables(transfer={"rebate_percent": rate})) as root:
             seated(root, other={})
-            t = episode_once(run("echo '2 200' > out/transfer"), say())
+            t = episode_once(run("echo '2 200' > outbox/transfer"), say())
             account = ground_truth("t")
             taker = ground_truth("other")
         assert t["transfer"]["amount"] == 200 and t["transfer"]["rebate"] == rebate, (
@@ -257,7 +257,7 @@ def check_a_giver_funded_transfer_debits_the_giver():
         channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0})
     ) as root:
         seated(root, other={})
-        t = episode_once(run("echo '2 400' > out/transfer"), say())
+        t = episode_once(run("echo '2 400' > outbox/transfer"), say())
         giver, taker = ground_truth("t"), ground_truth("other")
         rows = harness.ledger("t", giver)
     assert t["transfer"]["amount"] == 400 and t["transfer"]["debit"] == 400, t[
@@ -291,7 +291,7 @@ def check_a_giver_funded_transfer_debits_the_giver():
         channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0})
     ) as root:
         seated(root, other={})
-        t = episode_once(run("echo '2 99999999' > out/transfer"), say())
+        t = episode_once(run("echo '2 99999999' > outbox/transfer"), say())
         giver = ground_truth("t")
     assert t["transfer"]["debit"] == t["spent"] > 0, t["transfer"]
     assert giver["balance"] == giver["budget"] - 2 * t["spent"], giver
@@ -301,7 +301,7 @@ def check_unfunded_transfers_move_nothing_and_say_so():
     """Under funded_by "none" a declaration is recorded, moves no account, and costs no share."""
     with temp_root(channels=tables(transfer={"funded_by": "none"})) as root:
         seated(root, other={})
-        t = episode_once(run("echo '2 400' > out/transfer"), say())
+        t = episode_once(run("echo '2 400' > outbox/transfer"), say())
         giver, taker = ground_truth("t"), ground_truth("other")
     assert t["transfer"]["error"] == "transfers are off", t["transfer"]
     assert t["transfer"]["declared"].strip() == "2 400", (
@@ -347,7 +347,7 @@ def check_a_malformed_transfer_moves_nothing():
             before = harness.load_account("other")["balance"]
             with quiet():
                 t = harness.run_once(
-                    "t", fake(run(f"printf %s {text!r} > out/transfer"), say())
+                    "t", fake(run(f"printf %s {text!r} > outbox/transfer"), say())
                 )
             account, neighbour = ground_truth("t"), ground_truth("other")
         assert t["transfer"]["amount"] == 0, (text, t["transfer"])
@@ -370,7 +370,7 @@ def check_a_transfer_is_public_to_the_whole_experiment():
     """
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={}, third={})
-        episode_once(run("echo '2 300' > out/transfer"), say())
+        episode_once(run("echo '2 300' > outbox/transfer"), say())
 
         rows = {
             r: harness.ledger(r, harness.load_account(r))
@@ -410,7 +410,7 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
         with quiet():
-            harness.run_once("t", fake(run("echo '2 250' > out/transfer"), say()))
+            harness.run_once("t", fake(run("echo '2 250' > outbox/transfer"), say()))
         # The next agent to start builds its environment now, and the transfer is already in it.
         later, _ = harness.render_harness_files("other", harness.load_account("other"))
         assert later[ledger_name()] == "1 2 250\n", later[ledger_name()]
@@ -482,7 +482,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
         # The neighbour tries to give it an episode's worth from its own seat.
         with quiet():
             t = harness.run_once(
-                "other", fake(run(f"echo '1 {cost * 3}' > out/transfer"), say())
+                "other", fake(run(f"echo '1 {cost * 3}' > outbox/transfer"), say())
             )
 
         stays = ground_truth("t")
@@ -507,7 +507,7 @@ def check_a_transfer_to_an_exhausted_seat_costs_the_share():
         seated(root, "t", other={}, third={})
         exhaust("other")  # seat 2
         with quiet():
-            t = harness.run_once("t", fake(run("echo '2 1' > out/transfer"), say()))
+            t = harness.run_once("t", fake(run("echo '2 1' > outbox/transfer"), say()))
         gone, giver = ground_truth("other"), ground_truth("t")
         empty = harness.ledger("t", giver)
 
@@ -525,7 +525,7 @@ def check_a_transfer_to_an_exhausted_seat_costs_the_share():
         seated(root, "t", other={}, third={})
         exhaust("other")
         with quiet():
-            t = harness.run_once("t", fake(run("echo '3 1' > out/transfer"), say()))
+            t = harness.run_once("t", fake(run("echo '3 1' > outbox/transfer"), say()))
     assert t["transfer"]["amount"] == 1 and t["transfer"]["error"] is None, t[
         "transfer"
     ]

@@ -291,11 +291,11 @@ def check_episodes_reconcile():
     ) as root:
         seated(root, other={})
         episode_once(
-            run("echo '2 300' > out/transfer"), say()
+            run("echo '2 300' > outbox/transfer"), say()
         )  # a transfer, and no post
         episode_once(
             run(
-                "rm out/transfer && mkdir -p out/2 && echo hi > out/2/a",  # a crowded seat
+                "rm outbox/transfer && mkdir -p outbox/2 && echo hi > outbox/2/a",  # a crowded seat
                 "echo posted > 1/RESULT",
             ),
             say(),
@@ -327,7 +327,7 @@ def check_episodes_reconcile():
         channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0, **HALF}),
     ) as root:
         seated(root, other={})
-        episode_once(run("echo '2 300' > out/transfer"), say())
+        episode_once(run("echo '2 300' > outbox/transfer"), say())
         episode_once(say())  # no transfer submitted
         account = ground_truth()
         series, episodes = account["balance_history"], account["episodes"]

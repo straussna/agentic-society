@@ -67,8 +67,8 @@ def check_the_view_reads_a_live_episode_from_raw():
         assert (v["source"], v["live"]) == ("raw", True), v["source"]
         assert [c["call"] for t in v["turns"] for c in t["tools"]] == [
             "cat n1",
-            "echo hi > state/note.txt",
-            "ls state",
+            "echo hi > memory/note.txt",
+            "ls memory",
         ], v["turns"]
         assert all(c["result"] is None for t in v["turns"] for c in t["tools"]), (
             "no command's output is on disk until the trace is"
@@ -151,9 +151,9 @@ def check_the_view_costs_a_live_turn_like_the_account():
     with temp_root(MODEL="claude-opus-5"):
         episode_once(
             run("cat n1"),
-            run("echo hi > state/note.txt", id="twice"),
-            run("ls state", id="twice"),
-            run("cat state/note.txt", u=served),
+            run("echo hi > memory/note.txt", id="twice"),
+            run("ls memory", id="twice"),
+            run("cat memory/note.txt", u=served),
             say(),
         )
         gt = ground_truth()
@@ -767,7 +767,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
                 "text": f"post {seat}-{round}\n",
             },
             {
-                "path": "state/vote",
+                "path": "memory/vote",
                 "channel": "notes",
                 "author": "self",
                 "planted": False,
@@ -1001,7 +1001,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
             "text": "hello all\n",
         },
         {
-            "path": "out/2",
+            "path": "outbox/2",
             "channel": "mail",
             "writer": "self",
             "readers": "addressee",
@@ -1271,13 +1271,15 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
         seated(root, g02={})
         # Each episode leaves its board something new as well, so the post
         # penalty does not halve the budget four times over what is being read.
-        episode_once(run("echo hello > out/2", "echo r1 >> 1/log"), say())
-        episode_once(run("echo louder > out/2", "echo r2 >> 1/log"), say())
-        episode_once(run("printf '2 10\\n' > out/transfer", "echo r3 >> 1/log"), say())
-        episode_once(run("rm -f out/2", "echo r4 >> 1/log"), say())
+        episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
+        episode_once(run("echo louder > outbox/2", "echo r2 >> 1/log"), say())
+        episode_once(
+            run("printf '2 10\\n' > outbox/transfer", "echo r3 >> 1/log"), say()
+        )
+        episode_once(run("rm -f outbox/2", "echo r4 >> 1/log"), say())
         c = view.experiment_of("t")
         m = view.messages(c)
-        seen = [e for e in m["events"] if e["path"] == "out/2"]
+        seen = [e for e in m["events"] if e["path"] == "outbox/2"]
         transfers = [e for e in m["events"] if e["event_type"] == "transfer"]
 
     assert [e["change"] for e in seen] == ["sent", "sent"], [
@@ -1336,8 +1338,8 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_lifetime():
         with rooted(HostSandbox):
             c = fake_experiment(
                 [
-                    ("g01", "00:01", held("out/2")),
-                    ("g01", "00:02", held("out/2")),
+                    ("g01", "00:01", held("outbox/2")),
+                    ("g01", "00:02", held("outbox/2")),
                     ("g01", "00:03", held()),
                 ],
                 agents=("g01", "g02"),
@@ -1364,14 +1366,14 @@ def check_the_view_shows_what_the_receiver_has_not_seen_yet():
     """
     with temp_root() as root:
         seated(root, g02={}, g03={})
-        episode_once(run("echo hello > out/2", "echo r1 >> 1/log"), say())
+        episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         before = view.messages(view.experiment_of("t"))
         later = harness.mirror("t", "mail") / "3"
         later.write_text("written behind the harness\n", encoding="utf-8")
         after = view.messages(view.experiment_of("t"))
 
     assert not before["tip"], "nothing stands ahead of the trace that was just written"
-    assert [e["path"] for e in after["tip"]] == ["out/3"]
+    assert [e["path"] for e in after["tip"]] == ["outbox/3"]
     tip = after["tip"][0]
     assert tip["round"] is None and tip["tip"] and tip["change"] == "sent"
     assert tip["delivered"] is None, (
@@ -1383,21 +1385,21 @@ def check_the_view_shows_what_the_receiver_has_not_seen_yet():
 def check_the_view_reads_delivery_off_the_observation():
     """A message is delivered by the digest, so no command has to name the inbox.
 
-    The initial observation carries in/<sender>, which is the addressee holding it.
+    The initial observation carries inbox/<sender>, which is the addressee holding it.
     Reading delivery off the commands instead would call a delivered message unread.
     """
     with temp_root() as root:
         seated(root, other={})
-        episode_once(run("echo hello > out/2", "echo r1 >> 1/log"), say())
+        episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         with quiet():
             taken = harness.run_once("other", fake(run("cat n2"), say()))
         m = view.messages(view.experiment_of("t"))
-        ev = next(e for e in m["events"] if e["path"] == "out/2")
+        ev = next(e for e in m["events"] if e["path"] == "outbox/2")
 
-    assert "=== in/1 ===" in taken["observation"], (
+    assert "=== inbox/1 ===" in taken["observation"], (
         "the addressee started holding the message"
     )
-    assert "in/1" not in " ".join(taken["commands"]), (
+    assert "inbox/1" not in " ".join(taken["commands"]), (
         "and named it in no command of its own"
     )
     d = ev["delivered"]
@@ -1415,7 +1417,7 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
     def held(path: str, author: str, planted: bool) -> dict:
         return {
             "observation": "total 0\n. ..\n",
-            "commands": ["ls -la . ./state"],
+            "commands": ["ls -la . ./memory"],
             "files": [
                 {
                     "path": path,
@@ -1434,13 +1436,13 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
     with rooted(HostSandbox):
         c = fake_experiment(
             [
-                ("g01", "00:01", held("out/2", "self", False)),
-                ("g02", "00:02", held("in/1", "peer:1", True)),
+                ("g01", "00:01", held("outbox/2", "self", False)),
+                ("g02", "00:02", held("inbox/1", "peer:1", True)),
             ],
             agents=("g01", "g02"),
         )
         m = view.messages(c)
-        ev = next(e for e in m["events"] if e["path"] == "out/2")
+        ev = next(e for e in m["events"] if e["path"] == "outbox/2")
 
     d = ev["delivered"]
     assert d["shown_before"] is None, "nothing was shown_before, so it answers nothing"
@@ -1557,12 +1559,12 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
 
     with temp_root() as root:
         seated(root, other={})
-        episode_once(run("echo '2 100' > out/transfer", "echo r1 >> 1/log"), say())
+        episode_once(run("echo '2 100' > outbox/transfer", "echo r1 >> 1/log"), say())
         mine = tile()
         gt = ground_truth("t")
         (harness.mirror("t", "mail") / "transfer").unlink()
         resolved = tile()["transfer"]
-        episode_once(run("rm -f out/transfer"), say())
+        episode_once(run("rm -f outbox/transfer"), say())
         gone = tile()["transfer"]
 
     assert mine["spent"] == sum(s["spent"] for s in gt["episodes"]), (
@@ -2006,7 +2008,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         with quiet():
-            harness.run_once("g01", fake(run("echo mine > state/mine"), refuse()))
+            harness.run_once("g01", fake(run("echo mine > memory/mine"), refuse()))
             harness.run_once("g02", fake(think("weighing it", "spoken")))
         election = {
             "round": 1,

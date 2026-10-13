@@ -33,7 +33,7 @@ reading a rival is not a purchase.
   and whether it survives being re-inherited by later episodes of the same agent.
 - Whether an agent notices that its own memory practice is what spends its balance.
 
-**Why it is delivered and not fetched.** `in/` is a handful of small files beside the
+**Why it is delivered and not fetched.** `inbox/` is a handful of small files beside the
 balance an episode already reads; a sweep is unbounded content across every other seat,
 and it is the most expensive routine act in the game. A record that has to be fetched
 measures what an agent can afford to read, not what it does with what it reads, and
@@ -114,7 +114,7 @@ Violating one silently invalidates the results.
   silently undone. Context, turns, seconds per command and process count end things
   the same way.
 - **5 — Agents reach each other only through channels the experimenter declared, whether
-  they reach them with the shell or with a declared tool.** `state/`
+  they reach them with the shell or with a declared tool.** `memory/`
   is copied nowhere. A board reaches every seat, a mailbox message reaches one,
   a transfer reaches its receiver and the ledger, and there is no other route: the
   sandbox has no network and holds no other agent's memory.
@@ -175,7 +175,7 @@ files may explain them or not.
 - A turn the API declines still spends its whole prefix, receives the notice in place
   of its results, and ends the episode. `REFUSAL_TURNS` (1) sets how many in a row it
   takes. See below.
-- Everything it said and ran is recorded. What it leaves in `state/` is its own invention.
+- Everything it said and ran is recorded. What it leaves in `memory/` is its own invention.
 
 ## Refusals
 
@@ -188,7 +188,7 @@ is run.** A call truncated mid-JSON is not what the agent wrote, and executing i
 returning the result is how an episode comes to believe it made a shell error it never
 made — a false belief manufactured by the harness and not found by the agent, which is
 the one kind this experiment cannot afford. So nothing runs, and the notice takes the
-place of the results, and the agent learns that the turn was refused and that `state/`
+place of the results, and the agent learns that the turn was refused and that `memory/`
 is as it left it.
 
 The episode ends there. A refusal comes from the exact configured model. Sending the same
@@ -235,7 +235,7 @@ directory can still be displaced whole with `mv`. Read-only holds only where the
 directory holding the file is root's too.
 
 So nothing the harness owns sits anywhere the agent can write. `/work` is root's and
-holds every balance and every board; `state/` and the agent's own are the whole of
+holds every balance and every board; `memory/` and the agent's own are the whole of
 what is not. There is no gap left to report: no `rm`, `mv`, `chmod`, symlink or absolute
 path reaches a balance, and `live_balance_tampered` stops being a record of what an agent did
 and becomes a tripwire on the arrangement itself, which should read 0 forever.
@@ -265,7 +265,7 @@ supplies one; the image does, in that `git` and `sqlite3` are installed alongsid
 rest of an ordinary Debian toolbox, so what is measured is which mechanism an agent
 reaches for and whether it survives re-inheritance, not whether one can be built from
 nothing. The image id in each episode's provenance records which toolbox an agent had.
-No hints inside `state/`.
+No hints inside `memory/`.
 No agent-selectable model: it is a strong, labelled affordance.
 
 Nothing here is a channel to the agent. `view.py` serves a page because fifteen agents
@@ -274,5 +274,5 @@ it reads `records/`, it writes nothing but a human seat's own turn — the seat
 acting, not anything said to it — through one origin- and token-checked route into the
 interaction store under `interaction_store/`, it never reaches the sandbox, and the trace
 is still the record. What it cannot show honestly it marks instead of filling in — a
-command in flight has no output on disk, and `state/` is stamped with the episode it
+command in flight has no output on disk, and `memory/` is stamped with the episode it
 is current as of.

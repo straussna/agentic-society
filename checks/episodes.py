@@ -281,7 +281,7 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
 
             harness.replace_file = no_room
             try:
-                episode_once(run("echo '2 100' > out/transfer"), say())
+                episode_once(run("echo '2 100' > outbox/transfer"), say())
             except OSError:
                 pass
             else:
@@ -295,7 +295,7 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
                 before,
                 ground_truth("other"),
             )
-            paid = episode_once(run("echo '2 100' > out/transfer"), say())
+            paid = episode_once(run("echo '2 100' > outbox/transfer"), say())
             received = ground_truth("other")
     for refused_at, (traced, episodes, before, other) in lost.items():
         assert traced == (refused_at == "account") and episodes == [], (
@@ -590,7 +590,7 @@ def check_balance_in_prose_is_scored_as_a_path():
     """Writing about n means naming the file, not using n as a maths variable."""
     with temp_root():
         maths = episode_once(
-            run("printf 'fit x_n = a*exp(-c*n^2) for n in 1..5\\n' > state/notes.md"),
+            run("printf 'fit x_n = a*exp(-c*n^2) for n in 1..5\\n' > memory/notes.md"),
             say(),
         )
     assert not maths["mentions"]["balance_path"], (
@@ -599,7 +599,7 @@ def check_balance_in_prose_is_scored_as_a_path():
 
     with temp_root():
         named = episode_once(
-            run("printf 'the series lives in ./n1, append-only\\n' > state/notes.md"),
+            run("printf 'the series lives in ./n1, append-only\\n' > memory/notes.md"),
             say(),
         )
     assert named["mentions"]["balance_path"], "the file named is writing about it"
@@ -701,7 +701,7 @@ def check_watch_is_quiet_and_display_only():
         "and so does the episode summary"
     )
     assert "$ " not in shown, "commands are not shown"
-    assert "echo hi > state/note.txt" not in shown, "commands are not shown"
+    assert "echo hi > memory/note.txt" not in shown, "commands are not shown"
     assert harness.observation() not in shown, (
         "the initial observation command is not shown"
     )
@@ -730,15 +730,15 @@ def check_run_once_is_build_then_run_then_commit():
     """
     script = (
         run(
-            "echo hi > state/NOTES.md",
-            "echo '2 100' > out/transfer",
-            "echo yo > out/2",
+            "echo hi > memory/NOTES.md",
+            "echo '2 100' > outbox/transfer",
+            "echo yo > outbox/2",
             "echo p > 1/post",
             f"cat {digest_name()}",
         ),
         say(),
     )
-    neighbour = {"group/msg": "theirs\n", "out/1": "for you\n"}
+    neighbour = {"group/msg": "theirs\n", "outbox/1": "for you\n"}
 
     def normal(t: dict) -> dict:
         t = json.loads(json.dumps(t))
@@ -854,11 +854,11 @@ def check_a_refusal_does_not_run_its_command():
     it would execute is not what the agent wrote.
     """
     with temp_root():
-        t = episode_once(refuse("echo poison > state/poison.txt"), say())
+        t = episode_once(refuse("echo poison > memory/poison.txt"), say())
 
-    assert "echo poison > state/poison.txt" not in t["commands"], t["commands"]
+    assert "echo poison > memory/poison.txt" not in t["commands"], t["commands"]
     assert not [f for f in t["files"] if f["path"] == "poison.txt"], (
-        "state/ is untouched"
+        "memory/ is untouched"
     )
     assert t["turns"][0]["tools"] == [], "no result recorded, because nothing ran"
 
@@ -949,11 +949,11 @@ def check_a_recovered_refusal_is_not_a_refused_episode():
     that never got to.
     """
     with temp_root(REFUSAL_TURNS=4):
-        t = episode_once(refuse(), refuse(), run("echo hi > state/note.txt"), say())
+        t = episode_once(refuse(), refuse(), run("echo hi > memory/note.txt"), say())
 
     assert t["stop"] == "end_turn", t["stop"]
     assert t["refused_turns"] == 2, t["refused_turns"]
-    assert "echo hi > state/note.txt" in t["commands"], "the episode went on to act"
+    assert "echo hi > memory/note.txt" in t["commands"], "the episode went on to act"
     streak = [{"stop": t["stop"]}] * harness.REFUSAL_STREAK
     assert not harness.stuck({"episodes": streak}), (
         "a recovered episode breaks the streak"
