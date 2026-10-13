@@ -113,8 +113,8 @@ exceed the core count; the default is sized for this machine.
 # Stopping an agent early
 
 One `Ctrl+C` ends the agent cleanly. It does not raise: it sets a flag that the
-turn loop reads where it reads the account floor, so the episode ends the way an
-exhausted budget ends it — the turn in flight finishes, its spend is committed,
+turn loop reads where it checks whether the balance is exhausted, so the episode ends
+the way an exhausted budget ends it — the turn in flight finishes, its spend is committed,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing

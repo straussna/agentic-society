@@ -5021,7 +5021,7 @@ def run_turns(
 
     try:
         for turn in range(1, s.max_turns + 1):
-            # The interrupt is read before the floor: when the experimenter
+            # The interrupt is read before the balance: when the experimenter
             # interrupted the agent, that is what ended the episode, and it is the
             # reason that ends the rest of the experiment too.
             if INTERRUPTING:
