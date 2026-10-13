@@ -791,6 +791,13 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         ballot = view.tree_view(c, "notes", 2)
         opened = view.file_view(c, "g02", "blackboard", "post.md", 1)
         not_a_vote_round = view.tree_view(c, "notes", 1)
+        voting = view.header(c)["phase"]
+        # The election that follows round 2, held as one seat's account records it.
+        path = harness.account_path("g02")
+        account = json.loads(path.read_text(encoding="utf-8"))
+        account["last_election"] = {"round": 2, "tally": {"1": 1, "2": 0}}
+        path.write_text(json.dumps(account), encoding="utf-8")
+        held = view.header(c)["phase"]
         with serving() as base:
             served = got(base, "/api/experiment/g/tree/blackboard?round=1")[1]
             served_file = got(
@@ -821,6 +828,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         "selected": 2,
     }
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
+    assert (voting, held) == ("vote", "vote complete"), (voting, held)
 
 
 # What a human seat is offered in the human history checks: a post and a message.

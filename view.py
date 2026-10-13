@@ -1035,13 +1035,16 @@ def header(exp: dict) -> dict:
         if isinstance(election.get("round"), int):
             elections[election["round"]] = election
     every = vote.get("every") if vote else None
-    phase = (
-        "vote complete"
-        if current_round in elections
-        else "vote"
-        if every and current_round and current_round % every == 0
-        else "discussion"
-    )
+    # The harness's rule for the round it announces: the last round of each vote cycle
+    # votes, unless the election that follows it is held already, as this seat's
+    # account or any other seat's records it.
+    position = (current_round - 1) % every + 1 if every and current_round else 0
+    if position != every:
+        phase = "discussion"
+    elif harness.election_held(first, account, current_round):
+        phase = "vote complete"
+    else:
+        phase = "vote"
     records = product.records(harness.SETTINGS.root, exp["experiment_id"])
     cost = product.cost(
         exp["seats"], account_of, stamp.get("cost") or {}, providers.is_interactive
