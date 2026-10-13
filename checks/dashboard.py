@@ -1927,6 +1927,7 @@ EARLIER_KEYS = {
     "termination_reason",
     "draw",
     "scores",
+    "phase",
 }
 
 
@@ -2132,8 +2133,9 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             {"round": 1, "label": "2", "reason": "voted out"}
         ], outcome
         assert outcome["reveal"] == {"at_completion": ["tie", "winners"]}, outcome
+        assert not keys_in(records["progress"]) & EARLIER_KEYS, records
         events = records["progress"]["events"]
-        assert [event["phase"] for event in events] == ["waiting_human", "completed"]
+        assert [event["stage"] for event in events] == ["waiting_human", "completed"]
         assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
 
         exp = view.experiment_of("g01")

@@ -626,7 +626,7 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
     assert tie["end_reason"] == "final_tie" and tie["tie"], tie
     assert tie["winners"] == tie["survivors"] == ["1", "2"], tie
     assert (
-        latest["phase"] == "completed" and latest["end_reason"] == "final_tie"
+        latest["stage"] == "completed" and latest["end_reason"] == "final_tie"
     ), latest
     assert resume_code == 0 and resumed == [], (
         f"no round follows the final tie: {resumed}"
@@ -1536,7 +1536,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
         }
         took = episodes_taken(ids)
     resumed = [
-        (event["phase"], event["round"])
+        (event["stage"], event["round"])
         for event in records["progress"]["events"][logged:]
     ]
     assert first == 0 and [(e["round"], e["label"]) for e in order] == [
@@ -1815,7 +1815,7 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
     prepared = [
         (event["round"], event.get("finishing"))
         for event in events
-        if event["phase"] == "preparing_round"
+        if event["stage"] == "preparing_round"
     ]
     assert prepared == [(1, None), (1, ["g03"]), (2, None)], prepared
 
@@ -2178,7 +2178,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
         records = progress.records(root, "seats")
         outcome = records["outcome"]
         stages = [
-            (event["phase"], event["round"]) for event in records["progress"]["events"]
+            (event["stage"], event["round"]) for event in records["progress"]["events"]
         ]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took

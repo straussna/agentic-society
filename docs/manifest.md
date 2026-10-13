@@ -180,8 +180,8 @@ Each experiment writes under `experiment_records/<experiment_id>/`: the progress
 `progress.jsonl`, one line per stage each round reaches as it reaches it, the last naming
 the round the rounds ended at, so its rounds never go back; `progress.json`, the latest of
 those; `outcome.json`; and, for a branch, `lineage.json`. `progress.json` and
-`outcome.json` record `version` 2, and a stage that waits on a human seat is
-`waiting_human`. A round that a stop counting
+`outcome.json` record `version` 2. Each line of the log names its `stage` and its
+`round`, and a stage that waits on a human seat is `waiting_human`. A round that a stop counting
 seats ends the rounds before has no line, and the round the cost ceiling ends them before
 has its preparation alone, which carries the spend that ended them. The outcome's
 `end_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,

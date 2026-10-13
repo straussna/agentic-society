@@ -103,7 +103,7 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
         progress.log_stage(root, "pilot", "preparing_round", 1)
         progress.log_stage(root, "pilot", "waiting_human", 1, {"agents": ["player"]})
         recorded = progress.records(root, "pilot")["progress"]
-        assert [event["phase"] for event in recorded["events"]] == [
+        assert [event["stage"] for event in recorded["events"]] == [
             "preparing_round",
             "waiting_human",
         ]
@@ -838,20 +838,20 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     assert code == 0 and capped == {"p1": 2, "p2": 2}, (code, capped)
     latest = records["progress"]["latest"]
     assert (
-        latest["phase"] == "cost_ceiling"
+        latest["stage"] == "cost_ceiling"
         and latest["end_reason"] == "cost_ceiling"
     ), latest
     stopped_at = [
         event
         for event in records["progress"]["events"]
-        if event["phase"] == "preparing_round"
+        if event["stage"] == "preparing_round"
     ][-1]
     assert (
         stopped_at["round"] == 3 and stopped_at["cost"]["autonomous_spend"] == 4 * cost
     ), stopped_at
     assert stopped_at["cost"]["ceiling_reached"], stopped_at
     assert [
-        (event["phase"], event["round"]) for event in records["progress"]["events"][-2:]
+        (event["stage"], event["round"]) for event in records["progress"]["events"][-2:]
     ] == [
         ("preparing_round", 3),
         ("cost_ceiling", 3),
@@ -875,7 +875,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     assert code == 0 and alone == {"p1": 1, "p2": 1}, (code, alone)
     latest = records["progress"]["latest"]
     assert (
-        latest["phase"] == "completed" and latest["end_reason"] == "one_remains"
+        latest["stage"] == "completed" and latest["end_reason"] == "one_remains"
     ), latest
     outcome = records["outcome"]
     assert outcome["end_reason"] == "one_remains", outcome
@@ -897,7 +897,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         records = progress.records(root, "both")
     assert code == 0 and both == {"p1": 1, "p2": 1}, (code, both)
     assert [
-        (event["phase"], event["round"]) for event in records["progress"]["events"][-2:]
+        (event["stage"], event["round"]) for event in records["progress"]["events"][-2:]
     ] == [
         ("preparing_round", 2),
         ("cost_ceiling", 2),
@@ -958,30 +958,30 @@ def check_progress_appends_each_event_and_reads_its_history_back():
             "latest": event,
         }, head
         lines = (base / "progress.jsonl").read_text(encoding="utf-8").splitlines()
-        assert [json.loads(line)["phase"] for line in lines] == [
+        assert [json.loads(line)["stage"] for line in lines] == [
             "preparing_round",
             "waiting_autonomous",
             "round_completed",
         ], lines
 
         with (base / "progress.jsonl").open("ab") as log:
-            log.write(b'{"at":"2026-01-01T00:00:00Z","pha')
+            log.write(b'{"at":"2026-01-01T00:00:00Z","sta')
         progress.log_stage(root, "pilot", "completed", 1)
         recorded = progress.records(root, "pilot")["progress"]
-        assert [event["phase"] for event in recorded["events"]] == [
+        assert [event["stage"] for event in recorded["events"]] == [
             "preparing_round",
             "waiting_autonomous",
             "round_completed",
             "completed",
         ], recorded
-        assert recorded["latest"]["phase"] == "completed" and {
+        assert recorded["latest"]["stage"] == "completed" and {
             "version",
             "experiment_id",
         } <= set(recorded), recorded
 
         single = progress.directory(root, "single")
         earlier = [
-            {"at": "2026-01-01T00:00:00Z", "phase": stage, "round": 1}
+            {"at": "2026-01-01T00:00:00Z", "stage": stage, "round": 1}
             for stage in ("preparing_round", "round_completed")
         ]
         progress.atomic(
@@ -996,7 +996,7 @@ def check_progress_appends_each_event_and_reads_its_history_back():
         assert progress.records(root, "single")["progress"]["events"] == earlier
         progress.log_stage(root, "single", "preparing_round", 2)
         assert [
-            (event["phase"], event["round"])
+            (event["stage"], event["round"])
             for event in progress.records(root, "single")["progress"]["events"]
         ] == [("preparing_round", 1), ("round_completed", 1), ("preparing_round", 2)]
         assert "events" not in json.loads(
@@ -1195,7 +1195,7 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
     def events(root: Path) -> list[tuple]:
         return [
             (
-                event["phase"],
+                event["stage"],
                 event["round"],
                 event.get("agents")
                 or event.get("active")

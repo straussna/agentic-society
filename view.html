@@ -844,14 +844,14 @@ function renderHeader() {
       <td class="num">${esc(giver)} ${esc(receiver)} ${num(amount)}</td>
       <td class="note">${esc(seatName(giver) || "")} → ${esc(seatName(receiver) || "")}</td></tr>`).join("");
   const latest = h.progress && h.progress.latest;
-  const terminal = latest && ["completed", "interrupted", "cost_ceiling"].includes(latest.phase);
+  const terminal = latest && ["completed", "interrupted", "cost_ceiling"].includes(latest.stage);
   const result = terminal ? h.outcome : null;
   const lineage = h.lineage;
   const productState = result
     ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
        <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
          : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
-    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc(latest.phase.replaceAll("_", " "))}</div></div>
+    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc(latest.stage.replaceAll("_", " "))}</div></div>
        <div class="result">round ${num(latest.round)}${lineage ? ` · branch of ${esc(lineage.source_experiment_id)} at round ${num(lineage.source_round)}` : ""}</div></div>` : "";
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
     ${productState}

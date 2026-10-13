@@ -172,14 +172,14 @@ def log_stage(
     """Record that the experiment has reached `stage`, and return the event.
 
     The event is appended to progress.jsonl, and progress.json is rewritten to hold the
-    header and this event as the latest, with the stage under its "phase" key. A
+    header and this event as the latest, with the stage under its "stage" key. A
     progress.json that does not read stops the write, and is left as it is.
     """
     if stage not in STAGES:
         raise ValueError(f"unknown progress stage {stage!r}")
     base = directory(runtime_root, experiment_id)
     with _LOCK:
-        event = {"at": now(), "phase": stage, "round": round, **(detail or {})}
+        event = {"at": now(), "stage": stage, "round": round, **(detail or {})}
         previous = read(base / "progress.json") or {}
         log = base / "progress.jsonl"
         # A progress.json that holds its own events list starts the log with them.
@@ -319,9 +319,10 @@ def revealed(
     }
 
 
-# What a version-1 progress or outcome record calls a field, a stage or an end reason
-# that version 2 names otherwise, and the version-2 name; None for an outcome field
-# version 2 does not keep.
+# What a version-1 progress or outcome record calls a key, a field, a stage or an end
+# reason that version 2 names otherwise, and the version-2 name; None for an outcome
+# field version 2 does not keep.
+EVENT_1_KEYS = {"phase": "stage", "termination_reason": "end_reason"}
 OUTCOME_1_FIELDS: dict[str, str | None] = {
     "termination_reason": "end_reason",
     "draw": "tie",
@@ -332,14 +333,11 @@ END_REASONS_1 = {"all_eliminated": "none_in_play"}
 
 
 def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
-    """A version-1 progress event under the version-2 names of its stage and its end
-    reason."""
-    out = {
-        ("end_reason" if key == "termination_reason" else key): value
-        for key, value in event.items()
-    }
-    if "phase" in out:
-        out["phase"] = STAGES_1.get(out["phase"], out["phase"])
+    """A version-1 progress event under the version-2 names of its keys, its stage and
+    its end reason."""
+    out = {EVENT_1_KEYS.get(key, key): value for key, value in event.items()}
+    if "stage" in out:
+        out["stage"] = STAGES_1.get(out["stage"], out["stage"])
     if "end_reason" in out:
         out["end_reason"] = END_REASONS_1.get(out["end_reason"], out["end_reason"])
     return out
