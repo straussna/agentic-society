@@ -1928,7 +1928,7 @@ def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
     assert election["electors"] == ["1", "2", "3"], election
     assert election["voted_out"] == "2" and results["g03"] == election, results
     assert results["g04"] is None and out["g04"] is None, (
-        "g04 stands in no election and is not out of play"
+        "g04 stands in no election and its account is not out of play"
     )
     assert "received the most votes (2) in round 6" in out["g02"], out
 
