@@ -678,6 +678,9 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
     second = head["seat_tiles"][1]
     assert second["out_reason"] == "did not vote in round 5"
     assert second["eliminated"]["round"] == 5
+    first = head["seat_tiles"][0]
+    assert first["eliminated"] is None and not first["exhausted"], first
+    assert not first["unseated"] and not first["behind"], first
 
 
 def check_the_view_shows_every_seat_side_by_side():
@@ -1128,6 +1131,10 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         "a seat a whole round behind has been asked and passed"
     )
     assert past_seats["g02"]["pending"], "g02 acted in round 2 and is still to come"
+    # Behind is the seat the run seats in no further round, and an empty balance is
+    # exhausted whether or not the seat is still to come.
+    assert past_seats["g03"]["behind"] and not past_seats["g02"]["behind"], past_seats
+    assert all(s["exhausted"] for s in [*open_seats.values(), *past_seats.values()])
 
 
 def check_the_view_reads_a_message_out_of_two_outboxes():
@@ -1721,7 +1728,7 @@ def check_the_page_exposes_ephemeral_round_snapshots():
     """Blackboards and ballots expose live and committed round choices as buttons."""
     page = view.PAGE
     assert 'class="snapshotbar"' in page and 'class="snapshots"' in page
-    assert '"Blackboard round chats" : "Ballot vote-round snapshots"' in page
+    assert '"Board round snapshots" : "Ballot vote-round snapshots"' in page
     assert 'aria-pressed="${d.history.selected == null}"' in page
     assert "S.treeRound = {}" in page, "changing experiments clears the chosen snapshot"
     assert "&round=${encodeURIComponent(S.treeRound[channel])}" in page

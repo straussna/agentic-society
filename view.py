@@ -927,6 +927,7 @@ def seat_row(
     going = live_state(agent, running, account)
     table, _ = agent_environment(last, agent, account)
     mine = [r for r in rows if r["agent"] == agent]
+    played = mine[-1]["round"] if mine else 0
     out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
@@ -935,7 +936,7 @@ def seat_row(
         running is None
         and not account.get("eliminated")
         and latest.get("stop") not in harness.STOPS_THE_AGENT
-        and (mine[-1]["round"] if mine else 0) == current_round - 1
+        and played == current_round - 1
     )
     return {
         "seat": seat,
@@ -957,9 +958,8 @@ def seat_row(
         "live_turns": len(going["turns"]),
         "live_balance": going["balance"],
         "committed": len(episodes),
-        "round": mine[-1]["round"] if mine else 0,
-        "acted": bool(mine and mine[-1]["round"] == current_round)
-        or running is not None,
+        "round": played,
+        "acted": bool(mine and played == current_round) or running is not None,
         "pending": pending,
         "preparing": bool(
             account
@@ -967,8 +967,14 @@ def seat_row(
             and running is None
             and (account.get("experiment") or {}).get("manifest_sha256")
         ),
+        # The three ways a seat leaves the experiment, apart: eliminated by a vote,
+        # exhausted with its balance gone, and unseated by the run, which starts no
+        # further episode on it after a stop in STOPS_THE_AGENT, after why_out's
+        # other reason, or once it is more than a round behind.
         "out_reason": out_reason,
         "eliminated": account.get("eliminated"),
+        "exhausted": bool(account) and harness.spent_out(account),
+        "behind": running is None and played < current_round - 1,
         "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
         # in flight. A transfer, a share taken and a floor all move the balance

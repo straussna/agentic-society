@@ -445,8 +445,6 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 .input-card pre { margin:0; padding:11px; max-height:none; overflow:visible; white-space:pre-wrap; }
 .input-card.error { border-color:var(--bad); }
 .human-chat { border:1px solid var(--line); border-radius:7px; background:var(--bg); overflow:hidden; }
-.human-chat-head { display:flex; align-items:center; gap:9px; padding:9px 11px; border-bottom:1px solid var(--line); color:var(--accent);
-  background:var(--raise); font:600 12px/1.25 var(--sans); letter-spacing:.03em; }
 .human-chat-log { height:420px; overflow-y:auto; padding:12px; background:linear-gradient(180deg,var(--bg),var(--panel)); }
 .private-chat-list { display:grid; gap:9px; }
 .private-thread { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--bg); }
@@ -700,7 +698,7 @@ function renderPicks() {
   const el = document.getElementById("picks");
   // One set is not a choice between sets.
   if (S.experiments.length < 2) { el.innerHTML = ""; return; }
-  const why = (c) => c.seated ? `${c.seats.length} seated` : "no seating: no blackboard or mailbox between them";
+  const why = (c) => c.seated ? `${c.seats.length} seated` : "no seating: no board or mailbox between them";
   el.innerHTML = S.experiments.map(c => `<button class="filt ${c.experiment_id === S.experiment ? "on" : ""}"
       data-c="${esc(c.experiment_id)}" aria-pressed="${c.experiment_id === S.experiment}" title="${esc(why(c))}">${esc(c.experiment_id)}<em>${c.seats.length}</em></button>`).join("");
   el.querySelectorAll(".filt").forEach(b => b.onclick = () => pickExperiment(b.dataset.c));
@@ -729,23 +727,28 @@ function tileHtml(s, i) {
   const terms = [s.model ? `<span class="tag" title="provider and model">${esc(`${s.provider || ""}/${s.model}`.replace(/^\//, ""))}</span>` : "",
     s.starter_files ? `<span class="tag starter" title="${esc(s.starter_files)}">starter · ${esc(shortPath(s.starter_files))}</span>` : ""].filter(Boolean).join("");
   const state = s.pending_human
-      ? `<span class="tag warn"><i class="dot"></i>waiting for human</span>`
+      ? `<span class="tag warn"><i class="dot"></i>waiting for a human</span>`
     : running(s)
       ? `<span class="tag live"><i class="dot"></i>ep${s.running_episode} · ${s.live_turns}t · derived</span>`
     : s.running_episode != null
       ? `<span class="tag warn" title="no trace was ever written for it">ep${s.running_episode} unfinished · ${ago(s.live_age)}</span>`
     : s.eliminated
       ? `<span class="tag bad" title="${esc(s.eliminated.reason)}">eliminated · r${s.eliminated.round}</span>`
+    : s.exhausted
+      ? `<span class="tag bad" title="${esc(s.out_reason)}">exhausted</span>`
     : s.out_reason
-      ? `<span class="tag bad" title="${esc(s.out_reason)}">out of the experiment</span>`
+      ? `<span class="tag bad" title="${esc(s.out_reason)}">unseated</span>`
+    : s.unseated
+      ? `<span class="tag bad" title="its last episode ended on ${esc(s.stop)}, after which the run starts no further episode on it">unseated</span>`
     : s.preparing
       ? `<span class="tag warn"><i class="dot"></i>preparing first round</span>`
     : s.pending
       ? `<span class="tag" title="the round is still going and this seat has not acted yet">not yet this round</span>`
-    : !s.acted
-      ? `<span class="tag" title="nothing left to spend, or its last episodes ended in refusal; either way it is off the table">out of the experiment</span>`
+    : s.behind
+      ? `<span class="tag bad" title="more than a round behind, so the run seats it in no further round">unseated</span>`
       : `<span>ep${s.committed} committed</span>`;
-  return `<div class="tile ${s.out_reason || (!s.acted && !s.pending && !s.preparing) ? "idle" : ""}">
+  const idle = s.eliminated || s.out_reason || s.unseated || s.behind;
+  return `<div class="tile ${idle ? "idle" : ""}">
     <div class="k"><span style="color:${inkOf(i)}">${s.seat == null ? "agent" : esc(nameOf(s.seat))}</span>
       <b>${esc(s.agent)}</b></div>
     <div class="v ${balance < 0 ? "neg" : ""}">${num(balance)}</div>
@@ -811,7 +814,7 @@ function renderHeader() {
     (h.schedule ? ` · ${esc(h.schedule)}` : "") +
     (h.every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.phase)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
-    (h.seated ? "" : ` · no seating: these agents have no blackboard or mailbox between them`);
+    (h.seated ? "" : ` · no seating: these agents have no board or mailbox between them`);
   const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.balance);
   const remaining = current.reduce((sum, n) => sum + Number(n || 0), 0);
   const initial = h.seat_tiles.reduce((sum, s) => sum + Number(s.initial || 0), 0);
@@ -1137,8 +1140,8 @@ function keyOf(channel, agent) {
 function snapshotHtml(d) {
   if (!d.history) return "";
   const publicChat = d.history.kind === "round";
-  return `<div class="snapshotbar"><span class="lbl">${publicChat ? "Chats" : "Votes"}</span>
-    <div class="snapshots" role="group" aria-label="${publicChat ? "Blackboard round chats" : "Ballot vote-round snapshots"}">
+  return `<div class="snapshotbar"><span class="lbl">${publicChat ? "Posts" : "Votes"}</span>
+    <div class="snapshots" role="group" aria-label="${publicChat ? "Board round snapshots" : "Ballot vote-round snapshots"}">
       <button class="chip ${d.history.selected == null ? "on live" : ""}" data-round="" aria-pressed="${d.history.selected == null}">Live</button>
       ${d.history.rounds.map(r => `<button class="chip ${d.history.selected === r ? "on" : ""}"
         data-round="${r}" aria-pressed="${d.history.selected === r}">${publicChat ? "" : "vote "}r${r}</button>`).join("")}
@@ -1171,7 +1174,7 @@ function renderPublicChat(channel) {
     [m.c.agent, m.c.committed, m.f.path, m.f.stamp, m.got && m.got.stamp])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  const roundName = selected == null ? "Live blackboard" : `Round ${selected} blackboard`;
+  const roundName = selected == null ? "Live board" : `Round ${selected} board`;
   const participants = messages.map(m => `<span class="participant" style="color:${m.color}"
     title="${esc(m.c.agent)}">${esc(m.c.seat == null ? m.c.agent.slice(0,2) : m.c.seat)}</span>`).join("");
   const posts = messages.map(({c, f, got, color}) => {
@@ -1185,10 +1188,10 @@ function renderPublicChat(channel) {
   }).join("");
   const missing = d.columns.filter(c => !c.files.length).map(c => nameOf(c.seat)).filter(Boolean);
   const status = messages.length ? `${messages.length} post${messages.length === 1 ? "" : "s"} · ${
-    new Set(messages.map(m => m.c.agent)).size} participant${new Set(messages.map(m => m.c.agent)).size === 1 ? "" : "s"}` : "no posts";
+    new Set(messages.map(m => m.c.agent)).size} seat${new Set(messages.map(m => m.c.agent)).size === 1 ? "" : "s"}` : "no posts";
   redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread public-chat" aria-label="${esc(roundName)}">
     <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span><span class="note">${status}</span></div>
-      <div class="participants" aria-label="Participants who posted">${participants}</div></div>
+      <div class="participants" aria-label="Seats that posted">${participants}</div></div>
     <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted in this chat.</div>`}
       ${missing.length && selected != null ? `<div class="sys">No post from ${missing.map(esc).join(", ")}</div>` : ""}</div>
     </section></div>`);
@@ -1401,7 +1404,7 @@ function drawTranscript() {
   d.episodes.forEach(s => { if (s.round) byRound[s.round] = s; });
   const rounds = Array.from({ length: last }, (_, i) => i + 1).map(r => {
     const s = byRound[r];
-    if (!s) return `<button class="chip off" title="it was out of the experiment by this round">r${r}</button>`;
+    if (!s) return `<button class="chip off" title="no episode of this agent's is on record for this round">r${r}</button>`;
     const classes = [s.episode === S.episode ? "on" : "", s.live && running(d) ? "live" : "",
       s.live && !running(d) ? "halt" : "", s.unseated ? "halt" : ""].filter(Boolean).join(" ");
     const state = esc(s.stop || (running(d) ? "running" : "unfinished"));
@@ -1649,7 +1652,7 @@ function fieldHtml(name, schema, required, blank = false, displayName = name) {
 }
 
 function actionName(tool) {
-  return ({remember:"Private memory", send_message:"Private messages", post_to_board:"Public post",
+  return ({remember:"Memory", send_message:"Mailbox", post_to_board:"Post to board",
     vote_to_eliminate:"Vote to eliminate"})[tool.name] || tool.name.replaceAll("_", " ");
 }
 
@@ -1657,7 +1660,7 @@ function actionHtml(tool, index) {
   const schema = tool.input_schema || {}, properties = schema.properties || {};
   if (Array.isArray((properties.to || {}).enum) && properties.body) {
     const fields = properties.to.enum.map(recipient => `<label>Message to ${esc(recipient)}
-      <textarea rows="3" data-recipient="${esc(recipient)}" placeholder="Optional private message"></textarea></label>`).join("");
+      <textarea rows="3" data-recipient="${esc(recipient)}" placeholder="Optional message"></textarea></label>`).join("");
     return `<section class="tool-form" data-tool-index="${index}" data-message-tool><b>${esc(actionName(tool))}</b>
       <div class="note">${esc(tool.description)}</div><div class="message-fields">${fields}</div></section>`;
   }
@@ -1698,7 +1701,7 @@ function renderPeerStatus(head, humanAgent) {
       }
       return `<span class="peer-badge ${state}" title="${esc(seat.label)} is ${label}"><i class="dot"></i>${esc(seat.label)} <small>${label}</small></span>`;
     }).join("");
-  el.innerHTML = badges || `<span class="note">No other active participants.</span>`;
+  el.innerHTML = badges || `<span class="note">No other seat in play.</span>`;
 }
 
 function chatInitials(label) {
@@ -1742,7 +1745,7 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
     if (!message) {
       log.insertAdjacentHTML("beforeend", `<article class="chat-message mine pending-message" data-human-draft>
         <span class="chat-avatar" aria-hidden="true">YO</span><div class="chat-bubble"><b>You${destination ? ` → ${esc(destination)}` : ""}
-        <span class="chat-draft">pending this episode</span></b><pre></pre></div></article>`);
+        <span class="chat-draft">pending this turn</span></b><pre></pre></div></article>`);
       message = log.querySelector("[data-human-draft]");
     }
     message.querySelector("pre").textContent = field.value;
@@ -1780,7 +1783,7 @@ function renderHumanHistory(history, humanAgent, tiles, currentEpisode) {
     const events = privateEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
     return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
       <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
-      <div class="human-chat-log" role="log" aria-label="Private chat with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredEpisode)}</div>
+      <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredEpisode)}</div>
       ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
@@ -1816,7 +1819,7 @@ function renderInteraction(request) {
   const el = document.getElementById("human");
   if (!request) {
     if (S.interactionId !== null || (!el.innerHTML && S.humanMode))
-      el.innerHTML = S.humanMode ? `<h2>Human view</h2><div class="note">No human episode is waiting. This view will update when an interactive provider request arrives.</div>` : "";
+      el.innerHTML = S.humanMode ? `<h2>Human view</h2><div class="note">No human turn is waiting. This view will update when an interactive provider request arrives.</div>` : "";
     S.interaction = null; S.interactionId = null; S.interactionSubmitted = false;
     return;
   }
@@ -1830,18 +1833,18 @@ function renderInteraction(request) {
     tool.name === "send_message" || tool.name === "post_to_board" ? "" : actionHtml(tool, index)).join("");
   el.innerHTML = `<h2>${esc(request.label)} · episode ${request.episode}</h2>
     <div class="note">This is your private view.</div>
-    <div id="peer-status" class="peer-strip" aria-label="Other participant status"><span class="note">Loading participant status&hellip;</span></div>
+    <div id="peer-status" class="peer-strip" aria-label="Other seats"><span class="note">Loading the other seats&hellip;</span></div>
     <div class="human-grid">
     <div class="human-column"><details class="prompt-details"><summary>System instructions</summary><pre>${esc(request.system_prompt || "(none)")}</pre></details>
-      <h3>Blackboard</h3><section class="human-chat" ${postIndex >= 0 ? `data-tool-index="${postIndex}"` : ""}><div class="human-chat-head">Public room</div>
-        <div id="human-board" class="human-chat-log" role="log" aria-label="Blackboard history"><div class="empty">Loading history&hellip;</div></div>
+      <h3>Board</h3><section class="human-chat" ${postIndex >= 0 ? `data-tool-index="${postIndex}"` : ""}>
+        <div id="human-board" class="human-chat-log" role="log" aria-label="Board"><div class="empty">Loading history&hellip;</div></div>
         ${postIndex >= 0 ? `<div class="chat-compose"><textarea rows="2" data-field="body" data-type="string"
-          aria-label="Post to Blackboard" placeholder="Post to Blackboard…"></textarea></div>` : ""}</section>
-      <h3>Private chats</h3><div id="human-private" class="private-chat-list" aria-label="Private conversations"
+          aria-label="Post to board" placeholder="Post to board…"></textarea></div>` : ""}</section>
+      <h3>Mailbox</h3><div id="human-private" class="private-chat-list" aria-label="Mailbox"
         ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
-      <h3>Episode information</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
-    <div class="human-column"><h3>Episode actions</h3>${tools || `<div class="note">Use the chat composers, then submit the episode.</div>`}
-      <div class="human-actions"><button id="submit-interaction">Submit episode</button>
+      <h3>Turn input</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
+    <div class="human-column"><h3>Turn actions</h3>${tools || `<div class="note">Use the composers, then submit the turn.</div>`}
+      <div class="human-actions"><button id="submit-interaction">Submit turn</button>
       <span class="note" id="interaction-state">ready</span></div></div></div>`;
   document.getElementById("submit-interaction").onclick = submitInteraction;
 }
