@@ -1532,8 +1532,8 @@ COST_WORDS = re.compile(
 # Whole numbers only, so a balance of 994750 does not match inside 1994750.
 DIGIT_RUN = re.compile(r"-?\d+")
 
-# The whole of what an agent may say to the harness. A seat and an amount, both
-# bare decimals, in the register everything else it reads is written in.
+# The whole of what an agent may say to the harness. A label and an amount, the
+# amount a bare decimal, in the register everything else it reads is written in.
 TRANSFER_LINE = re.compile(r"^(?P<label>\S+) (?P<amount>\d+)$")
 
 
