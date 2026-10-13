@@ -2161,9 +2161,10 @@ def plant_starter_files(
     planted = account.get("starter_files_landed")
     if planted and name and planted["sha256"] != files_sha256(name):
         raise SystemExit(
-            f"agent {agent} received starter_files {planted['name']!r} ({planted['sha256'][:12]}) at episode "
-            f"{planted['episode']}, and files/{name} now has sha256 {files_sha256(name)[:12]}. "
-            f"Episodes either side of that are not one experiment; start a new agent"
+            f"agent {agent} received starter_files {planted['name']!r} "
+            f"({planted['sha256'][:12]}) at episode {planted['episode']}, and "
+            f"files/{name} now has sha256 {files_sha256(name)[:12]}. Episodes either "
+            f"side of that are not one experiment; start a new agent"
         )
     if planted or not name or account["remaining"] > below:
         return None
@@ -2221,10 +2222,11 @@ def guard_sources(
         was = seen.get(ch.name)
         if was and was["sha256"] != sha256:
             raise SystemExit(
-                f"agent {agent} first read channel {ch.name!r} from files/{was['source']} "
-                f"({was['sha256'][:12]}) at episode {was['episode']}, and files/{ch.source} now "
-                f"has sha256 {sha256[:12]}. Episodes either side of that are not one experiment; "
-                f"start a new agent"
+                f"agent {agent} first read channel {ch.name!r} from "
+                f"files/{was['source']} ({was['sha256'][:12]}) at episode "
+                f"{was['episode']}, and files/{ch.source} now has sha256 "
+                f"{sha256[:12]}. Episodes either side of that are not one "
+                f"experiment; start a new agent"
             )
         if not was:
             seen[ch.name] = {"source": ch.source, "sha256": sha256, "episode": index}
@@ -6350,7 +6352,8 @@ def start(
         if system_sha256(text) != expected:
             reject(
                 f"{name} drifted from its pinned sha256; if the change was meant, run "
-                f"`py -3 harness.py --print-system` and paste the sha256 into {name}_SHA256."
+                f"`py -3 harness.py --print-system` and paste the sha256 into "
+                f"{name}_SHA256."
             )
     s, cfg = read_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")
@@ -6672,9 +6675,8 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
         sha256 = system_sha256(text)
         drifted += [name] if sha256 != expected else []
         print(f"{name}: {text!r}")
-        print(
-            f"{len(text)} bytes  sha256={sha256}  {'ok' if sha256 == expected else 'DRIFTED'}"
-        )
+        verdict = "ok" if sha256 == expected else "DRIFTED"
+        print(f"{len(text)} bytes  sha256={sha256}  {verdict}")
 
     s, cfg = read_config(SETTINGS, config)
     print()
@@ -6906,7 +6908,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--print-files",
         metavar="NAME",
-        help="print the listing and sha256 of a directory under files/; starts no episode",
+        help=(
+            "print the listing and sha256 of a directory under files/; "
+            "starts no episode"
+        ),
     )
     ap.add_argument(
         "--fork-from",

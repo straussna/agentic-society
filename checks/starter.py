@@ -295,7 +295,8 @@ def check_starter_files_config_is_validated():
                 harness.SETTINGS.starter_files,
                 harness.SETTINGS.starter_files_below,
             ) == ("ok", 400_000)
-        # The sha256 covers paths as well as bytes, so a rename is a different set of starter files.
+        # The sha256 covers paths as well as bytes, so a rename is a different set of
+        # starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")
         assert harness.files_sha256("ok") != was, (
