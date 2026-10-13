@@ -120,7 +120,7 @@ Violating one silently invalidates the results.
   sandbox has no network and holds no other agent's memory.
 - **6 — All spend is counted exactly and the accounts always balance.** Integer
   micro-dollars, summed from provider-normalized itemized charges, so
-  `sum(spent) == initial - remaining` holds exactly. Metering money and not tokens keeps
+  `sum(spent) == budget - balance` holds exactly. Metering money and not tokens keeps
   caching, prompt structure, and model choice live strategies instead of collapsing to
   "do less".
 - **7 — Every episode records what the agent saw, said, did, and left behind.** The

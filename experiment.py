@@ -529,10 +529,9 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
             f"agent {agent}: memory_from names {source!r} episode {episode}, but {source_path} does not exist"
         )
     trace = json.loads(source_path.read_text(encoding="utf-8"))
-    if trace.get("trace_version") != harness.TRACE_VERSION:
+    if why := harness.stale(trace, "trace"):
         raise SystemExit(
-            f"agent {agent}: memory_from source {source!r} episode {episode} has "
-            f"trace version {trace.get('trace_version')!r}, expected {harness.TRACE_VERSION}"
+            f"agent {agent}: memory_from source {source!r} episode {episode} has {why}"
         )
     if not trace.get("state_saved"):
         raise SystemExit(
@@ -562,7 +561,7 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
         matches = [
             record
             for record in trace.get("files", [])
-            if record.get("role", "own") == "own"
+            if (not record.get("planted") or record.get("starter"))
             and record.get("channel") == source_channel.name
             and record.get("path", "").endswith(f"/{MEMORY_FILE}")
         ]
@@ -679,16 +678,16 @@ class Totals(TypedDict):
     received: int
     rebated: int
     debited: int
-    forgiven: int
+    floored: int
     penalised: dict[str, int]
 
 
 def branch_totals(
     account: harness.Account, episode: int, received: int
 ) -> tuple[list[int], Totals] | None:
-    """The series and running totals an account stood on as the round of its
-    `episode` ended, the ledger having paid it `received` by then; None where its
-    series does not bear that out.
+    """The balance history and running totals an account stood on as the round of
+    its `episode` ended, the ledger having paid it `received` by then; None where its
+    balance history does not bear that out.
 
     Inside an episode, what moves the balance is in its record: its turns, what its
     transfer rebated or debited, each channel's penalty, the floor, and a credit from a
@@ -708,40 +707,43 @@ def branch_totals(
         "received": 0,
         "rebated": 0,
         "debited": 0,
-        "forgiven": 0,
+        "floored": 0,
         "penalised": {},
     }
-    series, episodes = account["series"], account["episodes"]
+    history, episodes = account["balance_history"], account["episodes"]
 
-    def floored(at: int) -> bool:
-        return series[at - 1] < 0 < series[at] - series[at - 1]
+    def by_floor(at: int) -> bool:
+        return history[at - 1] < 0 < history[at] - history[at - 1]
 
     def between(at: int) -> None:
-        totals["forgiven" if floored(at) else "received"] += series[at] - series[at - 1]
+        moved = history[at] - history[at - 1]
+        totals["floored" if by_floor(at) else "received"] += moved
 
     ended = 0
     for earlier in episodes[:episode]:
-        for at in range(ended + 1, earlier["series_from"] + 1):
+        for at in range(ended + 1, earlier["balance_from"] + 1):
             between(at)
         transfer = earlier.get("transfer") or {}
         totals["sent"] += int(transfer.get("amount", 0))
         totals["rebated"] += int(transfer.get("rebate", 0))
         totals["debited"] += int(transfer.get("debit", 0))
-        totals["received"] += int(earlier.get("received", 0))
-        totals["forgiven"] += int(earlier.get("forgiven", 0))
+        totals["received"] += int(earlier.get("received_this_episode", 0))
+        totals["floored"] += int(earlier.get("floored", 0))
         for name, record in (earlier.get("channels") or {}).items():
             penalty = int(record.get("penalty", 0))
             if penalty:
                 totals["penalised"][name] = totals["penalised"].get(name, 0) + penalty
-        ended = earlier["series_to"]
+        ended = earlier["balance_to"]
     last = (
-        episodes[episode]["series_from"] if episode < len(episodes) else len(series) - 1
+        episodes[episode]["balance_from"]
+        if episode < len(episodes)
+        else len(history) - 1
     )
     held = max(
         (
             at
             for at in range(ended + 1, last + 1)
-            if floored(at) or series[at] < series[at - 1]
+            if by_floor(at) or history[at] < history[at - 1]
         ),
         default=ended,
     )
@@ -750,7 +752,7 @@ def branch_totals(
         between(ended)
     if totals["received"] != received:
         return None
-    return series[: ended + 1], totals
+    return history[: ended + 1], totals
 
 
 def branch_experiment(
@@ -786,6 +788,8 @@ def branch_experiment(
             )
         except OSError, ValueError:
             raise SystemExit(f"{entry['id']} has no readable source account") from None
+        if why := harness.stale(account, "account"):
+            raise SystemExit(f"{entry['id']} cannot be branched from: it has {why}")
         episode = min(at_round, len(account.get("episodes", [])))
         if episode < at_round and harness.why_not_in_play(account) is None:
             raise SystemExit(f"{entry['id']} did not reach completed round {at_round}")
@@ -801,6 +805,11 @@ def branch_experiment(
         trace = json.loads(
             harness.trace_path(entry["id"], episode).read_text(encoding="utf-8")
         )
+        if why := harness.stale(trace, "trace"):
+            raise SystemExit(
+                f"{entry['id']} cannot be branched from at episode {episode}: "
+                f"it has {why}"
+            )
         if harness.rebuildable(trace, entry["id"], episode) is None:
             raise SystemExit(f"{entry['id']} cannot be rebuilt at round {at_round}")
         sources.append((seat, entry, account, episode))
@@ -818,7 +827,8 @@ def branch_experiment(
         if (seat_totals := branch_totals(parent, episode, paid)) is None:
             raise SystemExit(
                 f"{entry['id']} cannot be carried as it stood at round {at_round}: "
-                f"its series does not hold the {paid} the ledger paid it by then"
+                f"its balance history does not hold the {paid} the ledger paid it "
+                "by then"
             )
         totals_by_seat[seat] = seat_totals
     # The elections held by the round, by round, from every seat's history. Each fork
@@ -839,8 +849,8 @@ def branch_experiment(
         for seat, entry, parent, episode in sources:
             new = new_ids[seat]
             created.append(new)
-            series, totals = totals_by_seat[seat]
-            if harness.fork(entry["id"], episode, new, series):
+            history, totals = totals_by_seat[seat]
+            if harness.fork(entry["id"], episode, new, history):
                 raise SystemExit(f"could not fork {entry['id']}")
             account = harness.load_account(new)
             account.update(**totals)
@@ -877,7 +887,7 @@ def branch_experiment(
                 "label": manifest["labels"][seat],
                 "provider": account["provider"],
                 "model": account["model"],
-                "budget": account["initial"],
+                "budget": account["budget"],
                 "system_prompt": account.get("system_prompt", ""),
                 "quality_tier": (account.get("product") or {}).get(
                     "quality_tier", "standard"
@@ -954,8 +964,12 @@ def preparer(
         seat = next(s for s, a in seats.items() if a == agent)
         account["seat"] = seat
         account["label"] = named[seat]
-        account["peers"] = {"seen": seats, "labels": named, "presentation": list(seats)}
-        account["experiment"] = {
+        account["seating"] = {
+            "agent_by_seat": seats,
+            "labels": named,
+            "seat_order": list(seats),
+        }
+        account["experiment_stamp"] = {
             **stamp,
             "memory_from": account.get("memory_inherited"),
         }
@@ -1213,14 +1227,14 @@ def take_back(agent: str, amount: int) -> None:
     left as its close did, so it stands where it would had the credit never reached it."""
     account = harness.load_account(agent)
     harness.credit_account(account, -amount)
-    forgiven = (
-        -account["remaining"]
-        if harness.SETTINGS.floor_at_zero and account["remaining"] < 0
+    floored = (
+        -account["balance"]
+        if harness.SETTINGS.floor_at_zero and account["balance"] < 0
         else 0
     )
-    harness.adjust(account, forgiven)
-    if forgiven:
-        account["forgiven"] = account.get("forgiven", 0) + forgiven
+    harness.adjust(account, floored)
+    if floored:
+        account["floored"] = account.get("floored", 0) + floored
     harness.save_account(agent, account)
 
 
@@ -1563,8 +1577,8 @@ def resolve_vote(
             (label_by_agent[agent] for agent in candidates if agent in voted_out), ""
         ),
         "top_votes": top,
-        "top_tied": len(leaders) > 1,
-        "remaining": [
+        "tied": len(leaders) > 1,
+        "candidates_left": [
             label_by_agent[agent] for agent in candidates if agent not in eliminated
         ],
     }
@@ -1652,7 +1666,7 @@ def concluded(
         }
         if all(
             result.get("round") == round
-            and result.get("top_tied")
+            and result.get("tied")
             and not result.get("interrupted")
             and label_by_agent[agent] in result.get("electors", result.get("tally", {}))
             for agent, result in results.items()

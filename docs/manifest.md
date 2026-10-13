@@ -98,7 +98,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Receipt** | A status file planted for the next episode of the transfer channel's writer, itemizing the settlement of the episode before. Optional |
 | **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. A balance at zero is exhausted either way |
 | **Settlement** | What an episode's end does to the balance, in a fixed order: the turns' spend, the transfer and its rebate, and each channel's silence penalty in declaration order, which the settle step applies; then the floor at zero, which closing applies. Recorded in the trace and itemized in a receipt |
-| **Reconciliation** | The identity every account satisfies once an episode is committed: `remaining == initial - spent + rebated + received - debited - sum(penalised) + forgiven`. A receipt states it for the episode it covers |
+| **Reconciliation** | The identity every account satisfies once an episode is committed: `balance == budget - spent + rebated + received - debited - sum(penalised) + floored`. A receipt states it for the episode it covers |
 
 ### What is recorded
 
@@ -232,7 +232,7 @@ experimenter record; the table is the declarative policy a human-facing display 
 
 Seat order determines identity, presentation and settlement order. Every agent sees
 agents and records in that same order, and every episode records it as
-`presentation_order` in provenance.
+`seat_order` in provenance.
 
 ## 3. Settings
 
@@ -982,20 +982,23 @@ Every rejection is a `SystemExit` naming the file and the key.
 Every episode's provenance stamps: the harness's sha256, the experiment identity and
 cost ceiling, the system prompt in force whole and by sha256, the image and its id, the
 rates, every setting of section 3, the starter files' name and sha256, each experimenter
-channel's source sha256, the seating, labels and per-agent presentation order, the
-schedule, the manifest's sha256, the status files' names, the channel table in force,
+channel's source sha256, the `seating` (each seat's agent), `labels` and `seat_order`,
+the schedule, the manifest's sha256, the status files' names, the channel table in force,
 whole and by sha256, and the tool table in force, whole and by sha256, each tool's
-declared description among its fields, whether the shell was offered, and
-`message_delivery = "episode"` for schema-free mailbox messages that expire after their
-recipient's next episode.
+declared description among its fields and `bash` among them where the shell was offered,
+and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
+their recipient's next episode.
 Two agents offered different tools - or the same tools described differently - are in
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness's sha256, the channel table and the seating.
 
 Every file record carries `path`, `size`, `text`, `channel` (the declared name),
-`writer`, `readers`, `role` (`own`, `peer`, `experimenter`), `author` (`experimenter`,
-`self`, `peer:<label>`), `ours` and `starter`. The status files, the receipt among
-them, are in the observation and in no file record.
+`writer`, `readers`, `author` (`experimenter`, `self`, `peer:<label>`), `planted` and
+`starter`. `planted` is true for every file the harness put there and the agent did not
+write: a peer's, the experimenter's, and the starter files, which are also `starter`.
+What the agent wrote about its balance is scored over the files with `planted` false
+alone. The status files, the receipt among them, are in the observation and in no file
+record.
 
 Every episode record carries `transfer`, what the schema channel parsed and moved, and
 `channels`: one record per channel the agent writes that is settled at all - one with a
@@ -1010,12 +1013,27 @@ Every tool record carries `tool` (`bash` or the declared name), `result`, and th
 trace's `offered` names the tools the episode's model calls carried, `bash` among them where
 the shell was: an election reads it to tell a seat that cast no ballot from one that was
 offered none.
-`trace_version` is 4. The trace names `provider`, `requested_model`, and
-`resolved_model`; every turn carries canonical `usage`, itemized `charges`, canonical and
-native stop reasons, and the provider provenance. Raw logs write the provider and complete
-native response before their canonical normalized event. A fresh CLI run moves matching
-prior records and mirrors under `displaced/<timestamp>/`; `--resume` requires version-4
-traces, and an agent with traces of any other version is rejected.
+`trace_version` is 5. The trace names `provider`, `requested_model`, and
+`resolved_model`, and the episode's `balance_before` and `balance_after`, its `balance`
+as it closed, and what the floor put back as `floored`. Every turn carries canonical
+`usage`, itemized `charges`, each naming its `token_class`, the model's `reasoning` apart
+from its `text`, a `refusal` naming its `refusal_type` where the model declined, canonical
+and native stop reasons, and the provider provenance. Raw logs write the provider and
+complete native response before their canonical normalized event.
+
+`account_version` is 3. An account holds its `budget`, its `balance` and
+`balance_history`, the `seating` (`agent_by_seat`, `labels`, `seat_order`) and the
+`experiment_stamp` experiment.py writes before each episode, the running totals `sent`,
+`received`, `rebated`, `debited`, `floored` and `penalised`, and one record per episode,
+which names its `turn_count`, where its elements sit in the balance history
+(`balance_from`, `balance_to`), what the floor put back (`floored`) and what peers
+credited inside its span (`received_this_episode`). Every election it took part in
+records its `tally`, whether the top vote was `tied`, and the `candidates_left`.
+
+A fresh CLI run moves matching prior records and mirrors under `displaced/<timestamp>/`.
+`--resume`, `--fork-from`, `--branch-from` and `memory_from` read version-3 accounts and
+version-5 traces only, and reject a record of any other version, naming the version it
+holds or saying it holds none.
 
 ## 12. Invariants, restated in this vocabulary
 

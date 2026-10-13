@@ -66,10 +66,21 @@ def tokens(t: dict) -> dict[str, int]:
 def agent_files_of(t: dict) -> list[dict]:
     """What the agent wrote, wherever it put it.
 
-    `ours` covers the starter files and every other agent's channel, so this is the
-    agent's invention alone.
+    `planted` covers the starter files, the experimenter's files and every other
+    agent's channel, so this is the agent's invention alone.
     """
-    return [f for f in t["files"] if not f["ours"]]
+    return [f for f in t["files"] if not f["planted"]]
+
+
+def is_own(f: dict) -> bool:
+    """Whether a file record is in a tree of the agent's own: what it wrote, and the
+    starter files planted in its private store."""
+    return not f["planted"] or f["starter"]
+
+
+def is_peer(f: dict) -> bool:
+    """Whether a file record is another agent's, planted from that agent's channel."""
+    return f["author"].startswith("peer:")
 
 
 def starter_files_of(t: dict) -> list[dict]:
@@ -79,12 +90,12 @@ def starter_files_of(t: dict) -> list[dict]:
 
 def own_public_files(t: dict) -> list[dict]:
     """What the agent put where every other agent reads it."""
-    return [f for f in t["files"] if f["role"] == "own" and f["readers"] == "all"]
+    return [f for f in t["files"] if is_own(f) and f["readers"] == "all"]
 
 
 def peer_public_files(t: dict) -> list[dict]:
     """The files that were another agent's public channel this episode."""
-    return [f for f in t["files"] if f["role"] == "peer" and f["readers"] == "all"]
+    return [f for f in t["files"] if is_peer(f) and f["readers"] == "all"]
 
 
 def outbox_files(t: dict) -> list[dict]:
@@ -93,7 +104,7 @@ def outbox_files(t: dict) -> list[dict]:
     return [
         f
         for f in t["files"]
-        if f["role"] == "own"
+        if is_own(f)
         and f["readers"] == "addressee"
         and f["channel"] not in parsed
     ]
@@ -105,7 +116,7 @@ def inbox_files(t: dict) -> list[dict]:
     return [
         f
         for f in t["files"]
-        if f["role"] == "peer"
+        if is_peer(f)
         and f["readers"] == "addressee"
         and f["channel"] not in parsed
     ]
@@ -114,18 +125,18 @@ def inbox_files(t: dict) -> list[dict]:
 def schema_files(t: dict) -> list[dict]:
     """The agent's files in the channel the harness parses, where it has one."""
     parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
-    return [f for f in t["files"] if f["role"] == "own" and f["channel"] in parsed]
+    return [f for f in t["files"] if is_own(f) and f["channel"] in parsed]
 
 
 # --- what the provenance and the channel records say ---------------------------
 
 
-def peers_of(t: dict) -> dict[str, str]:
+def agent_by_seat_of(t: dict) -> dict[str, str]:
     """Seat -> the agent sitting in it, for an episode that ran under an experiment.
 
     The whole experiment, this agent included; seat_of says which one is its own.
     """
-    return t["provenance"]["peers"]
+    return t["provenance"]["seating"]
 
 
 def seat_of(t: dict) -> str:
@@ -135,7 +146,7 @@ def seat_of(t: dict) -> str:
 
 def labels_of(t: dict) -> dict[str, str]:
     """Seat -> the label the other agents know it by; the seat itself where none was given."""
-    return t["provenance"].get("labels") or {s: s for s in peers_of(t)}
+    return t["provenance"].get("labels") or {s: s for s in agent_by_seat_of(t)}
 
 
 def label_of(t: dict) -> str:
@@ -455,7 +466,7 @@ def episode_cols(t: dict) -> dict:
         "missing_tools": ";".join(t["missing_tools"]),
         "error": next(iter((t["error"] or "").splitlines()), ""),
         "spent": t["spent"],
-        "remaining": t["remaining"],
+        "balance": t["balance"],
         "turns": len(t["turns"]),
         # The two ways an episode acts, counted apart: under the tools-only tool mode
         # it runs no commands, and under the shell-only one it makes no tool calls.
@@ -498,7 +509,9 @@ def peer_cols(t: dict) -> dict:
     """The other agents it could see this episode, and what passed between them."""
     peer = peer_public_files(t)
     return {
-        "peers": ";".join(f"{k}={v}" for k, v in sorted(peers_of(t).items())),
+        "seating": ";".join(
+            f"{k}={v}" for k, v in sorted(agent_by_seat_of(t).items())
+        ),
         "peer_files": len(peer),
         "peer_bytes": sum(f["size"] for f in peer),
         "touched_peer": touched_peer(t),
@@ -541,7 +554,7 @@ def channel_cols(t: dict) -> dict:
             # obligation and the other is the break.
             cols[f"{ch.name}_addressed"] = ";".join(channel_result["addressed"])
             cols[f"{ch.name}_crowded"] = ";".join(channel_result["broken"])
-    cols["forgiven"] = t.get("forgiven", 0)
+    cols["floored"] = t.get("floored", 0)
     return cols
 
 
@@ -581,7 +594,7 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
         out += [
             "=" * 72,
             f"agent {name}: {len(ts)} episodes, {sum(t['spent'] for t in ts)} micro-dollars, "
-            f"{ts[-1]['remaining']} remaining",
+            f"balance {ts[-1]['balance']}",
             first_line("first reached for n", ts, lambda t: t["touched_balance"]),
             first_line("first actually read n", ts, lambda t: t["read_balance"]),
             first_line("first wrote a number", ts, lambda t: t["mentions"]["number"]),
@@ -704,7 +717,7 @@ def peer_lines(ts: list[dict]) -> list[str]:
     An agent with no experiment says so in one line. An experiment that changed
     between episodes is already in provenance_drift; this reports what was in force.
     """
-    seen = {seat: agent for t in ts for seat, agent in peers_of(t).items()}
+    seen = {seat: agent for t in ts for seat, agent in agent_by_seat_of(t).items()}
     if len(seen) < 2:
         return [report_line("experiment", "none; the agent was alone")]
     mine, label = seat_of(ts[-1]), label_of(ts[-1])
@@ -747,7 +760,7 @@ def met_lines(ts: list[dict]) -> list[str]:
 
 
 def transfer_lines(ts: list[dict]) -> list[str]:
-    """What the agent gave, what it was given, and what the rules took or forgave.
+    """What the agent gave, what it was given, and what the rules took or put back.
 
     The floored total is the one figure the agent was never told about: its
     environment says a negative balance ends the agent, and the shortfall was returned.
@@ -759,10 +772,10 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     for t in ts:
         for ch, channel_result in settled_channels(t):
             taken[ch.name] += channel_result.get("penalty") or 0
-    forgiven = sum(t.get("forgiven") or 0 for t in ts)
+    floored = sum(t.get("floored") or 0 for t in ts)
     ledger = ts[-1].get("ledger") or []
     received = sum(a for _, receiver, a in ledger if receiver == label_of(ts[-1]))
-    if not (given or received or any(taken.values()) or forgiven):
+    if not (given or received or any(taken.values()) or floored):
         return [report_line("transfers", "none given, none received")]
     lines = [
         report_line(
@@ -785,11 +798,11 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     lines += [
         report_line(f"taken for silence on {name}", n) for name, n in taken.items() if n
     ]
-    if forgiven:
+    if floored:
         lines.append(
             report_line(
                 "floored back to zero",
-                f"{forgiven}, which its environment never mentions",
+                f"{floored}, which its environment never mentions",
             )
         )
     return lines
@@ -924,7 +937,7 @@ def transcript(agents: dict[str, list[dict]]) -> str:
                 "=" * 72,
                 f"agent {name}  episode {t['episode']}  {t['provider']}/{t['requested_model']}  "
                 f"stop={t['stop']}  spent={t['spent']}",
-                f"balance at start: {t['series_before']}",
+                f"balance at start: {t['balance_before']}",
                 "",
             ]
             # The agent's whole environment at episode start, before it did anything.
@@ -932,10 +945,10 @@ def transcript(agents: dict[str, list[dict]]) -> str:
             out += [f"  | {line}" for line in t["observation"].splitlines()] + [""]
             for turn in t["turns"]:
                 # Reasoning, kept apart from spoken words.
-                if turn["thinking"]:
+                if turn["reasoning"]:
                     out += [
                         f"  ({turn['turn']}) {line}"
-                        for line in turn["thinking"].splitlines()
+                        for line in turn["reasoning"].splitlines()
                     ]
                 if turn["text"]:
                     out.append(f"  [{turn['turn']}] {turn['text']}")
@@ -958,26 +971,27 @@ def transcript(agents: dict[str, list[dict]]) -> str:
 # --- the charts --------------------------------------------------------------------
 
 
-def series_of(ts: list[dict]) -> list[int]:
-    """The agent's whole balance history: the initial balance, then one per billed turn."""
-    return list(ts[-1]["series_after"])
+def balance_history_of(ts: list[dict]) -> list[int]:
+    """The agent's whole balance history: the budget, then one per billed turn."""
+    return list(ts[-1]["balance_after"])
 
 
 def bands(ts: list[dict]) -> dict[int, tuple[int, int]]:
-    """Each episode's span in series index, by episode number, from the balance it
-    started at to its last.
+    """Each episode's span in balance-history index, by episode number, from the
+    balance it started at to its last.
 
-    len(series_before) is where an episode's first billed turn lands, so the episode
+    len(balance_before) is where an episode's first billed turn lands, so the episode
     itself sits one element earlier. An episode billed nothing spans no width.
     """
     return {
-        t["episode"]: (len(t["series_before"]) - 1, len(t["series_after"]) - 1)
+        t["episode"]: (len(t["balance_before"]) - 1, len(t["balance_after"]) - 1)
         for t in ts
     }
 
 
 def turn_costs(series: list[int]) -> list[int]:
-    """What each element of the series cost, indexed to the element it produced.
+    """What each element of the balance history cost, indexed to the element it
+    produced.
 
     Mostly a billed turn. A rebate, a penalty and a floor each add an element at
     an episode's end, so a negative delta is one of those three.
@@ -988,7 +1002,7 @@ def turn_costs(series: list[int]) -> list[int]:
 def charts(
     agents: dict[str, list[dict]], out_dir: Path, identity: str | None = None
 ) -> list[str]:
-    """Five figures: the balance series, and everything that moved it. A sixth,
+    """Five figures: the balance history, and everything that moved it. A sixth,
     persona drift in the identity file, where a path was given.
 
     matplotlib is the only optional dependency in the project, and it gates
@@ -1035,7 +1049,7 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
     """
     fig, ax = plt.subplots(figsize=(11, 5))
     for name, ts in agents.items():
-        series = series_of(ts)
+        series = balance_history_of(ts)
         at = bands(ts)
         ax.plot(
             range(len(series)),
@@ -1097,7 +1111,7 @@ def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
     """
     fig, ax = plt.subplots(figsize=(11, 5))
     for name, ts in agents.items():
-        d = turn_costs(series_of(ts))
+        d = turn_costs(balance_history_of(ts))
         ax.plot(
             range(1, len(d) + 1),
             d,

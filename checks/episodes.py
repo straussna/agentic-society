@@ -59,8 +59,8 @@ def check_episodes_are_a_ceiling_not_a_floor():
         assert [s["episode"] for s in account["episodes"]] == [1, 2], account[
             "episodes"
         ]
-        assert len(account["series"]) == 1 + sum(
-            s["turns"] for s in account["episodes"]
+        assert len(account["balance_history"]) == 1 + sum(
+            s["turn_count"] for s in account["episodes"]
         )
         assert buf.getvalue().count("created agent") == 1, (
             "the agent is created once, not per episode"
@@ -73,7 +73,7 @@ def check_episodes_are_a_ceiling_not_a_floor():
         account = ground_truth()
         assert 0 < len(account["episodes"]) < 8, account["episodes"]
         assert (
-            account["remaining"] <= 0 and "nothing left to spend" in buf.getvalue()
+            account["balance"] <= 0 and "nothing left to spend" in buf.getvalue()
         ), buf.getvalue()
 
 
@@ -83,7 +83,7 @@ def check_a_turn_that_leaves_exactly_nothing_is_the_last():
     with temp_root(budget=turn_cost()):
         t = episode_once(run("echo one"), run("echo two"), say())
 
-    assert t["remaining"] == 0, t["remaining"]
+    assert t["balance"] == 0, t["balance"]
     assert (t["stop"], len(t["turns"])) == ("budget_exhausted", 1), (
         t["stop"],
         len(t["turns"]),
@@ -202,9 +202,9 @@ def check_interrupt_still_traces_and_commits():
         assert t["stop"] == "interrupted", t["stop"]
         assert t["spent"] > 0, "spend before the interrupt must reach the series"
         account = ground_truth()
-        assert account["initial"] - account["remaining"] == t["spent"]
+        assert account["budget"] - account["balance"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
-        assert t["series_after"] == account["series"], (
+        assert t["balance_after"] == account["balance_history"], (
             "the trace carries what was committed"
         )
 
@@ -368,9 +368,9 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
         assert t["commands"][-1] == "echo two", t["commands"]
         assert t["spent"] > 0 and t["state_saved"], t
         account = ground_truth()
-        assert account["initial"] - account["remaining"] == t["spent"]
+        assert account["budget"] - account["balance"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
-        assert t["series_after"] == account["series"], (
+        assert t["balance_after"] == account["balance_history"], (
             "the trace carries what was committed"
         )
 
@@ -454,13 +454,13 @@ def check_fatal_error_still_traces_and_commits():
         )
         assert t["spent"] > 0, "spend before the failure must still reach the series"
         account = ground_truth()
-        assert account["initial"] - account["remaining"] == t["spent"]
+        assert account["budget"] - account["balance"] == t["spent"]
 
     # An episode that never got a turn spent nothing and adds nothing.
     with temp_root():
         t = episode_once(Err(400))
         assert t["turns"] == [] and t["spent"] == 0, t["spent"]
-        assert t["series_after"] == t["series_before"], t["series_after"]
+        assert t["balance_after"] == t["balance_before"], t["balance_after"]
 
 
 def check_no_tool_call_on_turn_one():
@@ -468,7 +468,7 @@ def check_no_tool_call_on_turn_one():
     with temp_root():
         t = episode_once(say("Nothing to do."))
         assert t["stop"] == "no_tool_call" and t["error"] is None, t
-        assert t["spent"] > 0 and t["series_after"][-1] == t["remaining"]
+        assert t["spent"] > 0 and t["balance_after"][-1] == t["balance"]
 
 
 def check_stop_reasons():
@@ -533,7 +533,7 @@ def check_reasoning_reaches_the_record():
     """Thinking blocks are recorded, and kept apart from spoken words."""
     with temp_root():
         t = episode_once(think("weighing it up", "here goes"), say())
-    assert t["turns"][0]["thinking"] == "weighing it up", t["turns"][0]
+    assert t["turns"][0]["reasoning"] == "weighing it up", t["turns"][0]
     assert t["turns"][0]["text"] == "here goes", (
         "reasoning stays apart from spoken words"
     )
@@ -551,7 +551,7 @@ def check_reaching_for_balance_is_not_reading_it():
     # Under live_balance a read comes back as the committed series plus the balance so
     # far, so the committed array is a prefix of what the agent saw.
     got = json.loads(hit["turns"][0]["tools"][0]["result"])
-    assert got[: len(hit["series_before"])] == hit["series_before"], got
+    assert got[: len(hit["balance_before"])] == hit["balance_before"], got
 
     with temp_root():
         blind = episode_once(run("wc -c n1"), say())  # names n, never sees it
@@ -570,8 +570,8 @@ def check_read_balance_survives_a_clipped_read():
         with quiet():
             harness.load_account("t")  # create the agent, then enlarge it
         m = ground_truth()
-        m["series"] = list(range(1_000_000, 1_000_000 + 2_000))
-        m["remaining"] = m["series"][-1]
+        m["balance_history"] = list(range(1_000_000, 1_000_000 + 2_000))
+        m["balance"] = m["balance_history"][-1]
         harness.save_account("t", m)
         t = episode_once(run("cat n1"), say())
 
@@ -621,7 +621,7 @@ def check_provenance_is_recorded():
                 "image",
                 "image_id",
                 "provider",
-                "message_delivery",
+                "message_lifetime",
                 "requested_model",
                 "context_fraction",
                 "max_tokens",
@@ -805,7 +805,7 @@ def check_a_refusal_records_why():
 
     refused = t["turns"][1]
     assert refused["stop_reason"] == "refusal"
-    assert refused["refusal"]["kind"] == "refusal"
+    assert refused["refusal"]["refusal_type"] == "refusal"
     assert refused["refusal"]["details"]["category"] == "cyber"
     assert refused["refusal"]["explanation"] == "declined"
     assert t["turns"][0]["refusal"] is None, "absent on every other stop reason"
@@ -968,10 +968,16 @@ def check_a_stuck_agent_stops_itself():
     """
     streak = harness.REFUSAL_STREAK
     episodes = [
-        {"episode": i, "stop": "refusal", "spent": 1, "turns": 1, "balance_at_start": 9}
+        {
+            "episode": i,
+            "stop": "refusal",
+            "spent": 1,
+            "turn_count": 1,
+            "balance_at_start": 9,
+        }
         for i in range(1, streak + 1)
     ]
-    account = {"remaining": 999_999, "episodes": episodes}
+    account = {"balance": 999_999, "episodes": episodes}
 
     assert harness.stuck(account), f"{streak} refusals running is stuck"
     assert not harness.in_play(account), (
@@ -1015,7 +1021,7 @@ def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_comm
         )
         assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
         assert (
-            t["spent"] > 0 and account["initial"] - account["remaining"] == t["spent"]
+            t["spent"] > 0 and account["budget"] - account["balance"] == t["spent"]
         ), "the turn before the fault was billed and reached the series"
         if kind == "ProviderError":
             assert t["provider_error"] == {

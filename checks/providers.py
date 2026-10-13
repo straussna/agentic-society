@@ -569,21 +569,44 @@ def check_custom_provider_endpoints_are_rejected():
                 raise AssertionError(f"accepted {variable}")
 
 
-def check_version_three_accounts_are_rejected():
+def check_records_of_another_version_are_rejected_by_the_version_they_hold():
+    """An account or a trace of a version harness.py does not read is rejected, and the
+    rejection names the version the record holds, or says it holds none."""
     with temp_root() as root:
         path = root / "records" / "old" / "account.json"
         path.parent.mkdir(parents=True)
-        path.write_text(
-            json.dumps({"agent": "old", "model": "claude-sonnet-5"}), encoding="utf-8"
-        )
-        try:
-            __import__("harness").load_account(
-                "old", provider="anthropic", model="claude-sonnet-5"
-            )
-        except SystemExit as error:
-            assert "version-3" in str(error) and "fresh agent id" in str(error)
-        else:
-            raise AssertionError("accepted a version-3 account")
+        spec = {"provider": "anthropic", "model": "claude-sonnet-5"}
+        for account, named in (
+            ({"agent": "old", "model": "claude-sonnet-5"}, "records no version"),
+            ({"account_version": 2, "agent": "old", **spec}, "a version-2 account"),
+        ):
+            path.write_text(json.dumps(account), encoding="utf-8")
+            try:
+                harness.load_account("old", **spec)
+            except SystemExit as error:
+                said = str(error)
+                assert named in said and "fresh agent id" in said, said
+                assert "None" not in said, said
+            else:
+                raise AssertionError(f"accepted an account that {named}")
+
+        with quiet():
+            harness.load_account("new", **spec)
+        previous = harness.trace_path("new", 1)
+        previous.parent.mkdir(parents=True, exist_ok=True)
+        for trace, named in (
+            ({"trace_version": 4}, "a version-4 trace"),
+            ({"agent": "new"}, "a trace that records no version"),
+        ):
+            previous.write_text(json.dumps(trace), encoding="utf-8")
+            try:
+                harness.drift("new", 2, {})
+            except SystemExit as error:
+                said = str(error)
+                assert named in said and "fresh agent id" in said, said
+                assert "None" not in said, said
+            else:
+                raise AssertionError(f"read {named} as the previous episode")
 
 
 def check_each_adapter_declares_the_provenance_its_traces_record():

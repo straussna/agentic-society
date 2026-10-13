@@ -42,7 +42,7 @@ this round's writes: a board post, a mailbox message or a transfer made in round
 in the environment at round *r + 1*, for everyone alike. A
 transfer made in the round is credited to its receiver in the same round, after the
 receiver's own turns and before its floor, and appears in its episode record as
-`received`; an agent is exhausted on the round's net and is never lifted back by a
+`received_this_episode`; an agent is exhausted on the round's net and is never lifted back by a
 transfer that had already landed. Ctrl+C reaches every episode in flight at its next
 turn, and all of them are committed before the rounds end.
 
@@ -283,8 +283,8 @@ believes it has won is still its own reading of `n` and `g`.
 
 Everything that moves a balance without being a turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
-own starts or, under a simultaneous round, inside its own span — appends to the series, so `n` is the
-balance at every moment a reader could look and the reconciliation `remaining == initial - spent
-+ rebated + received - debited - sum(penalised) + forgiven` closes exactly, `penalised`
+own starts or, under a simultaneous round, inside its own span — appends to the balance history, so `n` is the
+balance at every moment a reader could look and the reconciliation `balance == budget - spent
++ rebated + received - debited - sum(penalised) + floored` closes exactly, `penalised`
 being the running total per channel. The transfer is the only one of them
 corroborated anywhere; the rest the agent has to account for from the movement alone.

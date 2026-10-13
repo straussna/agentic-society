@@ -185,7 +185,7 @@ def check_no_setting_is_given_in_two_places():
         pass
     else:
         raise AssertionError("Settings is frozen: configuration replaces it whole")
-    # The prompt is stated as `system`; the budget is pinned in the account as `initial`.
+    # The prompt is stated as `system`; the budget is pinned in the account as `budget`.
     prov = harness.provenance("anthropic", "claude-sonnet-5")
     unstated = sorted(tunables - {"system_prompt", "budget"} - set(prov))
     assert not unstated and "system" in prov, f"provenance omits {unstated}"

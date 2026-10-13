@@ -85,7 +85,7 @@ def check_a_live_episode_under_a_manifest_that_declares_no_tool_opens_without_th
         )
         manifest = experiment.load_manifest(path)
         account = ground_truth()
-        account["experiment"] = {"manifest_sha256": manifest["sha256"]}
+        account["experiment_stamp"] = {"manifest_sha256": manifest["sha256"]}
         harness.save_account("t", account)
         real = view.manifests
         view.manifests = lambda: {manifest["sha256"]: (manifest, path)}
@@ -159,19 +159,19 @@ def check_the_view_costs_a_live_turn_like_the_account():
         account = {
             "provider": gt["provider"],
             "model": gt["model"],
-            "remaining": gt["series"][0],
+            "balance": gt["balance_history"][0],
         }
         turns = view.from_raw(
             view.latest_attempt(view.raw_lines(harness.raw_path("t", 1))), account
         )
 
-    assert gt["series"][2] == gt["series"][3], (
+    assert gt["balance_history"][2] == gt["balance_history"][3], (
         "the replayed id has to have billed nothing"
     )
-    assert [t["balance"] for t in turns] == gt["series"][1:], (
-        f"derived {[t['balance'] for t in turns]} against {gt['series'][1:]}"
+    assert [t["balance"] for t in turns] == gt["balance_history"][1:], (
+        f"derived {[t['balance'] for t in turns]} against {gt['balance_history'][1:]}"
     )
-    assert sum(t["micros"] for t in turns) == gt["initial"] - gt["remaining"], (
+    assert sum(t["micros"] for t in turns) == gt["budget"] - gt["balance"], (
         "and the per-turn costs partition the spend"
     )
     assert all(t["provider"] == "anthropic" for t in turns)
@@ -252,7 +252,7 @@ def check_the_view_serves_its_api():
             assert [f["path"] for f in private[0]["files"]] == ["note.txt"]
             head = got(base, "/api/experiment/t")[1]
             balances = [s["balance"] for s in head["seat_tiles"]]
-            assert balances == [ground_truth()["series"][-1]], balances
+            assert balances == [ground_truth()["balance_history"][-1]], balances
             assert head["ledger"] == [], (
                 "an experiment of one has given nothing to anyone"
             )
@@ -429,15 +429,19 @@ def check_the_view_derives_an_experiment_id_from_its_agent_ids():
     agent_by_seat = {"1": "q01", "2": "q02", "3": "q03"}
     peers = {"q01": agent_by_seat, "q02": agent_by_seat, "q03": agent_by_seat}
     named = {
-        agent: view.derived_experiment_id(agent, {"peers": {"seen": seen}})
+        agent: view.derived_experiment_id(agent, {"seating": {"agent_by_seat": seen}})
         for agent, seen in peers.items()
     }
     assert set(named.values()) == {"q"}, named
 
     # No prefix in common: still one experiment, and still one id for it.
     both = [
-        view.derived_experiment_id("alpha", {"peers": {"seen": {"2": "beta"}}}),
-        view.derived_experiment_id("beta", {"peers": {"seen": {"1": "alpha"}}}),
+        view.derived_experiment_id(
+            "alpha", {"seating": {"agent_by_seat": {"2": "beta"}}}
+        ),
+        view.derived_experiment_id(
+            "beta", {"seating": {"agent_by_seat": {"1": "alpha"}}}
+        ),
     ]
     assert both == ["alpha+beta", "alpha+beta"], both
 
@@ -463,7 +467,7 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
         "tools": [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}],
     }
     accounts = {
-        "survivor01": {"experiment": {"manifest_sha256": "stamp"}},
+        "survivor01": {"experiment_stamp": {"manifest_sha256": "stamp"}},
         "survivor02": {},
         "survivor03": {},
     }
@@ -508,7 +512,7 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
             account = json.loads(
                 harness.account_path("g01").read_text(encoding="utf-8")
             )
-            account["experiment"] = {"experiment_id": "renamed"}
+            account["experiment_stamp"] = {"experiment_id": "renamed"}
             harness.account_path("g01").write_text(
                 json.dumps(account), encoding="utf-8"
             )
@@ -594,7 +598,7 @@ def check_a_grouping_reads_each_account_once_a_poll():
             account = json.loads(
                 harness.account_path(agent).read_text(encoding="utf-8")
             )
-            account["peers"]["labels"] = labels
+            account["seating"]["labels"] = labels
             harness.account_path(agent).write_text(
                 json.dumps(account), encoding="utf-8"
             )
@@ -658,8 +662,8 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
         "abstainers": ["2"],
         "voted_out": "",
         "top_votes": 1,
-        "top_tied": False,
-        "remaining": ["1"],
+        "tied": False,
+        "candidates_left": ["1"],
     }
     with two_seats() as (c, _):
         c["tools"] = [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}]
@@ -753,7 +757,8 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
             {
                 "path": f"{seat}/post.md",
                 "channel": "blackboard",
-                "role": "own",
+                "author": "self",
+                "planted": False,
                 "size": 8,
                 "starter": False,
                 "text": f"post {seat}-{round}\n",
@@ -761,7 +766,8 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
             {
                 "path": "state/vote",
                 "channel": "notes",
-                "role": "own",
+                "author": "self",
+                "planted": False,
                 "size": 2,
                 "starter": False,
                 "text": f"{3 - int(seat)}\n",
@@ -908,7 +914,8 @@ def check_the_human_history_adds_each_accepted_human_call_once():
             "channel": "blackboard",
             "writer": "self",
             "readers": "all",
-            "role": "own",
+            "author": "self",
+            "planted": False,
             "size": 10,
             "starter": False,
             "text": "hello all\n",
@@ -984,7 +991,8 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
             "channel": "blackboard",
             "writer": "self",
             "readers": "all",
-            "role": "own",
+            "author": "self",
+            "planted": False,
             "size": 10,
             "starter": False,
             "text": "hello all\n",
@@ -994,7 +1002,8 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
             "channel": "mail",
             "writer": "self",
             "readers": "addressee",
-            "role": "own",
+            "author": "self",
+            "planted": False,
             "size": 4,
             "starter": False,
             "text": "psst",
@@ -1293,8 +1302,8 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
     assert m["committed"] == len(m["events"]) and not m["tip"]
 
 
-def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
-    """A trace naming no message_delivery was written while an outbox stood until
+def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_lifetime():
+    """A trace naming no message_lifetime was written while an outbox stood until
     changed, so the log reads it against the sender's episode before.
 
     The same outbox held over two episodes and then emptied is sent, standing and
@@ -1310,7 +1319,8 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
                     "channel": "mail",
                     "writer": "self",
                     "readers": "addressee",
-                    "role": "own",
+                    "author": "self",
+                    "planted": False,
                     "text": "hello\n",
                     "size": 6,
                     "starter": False,
@@ -1331,9 +1341,9 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_delivery():
             )
             for path in harness.trace_paths("g01"):
                 trace = json.loads(path.read_text(encoding="utf-8"))
-                trace["provenance"].pop("message_delivery")
+                trace["provenance"].pop("message_lifetime")
                 if delivery:
-                    trace["provenance"]["message_delivery"] = delivery
+                    trace["provenance"]["message_lifetime"] = delivery
                 path.write_text(json.dumps(trace), encoding="utf-8")
             return [(e["episode"], e["change"]) for e in view.messages(c)["events"]]
 
@@ -1399,7 +1409,7 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
     instead of answering the question it can answer here as if it were asked.
     """
 
-    def held(path: str, role: str, ours: bool) -> dict:
+    def held(path: str, author: str, planted: bool) -> dict:
         return {
             "observation": "total 0\n. ..\n",
             "commands": ["ls -la . ./state"],
@@ -1409,10 +1419,10 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
                     "channel": "mail",
                     "writer": "self",
                     "readers": "addressee",
-                    "role": role,
+                    "author": author,
                     "text": "hello\n",
                     "size": 6,
-                    "ours": ours,
+                    "planted": planted,
                     "starter": False,
                 }
             ],
@@ -1421,8 +1431,8 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
     with rooted(HostSandbox):
         c = fake_experiment(
             [
-                ("g01", "00:01", held("out/2", "own", False)),
-                ("g02", "00:02", held("in/1", "peer", True)),
+                ("g01", "00:01", held("out/2", "self", False)),
+                ("g02", "00:02", held("in/1", "peer:1", True)),
             ],
             agents=("g01", "g02"),
         )
@@ -1556,7 +1566,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         mine["spent"],
         [s["spent"] for s in gt["episodes"]],
     )
-    assert mine["spent"] != gt["initial"] - gt["remaining"], (
+    assert mine["spent"] != gt["budget"] - gt["balance"], (
         "the transfer moved the balance without being spent"
     )
     assert mine["spent_this_round"] <= mine["spent"], "a round is part of a life"
@@ -1808,7 +1818,7 @@ def check_the_page_summarises_the_experiment_and_resizes_its_sections():
     """The dashboard leads with aggregate signals and its main splits are adjustable."""
     page = view.PAGE
     for label in (
-        "remaining",
+        "balance",
         "spent this round",
         "spent total",
         "active now",

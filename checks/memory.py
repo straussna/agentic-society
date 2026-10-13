@@ -38,8 +38,10 @@ def source_trace(agent: str, episode: int, body: str) -> None:
                 "channel": "notes",
                 "writer": "self",
                 "readers": "self",
-                "role": "own",
                 "size": len(data),
+                "author": "self",
+                "planted": False,
+                "starter": False,
                 "text": body,
             }
         ],
@@ -62,7 +64,7 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         copied = harness.mirror("new", "notes") / "memory.md"
 
         assert copied.read_bytes() == body.encode("utf-8")
-        assert inherited["episodes"] == [] and inherited["series"] == [
+        assert inherited["episodes"] == [] and inherited["balance_history"] == [
             harness.SETTINGS.budget
         ]
         assert inherited["memory_from"] == entry["memory_from"]
@@ -81,7 +83,7 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
         provenance = harness.provenance(
             inherited["provider"],
             inherited["model"],
-            experiment=inherited["experiment"],
+            experiment=inherited["experiment_stamp"],
         )
         assert provenance["memory_from"] == record
 
@@ -126,7 +128,7 @@ def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
     cases = {
         "was created with memory_from": pinned_elsewhere,
         "does not exist": lambda: None,
-        "trace version": rewritten(
+        f"a version-{harness.TRACE_VERSION - 1} trace": rewritten(
             lambda t: t.update(trace_version=harness.TRACE_VERSION - 1)
         ),
         "did not save its state": rewritten(lambda t: t.update(state_saved=False)),

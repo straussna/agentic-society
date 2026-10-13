@@ -616,36 +616,39 @@ def files_by_path(t: dict) -> dict[str, dict]:
 
 
 def reconciled(account: dict, spent: int) -> int:
-    """What an account must hold: every term of the identity, each one series element."""
+    """What an account must hold: every term of the identity, each one balance-history
+    element."""
     return (
-        account["initial"]
+        account["budget"]
         - spent
         + account.get("rebated", 0)
         + account.get("received", 0)
         - account.get("debited", 0)
         - sum((account.get("penalised") or {}).values())
-        + account.get("forgiven", 0)
+        + account.get("floored", 0)
     )
 
 
-def span_of(series: list[int], s: dict) -> list[int]:
-    """The elements of the series one episode's record spans, harness included."""
-    return series[s["series_from"] : s["series_to"] + 1]
+def span_of(history: list[int], s: dict) -> list[int]:
+    """The elements of the balance history one episode's record spans, harness
+    included."""
+    return history[s["balance_from"] : s["balance_to"] + 1]
 
 
 def elements_of(s: dict) -> int:
-    """How many series elements an episode's record says it appended, plus the entry at its start."""
+    """How many balance-history elements an episode's record says it appended, plus the
+    entry at its start."""
     return (
-        s["turns"]
+        s["turn_count"]
         + 1
         + bool(s["transfer"]["rebate"] or s["transfer"].get("debit"))
         + bool(s["transfer"]["penalty"])
         + bool(s["channels"]["blackboard"]["penalty"])
         + bool(s["channels"]["mail"]["penalty"])
-        + bool(s["forgiven"])
+        + bool(s["floored"])
         # A credit from a peer settling in the same simultaneous round lands
         # inside the receiver's span; sequentially it lands between spans.
-        + bool(s.get("received"))
+        + bool(s.get("received_this_episode"))
     )
 
 
@@ -717,7 +720,7 @@ def instances_of(agent: str, ids: list[str]) -> list[harness.Instance]:
     """
     seats = experiment.seats_of(ids)
     seat = next(i for i, r in seats.items() if r == agent)
-    return harness.instances(agent, {"seat": seat, "peers": {"seen": seats}})
+    return harness.instances(agent, {"seat": seat, "seating": {"agent_by_seat": seats}})
 
 
 def seated(
@@ -742,7 +745,7 @@ def seated(
             account = harness.load_account(other)
         named = {s: (labels or {}).get(s, s) for s in seats}
         account["seat"], account["label"] = seat, named[seat]
-        account["peers"] = {"seen": seats, "labels": named}
+        account["seating"] = {"agent_by_seat": seats, "labels": named}
         harness.save_account(other, account)
     return ids
 
@@ -765,8 +768,8 @@ def exhaust(agent: str) -> None:
     happens to an exhausted seat does not also depend on how it got there.
     """
     account = harness.load_account(agent)
-    account["remaining"] = 0
-    account["series"].append(0)
+    account["balance"] = 0
+    account["balance_history"].append(0)
     harness.save_account(agent, account)
 
 
@@ -775,8 +778,9 @@ def unfinished() -> None:
     raw log a running one leaves and the account as it stood when the episode started."""
     harness.trace_path("t", 1).unlink()
     account = ground_truth()
-    account["series"] = account["series"][: account["episodes"][0]["series_from"] + 1]
-    account["remaining"], account["episodes"] = account["series"][-1], []
+    opening = account["episodes"][0]["balance_from"]
+    account["balance_history"] = account["balance_history"][: opening + 1]
+    account["balance"], account["episodes"] = account["balance_history"][-1], []
     harness.save_account("t", account)
 
 
@@ -796,7 +800,7 @@ def two_seats():
         )
         for agent, series in (("g01", [1000, 900]), ("g02", [1000, 800])):
             account = harness.load_account(agent)
-            account["series"], account["remaining"] = series, series[-1]
+            account["balance_history"], account["balance"] = series, series[-1]
             account["starter_files_landed"] = {
                 "name": "objective-notes",
                 "paths": ["NOTES.md"],
@@ -828,14 +832,14 @@ def fake_experiment(
             "stop": "end_turn",
             "spent": 1,
             "turns": [],
-            "remaining": 0,
+            "balance": 0,
             "files": [],
             "state_saved": True,
             "provenance": {
                 "started_at": f"2026-01-01T{at}:00Z",
-                "peers": seats,
+                "seating": seats,
                 "harness_files": dict(harness.SETTINGS.harness_files),
-                "message_delivery": "episode",
+                "message_lifetime": "episode",
             },
             **trace_fields,
             **(more[0] if more else {}),
@@ -851,10 +855,10 @@ def fake_experiment(
                 {
                     "agent": agent,
                     "seat": seat,
-                    "peers": {"seen": seats},
-                    "series": list(series),
-                    "remaining": series[-1],
-                    "initial": 1000,
+                    "seating": {"agent_by_seat": seats},
+                    "balance_history": list(series),
+                    "balance": series[-1],
+                    "budget": 1000,
                     "episodes": taken.get(agent, []),
                 }
             ),

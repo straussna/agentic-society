@@ -1452,7 +1452,7 @@ RETRY_BASE = 2
 RETRY_CAP_S = 60
 RETRY_JITTER = 0.25
 
-# Characters of one turn's text and thinking kept in the trace.
+# Characters of one turn's text and reasoning kept in the trace.
 TURN_TEXT_LIMIT = 20_000
 
 # Seconds the harness gives its own first command in a new episode. Not command_timeout:
@@ -1464,12 +1464,14 @@ STARTUP_TIMEOUT = 30
 # recorded whether or not the content fits.
 FILE_CONTENT_LIMIT = 100_000
 
-# The shape of a trace: every file record names its channel, writer, readers,
-# role and author, and every episode record settles its channels by name.
-TRACE_VERSION = 4
+# The shape of a trace: every file record names its channel, writer, readers and
+# author and whether the harness planted it, and every episode record settles its
+# channels by name.
+TRACE_VERSION = 5
 
-# The shape of an account: provider-neutral, its pinned terms beside the series.
-ACCOUNT_VERSION = 2
+# The shape of an account: provider-neutral, its pinned terms beside the balance
+# history.
+ACCOUNT_VERSION = 3
 
 # --watch only. Not in TUNABLES, so config.toml cannot set it, and it never
 # reaches the agent.
@@ -1689,8 +1691,8 @@ class Election(TypedDict):
     tally: each candidate's votes. electors: who played the round it follows.
     abstainers: electors offered a ballot who cast none. interrupted: electors the
     experimenter's stop ended before they cast one. voted_out: the one the vote took
-    out, "" for none. top_votes, top_tied: the highest total, and whether more than
-    one candidate held it. remaining: the candidates it left in.
+    out, "" for none. top_votes, tied: the highest total, and whether more than
+    one candidate held it. candidates_left: the candidates it left in.
     """
 
     round: int
@@ -1700,29 +1702,30 @@ class Election(TypedDict):
     interrupted: list[str]
     voted_out: str
     top_votes: int
-    top_tied: bool
-    remaining: list[str]
+    tied: bool
+    candidates_left: list[str]
 
 
 class AccountEpisode(TypedDict):
     """One committed episode, as close_episode lists it in the account.
 
-    series_from, series_to: where in the series it starts and ends. transfer,
-    channels: what settle_episode recorded. forgiven: what the floor put back.
-    received: what peers settling in the same round credited inside its span.
-    receipts: what was planted at each receipt path, by sha256.
+    turn_count: how many turns it took. balance_from, balance_to: where in the
+    balance history it starts and ends. transfer, channels: what settle_episode
+    recorded. floored: what the floor put back. received_this_episode: what peers
+    settling in the same round credited inside its span. receipts: what was planted
+    at each receipt path, by sha256.
     """
 
     episode: int
     stop: str
     spent: int
-    turns: int
+    turn_count: int
     balance_at_start: int
-    series_from: int
-    series_to: int
+    balance_from: int
+    balance_to: int
     transfer: TransferRecord
-    forgiven: int
-    received: int
+    floored: int
+    received_this_episode: int
     channels: dict[str, Mapping[str, Any]]
     receipts: dict[str, str]
 
@@ -1744,11 +1747,11 @@ class Account(TypedDict):
     agent: str
     provider: str
     model: str
-    initial: int  # the budget, in micro-dollars
+    budget: int  # micro-dollars
     created_at: str
     seat: str
-    remaining: int
-    series: list[int]
+    balance: int
+    balance_history: list[int]
     episodes: list[AccountEpisode]
     starter_files: NotRequired[str]
     starter_files_below: NotRequired[int]
@@ -1756,20 +1759,20 @@ class Account(TypedDict):
     forked_from: NotRequired[dict[str, Any]]  # agent, episode, modes
     # What experiment.py stamps before each episode.
     label: NotRequired[str]
-    peers: NotRequired[dict[str, Any]]  # seen, labels, presentation
-    experiment: NotRequired[dict[str, Any]]  # the stamp, and memory_from
+    seating: NotRequired[dict[str, Any]]  # agent_by_seat, labels, seat_order
+    experiment_stamp: NotRequired[dict[str, Any]]  # the stamp, and memory_from
     # The starter files once they land, each experimenter source as first read, and
     # the digest's sections as last shown.
     starter_files_landed: NotRequired[dict[str, Any]]
     sources_seen: NotRequired[dict[str, dict[str, Any]]]
     shown_before: NotRequired[dict[str, str]]
     # Running totals: what transfers sent, received, rebated and debited, what the
-    # floor forgave, and what each channel's penalty took.
+    # floor put back, and what each channel's penalty took.
     sent: NotRequired[int]
     received: NotRequired[int]
     rebated: NotRequired[int]
     debited: NotRequired[int]
-    forgiven: NotRequired[int]
+    floored: NotRequired[int]
     penalised: NotRequired[dict[str, int]]  # by channel name
     # experiment.py's memory, election, branch and product records.
     memory_from: NotRequired[dict[str, Any] | None]
@@ -1811,7 +1814,7 @@ PINNED_SETTINGS = {
     "system_prompt": "system_prompt",
     "provider": "provider",
     "model": "model",
-    "budget": "initial",
+    "budget": "budget",
     "starter_files": "starter_files",
     "starter_files_below": "starter_files_below",
 }
@@ -1821,6 +1824,29 @@ def term_shown(key: str, value: Any) -> str:
     """A pinned setting as a rejection names it: a prompt by sha256, everything else
     whole."""
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
+
+
+# The key each record names its version under, and the one version harness.py reads.
+RECORD_VERSIONS = {
+    "account": ("account_version", ACCOUNT_VERSION),
+    "trace": ("trace_version", TRACE_VERSION),
+}
+
+
+def stale(record: Mapping[str, Any], kind: str) -> str | None:
+    """Why `record`, an account or a trace as `kind` names it, is not one harness.py
+    reads: the version it records, or that it records none, beside the version read.
+    None for a record of that version."""
+    key, current = RECORD_VERSIONS[kind]
+    found = record.get(key)
+    if found == current:
+        return None
+    held = (
+        f"a version-{found} {kind}"
+        if found is not None
+        else f"{'an' if kind == 'account' else 'a'} {kind} that records no version"
+    )
+    return f"{held}, and harness.py reads version-{current} {kind}s only"
 
 
 def load_account(
@@ -1856,7 +1882,7 @@ def load_account(
             raise SystemExit(
                 f"agent {agent} needs an explicit provider and model before it can be created"
             )
-        initial = s.budget if budget is None else budget
+        budget = s.budget if budget is None else budget
         name = s.starter_files if starter_files is None else starter_files
         below = (
             s.starter_files_below
@@ -1868,7 +1894,7 @@ def load_account(
             "account",
             provider=provider,
             model=model,
-            budget=initial,
+            budget=budget,
             starter_files=name,
             starter_files_below=below,
             who=agent,
@@ -1878,7 +1904,7 @@ def load_account(
             *(mirror(agent, c.name) for c in s.channels if c.mirrored),
         ):
             d.mkdir(parents=True, exist_ok=True)
-        # Element 0 of the series is the initial balance; one more per billed turn
+        # Element 0 of the balance history is the budget; one more per billed turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
         save_account(
@@ -1888,11 +1914,11 @@ def load_account(
                 "agent": agent,
                 "provider": provider,
                 "model": model,
-                "initial": initial,
+                "budget": budget,
                 "seat": "1",
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "remaining": initial,
-                "series": [initial],
+                "balance": budget,
+                "balance_history": [budget],
                 "episodes": [],
                 "starter_files": name,
                 "starter_files_below": below,
@@ -1908,14 +1934,12 @@ def load_account(
             else f", system prompt sha256={system_sha256(prompt)[:12]}"
         )
         print(
-            f"created agent {agent}: {initial} micro-dollars, {provider}/{model}{declared}{starter}"
+            f"created agent {agent}: {budget} micro-dollars, "
+            f"{provider}/{model}{declared}{starter}"
         )
     account = json.loads(f.read_text(encoding="utf-8"))
-    if account.get("account_version") != ACCOUNT_VERSION or "provider" not in account:
-        raise SystemExit(
-            f"agent {agent} has an account from the version-3 record format; "
-            "start a fresh agent id for provider-neutral records"
-        )
+    if why := stale(account, "account"):
+        raise SystemExit(f"agent {agent} has {why}; start a fresh agent id")
     try:
         providers.model_spec(account["provider"], account["model"])
     except providers.ProviderConfigurationError as error:
@@ -1946,9 +1970,9 @@ def account_on_disk(agent: str) -> Mapping[str, Any]:
     return json.loads(f.read_text(encoding="utf-8"))
 
 
-def series_on_disk(agent: str) -> list[int]:
+def balance_history_on_disk(agent: str) -> list[int]:
     """Another agent's balance history, read from its own account."""
-    return account_on_disk(agent).get("series") or []
+    return account_on_disk(agent).get("balance_history") or []
 
 
 def starter_terms(account: Account) -> tuple[str, int]:
@@ -1968,7 +1992,7 @@ def exhausted(account: Mapping[str, Any]) -> bool:
     A state an agent enters once and does not leave: in_play() starts no further
     episode on it, and move_transfer rejects it as a target. Read between episodes.
     """
-    return account["remaining"] <= 0
+    return account["balance"] <= 0
 
 
 def stuck(account: Mapping[str, Any]) -> bool:
@@ -2036,18 +2060,18 @@ class Seating:
 def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
     """The agent's seating, read from what experiment.py stamps into the account.
 
-    experiment.py writes `seat`, `label` and `peers` before each episode of a
+    experiment.py writes `seat`, `label` and `seating` before each episode of a
     round. An account without them is an experiment of one; a seat without a
     label is labelled by its number.
     """
     seat = account.get("seat") or "1"
-    peers = account.get("peers") or {}
-    by_seat = peers.get("seen") or {seat: agent}
+    stamped = account.get("seating") or {}
+    by_seat = stamped.get("agent_by_seat") or {seat: agent}
     by_seat = dict(sorted(by_seat.items(), key=lambda kv: int(kv[0])))
-    given = dict(peers.get("labels") or {})
+    given = dict(stamped.get("labels") or {})
     if account.get("label"):
         given[seat] = account["label"]
-    raw_order = peers.get("presentation")
+    raw_order = stamped.get("seat_order")
     order = (
         tuple(str(s) for s in raw_order if str(s) in by_seat)
         if raw_order
@@ -2076,18 +2100,19 @@ def reachable(seating: Seating) -> dict[str, str]:
 
 
 def adjust(account: Account, delta: int) -> None:
-    """Move the balance and append the result to the series.
+    """Move the balance and append the result to the balance history.
 
     Everything that moves a balance outside a billed turn goes through here, so
-    series[-1] is the remaining balance at any moment. A zero delta appends none.
+    balance_history[-1] is the balance at any moment. A zero delta appends none.
     """
     if delta:
-        account["remaining"] += delta
-        account["series"].append(account["remaining"])
+        account["balance"] += delta
+        account["balance_history"].append(account["balance"])
 
 
 def credit_account(account: Account, amount: int) -> None:
-    """Credit a transfer to the receiver's account: one series element, and the running total."""
+    """Credit a transfer to the receiver's account: one balance-history element, and
+    the running total."""
     adjust(account, amount)
     account["received"] = account.get("received", 0) + amount
 
@@ -2110,7 +2135,7 @@ def credit_episode(ep: Episode, amount: int) -> None:
 def penalise(account: Account, ch: Channel) -> int:
     """Take the channel's share of what is left, keep the running total by channel
     name, and return the share. A share of zero moves nothing."""
-    share = max(account["remaining"], 0) * ch.silence_penalty_percent // 100
+    share = max(account["balance"], 0) * ch.silence_penalty_percent // 100
     if share:
         adjust(account, -share)
         totals = account.setdefault("penalised", {})
@@ -2174,7 +2199,7 @@ def plant_starter_files(
             f"files/{name} now has sha256 {files_sha256(name)[:12]}. Episodes either "
             f"side of that are not one experiment; start a new agent"
         )
-    if planted or not name or account["remaining"] > below:
+    if planted or not name or account["balance"] > below:
         return None
 
     listing = files_listing(name)
@@ -2192,14 +2217,14 @@ def plant_starter_files(
         "name": name,
         "sha256": files_sha256(name),
         "episode": episode,
-        "remaining": account["remaining"],
+        "balance": account["balance"],
         "paths": [rel for rel, _ in listing],
     }
     account["starter_files_landed"] = record
     save_account(agent, account)
     print(
         f"{agent}: starter files {name!r} at episode {episode} "
-        f"with {account['remaining']} left: "
+        f"with {account['balance']} left: "
         f"{len(listing)} files, {sum(len(d) for _, d in listing)} bytes, "
         f"sha256={record['sha256'][:12]}"
     )
@@ -2472,9 +2497,9 @@ def balances(agent: str, account: Account) -> dict[str, list[int]]:
     s = seating_of(agent, account)
     return {
         s.labels[seat]: (
-            list(account["series"])
+            list(account["balance_history"])
             if s.agent_by_seat[seat] == agent
-            else series_on_disk(s.agent_by_seat[seat])
+            else balance_history_on_disk(s.agent_by_seat[seat])
         )
         for seat in s.seat_order
     }
@@ -2526,12 +2551,12 @@ def receipt_text(account: Account, ch: Channel) -> str:
         return ""
     declared = (transfer.get("declared") or "").strip().splitlines()
     start = episode.get("balance_at_start", 0)
-    series = account.get("series") or []
-    at = episode.get("series_to", len(series) - 1)
-    ending = series[at] if 0 <= at < len(series) else account.get("remaining", 0)
+    history = account.get("balance_history") or []
+    at = episode.get("balance_to", len(history) - 1)
+    ending = history[at] if 0 <= at < len(history) else account.get("balance", 0)
     penalties = sum(record.get("penalty", 0) for record in records.values())
-    received = episode.get("received", 0)
-    forgiven = episode.get("forgiven", 0)
+    received = episode.get("received_this_episode", 0)
+    floored = episode.get("floored", 0)
     transfer_made = bool(transfer.get("amount"))
     grace = episode.get("episode", 0) <= SETTINGS.grace_episodes
     giver = seating_of(account["agent"], account).label
@@ -2565,7 +2590,7 @@ def receipt_text(account: Account, ch: Channel) -> str:
     lines += [
         f"total penalties: {penalties}",
         f"received from peers: {received}",
-        f"balance-floor adjustment: {forgiven}",
+        f"balance-floor adjustment: {floored}",
         f"ending balance: {ending}",
         (
             "reconciliation: starting balance - API spend - transfer debit + transfer rebate "
@@ -2824,7 +2849,7 @@ def render_round_status(account: Account) -> str:
                 outcome = (
                     f"{voted_out} eliminated with {previous.get('top_votes', 0)} votes"
                 )
-            elif previous.get("top_tied"):
+            elif previous.get("tied"):
                 outcome = f"top vote tied at {previous.get('top_votes', 0)}; no agent eliminated by vote"
             else:
                 outcome = "no agent eliminated by vote"
@@ -4773,7 +4798,9 @@ def category_of(turn: dict) -> str:
     d = turn.get("refusal")
     if d is None:
         return "not recorded"
-    return (d.get("details") or {}).get("category") or d.get("kind") or "null"
+    return (
+        (d.get("details") or {}).get("category") or d.get("refusal_type") or "null"
+    )
 
 
 def refusal_category(turns: list[dict]) -> str:
@@ -4873,7 +4900,7 @@ def turn_record(
         "duplicate_response": duplicate,
         "charges": [item.as_dict() for item in charges],
         "text": clip("\n".join(response.text), TURN_TEXT_LIMIT),
-        "thinking": clip("\n".join(response.reasoning), TURN_TEXT_LIMIT),
+        "reasoning": clip("\n".join(response.reasoning), TURN_TEXT_LIMIT),
         "tools": [],
     }
 
@@ -4950,13 +4977,13 @@ def open_episode(
 def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
     """Rewrite the agent's own balance after a billed turn, and record how the write went.
 
-    What this write replaces is what the last one left: the series without the
-    element this turn just added.
+    What this write replaces is what the last one left: the balance history without
+    the element this turn just added.
     """
     status = shell.republish_balance(
         label,
-        account["series"] + out["balances"],
-        render_balance(account["series"] + out["balances"][:-1]),
+        account["balance_history"] + out["balances"],
+        render_balance(account["balance_history"] + out["balances"][:-1]),
     )
     if status == "failed":
         out["live_balance_errors"] += 1
@@ -5011,7 +5038,7 @@ def run_turns(
     provider, model, remaining = (
         account["provider"],
         account["model"],
-        account["remaining"],
+        account["balance"],
     )
     bound = list(bound)
     specs = episode_specs(bound)
@@ -5566,11 +5593,11 @@ def provenance(
         "digest_file_limit": s.digest_file_limit,
         "observation_limit": s.observation_limit,
         "live_balance": s.live_balance,
-        # How schema-free mailbox files are scoped across episodes.
-        "message_delivery": "episode",
+        # How long a schema-free mailbox message lives: one episode.
+        "message_lifetime": "episode",
         # Episodes at the start of an agent that answer for no obligation.
         "grace_episodes": s.grace_episodes,
-        # Whether an agent ends holding the sign flip, or has it forgiven.
+        # Whether an agent ends holding the sign flip, or is floored at zero.
         "floor_at_zero": s.floor_at_zero,
         # Invariant 9: the starter files by name and sha256, so drift() reports the
         # episode the environment changed at.
@@ -5580,24 +5607,21 @@ def provenance(
         # Invariant 9 for an experiment: which agent each seat is, this one included,
         # which is this one's own, and how each is named to the others.
         "seat": seating.seat,
-        "peers": dict(seating.agent_by_seat),
+        "seating": dict(seating.agent_by_seat),
         "labels": dict(seating.labels),
-        "presentation_order": list(seating.seat_order),
+        "seat_order": list(seating.seat_order),
         # The channel table in force, whole and by sha256, and the harness files'
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
         "harness_files": dict(s.harness_files),
-        # Invariant 9 for what the agent can do: the tools offered beside bash,
-        # whole and by sha256, so two agents offered different actions are
-        # different arms. What each one says of itself the harness generates from
-        # this table and the channel table, so nothing else has to be recorded for
-        # the wording to be reproducible.
+        # Invariant 9 for what the agent can do: the tools offered, bash among them
+        # where it is declared, whole and by sha256, so two agents offered
+        # different actions are different arms. What each one says of itself the
+        # harness generates from this table and the channel table, so nothing else
+        # has to be recorded for the wording to be reproducible.
         "tools": [t.as_table() for t in s.tools],
         "tools_sha256": tools_sha256(s.tools),
-        # Whether the shell was among them, which decides what the episode opened
-        # on as well as what it could do.
-        "shell_tool": s.shell_tool,
         # Each experimenter channel's files by sha256.
         "source_sha256": {
             c.name: files_sha256(c.source) for c in table if c.writer == "experimenter"
@@ -5639,13 +5663,13 @@ def drift(
     if not f.exists():
         return []
     previous = json.loads(f.read_text(encoding="utf-8"))
-    if previous.get("trace_version") != TRACE_VERSION:
+    if why := stale(previous, "trace"):
         raise SystemExit(
-            f"agent {owner} has incompatible version-{previous.get('trace_version')} traces; start a fresh agent id"
+            f"agent {owner} has {why} at episode {episode - 1}; start a fresh agent id"
         )
     was = previous.get("provenance") or {}
-    if owner != agent and "peers" in was:
-        was = {**was, "peers": seated_as_forked(was["peers"], now["peers"])}
+    if owner != agent and "seating" in was:
+        was = {**was, "seating": seated_as_forked(was["seating"], now["seating"])}
     # system_sha256 names a changed prompt in one line; the text would arrive as
     # two whole prompts in a banner.
     skip = {"started_at", "system"}
@@ -5729,9 +5753,10 @@ def snapshot(
     """What every file the episode could see holds, and what the agent wrote.
 
     Per-episode copies are the only record of a file the agent later deletes;
-    `text` is None for binaries. Every record names its author; `ours` is
-    everything the agent did not invent. A receipt is in no record, but a file
-    at a receipt path holding anything other than what `receipts` says was
+    `text` is None for binaries. Every record names its author; `planted` is
+    everything the harness provided and the agent did not invent: a peer's file,
+    the experimenter's, and the starter files. A receipt is in no record, but a
+    file at a receipt path holding anything other than what `receipts` says was
     planted there is the agent's, and recorded as its own.
     """
     files = []
@@ -5755,22 +5780,21 @@ def snapshot(
             if got is None:
                 continue
             size, text, binary = got
-            planted = store and inner in starter
+            from_starter = store and inner in starter
             file = {
                 "path": rel,
                 "channel": inst.name,
                 "writer": ch.writer,
                 "readers": ch.readers,
-                "role": inst.role,
                 "size": size,
-                "author": author_of(inst, planted),
-                "ours": inst.role != "own" or planted,
-                "starter": planted,
+                "author": author_of(inst, from_starter),
+                "planted": inst.role != "own" or from_starter,
+                "starter": from_starter,
                 "text": None,
             }
             files.append(file)
             file["text"] = None if binary else text
-            if file["ours"]:
+            if file["planted"]:
                 # Captured, because an edit to it is the thing worth reading -
                 # but not scored. mentions is what the agent wrote, and a
                 # neighbour's message full of balances and the word "budget"
@@ -5806,7 +5830,7 @@ class Episode:
     agent: str
     episode: int
     account: Account
-    series_before: list[int]
+    balance_before: list[int]
     seating: Seating
     reach: dict[str, str]  # seat -> agent, every peer in play
     instances: list[Instance]
@@ -5936,7 +5960,7 @@ def build_episode(agent: str) -> Episode:
         account["model"],
         seating,
         starter_terms(account),
-        account.get("experiment"),
+        account.get("experiment_stamp"),
         system_of(account),
     )
     drifted = drift(agent, episode, prov, account.get("forked_from"))
@@ -5967,7 +5991,7 @@ def build_episode(agent: str) -> Episode:
         agent=agent,
         episode=episode,
         account=account,
-        series_before=list(account["series"]),
+        balance_before=list(account["balance_history"]),
         seating=seating,
         reach=reach,
         instances=channel_instances,
@@ -5975,7 +5999,7 @@ def build_episode(agent: str) -> Episode:
         shown=shown,
         shown_now=shown_now,
         ledger_shown=ledger(agent, account),
-        canonical=render_balance(account["series"]),
+        canonical=render_balance(account["balance_history"]),
         prov=prov,
         drifted=drifted,
         records=records_dir(agent),
@@ -6064,7 +6088,7 @@ def settle_episode(
 
     The parsed channel settles first, then every other obligated channel in
     declaration order, and each penalty that moves the balance appends to the
-    series. Every penalty is a share of what is left, so the order decides the
+    balance history. Every penalty is a share of what is left, so the order decides the
     amounts. An episode the API never answered chose none of them and is charged
     for none, and grace_episodes waives the charges without stopping the
     measurement. `credit` is how a transfer reaches its receiver. By default it is
@@ -6074,8 +6098,8 @@ def settle_episode(
     account = ep.account
     # One element per turn, so an episode that never got a turn adds nothing. A
     # call in flight can overshoot the floor, which close_episode's floor answers.
-    account["remaining"] -= out["spent"]
-    account["series"].extend(out["balances"])
+    account["balance"] -= out["spent"]
+    account["balance_history"].extend(out["balances"])
 
     settles = bool(out["turns"]) and ep.episode > SETTINGS.grace_episodes
     credits: list[tuple[str, int]] = []
@@ -6122,23 +6146,21 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
     # What the starter files say ends an agent, and does. A balance below zero is
     # put back to zero, and zero is exhausted: the floor decides what the balance file
     # ends holding and nothing else.
-    forgiven = (
-        -account["remaining"] if s.floor_at_zero and account["remaining"] < 0 else 0
-    )
-    adjust(account, forgiven)
-    if forgiven:
-        account["forgiven"] = account.get("forgiven", 0) + forgiven
+    floored = -account["balance"] if s.floor_at_zero and account["balance"] < 0 else 0
+    adjust(account, floored)
+    if floored:
+        account["floored"] = account.get("floored", 0) + floored
     if ep.shown_now is not None:
         account["shown_before"] = ep.shown_now
 
     # Whether the agent can still see its whole history in one read. Past this
     # point every read of the balance file comes back clipped, which is a
     # different environment from the one earlier episodes had.
-    balance_bytes = len(render_balance(account["series"]))
+    balance_bytes = len(render_balance(account["balance_history"]))
     balance_fits = balance_bytes <= s.tool_result_limit
     if (
         not balance_fits
-        and len(render_balance(ep.series_before)) <= s.tool_result_limit
+        and len(render_balance(ep.balance_before)) <= s.tool_result_limit
     ):
         print(
             f"  {agent}: {balance_name(ep.seating.label)} reached {balance_bytes} "
@@ -6148,7 +6170,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
             file=sys.stderr,
         )
 
-    trace = trace_of(ep, out, settled, forgiven, balance_bytes, balance_fits)
+    trace = trace_of(ep, out, settled, floored, balance_bytes, balance_fits)
     save_trace(agent, episode, trace)
 
     account["episodes"].append(
@@ -6156,15 +6178,15 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
             "episode": episode,
             "stop": out["stop"],
             "spent": out["spent"],
-            "turns": len(out["turns"]),
-            "balance_at_start": ep.series_before[-1],
-            # Where this episode's elements sit in the series: its
+            "turn_count": len(out["turns"]),
+            "balance_at_start": ep.balance_before[-1],
+            # Where this episode's elements sit in the balance history: its
             # turns, then a transfer, each penalty and a floor.
-            "series_from": len(ep.series_before) - 1,
-            "series_to": len(account["series"]) - 1,
+            "balance_from": len(ep.balance_before) - 1,
+            "balance_to": len(account["balance_history"]) - 1,
             "transfer": settled["transfer"],
-            "forgiven": forgiven,
-            "received": ep.credited,
+            "floored": floored,
+            "received_this_episode": ep.credited,
             "channels": settled["channels"],
             # What was planted at each receipt path, by sha256: how
             # the next build tells a receipt from the agent's file.
@@ -6212,7 +6234,7 @@ def trace_of(
     ep: Episode,
     out: dict,
     settled: dict,
-    forgiven: int,
+    floored: int,
     balance_bytes: int,
     balance_fits: bool,
 ) -> dict:
@@ -6221,7 +6243,7 @@ def trace_of(
     `touched_balance` is a command naming the balance file; `read_balance` is its
     contents in a result. The files the agent could see are captured with the
     balances it could have read: under live_balance this episode's own elements,
-    with it off the series it opened on.
+    with it off the balance history it opened on.
     """
     account = ep.account
     patterns = balance_patterns(
@@ -6256,8 +6278,8 @@ def trace_of(
             for c in t["tools"]
             for f in forms
         ),
-        "series_before": ep.series_before,
-        "series_after": list(account["series"]),
+        "balance_before": ep.balance_before,
+        "balance_after": list(account["balance_history"]),
         "balance_bytes": balance_bytes,
         "balance_fits": balance_fits,
         # What the experiment could read about who has given what, as it stood
@@ -6267,14 +6289,14 @@ def trace_of(
         # obligated channel by name, the floor, and what arrived.
         "transfer": settled["transfer"],
         "channels": settled["channels"],
-        "forgiven": forgiven,
+        "floored": floored,
         "received": ep.credited,
-        "remaining": account["remaining"],
+        "balance": account["balance"],
         "duration_s": round(time.time() - ep.started, 3),
         **out,
         **snapshot(
             ep.instances,
-            account["series"] if SETTINGS.live_balance else ep.series_before,
+            account["balance_history"] if SETTINGS.live_balance else ep.balance_before,
             starter_paths(account),
             tuple(ep.seating.labels.values()),
             receipts_planted(ep.shown),
@@ -6289,7 +6311,7 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     line = (
         f"{ep.agent:<6} ep{ep.episode:<3} {trace['stop']:<16} "
         f"spent={trace['spent']:>7} "
-        f"left={trace['remaining']:>9} turns={len(trace['turns']):>3} "
+        f"left={trace['balance']:>9} turns={len(trace['turns']):>3} "
         f"read_balance={str(trace['read_balance']).lower()}"
     )
     # Written outside every channel: the work was kept, and the episode spent
@@ -6307,8 +6329,8 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
     if transfer["amount"]:
         line += f"  transfer={transfer['amount']}->{transfer['label']}"
     line += settled_why(settled["settled"])
-    if trace["forgiven"]:
-        line += f"  FLOORED +{trace['forgiven']}"
+    if trace["floored"]:
+        line += f"  FLOORED +{trace['floored']}"
     return line
 
 
@@ -6476,13 +6498,16 @@ def run_episodes(
 # --- 17. Forking -----------------------------------------------------------------
 
 
-def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -> int:
+def fork(
+    parent: str, episode: int, new: str, history: list[int] | None = None
+) -> int:
     """Rebuild an agent as it stood at the end of `episode`, under a new id.
 
-    series_after is the series at that episode, files[] holds what each file
-    contained, and the provenance holds the channel table the files sat in. A branch
-    hands the `series` its seat stood on as the episode's round ended: series_after,
-    and what reached the parent after the episode and within the round.
+    balance_after is the balance history at that episode, files[] holds what each
+    file contained, and the provenance holds the channel table the files sat in. A
+    branch hands the `history` its seat stood on as the episode's round ended:
+    balance_after, and what reached the parent after the episode and within the
+    round.
     Rejects a fork wherever it cannot reproduce the recorded environment exactly.
     """
     trace_file = trace_path(parent, episode)
@@ -6497,6 +6522,8 @@ def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -
         return 2
 
     parent_account = json.loads(account_path(parent).read_text(encoding="utf-8"))
+    if why := stale(parent_account, "account"):
+        raise SystemExit(f"{parent} cannot be forked: it has {why}")
     if episode > len(parent_account["episodes"]):
         # close_episode writes the trace before the account, so a trace can outlive
         # an episode whose commit stopped between the two.
@@ -6507,6 +6534,10 @@ def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -
         )
         return 2
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
+    if why := stale(trace, "trace"):
+        raise SystemExit(
+            f"{parent} cannot be forked at episode {episode}: it has {why}"
+        )
     table = table_of(trace)
     written = [c for c in table if c.mirrored]
     if account_path(new).exists() or any(
@@ -6519,12 +6550,12 @@ def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -
     rebuild = rebuildable(trace, parent, episode)
     if rebuild is None:
         return 2
-    recorded = list(trace["series_after"])
-    series = recorded if series is None else list(series)
-    if series[: len(recorded)] != recorded:
+    recorded = list(trace["balance_after"])
+    history = recorded if history is None else list(history)
+    if history[: len(recorded)] != recorded:
         print(
-            f"{parent} episode {episode}: the series handed to the fork does not "
-            f"carry on from the one the trace recorded",
+            f"{parent} episode {episode}: the balance history handed to the fork "
+            f"does not carry on from the one the trace recorded",
             file=sys.stderr,
         )
         return 2
@@ -6536,24 +6567,17 @@ def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -
         or parent_account.get("label")
         or seat
     )
-    if (
-        parent_account.get("account_version") != ACCOUNT_VERSION
-        or trace.get("trace_version") != TRACE_VERSION
-    ):
-        raise SystemExit(
-            f"{parent} cannot be forked from an incompatible account or trace; start a fresh agent id"
-        )
     account: Account = {
         "account_version": ACCOUNT_VERSION,
         "agent": new,
         "provider": parent_account["provider"],
         "model": parent_account["model"],
-        "initial": parent_account["initial"],
+        "budget": parent_account["budget"],
         "created_at": parent_account["created_at"],
-        "remaining": series[-1],
+        "balance": history[-1],
         "seat": seat,
         "label": label,
-        "series": series,
+        "balance_history": history,
         "episodes": parent_account["episodes"][:episode],
         # Modes live beside each tree and describe its latest revision only,
         # so a fork behind the parent's head cannot restore them.
@@ -6594,7 +6618,7 @@ def fork(parent: str, episode: int, new: str, series: list[int] | None = None) -
 
     print(
         f"forked {parent} episode {episode} -> agent {new}: {len(rebuild)} files, "
-        f"{len(series) - 1} billed turns, {series[-1]} remaining, "
+        f"{len(history) - 1} billed turns, balance {history[-1]}, "
         f"modes {account['forked_from']['modes']}"
     )
     if planted := account.get("starter_files_landed"):
@@ -6621,7 +6645,9 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
         return None
     rebuild = []
     for file in trace["files"]:
-        if file.get("role", "own") != "own":
+        # The agent's own records: what it wrote, and the starter files planted in
+        # its private store.
+        if file["planted"] and not file["starter"]:
             continue
         why = None
         if file["text"] is None:
@@ -6843,7 +6869,7 @@ def print_context(
                 rendered, _ = render_harness_files(entry["id"], view)
                 opening = rendered.get(s.harness_files["digest"], "")
                 reach = [
-                    view["peers"]["labels"][seat]
+                    view["seating"]["labels"][seat]
                     for seat in seating_of(entry["id"], view).peers
                 ]
                 bound = bind_tools(

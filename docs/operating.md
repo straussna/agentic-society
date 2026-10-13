@@ -69,8 +69,8 @@ is captured up to 100,000 bytes per file with the true size and an explicit
 truncation marker; binaries are listed and sized but not stored. Every file record
 names its `author` — `experimenter` for the starter files and an experimenter channel, `self` for what the
 agent wrote anywhere, `peer:<label>` for what another agent wrote — its `channel` by the
-name the manifest declared, its `writer` and `readers`, and its `role`: `own`, `peer` or
-`experimenter`. The trace opens with `trace_version`, 4 for this shape.
+name the manifest declared, its `writer` and `readers`, and whether the harness
+`planted` it. The trace opens with `trace_version`, 5 for this shape.
 
 `environments/`, `records/`, `displaced/`, `interactions/`, and `experiment_records/` are
 gitignored. Deeper detail lives in each file's docstrings. Human-seat operation is

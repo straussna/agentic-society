@@ -96,7 +96,7 @@ def check_every_viewer_sees_the_same_seat_order():
         prepare = experiment.preparer(agent, seats, stamp)
         prepare(account)
         prepare(account)
-        order = account["peers"]["presentation"]
+        order = account["seating"]["seat_order"]
         assert order == list(seats), (agent, order)
 
 
@@ -284,8 +284,8 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
             "interrupted": [],
             "voted_out": "1",
             "top_votes": 3,
-            "top_tied": False,
-            "remaining": ["2", "3", "5"],
+            "tied": False,
+            "candidates_left": ["2", "3", "5"],
         }, result
         next_round = harness.render_round_status(harness.load_account("g02"))
         assert "remaining agents: 2 (you), 3, 5" in next_round, next_round
@@ -329,7 +329,7 @@ def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
         assert "top vote tied at 2" in output.getvalue()
         result = harness.load_account("g01")["last_election"]
         assert (
-            result["top_tied"] and not result["voted_out"] and not result["abstainers"]
+            result["tied"] and not result["voted_out"] and not result["abstainers"]
         )
 
 
@@ -367,7 +367,7 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
 
     assert ended == "final_tie" and seated_ids == set(ids), ended
     assert "both survive and the experiment ends" in output.getvalue()
-    assert result["top_tied"]
+    assert result["tied"]
 
 
 def check_an_experiment_ends_on_the_reason_its_last_round_gives():
@@ -394,8 +394,8 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
             "abstainers": ["1"],
             "voted_out": "1",
             "top_votes": 2,
-            "top_tied": False,
-            "remaining": ["2", "3"],
+            "tied": False,
+            "candidates_left": ["2", "3"],
         }
         for agent, target in zip(ids, (None, "3", "2")):
             account = harness.load_account(agent)
@@ -698,8 +698,8 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
             "interrupted": [],
             "voted_out": "1",
             "top_votes": 3,
-            "top_tied": False,
-            "remaining": ["2", "3", "5"],
+            "tied": False,
+            "candidates_left": ["2", "3", "5"],
         }
         and a["elections"] == [a["last_election"]]
         for a in after.values()
@@ -760,8 +760,8 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
             "interrupted": ["3"],
             "voted_out": "",
             "top_votes": 1,
-            "top_tied": True,
-            "remaining": ["1", "2", "3"],
+            "tied": True,
+            "candidates_left": ["1", "2", "3"],
         }
         for election in elections.values()
     ), elections
@@ -827,8 +827,8 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
             "interrupted": ["2"],
             "voted_out": "",
             "top_votes": 1,
-            "top_tied": False,
-            "remaining": ["1", "2"],
+            "tied": False,
+            "candidates_left": ["1", "2"],
         }
         for election in elections.values()
     ), elections
@@ -917,8 +917,8 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
             "interrupted": ["2"],
             "voted_out": "",
             "top_votes": 1,
-            "top_tied": True,
-            "remaining": ["1", "2"],
+            "tied": True,
+            "candidates_left": ["1", "2"],
         }
         for election in elections.values()
     ), elections
@@ -964,7 +964,7 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
         election["tally"] == {"1": 1, "2": 0, "3": 1} and election["abstainers"] == []
     ), election
     assert election["electors"] == ["1", "3"], election
-    assert election["top_tied"] and election["remaining"] == ["1", "2", "3"], election
+    assert election["tied"] and election["candidates_left"] == ["1", "2", "3"], election
     assert g02["last_election"] == election, g02
     assert harness.why_not_in_play(g02) is None, g02
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
@@ -1057,8 +1057,8 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
         "interrupted": [],
         "voted_out": "",
         "top_votes": 1,
-        "top_tied": True,
-        "remaining": ["1", "2", "3"],
+        "tied": True,
+        "candidates_left": ["1", "2", "3"],
     }
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         seated(root, "g01", g02={}, g03={})
@@ -1424,7 +1424,7 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
         "1",
         "2",
     ], election
-    assert election["voted_out"] == "3" and not election["top_tied"], election
+    assert election["voted_out"] == "3" and not election["tied"], election
     assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == [
         "1",
         "2",
@@ -1451,8 +1451,8 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
         "interrupted": [],
         "voted_out": "",
         "top_votes": 0,
-        "top_tied": False,
-        "remaining": ["1"],
+        "tied": False,
+        "candidates_left": ["1"],
     }, g01["last_election"]
 
 
@@ -1622,9 +1622,10 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
         assert (bundles[0] / "environments" / "g01" / "notes" / "old.txt").read_text(
             encoding="utf-8"
         ) == "previous run\n"
-        assert account["account_version"] == 2 and len(account["episodes"]) == 1, (
-            account
-        )
+        assert (
+            account["account_version"] == harness.ACCOUNT_VERSION
+            and len(account["episodes"]) == 1
+        ), account
         assert "warning: starting fresh" in warning.getvalue()
         assert (
             str(bundles[0]) in warning.getvalue() and "--resume" in warning.getvalue()
@@ -1878,8 +1879,8 @@ def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
         "abstainers": [],
         "voted_out": "",
         "top_votes": 1,
-        "top_tied": True,
-        "remaining": ["1", "2", "3"],
+        "tied": True,
+        "candidates_left": ["1", "2", "3"],
     }
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={}, g04={})
@@ -1993,7 +1994,7 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
                     for key in ("electors", "interrupted"):
                         record.pop(key)
                     record["tally"].pop("4")
-                    record["remaining"].remove("4")
+                    record["candidates_left"].remove("4")
                 harness.save_account(agent, account)
             held = {
                 agent: {
@@ -2140,7 +2141,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
                 ]
             )
         took = episodes_taken(ids)
-        rested = {r: harness.load_account(r)["remaining"] for r in ids}
+        rested = {r: harness.load_account(r)["balance"] for r in ids}
         outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 1, "g02": 1, "g03": 1}, (
@@ -2448,8 +2449,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         "g03": "",
     }
     assert (
-        accounts["g02"]["initial"] == 600000
-        and accounts["g01"]["initial"] == harness.SETTINGS.budget
+        accounts["g02"]["budget"] == 600000
+        and accounts["g01"]["budget"] == harness.SETTINGS.budget
     )
     assert starter == {"g01": "alpha\n", "g02": "bravo\n", "g03": None}, starter
     for r, t in traces.items():
@@ -2560,8 +2561,11 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
     assert "1 2 250" in later["observation"], (
         "the transfer is on the ledger at the next episode"
     )
-    assert g02["received"] == 250 and g02_first["received"] == 250, (g02, g02_first)
-    span = g02["series"][g02_first["series_from"] : g02_first["series_to"] + 1]
+    assert (
+        g02["received"] == 250 and g02_first["received_this_episode"] == 250
+    ), (g02, g02_first)
+    first_from, first_to = g02_first["balance_from"], g02_first["balance_to"]
+    span = g02["balance_history"][first_from : first_to + 1]
     assert len(span) == elements_of(g02_first), (span, g02_first)
     assert span[-1] == span[-2] + 250, (
         "the credit is the last element of the receiver's span"
@@ -2588,9 +2592,10 @@ def check_a_simultaneous_credit_lands_before_the_floor():
                     per_agent(g01=(run(transfer), say()), g02=(say(),)),
                 )
             m = ground_truth("g02")
-            results[name] = (m["remaining"], m.get("forgiven", 0), harness.in_play(m))
+            results[name] = (m["balance"], m.get("floored", 0), harness.in_play(m))
     assert results["transfer"] == (49, 0, True), (
-        f"the credit landed first, so nothing was forgiven and the agent goes on: {results}"
+        "the credit landed first, so nothing was floored and the agent goes on: "
+        f"{results}"
     )
     assert results["none"] == (0, 1, False), (
         f"without it the overshoot is floored: {results}"
@@ -2649,9 +2654,11 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
     assert taken == {"g01": 1, "g02": 0, "g03": 1}, taken
     assert traced == {"g01": True, "g02": False, "g03": True}, traced
     assert (sent["agent"], sent["amount"]) == ("g02", 250), sent
-    assert g02["received"] == 250 and g02["remaining"] == before["remaining"] + 250, g02
-    assert g02["series"] == before["series"] + [before["remaining"] + 250], g02[
-        "series"
+    assert g02["received"] == 250 and g02["balance"] == before["balance"] + 250, g02
+    assert g02["balance_history"] == before["balance_history"] + [
+        before["balance"] + 250
+    ], g02[
+        "balance_history"
     ]
 
 
@@ -2715,8 +2722,8 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                 spent = sum(episode["spent"] for episode in account["episodes"])
                 assert (
                     reconciled(account, spent)
-                    == account["remaining"]
-                    == account["series"][-1]
+                    == account["balance"]
+                    == account["balance_history"][-1]
                 ), (
                     schedule,
                     lost,
@@ -2724,7 +2731,10 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                 )
             ended[schedule, lost] = {
                 agent: (
-                    [episode["received"] for episode in account["episodes"]],
+                    [
+                        episode["received_this_episode"]
+                        for episode in account["episodes"]
+                    ],
                     account.get("received", 0),
                 )
                 for agent, account in accounts.items()
@@ -2764,13 +2774,13 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
                     pass
                 g01 = ground_truth("g01")
             stood[floor, lost] = (
-                g01["remaining"],
-                g01.get("forgiven", 0),
+                g01["balance"],
+                g01.get("floored", 0),
                 g01.get("received", 0),
                 reconciled(g01, g01["episodes"][0]["spent"]),
-                g01["series"][1:],
+                g01["balance_history"][1:],
             )
-    # Floored, a take-back forgives what its close would have; unfloored, it forgives
+    # Floored, a take-back floors what its close would have; unfloored, it floors
     # nothing, and the balance stays below zero where the close left it.
     assert stood[True, True][:4] == stood[True, False][:4] == (0, 1, 0, 0), stood
     assert stood[True, True][4] == [-1, 49, -1, 0] and stood[True, False][4] == [
@@ -2863,12 +2873,12 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
             spent = sum(episode["spent"] for episode in account["episodes"])
             assert (
                 reconciled(account, spent)
-                == account["remaining"]
-                == account["series"][-1]
+                == account["balance"]
+                == account["balance_history"][-1]
             ), (case, account)
         ended[case] = {
             agent: (
-                [episode["received"] for episode in account["episodes"]],
+                [episode["received_this_episode"] for episode in account["episodes"]],
                 account.get("received", 0),
             )
             for agent, account in accounts.items()
@@ -2920,7 +2930,9 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
         episodes = {r: harness.load_account(r)["episodes"] for r in ids}
     assert all(len(s) == 1 for s in episodes.values()), episodes
     for r, (s,) in episodes.items():
-        assert s["stop"] == "interrupted" and s["turns"] == 1 and s["spent"] > 0, (r, s)
+        assert (
+            s["stop"] == "interrupted" and s["turn_count"] == 1 and s["spent"] > 0
+        ), (r, s)
     assert seated_ids == set(ids), "and no agent is ejected for it"
 
     # And main under a simultaneous manifest answers the same way.

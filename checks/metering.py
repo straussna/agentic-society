@@ -259,26 +259,26 @@ def check_episodes_reconcile():
         for _ in range(3):
             last = episode_once(*DEFAULT)
         account = ground_truth()
-        series, episodes = account["series"], account["episodes"]
+        series, episodes = account["balance_history"], account["episodes"]
         assert len(episodes) == 3, episodes
-        assert len(series) == 1 + sum(s["turns"] for s in episodes), (
+        assert len(series) == 1 + sum(s["turn_count"] for s in episodes), (
             "one element per billed turn, plus starter_files, where nothing else moved"
         )
         spent = sum(s["spent"] for s in episodes)
-        assert spent == account["initial"] - account["remaining"], (
-            f"{spent} != {account['initial'] - account['remaining']}"
+        assert spent == account["budget"] - account["balance"], (
+            f"{spent} != {account['budget'] - account['balance']}"
         )
-        assert series[-1] == account["remaining"], "the last element is the balance"
+        assert series[-1] == account["balance"], "the last element is the balance"
         for s in episodes:
-            started, ended = series[s["series_from"]], series[s["series_to"]]
+            started, ended = series[s["balance_from"]], series[s["balance_to"]]
             assert started - ended == s["spent"], (
                 f"episode {s['episode']}: {started} - {ended} != {s['spent']}"
             )
             assert started == s["balance_at_start"], (s["balance_at_start"], started)
-        assert [s["series_from"] for s in episodes[1:]] == [
-            s["series_to"] for s in episodes[:-1]
+        assert [s["balance_from"] for s in episodes[1:]] == [
+            s["balance_to"] for s in episodes[:-1]
         ], "and the spans meet end to end"
-        assert series == last["series_after"], (
+        assert series == last["balance_after"], (
             "the last trace carries the series the account committed"
         )
 
@@ -301,10 +301,10 @@ def check_episodes_reconcile():
             say(),
         )
         account = ground_truth()
-        series, episodes = account["series"], account["episodes"]
+        series, episodes = account["balance_history"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
-        assert account["remaining"] == reconciled(account, spent), account
-        assert series[-1] == account["remaining"], (
+        assert account["balance"] == reconciled(account, spent), account
+        assert series[-1] == account["balance"], (
             "the series ends where the account does"
         )
         assert account["rebated"] == 150 and account["penalised"]["blackboard"] > 0, (
@@ -330,13 +330,13 @@ def check_episodes_reconcile():
         episode_once(run("echo '2 300' > out/transfer"), say())
         episode_once(say())  # no transfer submitted
         account = ground_truth()
-        series, episodes = account["series"], account["episodes"]
+        series, episodes = account["balance_history"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
-        assert account["remaining"] == reconciled(account, spent), account
+        assert account["balance"] == reconciled(account, spent), account
         # Only the first episode submitted a transfer.
         assert account["debited"] == 300 and account["rebated"] == 0, account
         assert account["penalised"]["transfer"] > 0, account
-        assert series[-1] == account["remaining"]
+        assert series[-1] == account["balance"]
         for s in episodes:
             assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
 
@@ -349,7 +349,7 @@ def check_balance_grows_within_an_episode():
     """
     with temp_root(live_balance=True):
         t = episode_once(run("cat n1"), run("cat n1"), say())
-    before, balances = t["series_before"], [x["balance"] for x in t["turns"]]
+    before, balances = t["balance_before"], [x["balance"] for x in t["turns"]]
     first, second = (json.loads(t["turns"][i]["tools"][0]["result"]) for i in (0, 1))
     assert first == before + balances[:1], (first, before, balances)
     assert second == before + balances[:2], (second, before, balances)
@@ -358,7 +358,7 @@ def check_balance_grows_within_an_episode():
     assert first[-1] - second[-1] == t["turns"][1]["micros"], (
         "the drop between two reads is what the turn between them cost"
     )
-    assert t["series_after"] == before + balances, (
+    assert t["balance_after"] == before + balances, (
         "and the episode commits exactly those"
     )
     assert (
@@ -374,7 +374,8 @@ def check_live_balance_can_be_turned_off():
     with temp_root(live_balance=False):
         t = episode_once(run("cat n1"), run("cat n1"), say())
     reads = [c["result"].strip() for x in t["turns"][:2] for c in x["tools"]]
-    assert reads[0] == reads[1] == harness.render_balance(t["series_before"]).strip(), (
+    planted = harness.render_balance(t["balance_before"]).strip()
+    assert reads[0] == reads[1] == planted, (
         reads
     )
     assert t["live_balance_writes"] == 0 and t["live_balance_errors"] == 0
@@ -382,7 +383,7 @@ def check_live_balance_can_be_turned_off():
         "the trace must say which regime this was"
     )
     assert t["read_balance"], "a read of the fixed form is still a read"
-    assert t["series_after"] == t["series_before"] + [
+    assert t["balance_after"] == t["balance_before"] + [
         x["balance"] for x in t["turns"]
     ], "the turns still reach the series, just not during the episode"
 
@@ -399,7 +400,7 @@ def check_a_negative_balance_is_what_the_agent_ends_holding():
     with temp_root(budget=cost - 1):
         first = episode_once(*DEFAULT)
         assert first["balance_floor"] == 0, "an episode stops at zero"
-        assert first["remaining"] < 0, (
+        assert first["balance"] < 0, (
             "the last turn overshoots; that is the value at stake"
         )
         assert harness.exhausted(ground_truth()), "and below zero is exhausted"
@@ -451,7 +452,7 @@ def check_bills_once():
     # The replayed turn appends a balance equal to the one before it, its
     # incremental cost being zero: a flat step is a retry made visible.
     assert dup[0]["balance"] == dup[1]["balance"], "a replayed response moves nothing"
-    assert len(t["series_after"]) == len(t["series_before"]) + len(t["turns"]), (
+    assert len(t["balance_after"]) == len(t["balance_before"]) + len(t["turns"]), (
         "and still appends one element per turn"
     )
 
@@ -474,7 +475,7 @@ def check_per_turn_micros_partition_the_spend():
         f"the fraction must carry, or this proves nothing: {micros}"
     )
     assert t["balances"] == [
-        t["series_before"][-1] - sum(micros[: i + 1]) for i in range(len(micros))
+        t["balance_before"][-1] - sum(micros[: i + 1]) for i in range(len(micros))
     ], t["balances"]
 
 
@@ -564,7 +565,7 @@ def check_a_refusal_is_billed_only_if_it_produced_output():
         t = episode_once(refuse(), refuse("echo hi"), say())
 
     assert t["turns"][0]["micros"] == 0, "a refusal before any output is not billed"
-    assert t["turns"][0]["balance"] == t["series_before"][-1], (
+    assert t["turns"][0]["balance"] == t["balance_before"][-1], (
         "the balance did not move"
     )
     assert t["turns"][1]["micros"] > 0, "output was produced, so that one was billed"

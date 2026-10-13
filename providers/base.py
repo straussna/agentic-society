@@ -84,18 +84,10 @@ class Usage:
 USAGE_FIELDS = tuple(f.name for f in dataclasses.fields(Usage))
 
 
-def kind_keyed(value: Any, name: str) -> dict[str, Any]:
-    """A dataclass as its record stores it: the field `name` under the key "kind"."""
-    return {
-        "kind" if key == name else key: item
-        for key, item in dataclasses.asdict(value).items()
-    }
-
-
 @dataclasses.dataclass(frozen=True)
 class Charge:
     """One itemized line of a response's spend: the tokens of one token class, at the
-    model's rate for that class. Its record keys the token class as "kind"."""
+    model's rate for that class."""
 
     token_class: str
     tokens: int
@@ -105,13 +97,12 @@ class Charge:
     multiplier_denominator: int = 1
 
     def as_dict(self) -> dict[str, int | str]:
-        return kind_keyed(self, "token_class")
+        return dataclasses.asdict(self)
 
 
 @dataclasses.dataclass(frozen=True)
 class Refusal:
-    """A model declining, as the provider typed it. Its record keys the refusal type
-    as "kind"."""
+    """A model declining, as the provider typed it."""
 
     refusal_type: str
     explanation: str | None = None
@@ -119,7 +110,7 @@ class Refusal:
     details: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return kind_keyed(self, "refusal_type")
+        return dataclasses.asdict(self)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -139,10 +130,7 @@ class NormalizedResponse:
     native_stop_details: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        value = dataclasses.asdict(self)
-        value["charges"] = tuple(item.as_dict() for item in self.charges)
-        value["refusal"] = self.refusal.as_dict() if self.refusal else None
-        return value
+        return dataclasses.asdict(self)
 
 
 @dataclasses.dataclass(frozen=True)

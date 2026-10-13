@@ -287,9 +287,9 @@ def outcome(
             {"round": round, "seat": seat, "reason": why}
             for round, seat, why in eliminated
         ],
-        "scores": {label_by_agent[a]: accounts[a].get("remaining", 0) for a in agents},
+        "scores": {label_by_agent[a]: accounts[a].get("balance", 0) for a in agents},
         "resources": {
-            label_by_agent[a]: {"micro_dollars": accounts[a].get("remaining", 0)}
+            label_by_agent[a]: {"micro_dollars": accounts[a].get("balance", 0)}
             for a in agents
         },
         "evidence": evidence,

@@ -108,7 +108,7 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     assert all(r["episode"] < 4 for r in landed.values()), (
         f"both must land inside the episodes run, with headroom to spare: {landed}"
     )
-    assert all(r["remaining"] <= below for r in landed.values()), landed
+    assert all(r["balance"] <= below for r in landed.values()), landed
     assert all(r["sha256"] == landed["cheap"]["sha256"] for r in landed.values()), (
         "the same starter files, whenever they happened to land"
     )
@@ -127,7 +127,7 @@ def check_starter_files_are_recorded_and_idempotent():
         record = ground_truth()["starter_files_landed"]
 
     assert record["name"] == "s" and record["episode"] == 1, record
-    assert record["remaining"] == 500_000, "and the balance it landed on"
+    assert record["balance"] == 500_000, "and the balance it landed on"
     assert sorted(record["paths"]) == ["d/m2", "m1"], record
     kept = files_by_path(after)["state/m1"]
     assert kept["text"].strip() == "mine", (
@@ -137,7 +137,7 @@ def check_starter_files_are_recorded_and_idempotent():
 
 
 def check_starter_files_are_not_the_agents():
-    """What the agent was given is `ours`; only what it invented is not."""
+    """What the agent was given is `planted`; only what it invented is not."""
     with temp_root(
         budget=500_000, starter_files="s", starter_files_below=500_000
     ) as root:
@@ -145,12 +145,12 @@ def check_starter_files_are_not_the_agents():
         t = episode_once(run("echo doctrine > state/NOTES.md"), say())
 
     by = files_by_path(t)
-    assert by["state/m1"]["ours"] and by["state/m1"]["starter"], by["state/m1"]
+    assert by["state/m1"]["planted"] and by["state/m1"]["starter"], by["state/m1"]
     assert by["state/m1"]["text"].strip() == "alpha", (
         "a starter file's contents are captured, so an edit to it is legible"
     )
-    assert not by["state/NOTES.md"]["ours"], "the agent's own file stays the agent's"
-    assert [f["path"] for f in t["files"] if not f["ours"]] == ["state/NOTES.md"], (
+    assert not by["state/NOTES.md"]["planted"], "the agent's own file stays the agent's"
+    assert [f["path"] for f in t["files"] if not f["planted"]] == ["state/NOTES.md"], (
         "everything the agent did not invent is out of what analyze.py counts as its own"
     )
     assert not [f for f in t["files"] if f["channel"] != "notes"], (
@@ -320,18 +320,18 @@ def check_fork_reproduces_state_and_account():
         assert notes.decode() == was["text"], "state/ is the episode it forked at"
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
-        assert forked["series"] == trace["series_after"], (
+        assert forked["balance_history"] == trace["balance_after"], (
             "invariant 8: the series is what carries"
         )
         assert not any(harness.mirror("f", "blackboard").rglob("*")), (
             "the parent's blackboard was empty, so the fork's is"
         )
-        assert forked["remaining"] == trace["series_after"][-1]
+        assert forked["balance"] == trace["balance_after"][-1]
         assert len(forked["episodes"]) == 1, (
             "the episodes after the fork point are dropped"
         )
         assert (
-            forked["initial"] == parent["initial"]
+            forked["budget"] == parent["budget"]
             and forked["model"] == parent["model"]
         )
         assert forked["forked_from"] == {
@@ -413,12 +413,12 @@ def check_fork_rejects_what_it_cannot_rebuild():
                 "agent": "p",
                 "provider": "anthropic",
                 "model": "claude-opus-5",
-                "initial": 10,
+                "budget": 10,
                 "created_at": "now",
-                "remaining": 9,
-                "series": [10, 9],
+                "balance": 9,
+                "balance_history": [10, 9],
                 "episodes": [
-                    {"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}
+                    {"episode": 1, "stop": "end_turn", "spent": 1, "turn_count": 1}
                 ],
             },
         )
@@ -430,17 +430,16 @@ def check_fork_rejects_what_it_cannot_rebuild():
                 "trace_version": harness.TRACE_VERSION,
                 "episode": 1,
                 "state_saved": True,
-                "series_after": [10, 9],
+                "balance_after": [10, 9],
                 "files": [
                     {
                         "path": "2/theirs",
                         "channel": "blackboard",
                         "writer": "self",
                         "readers": "all",
-                        "role": "peer",
                         "size": 5,
                         "author": "peer:2",
-                        "ours": True,
+                        "planted": True,
                         "starter": False,
                         "text": None,
                     },
@@ -449,10 +448,9 @@ def check_fork_rejects_what_it_cannot_rebuild():
                         "channel": "notes",
                         "writer": "self",
                         "readers": "self",
-                        "role": "own",
                         "size": 3,
                         "author": "self",
-                        "ours": False,
+                        "planted": False,
                         "starter": False,
                         "text": "hi\n",
                     },
@@ -484,7 +482,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
         # A trace whose episode the account never came to list: the commit stopped
         # between writing the one and saving the other.
         harness.trace_path("p", 2).write_text(
-            json.dumps(trace(episode=2, series_after=[10, 9, 8])), encoding="utf-8"
+            json.dumps(trace(episode=2, balance_after=[10, 9, 8])), encoding="utf-8"
         )
         with quiet() as said:
             assert harness.fork("p", 2, "x-orphan") == 2, (
@@ -523,12 +521,12 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
                 "agent": "p",
                 "provider": "anthropic",
                 "model": "claude-opus-5",
-                "initial": 10,
+                "budget": 10,
                 "created_at": "now",
-                "remaining": 9,
-                "series": [10, 9],
+                "balance": 9,
+                "balance_history": [10, 9],
                 "episodes": [
-                    {"episode": 1, "stop": "end_turn", "spent": 1, "turns": 1}
+                    {"episode": 1, "stop": "end_turn", "spent": 1, "turn_count": 1}
                 ],
             },
         )
@@ -537,10 +535,9 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
             "channel": "notes",
             "writer": "self",
             "readers": "self",
-            "role": "own",
             "size": 3,
             "author": "self",
-            "ours": False,
+            "planted": False,
             "starter": False,
             "text": "hi\n",
         }
@@ -548,7 +545,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
             "trace_version": harness.TRACE_VERSION,
             "episode": 1,
             "state_saved": True,
-            "series_after": [10, 9],
+            "balance_after": [10, 9],
             "files": [mine, {**mine, "path": "elsewhere/b.txt"}],
         }
         harness.trace_path("p", 1).write_text(json.dumps(trace), encoding="utf-8")
@@ -636,8 +633,8 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
                 branch["labels"],
             )
         was, t = trace_on_disk("g01", 1)["provenance"], trace_on_disk("br-01", 2)
-    assert t["provenance"]["peers"] == {"1": "br-01", "2": "br-02"}, t["provenance"][
-        "peers"
+    assert t["provenance"]["seating"] == {"1": "br-01", "2": "br-02"}, t["provenance"][
+        "seating"
     ]
     assert t["provenance_drift"] == [
         f"experiment_id: {was['experiment_id']!r} -> 'br'",

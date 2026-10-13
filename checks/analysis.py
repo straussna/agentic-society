@@ -207,7 +207,7 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["transfer_error"] == "" and r1["transfer_penalised"] == 0, r1
     assert r1["starter_files"] == "s" and r1["starter_files_count"] == 2, r1
     assert r1["touched_starter"] is True, r1
-    assert r1["peers"] == "1=t;2=other" and r1["persona_delta"] == "", r1
+    assert r1["seating"] == "1=t;2=other" and r1["persona_delta"] == "", r1
     assert r1["turns"] == 4 and r1["spent"] == first["spent"], r1
     assert sum(r1[k] for k in analyze.USAGE_FIELDS) == sum(
         x["usage"][k] for x in first["turns"] for k in analyze.USAGE_FIELDS
@@ -330,7 +330,7 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
         }
     ]
     traced = view.from_trace({"turns": [{"turn": 1, "tools": records}]})[0]["tools"]
-    live = view.from_raw(logged, {"remaining": 100})[0]["tools"]
+    live = view.from_raw(logged, {"balance": 100})[0]["tools"]
 
     shown = ["ls", "(restart)", "post(body='hi')", "ls"]
     assert [analyze.tool_call(call) for call in records] == shown

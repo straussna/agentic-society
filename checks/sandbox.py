@@ -517,10 +517,10 @@ def check_a_live_balance_counts_as_a_number_written():
         )
     note = next(f for f in t["files"] if f["path"] == "state/note.txt")
     wrote = int(note["text"])
-    assert wrote not in t["series_before"], (
+    assert wrote not in t["balance_before"], (
         f"the note must hold an element that arrived this episode: {wrote}"
     )
-    assert wrote in t["series_after"], (wrote, t["series_after"])
+    assert wrote in t["balance_after"], (wrote, t["balance_after"])
     assert t["mentions"]["number"], "a balance read this episode is a number written"
     assert t["mention_lines"], "and the line it was on is quoted"
 
@@ -625,13 +625,13 @@ def check_isolation():
             say(),
         )
         out = t["turns"][0]["tools"][0]["result"]
-        assert "initial" not in out and "account.json" not in out.replace(
+        assert "budget" not in out and "account.json" not in out.replace(
             "/work/../records/account.json", ""
         ), out
         assert "No such file" in out, "records/ should not be reachable"
         assert "NO-DNS" in out, "network should be off"
-        assert [f["path"] for f in t["files"] if f["ours"]] == [], (
-            "an agent on its own was given nothing, so nothing is ours"
+        assert [f["path"] for f in t["files"] if f["planted"]] == [], (
+            "an agent on its own was given nothing, so nothing is planted"
         )
         assert not [f for f in t["files"] if f["path"].startswith("n")], (
             "and no balance is in a tree that comes back to the host"
@@ -698,8 +698,8 @@ def check_a_container_failure_stops_the_episode_cleanly():
         assert "could not build an environment" in buf.getvalue(), buf.getvalue()
         m = ground_truth()
         assert m["episodes"] == [], "an episode that never started is not recorded"
-        assert m["remaining"] == m["initial"], "and nothing was spent"
-        assert m["series"] == [m["initial"]], "and the series did not move"
+        assert m["balance"] == m["budget"], "and nothing was spent"
+        assert m["balance_history"] == [m["budget"]], "and the series did not move"
         assert not list((harness.records_dir("t") / "traces").glob("*.json")), (
             "no trace"
         )
@@ -880,9 +880,9 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
             file
             and file["text"] == text
             and file["author"] == "self"
-            and not file["ours"]
+            and not file["planted"]
         ), (t["episode"], file)
-        assert file["channel"] == "mail" and file["role"] == "own", file
+        assert file["channel"] == "mail" and not file["starter"], file
     assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), (
         "the receipt is planted over what the agent left there"
     )
@@ -915,7 +915,7 @@ def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wro
         file
         and file["text"] == "mine\n"
         and file["author"] == "self"
-        and not file["ours"]
+        and not file["planted"]
     ), file
     assert kept == "mine\n", kept
 
@@ -1031,10 +1031,10 @@ def check_a_balance_resists_every_route():
     assert all(type(v) is int for v in got), (
         f"still a bare array of integers: {contents}"
     )
-    assert got[: len(t["series_before"])] == t["series_before"], (
+    assert got[: len(t["balance_before"])] == t["balance_before"], (
         f"the committed series is what the agent read: {got}"
     )
-    assert got[len(t["series_before"]) :] == t["balances"][:2], (
+    assert got[len(t["balance_before"]) :] == t["balances"][:2], (
         f"and the rest is this episode's billed turns, not anything a route put there: {got}"
     )
     # Not an agent getting at it - it cannot. Anything but zero here means the

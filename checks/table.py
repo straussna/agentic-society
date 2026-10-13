@@ -400,8 +400,8 @@ def check_a_declared_table_reshapes_the_environment():
     }, sorted(by)
     assert (
         by["journal/IDENTITY.md"]["channel"],
-        by["journal/IDENTITY.md"]["role"],
-    ) == ("identity", "own")
+        by["journal/IDENTITY.md"]["author"],
+    ) == ("identity", "self")
     assert (
         by["from-Game/hello"]["author"] == "peer:Game"
         and by["from/Game"]["author"] == "peer:Game"
@@ -480,7 +480,7 @@ def check_a_second_blackboard_channel_is_its_own_obligation():
     }
     with temp_root(channels=tables(gallery, blackboard=HALF)) as root:
         seated(root, other={})
-        left = harness.load_account("t")["remaining"]
+        left = harness.load_account("t")["balance"]
         t = episode_once(run("echo p > 1/post"), say())
         account = ground_truth()
         env = [
@@ -510,11 +510,11 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
     table = [c for c in tables() if c["name"] != "transfer"]
     with temp_root(channels=table) as root:
         seated(root, other={})
-        before = harness.load_account("other")["remaining"]
+        before = harness.load_account("other")["balance"]
         t = episode_once(run("echo '2 100' > out/transfer", "echo hi > out/2"), say())
         account = ground_truth()
         planted = set(harness.render_harness_files("t", account)[0])
-        other = harness.load_account("other")["remaining"]
+        other = harness.load_account("other")["balance"]
     assert planted == {"n1", "n2", "m"}, planted
     assert "=== g ===" not in t["observation"] and "transfer" not in t["channels"]
     assert t["transfer"]["amount"] == 0 and t["transfer"]["declared"] is None, t[
@@ -580,14 +580,14 @@ def check_a_receipt_says_what_each_obligation_came_to():
     def said(records: dict) -> list[str]:
         account = {
             "agent": "t",
-            "series": [1000, 900],
-            "remaining": 900,
+            "balance_history": [1000, 900],
+            "balance": 900,
             "episodes": [
                 {
                     "episode": 1,
                     "balance_at_start": 1000,
                     "spent": 100,
-                    "series_to": 1,
+                    "balance_to": 1,
                     "channels": records,
                 }
             ],
@@ -771,7 +771,7 @@ def check_a_channel_is_settled_only_where_it_asks_to_be():
         and t["channels"]["mail"]["penalty"] == 0
     )
     assert not account.get("penalised"), account
-    assert account["remaining"] == account["initial"] - t["spent"], (
+    assert account["balance"] == account["budget"] - t["spent"], (
         "measured costs nothing"
     )
 
@@ -803,8 +803,8 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     )
     assert t["provenance"]["harness_files"] == {"balance": "", "digest": "digest"}
     # The accounting itself is untouched: the series still grew by the turns billed.
-    assert account["series"], "the balance is still kept, just not shown"
-    assert account["remaining"] == account["initial"] - t["spent"], account
+    assert account["balance_history"], "the balance is still kept, just not shown"
+    assert account["balance"] == account["budget"] - t["spent"], account
 
     # The budget is the cap on what an experiment can cost, and hiding the file
     # does not lift it: the episodes still stop at the floor and no further one
@@ -815,7 +815,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
             assert harness.run_episodes("t", fake(), 8) == 0
         exhausted = ground_truth()
     assert 0 < len(exhausted["episodes"]) < 8, exhausted["episodes"]
-    assert exhausted["remaining"] <= 0, exhausted
+    assert exhausted["balance"] <= 0, exhausted
     assert "nothing left to spend" in buf.getvalue(), buf.getvalue()
 
 
@@ -830,7 +830,9 @@ def check_an_unpushed_public_channel_stays_out_of_the_digest():
         "and the board is there to read"
     )
     by = files_by_path(t)
-    assert by["2/post"]["channel"] == "blackboard" and by["2/post"]["role"] == "peer"
+    assert (
+        by["2/post"]["channel"] == "blackboard" and by["2/post"]["author"] == "peer:2"
+    )
 
 
 def check_an_experimenter_channels_sha256_reaches_provenance():
@@ -877,7 +879,7 @@ def check_an_experimenter_channels_sha256_reaches_provenance():
     by = files_by_path(t)
     assert (
         by["rules/RULES"]["author"] == "experimenter"
-        and by["rules/RULES"]["role"] == "experimenter"
+        and not by["rules/RULES"]["starter"]
     )
 
 

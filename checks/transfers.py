@@ -118,7 +118,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
     """
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
-        before = harness.load_account("other")["remaining"]
+        before = harness.load_account("other")["balance"]
         t = episode_once(run("echo '2 400' > out/transfer"), say())
 
         giver, taker = ground_truth("t"), ground_truth("other")
@@ -129,13 +129,15 @@ def check_a_transfer_moves_both_accounts_and_both_series():
             and transfer["error"] is None
         ), transfer
         assert transfer["amount"] == 400 and transfer["rebate"] == 400, transfer
-        assert taker["remaining"] == before + 400, "the receiver is credited in full"
+        assert taker["balance"] == before + 400, "the receiver is credited in full"
         assert taker["received"] == 400 and giver["sent"] == 400
         assert giver["rebated"] == 400
         # Both balances move where their owner can read them, and nowhere else.
-        assert taker["series"][-1] == taker["remaining"], "n is the balance, always"
-        assert giver["series"][-1] == giver["remaining"]
-        assert giver["remaining"] == giver["initial"] - t["spent"] + 400, (
+        assert taker["balance_history"][-1] == taker["balance"], (
+            "n is the balance, always"
+        )
+        assert giver["balance_history"][-1] == giver["balance"]
+        assert giver["balance"] == giver["budget"] - t["spent"] + 400, (
             "at 100 the transfer costs its giver nothing"
         )
 
@@ -161,14 +163,14 @@ def check_a_transfer_never_costs_the_giver():
                 seated(root, other={})
                 t = episode_once(run(f"echo '2 {amount}' > out/transfer"), say())
                 account = ground_truth("t")
-            floor = account["initial"] - t["spent"]
-            assert account["remaining"] >= floor, (
+            floor = account["budget"] - t["spent"]
+            assert account["balance"] >= floor, (
                 f"at {rate}% a transfer of {amount} left its giver below what it spent"
             )
-            assert account["remaining"] == floor + t["transfer"]["rebate"], (
+            assert account["balance"] == floor + t["transfer"]["rebate"], (
                 rate,
                 amount,
-                account["remaining"],
+                account["balance"],
                 floor,
                 t["transfer"],
             )
@@ -179,8 +181,9 @@ def check_a_transfer_never_costs_the_giver():
         seated(root, other={})
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
         account = ground_truth("t")
-    assert account["remaining"] == account["initial"], (
-        f"{account['remaining']} != {account['initial']}; the episode should have cost nothing"
+    assert account["balance"] == account["budget"], (
+        f"{account['balance']} != {account['budget']}; "
+        "the episode should have cost nothing"
     )
     assert t["spent"] > 0, "and it did spend, so that is a rebate and not a no-op"
 
@@ -204,7 +207,7 @@ def check_an_agent_cannot_transfer_to_itself():
 
     assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t["transfer"]
     assert "cannot transfer to itself" in (t["transfer"]["error"] or ""), t["transfer"]
-    assert account["remaining"] == account["initial"] - t["spent"], (
+    assert account["balance"] == account["budget"] - t["spent"], (
         "a self-transfer recovered part of the episode"
     )
     assert account.get("sent", 0) == 0 and account.get("rebated", 0) == 0, account
@@ -228,7 +231,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
             rate,
             t["transfer"],
         )
-        assert account["remaining"] == account["initial"] - t["spent"] + rebate, (
+        assert account["balance"] == account["budget"] - t["spent"] + rebate, (
             f"at {rate}% a transfer of 200 wins {rebate} of the episode's spend back"
         )
         assert taker["received"] == 200, (
@@ -263,16 +266,16 @@ def check_a_giver_funded_transfer_debits_the_giver():
     assert t["transfer"]["rebate"] == 0 and t["transfer"]["error"] is None, t[
         "transfer"
     ]
-    assert giver["remaining"] == giver["initial"] - t["spent"] - 400, giver
+    assert giver["balance"] == giver["budget"] - t["spent"] - 400, giver
     assert giver["sent"] == 400 and giver["debited"] == 400 and giver["rebated"] == 0, (
         giver
     )
-    assert taker["remaining"] == taker["initial"] + 400 and taker["received"] == 400, (
+    assert taker["balance"] == taker["budget"] + 400 and taker["received"] == 400, (
         taker
     )
     assert (
-        giver["series"][-1] == giver["remaining"]
-        and taker["series"][-1] == taker["remaining"]
+        giver["balance_history"][-1] == giver["balance"]
+        and taker["balance_history"][-1] == taker["balance"]
     )
     assert (
         next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")[
@@ -291,7 +294,7 @@ def check_a_giver_funded_transfer_debits_the_giver():
         t = episode_once(run("echo '2 99999999' > out/transfer"), say())
         giver = ground_truth("t")
     assert t["transfer"]["debit"] == t["spent"] > 0, t["transfer"]
-    assert giver["remaining"] == giver["initial"] - 2 * t["spent"], giver
+    assert giver["balance"] == giver["budget"] - 2 * t["spent"], giver
 
 
 def check_unfunded_transfers_move_nothing_and_say_so():
@@ -312,8 +315,8 @@ def check_unfunded_transfers_move_nothing_and_say_so():
     assert t["transfer"]["penalty"] == 0 and "transfer" not in giver.get(
         "penalised", {}
     ), giver
-    assert giver["remaining"] == giver["initial"] - t["spent"], giver
-    assert "received" not in taker and taker["remaining"] == taker["initial"], taker
+    assert giver["balance"] == giver["budget"] - t["spent"], giver
+    assert "received" not in taker and taker["balance"] == taker["budget"], taker
     assert t["ledger"] == [], t["ledger"]
     assert (
         next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")[
@@ -341,7 +344,7 @@ def check_a_malformed_transfer_moves_nothing():
     for text, why in cases.items():
         with temp_root() as root:
             seated(root, other={})
-            before = harness.load_account("other")["remaining"]
+            before = harness.load_account("other")["balance"]
             with quiet():
                 t = harness.run_once(
                     "t", fake(run(f"printf %s {text!r} > out/transfer"), say())
@@ -349,12 +352,12 @@ def check_a_malformed_transfer_moves_nothing():
             account, neighbour = ground_truth("t"), ground_truth("other")
         assert t["transfer"]["amount"] == 0, (text, t["transfer"])
         assert why in (t["transfer"]["error"] or ""), (text, t["transfer"])
-        assert neighbour["remaining"] == before, (
+        assert neighbour["balance"] == before, (
             f"{text!r} moved the receiver's account"
         )
         assert (
             account.get("sent", 0) == 0
-            and account["remaining"] == account["initial"] - t["spent"]
+            and account["balance"] == account["budget"] - t["spent"]
         ), f"{text!r} moved the giver's account"
         assert harness.ledger("t", account) == [], f"{text!r} reached the ledger"
 
@@ -416,7 +419,7 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
 def check_a_negative_balance_is_floored_to_zero():
     """Under floor_at_zero a balance below zero is put back to zero and recorded.
 
-    The shortfall is forgiven and the balance rests at zero, where in_play()
+    The shortfall is floored and the balance rests at zero, where in_play()
     stops asking. The floor decides what n holds, not whether an episode follows.
     """
     cost = turn_cost()
@@ -429,14 +432,14 @@ def check_a_negative_balance_is_floored_to_zero():
         assert not harness.in_play(account), (
             "and the agent is not asked for another episode"
         )
-    assert t["spent"] > account["initial"], (
+    assert t["spent"] > account["budget"], (
         "the last turn has to overshoot for this to say anything"
     )
-    assert t["forgiven"] == t["spent"] - account["initial"], t["forgiven"]
-    assert account["remaining"] == 0 and account["series"][-1] == 0, (
+    assert t["floored"] == t["spent"] - account["budget"], t["floored"]
+    assert account["balance"] == 0 and account["balance_history"][-1] == 0, (
         "the balance rests at zero, and n says so"
     )
-    assert account["forgiven"] == t["forgiven"]
+    assert account["floored"] == t["floored"]
     # Off by default: without it the agent ends holding the negative, as it always has.
     assert harness.SETTINGS.floor_at_zero is False
 
@@ -457,8 +460,8 @@ def check_an_agent_at_zero_is_not_asked_again():
         assert not harness.in_play(account), "and it is not asked for another"
         assert harness.exhausted(account), "which is the whole of what says it is done"
     assert len(account["episodes"]) == 1, "one episode, and the agent is over"
-    assert account["remaining"] == 0, account["remaining"]
-    assert account["forgiven"] > 0, "the one it did take was floored back"
+    assert account["balance"] == 0, account["balance"]
+    assert account["floored"] > 0, "the one it did take was floored back"
 
 
 def check_a_transfer_cannot_lift_an_agent_off_zero():
@@ -474,7 +477,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(*DEFAULT))
-        assert ground_truth("t")["remaining"] == 0, "flat on the floor"
+        assert ground_truth("t")["balance"] == 0, "flat on the floor"
 
         # The neighbour tries to give it an episode's worth from its own seat.
         with quiet():
@@ -487,7 +490,7 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
         assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t[
             "transfer"
         ]
-        assert stays["remaining"] == 0 and not stays.get("received"), stays["remaining"]
+        assert stays["balance"] == 0 and not stays.get("received"), stays["balance"]
         assert not harness.in_play(stays), "and it still cannot act"
         # Its only peer is exhausted, so there was nobody it could have given to and
         # the share for an episode that made no transfer does not fall on it.
@@ -511,7 +514,7 @@ def check_a_transfer_to_an_exhausted_seat_costs_the_share():
     assert t["transfer"]["seat"] == "2", "the record names the seat that was asked for"
     assert t["transfer"]["error"] == "seat 2 is out", t["transfer"]
     assert t["transfer"]["amount"] == 0 and t["transfer"]["rebate"] == 0, t["transfer"]
-    assert gone["remaining"] == 0 and not gone.get("received"), gone["remaining"]
+    assert gone["balance"] == 0 and not gone.get("received"), gone["balance"]
     assert not giver.get("sent") and not giver.get("rebated"), giver
     assert t["transfer"]["penalty"] > 0, (
         "and the share falls as it does on no transfer at all"
@@ -539,7 +542,8 @@ def check_a_ledger_resists_every_route():
         ids = lay_out(t={}, other={})
         with quiet():
             account = harness.load_account("t")
-        account["seat"], account["peers"] = "1", {"seen": experiment.seats_of(ids)}
+        account["seat"] = "1"
+        account["seating"] = {"agent_by_seat": experiment.seats_of(ids)}
         harness.save_account("t", account)
         t = episode_once(
             run(

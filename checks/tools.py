@@ -126,8 +126,8 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
             other={"group/post.md": "public\n", "out/1": "private\n"},
         )
         account = ground_truth("t")
-        account["series"] = [1_500_000, 1_499_000]
-        account["remaining"] = account["series"][-1]
+        account["balance_history"] = [1_500_000, 1_499_000]
+        account["balance"] = account["balance_history"][-1]
         account["starter_files_landed"] = {"name": "brief", "paths": ["brief.md"]}
         harness.save_account("t", account)
         previous_transfer = harness.mirror("t", "mail") / "transfer"
@@ -1136,7 +1136,8 @@ def check_the_audit_opens_on_the_memory_an_agent_inherits():
                             "channel": "notes",
                             "writer": "self",
                             "readers": "self",
-                            "role": "own",
+                            "author": "self",
+                            "planted": False,
                             "size": len(body.encode("utf-8")),
                             "text": body,
                         }
@@ -1321,7 +1322,9 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
             f"an episode with no shell opens on the digest alone: {t['commands']}"
         )
         assert "total " not in t["observation"], "and on no listing"
-        assert t["provenance"]["shell_tool"] is False, t["provenance"]["shell_tool"]
+        assert all(tool["kind"] != "bash" for tool in t["provenance"]["tools"]), t[
+            "provenance"
+        ]["tools"]
 
         # Everything downstream of the turn is untouched.
         files = files_by_path(t)

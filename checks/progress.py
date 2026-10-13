@@ -74,13 +74,13 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
         accounts = {
             "auto": {
                 "provider": "anthropic",
-                "remaining": 70,
+                "balance": 70,
                 "episodes": [{"episode": 1, "spent": 30}],
                 "product": {"quality_tier": "premium"},
             },
             "player": {
                 "provider": "human",
-                "remaining": 90,
+                "balance": 90,
                 "episodes": [{"episode": 1, "spent": 999}],
                 "product": {"quality_tier": "interactive"},
             },
@@ -248,8 +248,8 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
                 ids, set(ids), 1, fake(say(), run("echo '1 250' > out/transfer"), say())
             )
         account = harness.load_account("g01")
-        account["series"].pop()
-        account["remaining"], account["received"] = account["series"][-1], 0
+        account["balance_history"].pop()
+        account["balance"], account["received"] = account["balance_history"][-1], 0
         harness.save_account("g01", account)
         with quiet():
             rejected(
@@ -342,19 +342,19 @@ def check_a_branch_that_fails_partway_can_be_made_again():
 
 def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     """Every running total of a branch sums the episodes up to the one it forks at: what
-    was sent, rebated, debited, forgiven and taken by each channel, and what was received
+    was sent, rebated, debited, floored and taken by each channel, and what was received
     inside an episode or, from a peer settling outside it, between two. Past that episode
-    the series is the round's until what the account received comes to what the ledger
-    had paid it by the round's end, and holds every credit taken back, with the floor
-    that answers one: a credit past that is a later round's. A series that cannot hold
-    what the ledger paid has no branch totals."""
+    the balance history is the round's until what the account received comes to what the
+    ledger had paid it by the round's end, and holds every credit taken back, with the
+    floor that answers one: a credit past that is a later round's. A balance history
+    that cannot hold what the ledger paid has no branch totals."""
     first = {
         "episode": 1,
         "spent": 100,
-        "series_from": 1,
-        "series_to": 5,
-        "received": 20,
-        "forgiven": 0,
+        "balance_from": 1,
+        "balance_to": 5,
+        "received_this_episode": 20,
+        "floored": 0,
         "transfer": {"amount": 100, "rebate": 100, "debit": 0, "penalty": 0},
         "channels": {
             "transfer": {"penalty": 0},
@@ -365,10 +365,10 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     second = {
         "episode": 2,
         "spent": 200,
-        "series_from": 6,
-        "series_to": 11,
-        "received": 0,
-        "forgiven": 7,
+        "balance_from": 6,
+        "balance_to": 11,
+        "received_this_episode": 0,
+        "floored": 7,
         "transfer": {"amount": 50, "rebate": 0, "debit": 50, "penalty": 0},
         "channels": {
             "transfer": {"penalty": 0},
@@ -378,27 +378,30 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     }
     # 30 arrives before the first episode and 40 between the two; 20 inside the first.
     series = [1000, 1030, 930, 1030, 1050, 1040, 1080, 880, 830, 810, 795, 802]
-    two = {"series": series, "episodes": [first, second]}
+    two = {"balance_history": series, "episodes": [first, second]}
     # 50 arrives inside an episode and is taken back, then 30 arrives.
     taken = {
         "episode": 1,
         "spent": 100,
-        "series_from": 0,
-        "series_to": 2,
-        "received": 50,
-        "forgiven": 0,
+        "balance_from": 0,
+        "balance_to": 2,
+        "received_this_episode": 50,
+        "floored": 0,
         "transfer": {"amount": 0, "rebate": 0, "debit": 0, "penalty": 0},
         "channels": {},
     }
-    back = {"series": [1000, 900, 950, 900, 930], "episodes": [taken]}
+    back = {"balance_history": [1000, 900, 950, 900, 930], "episodes": [taken]}
     # The same, for an episode that overspent by 1, so the floor answers the take-back.
-    floored = {"series": [1049, -1, 49, -1, 0], "episodes": [{**taken, "spent": 1050}]}
+    floored = {
+        "balance_history": [1049, -1, 49, -1, 0],
+        "episodes": [{**taken, "spent": 1050}],
+    }
     one = {
         "sent": 100,
         "received": 50,
         "rebated": 100,
         "debited": 0,
-        "forgiven": 0,
+        "floored": 0,
         "penalised": {"blackboard": 10},
     }
     none = {
@@ -406,7 +409,7 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         "received": 0,
         "rebated": 0,
         "debited": 0,
-        "forgiven": 0,
+        "floored": 0,
         "penalised": {},
     }
     cases = {
@@ -426,14 +429,20 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
                         "received": 90,
                         "rebated": 100,
                         "debited": 50,
-                        "forgiven": 7,
+                        "floored": 7,
                         "penalised": {"blackboard": 30, "mail": 15},
                     },
                 ),
             ),
-            ("back", back, 1, 0, (back["series"][:4], none)),
-            ("back", back, 1, 30, (back["series"], {**none, "received": 30})),
-            ("floored", floored, 1, 0, (floored["series"], {**none, "forgiven": 1})),
+            ("back", back, 1, 0, (back["balance_history"][:4], none)),
+            ("back", back, 1, 30, (back["balance_history"], {**none, "received": 30})),
+            (
+                "floored",
+                floored,
+                1,
+                0,
+                (floored["balance_history"], {**none, "floored": 1}),
+            ),
             ("two", two, 1, 60, None),
             ("two", two, 1, 40, None),
             ("back", back, 1, 50, None),
@@ -446,7 +455,7 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         if found is not None:
             stood, totals = found
             spent = sum(e["spent"] for e in account["episodes"][: case[1]])
-            assert reconciled({"initial": stood[0], **totals}, spent) == stood[-1], (
+            assert reconciled({"budget": stood[0], **totals}, spent) == stood[-1], (
                 case,
                 totals,
             )
@@ -474,14 +483,14 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
         say(),
     )
     keys = (
-        "remaining",
-        "series",
+        "balance",
+        "balance_history",
         "episodes",
         "sent",
         "received",
         "rebated",
         "debited",
-        "forgiven",
+        "floored",
         "penalised",
     )
     ended, forks = {}, {}
@@ -564,11 +573,13 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
         250,
     ]
     g02 = ended["simultaneous"]["g02"]
-    assert g02["episodes"][0]["received"] == 250 and g02["received"] == 30, g02
+    assert (
+        g02["episodes"][0]["received_this_episode"] == 250 and g02["received"] == 30
+    ), g02
     for schedule, stood in ended.items():
         for agent, fork in forks[schedule].items():
             spent = sum(e["spent"] for e in fork["episodes"])
-            assert reconciled(fork, spent) == fork["remaining"], (schedule, agent, fork)
+            assert reconciled(fork, spent) == fork["balance"], (schedule, agent, fork)
             carried = {key: fork.get(key, 0) for key in keys}
             expected = {
                 key: stood[agent].get(key, {} if key == "penalised" else 0)
@@ -783,9 +794,9 @@ def check_a_branch_holds_no_election_again_that_a_later_one_replaced():
             for agent in forks
         }
     assert (
-        second["round"] == 2 and second["top_tied"] and second["electors"] == ["1", "2"]
+        second["round"] == 2 and second["tied"] and second["electors"] == ["1", "2"]
     ), second
-    assert fourth["round"] == 4 and fourth["top_tied"], fourth
+    assert fourth["round"] == 4 and fourth["tied"], fourth
     assert histories == [[second, fourth]] * 3, histories
     assert all(
         fork == {"last_election": second, "eliminated": None, "elections": [second]}
@@ -1026,8 +1037,8 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                     if harness.trace_path(agent, round).exists():
                         return "committed"
                     ep = built.get((agent, round))
-                    if ep is not None and len(ep.account["series"]) > len(
-                        ep.series_before
+                    if ep is not None and len(ep.account["balance_history"]) > len(
+                        ep.balance_before
                     ):
                         return "settled"
                     return (

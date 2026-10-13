@@ -678,12 +678,12 @@ const inkOf = (i) => INK[i % INK.length];
 // Every seat on one scale, which is the comparison a chart of one agent cannot
 // make: who is ahead, and where the lines crossed.
 function overlay(tiles) {
-  const all = tiles.flatMap(s => s.series || []);
+  const all = tiles.flatMap(s => s.balance_history || []);
   if (all.length < 2) return `<div class="note">no billed turns yet</div>`;
   const lo = loOf(all), hi = hiOf(all);
-  const n = tiles.reduce((a, s) => Math.max(a, (s.series || []).length), 0);
+  const n = tiles.reduce((a, s) => Math.max(a, (s.balance_history || []).length), 0);
   const lines = tiles.map((s, i) => {
-    const d = path(s.series || [], 240, 54, 3, lo, hi, n);
+    const d = path(s.balance_history || [], 240, 54, 3, lo, hi, n);
     return d ? `<path d="${d}" fill="none" stroke="${inkOf(i)}" stroke-width="1.25"
       opacity=".85" vector-effect="non-scaling-stroke"/>` : "";
   }).join("");
@@ -719,7 +719,7 @@ function pickExperiment(id) {
 
 function tileHtml(s, i) {
   const balance = s.live_balance != null ? s.live_balance : s.balance;
-  const left = s.initial ? Math.max(0, Math.min(1, balance / s.initial)) : 0;
+  const left = s.budget ? Math.max(0, Math.min(1, balance / s.budget)) : 0;
   const g = s.transfer;
   const taken = Object.entries(s.penalised || {}).filter(([, v]) => v);
   // A submitted declaration that moved nothing carries settlement's reason here.
@@ -763,13 +763,13 @@ function tileHtml(s, i) {
         >of ${num(s.spent)}</span>
       ${(s.unmet || []).map(u => `<span class="tag bad" title="the rule ${esc(u.channel)} settles by was not met">${
         esc(u.channel)}: ${esc(u.why)}</span>`).join(" ")}
-      ${(s.sent || s.received || s.rebated || taken.length || s.forgiven || transfer) ? `<i>|</i>
+      ${(s.sent || s.received || s.rebated || taken.length || s.floored || transfer) ? `<i>|</i>
         ${s.sent ? `<span title="given away">→ ${num(s.sent)}</span>` : ""}
         ${s.received ? `<span title="given to it">← ${num(s.received)}</span>` : ""}
         ${s.rebated ? `<span title="won back for what it gave">↺ ${num(s.rebated)}</span>` : ""}
         ${taken.map(([name, n]) => `<span title="taken for silence on ${esc(name)}">− ${num(n)} ${esc(name)}</span>`).join(" ")}
-        ${s.forgiven ? `<span title="floored back to zero; its environment never says so"
-          >floored ${num(s.forgiven)}</span>` : ""}${transfer}` : ""}
+        ${s.floored ? `<span title="floored back to zero; its environment never says so"
+          >floored ${num(s.floored)}</span>` : ""}${transfer}` : ""}
       ${(s.stopped_by_run || s.drift.length) ? `<i>|</i>
         ${s.stopped_by_run ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
         ${s.drift.length ? `<span class="tag warn" title="${esc(s.drift.join("; "))}">drift</span>` : ""}` : ""}</div>
@@ -798,13 +798,13 @@ function electionHtml(h) {
     `<span class="tag">${esc(label)} · ${num(votes)}</span>`).join("");
   let outcome = latest.voted_out
     ? `${esc(latest.voted_out)} eliminated with ${num(latest.top_votes)} votes`
-    : latest.top_tied ? `top vote tied at ${num(latest.top_votes)}; nobody eliminated by vote`
+    : latest.tied ? `top vote tied at ${num(latest.top_votes)}; nobody eliminated by vote`
     : `nobody eliminated by vote`;
   if ((latest.abstainers || []).length) outcome += ` · abstainers: ${latest.abstainers.map(esc).join(", ")}`;
   if ((latest.interrupted || []).length) outcome += ` · stopped before voting: ${latest.interrupted.map(esc).join(", ")}`;
   return `<div class="election"><div class="kv"><div class="k">round ${latest.round} election · aggregate</div></div>
     <div class="tally">${tally}</div><div class="result">${outcome}</div>
-    <div class="note">remaining: ${(latest.remaining || []).map(esc).join(", ") || "none"}</div></div>`;
+    <div class="note">candidates left: ${(latest.candidates_left || []).map(esc).join(", ") || "none"}</div></div>`;
 }
 
 function renderHeader() {
@@ -818,17 +818,17 @@ function renderHeader() {
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no board or mailbox between them`);
   const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.balance);
-  const remaining = current.reduce((sum, n) => sum + Number(n || 0), 0);
-  const initial = h.seat_tiles.reduce((sum, s) => sum + Number(s.initial || 0), 0);
+  const balance = current.reduce((sum, n) => sum + Number(n || 0), 0);
+  const budget = h.seat_tiles.reduce((sum, s) => sum + Number(s.budget || 0), 0);
   const roundSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
   const totalSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent || 0), 0);
   const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
   const live = h.seat_tiles.filter(running).length;
   const attention = h.seat_tiles.filter(s => s.unseated || (s.drift || []).length || (s.unmet || []).length
     || (s.running_episode != null && !running(s))).length;
-  const pct = initial ? `${Math.max(0, remaining / initial * 100).toFixed(0)}% of initial` : "current balance";
+  const pct = budget ? `${Math.max(0, balance / budget * 100).toFixed(0)}% of budget` : "current balance";
   document.getElementById("metrics").innerHTML = [
-    ["remaining", num(remaining), pct, ""],
+    ["balance", num(balance), pct, ""],
     ["spent this round", num(roundSpent), `round ${h.round}`, ""],
     ["spent total", num(totalSpent), h.cost && h.cost.maximum != null
       ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
@@ -1474,14 +1474,14 @@ function turnHtml(t, pend) {
   const tags = [
     t.stop_reason ? `<span class="tag">${esc(t.stop_reason)}</span>` : "",
     t.provider && t.model ? `<span class="tag">${esc(t.provider)}/${esc(t.model)}</span>` : "",
-    t.refusal ? `<span class="tag bad">refused${t.refusal.kind ? " · " + esc(t.refusal.kind) : ""}</span>` : "",
+    t.refusal ? `<span class="tag bad">refused${t.refusal.refusal_type ? " · " + esc(t.refusal.refusal_type) : ""}</span>` : "",
   ].join(" ");
   const tools = (t.tools || []).map(c =>
     `<div class="cmd ${c.shell ? "shell" : "tool"}">${esc(c.call)}</div>` +
     (c.result == null ? `<div class="pend">⏳ ${pend}</div>`
                       : expandableHtml(c.result, "out", "tool output"))).join("");
   return `<div class="turn"><div class="th"><span class="num">${bits.join(" · ")}</span>${tags}</div>
-    ${t.thinking ? `<div class="think">${esc(t.thinking)}</div>` : ""}
+    ${t.reasoning ? `<div class="think">${esc(t.reasoning)}</div>` : ""}
     ${t.text ? `<div class="say">${esc(t.text)}</div>` : ""}
     ${t.refusal && t.refusal.explanation ? `<div class="note">${esc(t.refusal.explanation)}</div>` : ""}
     ${tools}</div>`;
@@ -1537,7 +1537,7 @@ function renderTranscript(fresh) {
   document.getElementById("txhead").innerHTML =
     `episode ${v.episode} · ${state} · ${v.total_turns} turns · spent ${num(v.spent)}` +
     unmet +
-    (v.forgiven ? ` · floored ${num(v.forgiven)}` : "") +
+    (v.floored ? ` · floored ${num(v.floored)}` : "") +
     (v.error ? ` · <span style="color:var(--bad)">${esc(v.error)}</span>` : "") +
     ((v.missing_tools || []).length ? ` · reached for and absent: ${esc(v.missing_tools.join(", "))}` : "");
   // Measured before anything is written, or the answer is about the page the
@@ -1547,7 +1547,7 @@ function renderTranscript(fresh) {
   if (fresh) {
     redraw(tx,
       `<div class="turn"><div class="th">start · ${esc(nameOf(S.detail.seat))} at start ${
-        v.series_before.length ? num(v.series_before[v.series_before.length - 1]) : "–"}</div>
+        v.balance_before.length ? num(v.balance_before[v.balance_before.length - 1]) : "–"}</div>
         <div class="cmd ${o.shell ? "shell" : "tool"}">${esc(o.command)}</div>` +
         (o.listing == null ? `<div class="pend">⏳ ${pend}</div>`
                            : expandableHtml(o.listing, "out", "listing")) + `</div>` +

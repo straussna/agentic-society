@@ -187,7 +187,7 @@ def manifest_of(
     account is read here.
     """
     account = account_of(agent) if account is None else account
-    digest = (account.get("experiment") or {}).get("manifest_sha256")
+    digest = (account.get("experiment_stamp") or {}).get("manifest_sha256")
     return manifests().get(digest) if digest else None
 
 
@@ -379,6 +379,12 @@ def inbox_prefix(mail: harness.Channel | None) -> str | None:
     return "Letter from " if mail.agent_view == "letters" else f"{mail.inbox}/"
 
 
+def shell_offered(provenance: Mapping[str, Any]) -> bool:
+    """Whether an episode offered the agent the shell: whether its recorded tool table
+    declares bash."""
+    return any(t.get("kind") == "bash" for t in provenance.get("tools") or [])
+
+
 def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
     """A long series sampled down, keeping the first element and the last."""
     if len(series) <= points:
@@ -403,7 +409,7 @@ def from_trace(t: dict) -> list[dict]:
             "provider": turn.get("provider"),
             "model": turn.get("resolved_model"),
             "text": turn.get("text") or "",
-            "thinking": turn.get("thinking") or "",
+            "reasoning": turn.get("reasoning") or "",
             "tools": [
                 {
                     "result": tool.get("result"),
@@ -432,7 +438,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     read the account. Command results are None until the trace lands, and a shell
     call is the command it asked for: whether run_tools ran it is the trace's to say.
     """
-    remaining = account.get("remaining", 0)
+    opening = account.get("balance", 0)
     centi, seen, out = 0, set(), []
     for line in lines:
         if line.get("kind") != "normalized_response":
@@ -447,9 +453,9 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
             if duplicate
             else sum(c.get("centi_micros", 0) for c in data.get("charges") or [])
         )
-        previous = remaining - centi // 100
+        previous = opening - centi // 100
         centi += turn_centi
-        balance = remaining - centi // 100
+        balance = opening - centi // 100
         calls = data.get("tool_calls") or []
         out.append(
             {
@@ -463,7 +469,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
                 "provider": data.get("provider"),
                 "model": data.get("resolved_model"),
                 "text": "\n".join(data.get("text") or []),
-                "thinking": "\n".join(data.get("reasoning") or []),
+                "reasoning": "\n".join(data.get("reasoning") or []),
                 "tools": [
                     {
                         "result": None,
@@ -493,8 +499,8 @@ def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dic
     """What an unfinished episode has done so far, derived from its raw log.
 
     `turns` are its turns, `spent` what they have cost, `balance` what the last
-    of them left and None before any is on disk, and `remaining` that balance or
-    the account's where there is none yet. Empty for an agent with no episode in
+    of them left and None before any is on disk, and `current_balance` that balance
+    or the account's where there is none yet. Empty for an agent with no episode in
     flight (`index` None).
     """
     turns = live_turns(agent, index, account) if index is not None else []
@@ -502,8 +508,8 @@ def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dic
     return {
         "turns": turns,
         "balance": balance,
-        "spent": account.get("remaining", 0) - balance if turns else 0,
-        "remaining": balance if turns else account.get("remaining"),
+        "spent": account.get("balance", 0) - balance if turns else 0,
+        "current_balance": balance if turns else account.get("balance"),
     }
 
 
@@ -518,10 +524,10 @@ def derived_experiment_id(agent: str, account: Mapping[str, Any]) -> str:
     leading letters they share, or their ids joined. The leading letters of the
     agent's own id cover agents started one at a time.
     """
-    peers = (account.get("peers") or {}).get("seen") or {}
-    if not peers:
+    agent_by_seat = (account.get("seating") or {}).get("agent_by_seat") or {}
+    if not agent_by_seat:
         return AGENT_PREFIX.match(agent).group(0) or agent
-    agents = sorted({agent, *peers.values()})
+    agents = sorted({agent, *agent_by_seat.values()})
     head = AGENT_PREFIX.match(agents[0]).group(0)
     return (
         head if head and all(a.startswith(head) for a in agents) else "+".join(agents)
@@ -596,7 +602,9 @@ def anchored_experiments(
         declared = [entry["id"] for entry in manifest["agents"]]
         if not any(
             (
-                (accounts.get(agent, {}).get("experiment") or {}).get("manifest_sha256")
+                (accounts.get(agent, {}).get("experiment_stamp") or {}).get(
+                    "manifest_sha256"
+                )
                 == digest
             )
             for agent in declared
@@ -607,7 +615,7 @@ def anchored_experiments(
             for agent in declared
             if agent in accounts
             and (
-                (accounts[agent].get("experiment") or {}).get("manifest_sha256")
+                (accounts[agent].get("experiment_stamp") or {}).get("manifest_sha256")
                 in (None, digest)
             )
         ]
@@ -705,7 +713,9 @@ def read_experiments() -> tuple[list[dict], bool]:
         exp: dict[str, Any] | None = by_seating.get(ident)
         if exp is None:
             exp = by_seating[ident] = {
-                "experiment_id": (account.get("experiment") or {}).get("experiment_id")
+                "experiment_id": (account.get("experiment_stamp") or {}).get(
+                    "experiment_id"
+                )
                 or derived_experiment_id(agent, account),
                 "seated": key is not None,
                 "agent_by_seat": dict(agent_by_seat) if key else {},
@@ -980,9 +990,9 @@ def seat_row(
         "starter_files": (account.get("starter_files_landed") or {}).get("name")
         or account.get("starter_files")
         or "",
-        "balance": account.get("remaining"),
-        "initial": account.get("initial"),
-        "series": thin(account.get("series") or []),
+        "balance": account.get("balance"),
+        "budget": account.get("budget"),
+        "balance_history": thin(account.get("balance_history") or []),
         # Derived from the raw log until the trace lands, which is what the
         # header labels it as: the arithmetic is the account's, the commit is not.
         "running_episode": running,
@@ -999,7 +1009,7 @@ def seat_row(
             account
             and not episodes
             and running is None
-            and (account.get("experiment") or {}).get("manifest_sha256")
+            and (account.get("experiment_stamp") or {}).get("manifest_sha256")
         ),
         # The three ways a seat leaves the experiment, apart: eliminated by a vote,
         # exhausted with its balance gone, and unseated by the run, which starts no
@@ -1016,7 +1026,7 @@ def seat_row(
         "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
         # in flight. A transfer, a share taken and a floor all move the balance
-        # without being spend, so the drop from initial is a different number,
+        # without being spend, so the drop from the budget is a different number,
         # which the bar above draws.
         "spent": sum(s["spent"] for s in episodes) + going["spent"],
         "spent_this_round": sum(
@@ -1038,7 +1048,7 @@ def seat_row(
         "rebated": account.get("rebated", 0),
         # What each channel's silence has cost, by channel name.
         "penalised": account.get("penalised") or {},
-        "forgiven": account.get("forgiven", 0),
+        "floored": account.get("floored", 0),
         "transfer": latest_transfer(latest, table),
     }
 
@@ -1059,7 +1069,7 @@ def header(exp: dict) -> dict:
     last = rows[-1]["trace"] if rows else None
     table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
-    stamp = account.get("experiment") or {}
+    stamp = account.get("experiment_stamp") or {}
     committed_round = table_round(exp)
     seat_tiles = [
         seat_row(seat, agent, rows, current_round, committed_round)
@@ -1337,7 +1347,7 @@ def messages(exp: dict, since: int = 0) -> dict:
     """Every mailbox and schema-channel event, in round order.
 
     Under episode delivery a message lasts one episode, so what a committed outbox
-    holds was sent afresh by that episode. A trace naming no message_delivery was
+    holds was sent afresh by that episode. A trace naming no message_lifetime was
     written while an outbox stood until changed, so its messages are diffed against
     the sender's episode before: standing where unchanged, withdrawn where gone.
     A transfer declaration is every episode's own under either.
@@ -1354,7 +1364,7 @@ def messages(exp: dict, since: int = 0) -> dict:
             if not row["trace"].get("state_saved"):
                 continue
             now = outbox_of(row["trace"])
-            episodic = row["trace"]["provenance"].get("message_delivery") == "episode"
+            episodic = row["trace"]["provenance"].get("message_lifetime") == "episode"
             for path in sorted(now if episodic else set(prev) | set(now)):
                 if episodic or transfer_path(room, path):
                     if path in now:
@@ -1438,7 +1448,7 @@ def human_history(exp: dict, agent: str) -> dict:
             for file in row["trace"].get("files") or []:
                 if file.get("channel") != post_channel.name:
                     continue
-                if file.get("role") != "own":
+                if not analyze.is_own(file):
                     continue
                 path = str(file.get("path") or "").strip("/")
                 if prefix and not path.startswith(prefix + "/"):
@@ -1671,7 +1681,7 @@ def historical_listing(
     prefix = ch.path_for(label).strip("/")
     out = []
     for file in row["trace"].get("files") or []:
-        if file.get("channel") != channel or file.get("role") != "own":
+        if file.get("channel") != channel or not analyze.is_own(file):
             continue
         path = str(file.get("path") or "").strip("/")
         if prefix:
@@ -1866,7 +1876,7 @@ def file_view(
                 item
                 for item in row["trace"].get("files") or []
                 if item.get("channel") == channel
-                and item.get("role") == "own"
+                and analyze.is_own(item)
                 and str(item.get("path") or "").strip("/") == full
             ),
             None,
@@ -1915,12 +1925,12 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "stop": t["stop"],
             "spent": t["spent"],
             "turns": len(t["turns"]),
-            "remaining": t["remaining"],
+            "balance": t["balance"],
             "duration_s": t.get("duration_s"),
             "refused": len(analyze.refused_turns_of(t)),
             "transfer": t.get("transfer") or {},
             "channels": analyze.channel_records(t),
-            "forgiven": t.get("forgiven") or 0,
+            "floored": t.get("floored") or 0,
             "provenance": t["provenance"],
             "drift": t.get("provenance_drift") or [],
             "stopped_by_run": t["stop"] in harness.STOPS_THE_AGENT,
@@ -1937,12 +1947,12 @@ def agent_view(agent: str, exp: dict | None) -> dict:
                 "stop": None,
                 "spent": going["spent"],
                 "turns": len(going["turns"]),
-                "remaining": going["remaining"],
+                "balance": going["current_balance"],
                 "duration_s": None,
                 "refused": len([t for t in going["turns"] if t.get("refusal")]),
                 "transfer": {},
                 "channels": {},
-                "forgiven": 0,
+                "floored": 0,
                 "provenance": {},
                 "drift": [],
                 "stopped_by_run": False,
@@ -1955,15 +1965,15 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "experiment_id": exp["experiment_id"] if exp else "",
         "provider": account.get("provider"),
         "model": account.get("model"),
-        "initial": account.get("initial"),
-        "remaining": account.get("remaining"),
+        "budget": account.get("budget"),
+        "balance": account.get("balance"),
         "episodes": episodes,
         "running_episode": running,
         "live_age": live_age(agent, running),
         # The mapping has no gap and holds every seat, this agent's among them, so
         # which one is its own has to be said: absence cannot say it.
         "seat": seating.seat,
-        "peers": seating.agent_by_seat,
+        "agent_by_seat": seating.agent_by_seat,
         "starter_files": account.get("starter_files_landed") or {},
         "out_reason": harness.why_not_in_play(account) if account else None,
         "eliminated": account.get("eliminated"),
@@ -2010,17 +2020,17 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         "episode": index,
         "stop": trace["stop"],
         "spent": trace["spent"],
-        "remaining": trace["remaining"],
+        "balance": trace["balance"],
         "duration_s": trace.get("duration_s"),
         "error": trace.get("error"),
-        "series_before": trace.get("series_before") or [],
-        "series_after": trace.get("series_after") or [],
+        "balance_before": trace.get("balance_before") or [],
+        "balance_after": trace.get("balance_after") or [],
         "missing_tools": trace.get("missing_tools") or [],
         "balance_fits": trace.get("balance_fits"),
         "read_balance": trace.get("read_balance"),
         "transfer": trace.get("transfer") or {},
         "channels": analyze.channel_records(trace),
-        "forgiven": trace.get("forgiven") or 0,
+        "floored": trace.get("floored") or 0,
         "obligations": obligations(trace),
         "unmet": unmet(trace),
         "turns": from_trace(trace),
@@ -2029,7 +2039,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         listing, sections = observation_split(trace.get("observation") or "")
         out["observation"] = {
             "command": trace["commands"][0],
-            "shell": trace["provenance"].get("shell_tool", True),
+            "shell": shell_offered(trace["provenance"]),
             "result": trace.get("observation") or "",
             # `listing` and `shown_before` are `result` split where the digest's
             # record begins; `name` is the digest file the record came from.
@@ -2066,9 +2076,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
         any(t.get("kind") == "bash" for t in found[0]["tools"] or [])
         if found
         else (
-            last["provenance"].get("shell_tool", True)
-            if last
-            else harness.SETTINGS.shell_tool
+            shell_offered(last["provenance"]) if last else harness.SETTINGS.shell_tool
         )
     )
     mail = harness.mailbox_channel(table)
@@ -2079,17 +2087,17 @@ def raw_view(agent: str, index: int, since: int) -> dict:
         "episode": index,
         "stop": None,
         "spent": going["spent"],
-        "remaining": going["remaining"],
+        "balance": going["current_balance"],
         "duration_s": None,
         "error": None,
-        "series_before": account.get("series") or [],
-        "series_after": [],
+        "balance_before": account.get("balance_history") or [],
+        "balance_after": [],
         "missing_tools": [],
         "balance_fits": None,
         "read_balance": None,
         "transfer": {},
         "channels": {},
-        "forgiven": 0,
+        "floored": 0,
         "obligations": obligations(None),
         "unmet": unmet(None),
         "turns": going["turns"],
@@ -2122,7 +2130,7 @@ def episode_changes(agent: str, index: int) -> list[dict]:
         return {
             f["path"]: f["text"]
             for f in (t or {}).get("files") or []
-            if f["channel"] == name and f["role"] == "own" and f["text"] is not None
+            if f["channel"] == name and analyze.is_own(f) and f["text"] is not None
         }
 
     this = load_trace(harness.trace_path(agent, index))

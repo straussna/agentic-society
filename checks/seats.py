@@ -84,11 +84,12 @@ def check_a_private_store_never_leaves_its_agent():
     ], [(i.path, i.name, i.role) for i in instances]
     assert by["state/secret.md"]["channel"] == "notes"
     assert by["1/msg"]["channel"] == by["2/msg"]["channel"] == "blackboard"
-    assert (by["1/msg"]["role"], by["2/msg"]["role"]) == ("own", "peer")
+    assert (by["1/msg"]["author"], by["2/msg"]["author"]) == ("self", "peer:2")
 
 
 def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
-    """Its own blackboard counts as its writing; another's is `ours` and out of mentions.
+    """Its own blackboard counts as its writing; another's is `planted` and out of
+    mentions.
 
     mentions is what the agent wrote. A neighbour's blackboard full of balances and
     the word "budget" would otherwise answer for it at round one.
@@ -102,16 +103,18 @@ def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
 
     by = files_by_path(snap)
     assert set(by) == {"state/NOTES.md", "1/out", "2/out"}, sorted(by)
-    assert by["2/out"]["ours"], by["2/out"]
+    assert by["2/out"]["planted"], by["2/out"]
     assert not by["2/out"]["starter"], (
         "a peer is given, but it is not the starter files"
     )
     assert by["2/out"]["text"], (
         "a peer's blackboard is captured, so what it says is legible"
     )
-    assert not by["state/NOTES.md"]["ours"], "its own notes stay its own"
-    assert not by["1/out"]["ours"], "what it puts on its own blackboard is its writing"
-    assert sum(f["size"] for f in snap["files"] if not f["ours"]) == len(
+    assert not by["state/NOTES.md"]["planted"], "its own notes stay its own"
+    assert not by["1/out"]["planted"], (
+        "what it puts on its own blackboard is its writing"
+    )
+    assert sum(f["size"] for f in snap["files"] if not f["planted"]) == len(
         "mine\n"
     ) + len("ours\n"), "private and blackboard together are agent_bytes"
     assert snap["mentions"] == {
@@ -140,11 +143,11 @@ def check_starter_files_and_a_peer_are_told_apart():
         )
 
     by = files_by_path(snap)
-    assert by["state/m1"]["ours"] and by["state/m1"]["starter"], by["state/m1"]
-    assert by["2/out"]["ours"] and not by["2/out"]["starter"], by["2/out"]
-    assert not by["state/NOTES.md"]["ours"], "its own notes stay its own"
+    assert by["state/m1"]["planted"] and by["state/m1"]["starter"], by["state/m1"]
+    assert by["2/out"]["planted"] and not by["2/out"]["starter"], by["2/out"]
+    assert not by["state/NOTES.md"]["planted"], "its own notes stay its own"
 
-    trace = {**snap, "provenance": {"peers": seats, "seat": "1"}}
+    trace = {**snap, "provenance": {"seating": seats, "seat": "1"}}
     assert [f["path"] for f in analyze.starter_files_of(trace)] == ["state/m1"], trace[
         "files"
     ]
@@ -268,7 +271,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
     by = files_by_path(t)
     assert by["shared/BRIEF"]["channel"] == "shared", by["shared/BRIEF"]
     assert by["shared/BRIEF"]["author"] == "experimenter", by["shared/BRIEF"]
-    assert by["shared/BRIEF"]["ours"] and not by["shared/BRIEF"]["starter"], by[
+    assert by["shared/BRIEF"]["planted"] and not by["shared/BRIEF"]["starter"], by[
         "shared/BRIEF"
     ]
     assert by["shared/BRIEF"]["text"] == "read me first\n"
@@ -340,21 +343,21 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
 
     assert "in/1" in seen["g03"], sorted(seen["g03"])
     assert seen["g03"]["in/1"]["text"] == "for three alone\n"
-    assert (seen["g03"]["in/1"]["channel"], seen["g03"]["in/1"]["role"]) == (
+    assert (seen["g03"]["in/1"]["channel"], seen["g03"]["in/1"]["author"]) == (
         "mail",
-        "peer",
+        "peer:1",
     )
     # Addressed, so it is nobody else's to read: not the experiment's, and not even
     # visible as having been sent.
     assert not [p for p in seen["g02"] if p.startswith("in/")], sorted(seen["g02"])
     assert "1/RESULT" in seen["g02"], "while the blackboard reaches everyone"
     # And what the sender wrote stays the sender's, on its own side of the wire.
-    assert (seen["g01"]["out/3"]["channel"], seen["g01"]["out/3"]["role"]) == (
+    assert (seen["g01"]["out/3"]["channel"], seen["g01"]["out/3"]["author"]) == (
         "mail",
-        "own",
+        "self",
     )
-    assert not seen["g01"]["out/3"]["ours"], "the outbox is the agent's own writing"
-    assert seen["g03"]["in/1"]["ours"], "and an inbox is not the reader's"
+    assert not seen["g01"]["out/3"]["planted"], "the outbox is the agent's own writing"
+    assert seen["g03"]["in/1"]["planted"], "and an inbox is not the reader's"
 
 
 def check_an_outbox_message_expires_before_the_next_sender_episode_ends():
@@ -397,7 +400,9 @@ def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
 
     assert got["stop"] == "end_turn", f"the receiver took its episode: {got['stop']}"
     assert not [
-        f for f in got["files"] if f["channel"] == "mail" and f["role"] == "peer"
+        f
+        for f in got["files"]
+        if f["channel"] == "mail" and f["author"].startswith("peer:")
     ], [f["path"] for f in got["files"]]
     listing = got["turns"][0]["tools"][0]["result"]
     assert "1" not in listing.split(), f"in/ holds nothing at all: {listing!r}"
@@ -449,10 +454,12 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
             commands,
             mail,
         )
-        left = account["series"][-2]
+        left = account["balance_history"][-2]
         assert mail["penalty"] == left // 2, (commands, mail, left)
         assert (
-            account["remaining"] == left - mail["penalty"] == account["series"][-1]
+            account["balance"]
+            == left - mail["penalty"]
+            == account["balance_history"][-1]
         ), (commands, account)
         assert account["penalised"]["mail"] == mail["penalty"], (commands, account)
         assert account["episodes"][-1]["channels"]["mail"] == mail, (
@@ -536,7 +543,7 @@ def check_one_message_an_episode_costs_nothing():
     assert t["channels"]["blackboard"]["penalty"] == 0 and "mail" not in account.get(
         "penalised", {}
     ), account
-    assert account["remaining"] == account["initial"] - t["spent"], (
+    assert account["balance"] == account["budget"] - t["spent"], (
         "meeting both costs nothing"
     )
 
@@ -619,7 +626,7 @@ def check_an_episode_that_does_not_post_loses_half():
         seated(root, other={})
         quiet_t = episode_once(run("echo hi > state/note"), say())
         account = ground_truth("t")
-        left = account["initial"] - quiet_t["spent"]
+        left = account["budget"] - quiet_t["spent"]
         assert quiet_t["channels"]["blackboard"]["posted"] is False, (
             "state/ is not the blackboard"
         )
@@ -627,7 +634,7 @@ def check_an_episode_that_does_not_post_loses_half():
             quiet_t["channels"]["blackboard"]["penalty"],
             left,
         )
-        assert account["remaining"] == left - left // 2 == account["series"][-1]
+        assert account["balance"] == left - left // 2 == account["balance_history"][-1]
         assert (
             account["penalised"]["blackboard"]
             == quiet_t["channels"]["blackboard"]["penalty"]
@@ -641,7 +648,7 @@ def check_an_episode_that_does_not_post_loses_half():
         posted["channels"]["blackboard"]["posted"] is True
         and posted["channels"]["blackboard"]["penalty"] == 0
     )
-    assert account["remaining"] == account["initial"] - posted["spent"], (
+    assert account["balance"] == account["budget"] - posted["spent"], (
         "posting costs nothing"
     )
 
@@ -732,13 +739,15 @@ def check_an_episode_with_no_turn_settles_nothing():
         "penalised", {}
     ) and "mail" not in account.get("penalised", {}), account
     assert "transfer" not in account.get("penalised", {}), account
-    assert account["remaining"] == account["initial"], (
+    assert account["balance"] == account["budget"], (
         "nothing settled, so nothing moved"
     )
-    assert account["series"] == t["series_before"] == t["series_after"], (
+    assert account["balance_history"] == t["balance_before"] == t["balance_after"], (
         "and n gained no element for the agent to account for"
     )
-    assert len(account["episodes"]) == 1 and account["episodes"][0]["turns"] == 0, (
+    assert (
+        len(account["episodes"]) == 1 and account["episodes"][0]["turn_count"] == 0
+    ), (
         account["episodes"]
     )
     assert traced, "the trace is what makes such an episode readable afterwards"
@@ -777,7 +786,8 @@ def check_the_channels_answer_differently():
         )
         with quiet():
             account = harness.load_account("t")
-        account["seat"], account["peers"] = "1", {"seen": experiment.seats_of(ids)}
+        account["seat"] = "1"
+        account["seating"] = {"agent_by_seat": experiment.seats_of(ids)}
         harness.save_account("t", account)
         t = episode_once(
             run(
@@ -866,18 +876,18 @@ def check_the_channels_answer_differently():
     assert after == {"out": "theirs\n"}, f"and its blackboard is as it left it: {after}"
 
     by = files_by_path(t)
-    assert by["state/new"]["channel"] == "notes" and not by["state/new"]["ours"]
-    assert by["1/out"]["channel"] == "blackboard" and not by["1/out"]["ours"]
-    assert by["out/2"]["channel"] == "mail" and not by["out/2"]["ours"]
+    assert by["state/new"]["channel"] == "notes" and not by["state/new"]["planted"]
+    assert by["1/out"]["channel"] == "blackboard" and not by["1/out"]["planted"]
+    assert by["out/2"]["channel"] == "mail" and not by["out/2"]["planted"]
     assert (
         by["2/out"]["channel"] == "blackboard"
-        and by["2/out"]["role"] == "peer"
-        and by["2/out"]["ours"]
+        and by["2/out"]["author"] == "peer:2"
+        and by["2/out"]["planted"]
     )
     assert (
         by["in/2"]["channel"] == "mail"
-        and by["in/2"]["role"] == "peer"
-        and by["in/2"]["ours"]
+        and by["in/2"]["author"] == "peer:2"
+        and by["in/2"]["planted"]
     )
 
 
@@ -895,9 +905,11 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
         snap = harness.snapshot(instances_of("t", ids), [9])
 
     by = files_by_path(snap)
-    assert by["2/added"]["ours"] and not by["2/added"]["starter"], by["2/added"]
+    assert by["2/added"]["planted"] and not by["2/added"]["starter"], by["2/added"]
     assert by["2/added"]["text"].strip() == "put here somehow", "still captured in full"
-    assert [f["path"] for f in snap["files"] if not f["ours"]] == ["state/NOTES.md"], (
+    assert [f["path"] for f in snap["files"] if not f["planted"]] == [
+        "state/NOTES.md"
+    ], (
         "only what it wrote in its own two trees counts as its own"
     )
 
@@ -952,8 +964,9 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     ), free
     assert free["spent"] > 0, "the grace is on the charges, not on the account"
     opening = account["episodes"][0]
-    span = account["series"][opening["series_from"] : opening["series_to"] + 1]
-    assert len(span) == opening["turns"] + 1, (
+    opening_from, opening_to = opening["balance_from"], opening["balance_to"]
+    span = account["balance_history"][opening_from : opening_to + 1]
+    assert len(span) == opening["turn_count"] + 1, (
         "a free episode appends its turns to n and nothing else"
     )
     # Measured and recorded all the same: what an episode did is never a function
@@ -968,7 +981,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
         and due["channels"]["blackboard"]["penalty"] > 0
         and due["channels"]["mail"]["penalty"] > 0
     ), due
-    assert account["remaining"] == account["series"][-1]
+    assert account["balance"] == account["balance_history"][-1]
 
     # A transfer is a movement and not a charge, so a free episode still gives.
     with temp_root(
@@ -997,7 +1010,7 @@ def check_the_transfer_share_is_taken_before_the_other_two():
         seated(root, other={})
         t = episode_once(run("true"), say())
         account = ground_truth("t")
-    left = account["initial"] - t["spent"]
+    left = account["budget"] - t["spent"]
     first = left // 2
     second = (left - first) // 2
     third = (left - first - second) // 2
@@ -1011,9 +1024,11 @@ def check_the_transfer_share_is_taken_before_the_other_two():
         third,
     )
     assert (
-        account["remaining"] == left - first - second - third == account["series"][-1]
+        account["balance"]
+        == left - first - second - third
+        == account["balance_history"][-1]
     )
-    assert account["remaining"] * 8 <= left * 1.05, (
+    assert account["balance"] * 8 <= left * 1.05, (
         "three halves off the top leave an eighth"
     )
 
