@@ -305,7 +305,7 @@ def load_manifest(path: Path) -> Manifest:
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         raise SystemExit(f"{path}: not a manifest: {e}") from None
 
-    allowed = EXPERIMENT_KEYS | {t.lower() for t in harness.TREATMENT}
+    allowed = EXPERIMENT_KEYS | {t.lower() for t in harness.MANIFEST_SETTINGS}
 
     check_keys(
         rejecter(path),

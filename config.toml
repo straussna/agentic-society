@@ -1,4 +1,4 @@
-# Process parameters: the machine, the API and the safety stops, true of every run
+# Process parameters: the machine, the API and the limits, true of every run
 # whatever the experiment. Everything an agent's situation is made of - what is said
 # to it, the money, the files it is given, the channels it reaches its peers through -
 # is an experiment's, declared in a manifest under experiments/, and rejected here.
@@ -13,7 +13,7 @@ image = "metered-agent:latest"
 # Positive integer, at most 16000.
 max_tokens = 8192
 
-# Safety stop: turns per episode.
+# Limit: turns per episode.
 # Positive integer, 100-500.
 max_turns = 200
 

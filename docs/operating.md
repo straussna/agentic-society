@@ -1,6 +1,6 @@
 # Operating the harness
 
-The full file layout, every command in detail, the tunable parameters, and what
+The full file layout, every command in detail, the process parameters, and what
 to check before an episode that spends.
 
 [<- back to the README](../README.md)
@@ -20,7 +20,7 @@ check.py                 run the verification suite against a fake API; nothing 
 checks/<topic>.py        the suite itself, one module per topic; fixtures in checks/lanes.py
 analyze.py               read the traces into a CSV, a report, a transcript, and charts
 view.py, view.html       the dashboard; a human seat's submissions enter the interaction store only
-config.toml              the tunable parameters, with the spend each one implies
+config.toml              the process parameters, with the spend each one implies
 Dockerfile               the sandbox: debian + bash, non-root, no network
 requirements.txt         anthropic, openai, and matplotlib for analyze.py's charts
 files/<name>/            starter files one agent is given, or an experimenter channel's source; committed

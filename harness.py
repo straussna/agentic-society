@@ -12,7 +12,8 @@ Sections, in the order an episode meets them:
   1. What the harness says          SYSTEM, REFUSAL_NOTICE, SHIPPED_TEXT, SHELL_SPEC,
                                     system_of
   2. Providers                      providers package catalogs and adapters
-  3. Tunables                       PROCESS, TREATMENT, load_config, rejecter, overlay
+  3. Settings                       PROCESS, MANIFEST_SETTINGS, load_config, rejecter,
+                                    overlay
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
                                     Tool, validate_tools, Settings, SETTINGS
   5. Process constants              HARNESS_SHA256, limits, stop sets, regexes
@@ -108,7 +109,7 @@ SYSTEM_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85
 # The whole of the second channel the harness speaks on: two facts, no cause,
 # no instruction, and no actor. The agent learns that the turn was refused and
 # that its environment is unchanged, and nothing further. It is the harness reporting
-# a fact about a turn and not a treatment, so no manifest declares it.
+# a fact about a turn and not part of what an arm compares, so no manifest declares it.
 REFUSAL_NOTICE = "The turn was refused. No command was run."
 REFUSAL_NOTICE_SHA256 = (
     "4263e6bab90f883bbbcb2a9676a27a4aef7bde825461b3f56a2b2665f68c0c8b"
@@ -150,9 +151,9 @@ def system_of(account: Account | None = None) -> str:
     return SETTINGS.system_prompt
 
 
-# --- 3. Tunables -----------------------------------------------------------------
+# --- 3. Settings -----------------------------------------------------------------
 
-# Every tunable is a field of Settings, at the end of section 4, beside its default;
+# Every setting is a field of Settings, at the end of section 4, beside its default;
 # config.toml and then a manifest overlay them at startup. system_prompt is the one of
 # them that reaches the model. This section says which file owns which, and holds
 # them to one set of rules wherever they came from.
@@ -162,13 +163,13 @@ def system_of(account: Account | None = None) -> str:
 # reads what it chooses at what reading costs.
 DELIVERIES = ("push", "pull")
 
-# config.toml's, and rejected in a manifest: the machine, the API and the safety
-# stops, true of every run whatever the experiment is.
+# config.toml's, and rejected in a manifest: the process parameters, which are the
+# machine, the API and the limits, true of every run whatever the experiment is.
 PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_LIMIT"}
 
 # An experiment's, and rejected in config.toml: everything an agent's situation is
 # made of, alongside the [[channel]] tables and [harness_files] that go with it.
-TREATMENT = {
+MANIFEST_SETTINGS = {
     "SYSTEM_PROMPT",
     "BUDGET",
     "STARTER_FILES",
@@ -182,7 +183,7 @@ TREATMENT = {
     "FLOOR_AT_ZERO",
 }
 
-TUNABLES = PROCESS | TREATMENT
+SETTING_KEYS = PROCESS | MANIFEST_SETTINGS
 
 # What each file says when it is handed the other's key.
 NOT_CONFIG = "an experiment's to declare; config.toml holds what is true of every run"
@@ -205,10 +206,10 @@ RETIRED = {
 # model call much above this hits the SDK's HTTP timeout.
 MAX_TOKENS_CEILING = 16_000
 
-# What config.toml may set the two safety stops to. A stop is true of every run and
-# no part of an agent's situation: lower, it can end an episode the agent had not
-# finished or kill a command that would have, which makes it a treatment config.toml
-# cannot declare; higher, it no longer stops a runaway.
+# What config.toml may set the two limits to. A limit is true of every run and no
+# part of an agent's situation: lower, it can end an episode the agent had not
+# finished or kill a command that would have, which makes it part of the agent's
+# situation, which config.toml cannot declare; higher, it no longer stops a runaway.
 MAX_TURNS_FLOOR = 100
 MAX_TURNS_CEILING = 500
 COMMAND_TIMEOUT_FLOOR = 30
@@ -300,16 +301,16 @@ def overlay(
     base: Settings,
     values: dict[str, Any],
     source: str,
-    allowed: Iterable[str] = TUNABLES,
+    allowed: Iterable[str] = SETTING_KEYS,
     elsewhere: str = "",
 ) -> Settings:
     """The settings config keys make of `base`, validated as a whole.
 
     `source` names where the values came from in every rejection. `allowed` is the half
-    of TUNABLES this file owns, and a key belonging to the other half is rejected
+    of SETTING_KEYS this file owns, and a key belonging to the other half is rejected
     saying so, so no setting can be given in two places. A manifest's experiment-level
     defaults come through here after config.toml, so both are held to the same types
-    and ranges. The safety stops are held to their ranges where `values` gives them,
+    and ranges. The limits are held to their ranges where `values` gives them,
     and not where a check has amended them directly. Pure: nothing is installed. The
     starter files are found under the root in force, so `base` holds that root (see
     Settings).
@@ -322,7 +323,7 @@ def overlay(
         values,
         [t.lower() for t in allowed],
         retired=RETIRED,
-        elsewhere={k.lower(): elsewhere for k in TUNABLES - allowed}
+        elsewhere={k.lower(): elsewhere for k in SETTING_KEYS - allowed}
         if elsewhere
         else None,
     )
@@ -360,7 +361,7 @@ def overlay(
     ):
         reject(
             f"max_turns must be from {MAX_TURNS_FLOOR} to {MAX_TURNS_CEILING}, got "
-            f"{s.max_turns}; it is a safety stop, true of every run: lower, it can end an "
+            f"{s.max_turns}; it is a limit, true of every run: lower, it can end an "
             f"episode the agent had not finished, and higher, it no longer stops a runaway"
         )
     if (
@@ -406,7 +407,7 @@ def overlay(
 def apply_config(
     values: dict[str, Any],
     source: str,
-    allowed: Iterable[str] = TUNABLES,
+    allowed: Iterable[str] = SETTING_KEYS,
     elsewhere: str = "",
 ) -> None:
     """Overlay config keys onto the settings in force: overlay, installed.
@@ -1339,11 +1340,11 @@ def apply_tools(tables: list[dict] | None, chans: list[Channel], source: str) ->
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Settings:
-    """Everything a run is configured with: the tunables, the channel and tool tables,
+    """Everything a run is configured with: the settings, the channel and tool tables,
     the harness files' names, and the directory every path resolves against.
 
     Frozen, and replaced whole: config.toml, a manifest and a check each make a new one
-    of the one before. A tunable's field is its lowercased name, so a config key, a
+    of the one before. A setting's field is its lowercased name, so a config key, a
     manifest key and the field holding it are spelled alike.
 
     No builder moves root, and each is handed settings whose root is the one in force:
@@ -1361,14 +1362,14 @@ class Settings:
     # The sandbox image the container is started from.
     image: str = "metered-agent:latest"
     max_tokens: int = 8_192  # output ceiling per turn
-    max_turns: int = 200  # safety stop
+    max_turns: int = 200  # a limit
     command_timeout: int = 60  # seconds per bash command
     # Characters per tool result, in what the agent receives and in the trace. Also
     # the ceiling on what one call can cost, since the model is billed on what
     # survives the clip and never on what the command produced.
     tool_result_limit: int = 8_000
 
-    # An experiment's half: TREATMENT.
+    # An experiment's half: MANIFEST_SETTINGS.
     # What the harness says to every agent, which is whatever the experiment declared it
     # should. Every manifest declares it, so this default stands only for a round driven
     # straight from a list of ids; "" sends no system parameter at all. Pinned per agent
@@ -1481,7 +1482,7 @@ TRACE_VERSION = 5
 # history.
 ACCOUNT_VERSION = 3
 
-# --watch only. Not in TUNABLES, so config.toml cannot set it, and it never
+# --watch only. Not in SETTING_KEYS, so config.toml cannot set it, and it never
 # reaches the agent.
 WATCH = False
 
@@ -1986,7 +1987,7 @@ def load_account(
     The pinned settings - the system prompt, provider, model, budget, starter files and
     their threshold - are read once and recorded in account.json, which is what the agent
     uses from then on. Provider and model are always explicit; other omitted settings
-    use their experiment tunables. A setting given for an existing agent must match what
+    use the experiment's settings. A setting given for an existing agent must match what
     it was created on. An account that holds no provider, no model, or no setting it is
     given is rejected by the key it lacks.
     """
@@ -5704,11 +5705,11 @@ def provenance(
 ) -> dict:
     """Everything outside account.json that decided what this episode was.
 
-    Per episode, not per agent: only the pinned settings hold, so image, rates
-    and tunables are whatever this episode had. `starter_files` is the agent's
-    own pinned pair and `system` its pinned prompt, and the tunables stand in where
-    a caller has no account. `experiment` is what the driver stamped: the schedule
-    and the manifest's sha256.
+    Per episode, not per agent: only the pinned settings hold, so image, rates and
+    settings are whatever this episode had. `starter_files` is the agent's own pinned
+    pair and `system` its pinned prompt, and the settings in force stand in where a
+    caller has no account. `experiment` is what the driver stamped: the schedule and
+    the manifest's sha256.
     """
     s = SETTINGS
     starter_name, starter_below = (
@@ -6554,7 +6555,7 @@ def start(
     s, cfg = load_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")
     if overrides:
-        s = overlay(s, overrides, "manifest", TREATMENT, NOT_MANIFEST)
+        s = overlay(s, overrides, "manifest", MANIFEST_SETTINGS, NOT_MANIFEST)
     # A manifest's table replaces the set whole; its names overlay one by one; and
     # whatever is in force is held against the labels this experiment will use.
     s = with_channels(s, channel_tables, harness_files, "manifest", tuple(labels))
@@ -6931,7 +6932,7 @@ def print_context(
 
     s, cfg = load_config(SETTINGS, config)
     if m["overrides"]:
-        s = overlay(s, m["overrides"], str(manifest), TREATMENT, NOT_MANIFEST)
+        s = overlay(s, m["overrides"], str(manifest), MANIFEST_SETTINGS, NOT_MANIFEST)
     s = with_channels(
         s, m["channels"], m["harness_files"], str(manifest), tuple(m["labels"].values())
     )
@@ -7170,7 +7171,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--fork-from and --at-episode go together")
     if a.at_episode is not None and a.at_episode < 1:
         ap.error("--at-episode must be at least 1")
-    # Reads the parent's recorded environment and writes a copy of it. No tunable
+    # Reads the parent's recorded environment and writes a copy of it. No setting
     # decides anything here, so it runs before the config is even read.
     if a.fork_from:
         return fork(a.fork_from, a.at_episode, a.agent)

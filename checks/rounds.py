@@ -89,7 +89,7 @@ def check_every_viewer_sees_the_same_seat_order():
     stamp = {
         "schedule": "simultaneous",
         "stop_when_one_remains": True,
-        "manifest_sha256": "stable-treatment",
+        "manifest_sha256": "stable-arm",
     }
     for agent in agents:
         account = {}

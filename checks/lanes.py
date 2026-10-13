@@ -423,9 +423,9 @@ SEAMS = {
     "catch_signals",
 }
 
-# What a check may amend: every tunable, and the root. The tables are
+# What a check may amend: every setting, and the root. The tables are
 # apply_channels' and apply_tools', which hold them to their rules.
-TUNED = {t.lower() for t in harness.TUNABLES} | {"root"}
+TUNED = {t.lower() for t in harness.SETTING_KEYS} | {"root"}
 
 # How many pinned() blocks are open: amend() moves a setting only inside one.
 _depth = 0
@@ -465,7 +465,7 @@ def amend(**fields) -> None:
 def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
     """Point harness at a throwaway directory, with episodes running in `sandbox`.
 
-    `overrides` amend a tunable (max_turns=1, command_timeout=2) or move a seam
+    `overrides` amend a setting (max_turns=1, command_timeout=2) or move a seam
     (SANDBOX=RecordingSandbox, start=capture) for the duration, and pinned() puts
     every one of them back. `tools` are [[tool]] tables, decided against whatever
     channel table is then in force.

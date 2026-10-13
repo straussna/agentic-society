@@ -134,7 +134,7 @@ Violating one silently invalidates the results.
   report from the traces each time it runs.
 - **9 — Every episode is stamped with everything it ran under, and any difference from
   the previous episode starts a new arm.** The harness's own sha256, the image, the
-  provider, requested model, rate catalog, every tunable, the starter files' and each
+  provider, requested model, rate catalog, every setting, the starter files' and each
   experimenter channel's names and sha256s, the experiment's seating, its schedule and
   its manifest's sha256, and how much of each file `m` carried are in every episode's
   provenance, along with the system prompt in force, whole and by sha256. The pinned

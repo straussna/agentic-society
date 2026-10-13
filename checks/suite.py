@@ -151,24 +151,24 @@ def check_no_setting_is_given_in_two_places():
 
     A setting given in both files is a run whose settings depend on which was read last.
     Each file rejects the other's keys by name; this asserts the two halves cover
-    every tunable exactly once, and that the files the repo ships keep to them. In a
-    process every tunable is a field of the one frozen Settings, spelled as the files
+    every setting exactly once, and that the files the repo ships keep to them. In a
+    process every setting is a field of the one frozen Settings, spelled as the files
     spell it and stated in every episode's provenance. No module global spells a
     setting in capitals beside it, where an assignment would configure nothing, and
     nothing imports SETTINGS by name, which would hold on to the settings in force at
     the import.
     """
-    assert harness.PROCESS | harness.TREATMENT == harness.TUNABLES, (
-        "every tunable is owned"
+    assert harness.PROCESS | harness.MANIFEST_SETTINGS == harness.SETTING_KEYS, (
+        "every setting is owned"
     )
-    assert not harness.PROCESS & harness.TREATMENT, sorted(
-        harness.PROCESS & harness.TREATMENT
+    assert not harness.PROCESS & harness.MANIFEST_SETTINGS, sorted(
+        harness.PROCESS & harness.MANIFEST_SETTINGS
     )
 
-    tunables = {t.lower() for t in harness.TUNABLES}
+    settings = {t.lower() for t in harness.SETTING_KEYS}
     fields = {f.name for f in dataclasses.fields(harness.Settings)}
-    assert tunables == fields - {"root", "channels", "harness_files", "tools"}, (
-        f"a tunable is the field of its lowercased name: {sorted(tunables ^ fields)}"
+    assert settings == fields - {"root", "channels", "harness_files", "tools"}, (
+        f"a setting is the field of its lowercased name: {sorted(settings ^ fields)}"
     )
     held = fields | {
         name
@@ -187,7 +187,7 @@ def check_no_setting_is_given_in_two_places():
         raise AssertionError("Settings is frozen: configuration replaces it whole")
     # The prompt is stated as `system`; the budget is pinned in the account as `budget`.
     prov = harness.provenance("anthropic", "claude-sonnet-5")
-    unstated = sorted(tunables - {"system_prompt", "budget"} - set(prov))
+    unstated = sorted(settings - {"system_prompt", "budget"} - set(prov))
     assert not unstated and "system" in prov, f"provenance omits {unstated}"
 
     root = Path(harness.__file__).parent
@@ -209,7 +209,7 @@ def check_no_setting_is_given_in_two_places():
 
     manifests = sorted((root / "experiments").rglob("*.toml"))
     assert manifests, "the repo ships manifests"
-    treatment = {t.lower() for t in harness.TREATMENT}
+    manifest_settings = {t.lower() for t in harness.MANIFEST_SETTINGS}
     for m in manifests:
         top = tomllib.loads(m.read_text(encoding="utf-8"))
         assert top.get("agent"), f"{m.name}: an experiment seats agents"
@@ -229,7 +229,7 @@ def check_no_setting_is_given_in_two_places():
                 "harness_files",
                 "tool",
             }
-            - treatment
+            - manifest_settings
         )
         assert not stray, f"{m.name} sets {stray}, which config.toml owns"
         told = "system_prompt" in top or all("system_prompt" in a for a in top["agent"])

@@ -91,7 +91,7 @@ SDK's HTTP timeout mid-episode.
 at that many characters, and the clip happens before the result becomes the `tool_result`
 sent to the API — so the agent spends on what survives it and never on what the command
 produced. That makes the limit a ceiling on what any one call can spend, which is why it is
-tunable but small by default. Measured at roughly 6.7 micro-dollars per character
+configurable but small by default. Measured at roughly 6.7 micro-dollars per character
 delivered: 8000 caps a call at about 54000, some 4% of a 1500000 budget — enough that a
 careless dump is a lesson and not an ending. 32000 caps it at ~214000, and 64000 at
 ~429000, where one bad call exhausts an agent before it has learned anything.

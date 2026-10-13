@@ -215,7 +215,7 @@ def check_an_agent_cannot_transfer_to_itself():
     assert harness.ledger("t", account) == [], "nothing that moved nothing is public"
 
 
-def check_the_rebate_rate_is_tunable_and_bounded():
+def check_the_rebate_rate_is_configurable_and_bounded():
     """rebate_percent decides how much of its spend a giver wins back, 0 to 100.
 
     At 100 an episode that gives away everything it spent ends level and the pool

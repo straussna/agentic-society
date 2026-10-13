@@ -116,13 +116,13 @@ lives in each file's docstrings.
 ## Reading the code
 
 `harness.py` is one file on purpose: it hashes itself at import and records the sha256
-in every trace. What a run is configured with — every tunable, the channel and tool
+in every trace. What a run is configured with — every setting, the channel and tool
 tables, the status files' names and the root every path resolves against — is one
 frozen `Settings` held in `harness.SETTINGS` and replaced whole, never edited:
 `start()` builds it from `config.toml` and the manifest and installs it once nothing
 has rejected it, and a check moves it with `amend()` inside `pinned()`, which puts it back.
 Its module docstring is a table of contents, and the file is in the order an
-episode meets things: what the harness says, the rates, the tunables, the channel and
+episode meets things: what the harness says, the rates, the settings, the channel and
 tool tables, the process constants, accounts, starter files, the environment, what the agent's
 channels held at episode start, the sandbox and the shell, the API, the turn loop,
 settlement, provenance and the trace, the steps of one episode, many episodes,
@@ -148,7 +148,7 @@ across them and runs them in a process pool.
 | [docs/design.md](docs/design.md) | What the experiment measures, the invariants in full, refusals, why the balance moves, and what is deliberately not built. |
 | [docs/experiments.md](docs/experiments.md) | Seating, boards, mailboxes, transfers, the ledger, and the silence penalties, as the default channels and the shipped competition declare them. |
 | [docs/files.md](docs/files.md) | Starter files and experimenter channels, when each arrives, and how a turn's spend is computed. |
-| [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that spends. |
+| [docs/operating.md](docs/operating.md) | Full layout, every command, the process parameters, and what to check before an episode that spends. |
 | [docs/human.md](docs/human.md) | Human seats: the manifest settings, attaching with `human.py`, and how a human turn is recorded. |
 | [experiments/README.md](experiments/README.md) | The index of shipped experiments: what each one is, the seats it declares, and which arm it is read against. |
 | [docs/manifest.md](docs/manifest.md) | The experiment manifest: every term defined, then settings, agents, channels, tools, status files, validation, and what reaches the trace. The specification the code implements; read this first. |

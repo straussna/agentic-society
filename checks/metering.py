@@ -122,7 +122,7 @@ def check_config_is_validated():
     def declared(**values):
         """One experiment setting, applied the way a manifest's defaults are."""
         harness.apply_config(
-            values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
+            values, "manifest", harness.MANIFEST_SETTINGS, harness.NOT_MANIFEST
         )
 
     with tempfile.TemporaryDirectory(prefix="mtr-cfg-") as tmp:
@@ -480,13 +480,13 @@ def check_per_turn_micros_partition_the_spend():
     ], t["balances"]
 
 
-def check_the_safety_stops_are_held_to_their_ranges():
+def check_the_limits_are_held_to_their_ranges():
     """config.toml's max_turns and command_timeout are rejected outside their ranges.
 
-    Each bound itself is accepted and applied. A stop a check amends directly is not
+    Each bound itself is accepted and applied. A limit a check amends directly is not
     a value config.toml gave, so a manifest applied after it stands.
     """
-    stops = (
+    limits = (
         ("max_turns", harness.MAX_TURNS_FLOOR, harness.MAX_TURNS_CEILING),
         (
             "command_timeout",
@@ -494,9 +494,9 @@ def check_the_safety_stops_are_held_to_their_ranges():
             harness.COMMAND_TIMEOUT_CEILING,
         ),
     )
-    with tempfile.TemporaryDirectory(prefix="mtr-stops-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="mtr-limits-") as tmp:
         f = Path(tmp) / "config.toml"
-        for key, floor, ceiling in stops:
+        for key, floor, ceiling in limits:
             for bad in (floor - 1, ceiling + 1):
                 f.write_text(f"{key} = {bad}\n", encoding="utf-8")
                 with pinned():
@@ -519,15 +519,18 @@ def check_the_safety_stops_are_held_to_their_ranges():
     with pinned():
         amend(max_turns=1, command_timeout=2)
         harness.apply_config(
-            {"grace_episodes": 1}, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
+            {"grace_episodes": 1},
+            "manifest",
+            harness.MANIFEST_SETTINGS,
+            harness.NOT_MANIFEST,
         )
         assert (harness.SETTINGS.max_turns, harness.SETTINGS.command_timeout) == (
             1,
             2,
-        ), "a manifest's settings leave the stops a check set alone"
+        ), "a manifest's settings leave the limits a check set alone"
 
 
-def check_tool_result_limit_is_tunable_and_bounded():
+def check_tool_result_limit_is_configurable_and_bounded():
     """The clip is settable, validated, and actually applied at the set value."""
     with tempfile.TemporaryDirectory(prefix="mtr-trl-") as tmp:
         f = Path(tmp) / "config.toml"
@@ -642,7 +645,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     assert harness.SETTINGS.system_prompt == harness.SYSTEM, (
         "declaring nothing is the shipped arm"
     )
-    assert "SYSTEM_PROMPT" in harness.TUNABLES, (
+    assert "SYSTEM_PROMPT" in harness.SETTING_KEYS, (
         "so config.toml and a manifest can declare it"
     )
     assert (

@@ -1385,7 +1385,9 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
 
     # Bash is disabled outside a declared experiment.
     assert harness.SETTINGS.shell_tool is False, "bash requires a declaration"
-    assert "SHELL_TOOL" not in harness.TREATMENT, "the tool table decides bash access"
+    assert "SHELL_TOOL" not in harness.MANIFEST_SETTINGS, (
+        "the tool table decides bash access"
+    )
 
 
 def check_withholding_the_shell_needs_something_to_act_with():

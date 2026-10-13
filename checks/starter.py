@@ -275,7 +275,7 @@ def check_starter_files_config_is_validated():
             """Starter file settings as a manifest states them; config.toml rejects
             them."""
             harness.apply_config(
-                values, "manifest", harness.TREATMENT, harness.NOT_MANIFEST
+                values, "manifest", harness.MANIFEST_SETTINGS, harness.NOT_MANIFEST
             )
 
         for bad in (
