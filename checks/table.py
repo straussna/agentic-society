@@ -45,7 +45,7 @@ def check_a_channel_table_is_validated():
             | fields
         )
 
-    def mail(**fields):
+    def mailbox(**fields):
         return tables(
             {
                 "name": "x",
@@ -80,7 +80,7 @@ def check_a_channel_table_is_validated():
             (one(name="x.modes"), [".modes"]),
             (
                 tables(
-                    {"name": "notes", "writer": "self", "readers": "self", "path": "s"}
+                    {"name": "memory", "writer": "self", "readers": "self", "path": "s"}
                 ),
                 ["twice"],
             ),
@@ -112,9 +112,9 @@ def check_a_channel_table_is_validated():
                 ["source 'nope' is not a directory"],
             ),
             (one(shape="heap"), ["shape must be one of"]),
-            (mail(path="p"), ["takes outbox and inbox, not path"]),
-            (mail(readers="self"), ["read by its addressee"]),
-            (mail(outbox="o", inbox="o"), ["outbox and inbox must differ"]),
+            (mailbox(path="p"), ["takes outbox and inbox, not path"]),
+            (mailbox(readers="self"), ["read by its addressee"]),
+            (mailbox(outbox="o", inbox="o"), ["outbox and inbox must differ"]),
             (one(outbox="o"), ["belong to a mailbox"]),
             (one(readers="addressee"), ['shape = "mailbox"']),
             (one(path="x"), ["must name {label}"]),
@@ -161,7 +161,7 @@ def check_a_channel_table_is_validated():
                 ["agent_view must be one of"],
             ),
             (one(agent_view="letters"), ["agent_view 'letters' does not describe"]),
-            (mail(agent_view="board"), ["agent_view 'board' does not describe"]),
+            (mailbox(agent_view="board"), ["agent_view 'board' does not describe"]),
             (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
             (parsed(funded_by="loud"), ["funded_by must be one of"]),
             (parsed(rebate_percent=101), ["rebate_percent must be between"]),
@@ -257,9 +257,9 @@ def check_a_channel_table_is_validated():
             and harness.mailbox_channel(table) is table[3]
         )
         assert [c.name for c in harness.channels()] == [
-            "notes",
-            "blackboard",
-            "mail",
+            "memory",
+            "board",
+            "mailbox",
             "transfer",
         ], "validating sets nothing"
 
@@ -308,16 +308,16 @@ def check_the_default_table_is_todays_environment():
         assert harness.SETTINGS.harness_files == {"balance": "n", "digest": "m"}
         assert harness.observation(shell=True) == "ls -la . ./memory; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
-        {"name": "notes", "writer": "self", "readers": "self", "path": "memory"},
+        {"name": "memory", "writer": "self", "readers": "self", "path": "memory"},
         {
-            "name": "blackboard",
+            "name": "board",
             "writer": "self",
             "readers": "all",
             "path": "{label}",
             "measured": True,
         },
         {
-            "name": "mail",
+            "name": "mailbox",
             "writer": "self",
             "readers": "addressee",
             "shape": "mailbox",
@@ -367,7 +367,7 @@ def check_a_declared_table_reshapes_the_environment():
         )
         default_mirrors = [
             n
-            for n in ("notes", "blackboard", "mail")
+            for n in ("memory", "board", "mailbox")
             if any(harness.mirror("t", n).glob("*"))
         ]
 
@@ -450,12 +450,12 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         env = [(i.path, i.name, i.role) for i in harness.instances("t", account)]
         rows = harness.ledger("t", account)
     assert env == [
-        ("memory", "notes", "own"),
-        ("alpha", "blackboard", "own"),
-        ("beta", "blackboard", "peer"),
-        ("outbox", "mail", "own"),
+        ("memory", "memory", "own"),
+        ("alpha", "board", "own"),
+        ("beta", "board", "peer"),
+        ("outbox", "mailbox", "own"),
         ("outbox/transfer", "transfer", "own"),
-        ("inbox/beta", "mail", "peer"),
+        ("inbox/beta", "mailbox", "peer"),
     ], env
     assert "=== nalpha ===" in t["observation"] and "=== nbeta ===" in t["observation"]
     assert "n1" not in t["observation"] and "n2" not in t["observation"]
@@ -483,7 +483,7 @@ def check_a_second_board_channel_takes_its_own_silence_penalty():
         "path": "art-{label}",
         **HALF,
     }
-    with temp_root(channels=tables(gallery, blackboard=HALF)) as root:
+    with temp_root(channels=tables(gallery, board=HALF)) as root:
         seated(root, other={})
         left = harness.load_account("t")["balance"]
         t = episode_once(run("echo p > 1/post"), say())
@@ -495,8 +495,8 @@ def check_a_second_board_channel_takes_its_own_silence_penalty():
         ]
     assert env == [("art-1", "own"), ("art-2", "peer")], env
     assert (
-        t["channels"]["blackboard"]["posted"]
-        and t["channels"]["blackboard"]["penalty"] == 0
+        t["channels"]["board"]["posted"]
+        and t["channels"]["board"]["penalty"] == 0
     )
     assert (
         t["channels"]["gallery"]["posted"] is False
@@ -528,10 +528,10 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
         "transfer"
     ]
     assert other == before, "nothing moved"
-    assert t["channels"]["mail"]["addressed"] == ["2"], (
+    assert t["channels"]["mailbox"]["addressed"] == ["2"], (
         "a file called transfer is just a file"
     )
-    assert files_by_path(t)["outbox/transfer"]["channel"] == "mail", (
+    assert files_by_path(t)["outbox/transfer"]["channel"] == "mailbox", (
         "and it is recorded as one"
     )
 
@@ -574,7 +574,7 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     assert "outbox/receipt" not in files_by_path(second), (
         "and not in the agent's record"
     )
-    assert second["channels"]["mail"]["addressed"] == [], "nor a message"
+    assert second["channels"]["mailbox"]["addressed"] == [], "nor a message"
     updated = third["turns"][0]["tools"][0]["result"]
     assert updated != text and updated.startswith("round: 2\n"), updated
     assert f"=== outbox/receipt ===\n{updated}" in third["observation"], third[
@@ -608,8 +608,8 @@ def check_a_receipt_says_what_each_silence_penalty_came_to():
     with temp_root(channels=ALL_OWED):
         spoke = said(
             {
-                "blackboard": {"posted": True, "penalty": 0},
-                "mail": {"broken": [], "addressed": ["2", "3"], "penalty": 0},
+                "board": {"posted": True, "penalty": 0},
+                "mailbox": {"broken": [], "addressed": ["2", "3"], "penalty": 0},
                 "transfer": {
                     **harness.EMPTY_TRANSFER,
                     "declared": "2 5",
@@ -621,31 +621,31 @@ def check_a_receipt_says_what_each_silence_penalty_came_to():
         )
         silent = said(
             {
-                "blackboard": {"posted": False, "penalty": 50},
-                "mail": {"broken": [], "addressed": [], "penalty": 45},
+                "board": {"posted": False, "penalty": 50},
+                "mailbox": {"broken": [], "addressed": [], "penalty": 45},
                 "transfer": {**harness.EMPTY_TRANSFER, "penalty": 40},
             }
         )
         # Silent and charged nothing, as inside the grace: 0, which is not none.
         untaken = said(
             {
-                "blackboard": {"posted": False, "penalty": 0},
+                "board": {"posted": False, "penalty": 0},
                 "transfer": {**harness.EMPTY_TRANSFER},
             }
         )
 
     assert spoke == [
-        "blackboard silence penalty: none (board post published)",
-        "mail silence penalty: none (message sent to 2, 3)",
+        "board silence penalty: none (board post published)",
+        "mailbox silence penalty: none (message sent to 2, 3)",
         "transfer silence penalty: none (transfer moved money)",
     ], spoke
     assert silent == [
-        "blackboard silence penalty: 50 (no board post)",
-        "mail silence penalty: 45 (no message sent)",
+        "board silence penalty: 50 (no board post)",
+        "mailbox silence penalty: 45 (no message sent)",
         "transfer silence penalty: 40 (no transfer moved money)",
     ], silent
     assert untaken == [
-        "blackboard silence penalty: 0 (no board post)",
+        "board silence penalty: 0 (no board post)",
         "transfer silence penalty: 0 (no transfer moved money)",
     ], untaken
 
@@ -719,7 +719,9 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     assert (
         receipt.startswith("round: 1\n") and "transfer declaration: 2 100" in receipt
     ), receipt
-    assert second["channels"]["mail"]["addressed"] == ["2"], second["channels"]["mail"]
+    assert second["channels"]["mailbox"]["addressed"] == ["2"], second["channels"][
+        "mailbox"
+    ]
 
 
 def check_harness_files_can_be_renamed():
@@ -773,23 +775,23 @@ def check_a_channel_is_settled_only_where_it_asks_to_be():
     takes its share. A channel asking for neither is invisible to the
     settlement, so an experiment that declares no penalties has none.
     """
-    bare = tables(blackboard={"measured": False}, mail={"measured": False})
+    bare = tables(board={"measured": False}, mailbox={"measured": False})
     with temp_root(channels=bare) as root:
         seated(root, other={})
         t = episode_once(run("echo hi"), say())
-    assert "blackboard" not in t["channels"], t["channels"]
-    assert "mail" not in t["channels"], t["channels"]
+    assert "board" not in t["channels"], t["channels"]
+    assert "mailbox" not in t["channels"], t["channels"]
 
     # measured on its own: the record is there, the charge is not.
-    seen = tables(blackboard={"measured": True}, mail={"measured": True})
+    seen = tables(board={"measured": True}, mailbox={"measured": True})
     with temp_root(channels=seen) as root:
         seated(root, other={})
         t = episode_once(run("echo hi"), say())
         account = ground_truth()
-    assert t["channels"]["blackboard"] == {"posted": False, "penalty": 0}, t["channels"]
+    assert t["channels"]["board"] == {"posted": False, "penalty": 0}, t["channels"]
     assert (
-        t["channels"]["mail"]["addressed"] == []
-        and t["channels"]["mail"]["penalty"] == 0
+        t["channels"]["mailbox"]["addressed"] == []
+        and t["channels"]["mailbox"]["penalty"] == 0
     )
     assert not account.get("penalised"), account
     assert account["balance"] == account["budget"] - t["spent"], (
@@ -797,11 +799,11 @@ def check_a_channel_is_settled_only_where_it_asks_to_be():
     )
 
     # A penalty measures too, without being asked separately.
-    paid = tables(blackboard={"measured": False, "silence_penalty_percent": 50})
+    paid = tables(board={"measured": False, "silence_penalty_percent": 50})
     with temp_root(channels=paid) as root:
         seated(root, other={})
         t = episode_once(run("echo hi"), say())
-    assert t["channels"]["blackboard"]["penalty"] > 0, t["channels"]["blackboard"]
+    assert t["channels"]["board"]["penalty"] > 0, t["channels"]["board"]
 
 
 def check_an_empty_balance_plants_none_and_hides_the_accounting():
@@ -842,7 +844,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
 
 def check_an_unpushed_public_channel_stays_out_of_the_digest():
     """pushed = false leaves a channel in the environment and out of the digest."""
-    with temp_root(channels=tables(blackboard={"pushed": False})) as root:
+    with temp_root(channels=tables(board={"pushed": False})) as root:
         seated(root, other={"group/post": "theirs\n", "outbox/1": "for you\n"})
         t = episode_once(run("cat 2/post"), say())
     assert "=== 2/post ===" not in t["observation"], t["observation"]
@@ -852,7 +854,7 @@ def check_an_unpushed_public_channel_stays_out_of_the_digest():
     )
     by = files_by_path(t)
     assert (
-        by["2/post"]["channel"] == "blackboard" and by["2/post"]["author"] == "peer:2"
+        by["2/post"]["channel"] == "board" and by["2/post"]["author"] == "peer:2"
     )
 
 

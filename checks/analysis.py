@@ -151,7 +151,7 @@ def check_the_report_names_what_the_traces_hold():
         ("starter_files", f"s ({sha256[:12]}), configured to land below 500000"),
         ("starter_files first seen", 1),
         ("first named a starter", 1),
-        ("episodes that spoke on mail", "1 of 2"),
+        ("episodes that spoke on mailbox", "1 of 2"),
         ("first addressed a seat", 1),
         ("first crowded a seat", "never"),
         ("its own seat", "1, label 1, balance n1"),
@@ -196,8 +196,8 @@ def check_the_csv_row_flattens_a_trace():
     assert r1["provider"] == "anthropic" and r1["resolved_model"], r1
     assert (
         r1["sent_to"] == "2"
-        and r1["mail_addressed"] == "2"
-        and r1["mail_crowded"] == ""
+        and r1["mailbox_addressed"] == "2"
+        and r1["mailbox_crowded"] == ""
     ), r1
     assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, (
         "the declaration is the schema channel's, not a slot"
@@ -217,7 +217,7 @@ def check_the_csv_row_flattens_a_trace():
     )
 
     # The first episode's message has expired and the second sent none.
-    assert r2["sent_to"] == "" and r2["mail_addressed"] == "", r2
+    assert r2["sent_to"] == "" and r2["mailbox_addressed"] == "", r2
     assert r2["transfer_amount"] == 0 and r2["transfer_to_seat"] == "", r2
     assert (
         r2["refusal_category"] == ""
@@ -261,7 +261,7 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
         "path": "art-{label}",
         **HALF,
     }
-    with temp_root(channels=tables(gallery, blackboard=HALF)) as root:
+    with temp_root(channels=tables(gallery, board=HALF)) as root:
         seated(root, other={})
         t = episode_once(run("echo p > 1/post"), say())
         account = ground_truth()
@@ -278,9 +278,9 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
     assert took == {"gallery": t["channels"]["gallery"]["penalty"]}, took
 
     # Each board has columns of its own, and neither is folded into the other's.
-    assert (r["blackboard_spoke"], r["blackboard_penalised"]) == (True, 0), r
+    assert (r["board_spoke"], r["board_penalised"]) == (True, 0), r
     assert (r["gallery_spoke"], r["gallery_penalised"]) == (False, took["gallery"]), r
-    assert r["mail_spoke"] is False and r["transfer_spoke"] is False, r
+    assert r["mailbox_spoke"] is False and r["transfer_spoke"] is False, r
 
     # The report states the share by the channel it was taken on, and how many
     # episodes spoke on each channel, one line a channel.
@@ -289,15 +289,15 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
     ), text
     assert analyze.report_line("episodes that spoke on gallery", "0 of 1") in text, text
     assert (
-        analyze.report_line("episodes that spoke on blackboard", "1 of 1") in text
+        analyze.report_line("episodes that spoke on board", "1 of 1") in text
     ), text
 
     # And the page names the channel, so the tile and the transcript cannot state
     # a silence the other leaves out.
     assert v["spoke"] == {
-        "blackboard": True,
+        "board": True,
         "gallery": False,
-        "mail": False,
+        "mailbox": False,
         "transfer": False,
     }, v["spoke"]
     assert ("gallery", "no post") in [

@@ -364,8 +364,8 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         "transfer": {"amount": 100, "rebate": 100, "debit": 0, "penalty": 0},
         "channels": {
             "transfer": {"penalty": 0},
-            "blackboard": {"penalty": 10},
-            "mail": {"penalty": 0},
+            "board": {"penalty": 10},
+            "mailbox": {"penalty": 0},
         },
     }
     second = {
@@ -378,8 +378,8 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         "transfer": {"amount": 50, "rebate": 0, "debit": 50, "penalty": 0},
         "channels": {
             "transfer": {"penalty": 0},
-            "blackboard": {"penalty": 20},
-            "mail": {"penalty": 15},
+            "board": {"penalty": 20},
+            "mailbox": {"penalty": 15},
         },
     }
     # 30 arrives before the first episode and 40 between the two; 20 inside the first.
@@ -408,7 +408,7 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         "rebated": 100,
         "debited": 0,
         "floored": 0,
-        "penalised": {"blackboard": 10},
+        "penalised": {"board": 10},
     }
     none = {
         "sent": 0,
@@ -436,7 +436,7 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
                         "rebated": 100,
                         "debited": 50,
                         "floored": 7,
-                        "penalised": {"blackboard": 30, "mail": 15},
+                        "penalised": {"board": 30, "mailbox": 15},
                     },
                 ),
             ),

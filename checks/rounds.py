@@ -1601,7 +1601,7 @@ def check_a_fresh_run_archives_previous_state_and_resume_continues_it():
         old_account.write_text(
             json.dumps({"agent": "g01", "model": "claude-sonnet-5"}), encoding="utf-8"
         )
-        old_note = harness.mirror("g01", "notes") / "old.txt"
+        old_note = harness.mirror("g01", "memory") / "old.txt"
         old_note.parent.mkdir(parents=True)
         old_note.write_text("previous run\n", encoding="utf-8")
         manifest = manifest_file(root, 'system_prompt = ""\n[[agent]]\nid = "g01"\n')
@@ -1621,7 +1621,7 @@ def check_a_fresh_run_archives_previous_state_and_resume_continues_it():
             )["agent"]
             == "g01"
         )
-        assert (bundles[0] / "mirrors" / "g01" / "notes" / "old.txt").read_text(
+        assert (bundles[0] / "mirrors" / "g01" / "memory" / "old.txt").read_text(
             encoding="utf-8"
         ) == "previous run\n"
         assert (
@@ -1951,7 +1951,7 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
     electors and written only to them, which leaves g04's own account without it: its
     peers' say it was held.
     """
-    note = {"name": "note", "kind": "write_file", "channel": "notes"}
+    note = {"name": "note", "kind": "write_file", "channel": "memory"}
     for older in (False, True):
         seen: list[dict] = []
         with temp_root(
@@ -2244,10 +2244,10 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
     )
     assert "experiment ends" not in buf.getvalue(), buf.getvalue()
     assert alone["transfer"]["penalty"] == 0, alone["transfer"]
-    assert alone["channels"]["mail"]["penalty"] == 0, alone["channels"]["mail"]
+    assert alone["channels"]["mailbox"]["penalty"] == 0, alone["channels"]["mailbox"]
     assert (
-        not alone["channels"]["blackboard"]["posted"]
-        and alone["channels"]["blackboard"]["penalty"] > 0
+        not alone["channels"]["board"]["posted"]
+        and alone["channels"]["board"]["penalty"] > 0
     )
 
     with temp_root(channels=ALL_OWED) as root:
@@ -2417,8 +2417,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
             code = experiment.main(["--manifest", str(p), "--rounds", "1"])
         accounts = {r: ground_truth(r) for r in ("g01", "g02", "g03")}
         starter = {
-            r: (harness.mirror(r, "notes") / "m1").read_text(encoding="utf-8")
-            if (harness.mirror(r, "notes") / "m1").exists()
+            r: (harness.mirror(r, "memory") / "m1").read_text(encoding="utf-8")
+            if (harness.mirror(r, "memory") / "m1").exists()
             else None
             for r in accounts
         }
@@ -2614,14 +2614,14 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
     """One agent's settlement failing in a simultaneous round is raised once every other
     agent has committed, and a transfer made to it that round reaches its account on disk.
 
-    g02's settlement cannot read back what its blackboard held when its episode started.
+    g02's settlement cannot read back what its board held when its episode started.
     g01 transferred to g02 in the same round.
     """
 
     class Unread(dict):
         def get(self, *args):
             raise OSError(
-                "what the blackboard held at episode start does not read back"
+                "what the board held at episode start does not read back"
             )
 
     with temp_root() as root:
@@ -3092,21 +3092,21 @@ def check_a_manifest_table_replaces_the_whole_set():
         p = manifest_file(
             root,
             'schedule = "sequential"\nsystem_prompt = ""\n'
-            '[[channel]]\nname = "notes"\nwriter = "self"\n'
+            '[[channel]]\nname = "memory"\nwriter = "self"\n'
             'readers = "self"\npath = "state"\n' + agents,
         )
         m = experiment.load_manifest(p)
         table, hf = harness.validate_channels(
             m["channels"], m["harness_files"], str(p), tuple(m["labels"].values())
         )
-        assert [c.name for c in table] == ["notes"], (
+        assert [c.name for c in table] == ["memory"], (
             "one table declared, one channel in force"
         )
         assert hf == {"balance": "n", "digest": "m"}, "no [harness_files], no change"
         assert [c.name for c in harness.channels()] == [
-            "notes",
-            "blackboard",
-            "mail",
+            "memory",
+            "board",
+            "mailbox",
             "transfer",
         ], "loading a manifest sets nothing; start() does"
 

@@ -155,8 +155,8 @@ def check_starter_files_are_not_the_agents():
     assert [f["path"] for f in t["files"] if not f["planted"]] == ["memory/NOTES.md"], (
         "everything the agent did not invent is out of what analyze.py counts as its own"
     )
-    assert not [f for f in t["files"] if f["channel"] != "notes"], (
-        "an agent on its own has a blackboard and nothing on it"
+    assert not [f for f in t["files"] if f["channel"] != "memory"], (
+        "an agent on its own has a board and nothing on it"
     )
 
 
@@ -174,7 +174,7 @@ def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
             "m1",
             because="the starter files overwrote a file the agent had made",
         )
-        assert (harness.mirror("t", "notes") / "m1").read_text().strip() == "mine", (
+        assert (harness.mirror("t", "memory") / "m1").read_text().strip() == "mine", (
             "and left it alone"
         )
 
@@ -209,7 +209,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         assert ground_truth()["starter_files_landed"]["name"] == "s", (
             "the starter files that landed are the pinned ones"
         )
-        assert not (harness.mirror("t", "notes") / "m9").exists()
+        assert not (harness.mirror("t", "memory") / "m9").exists()
         assert second["provenance_drift"] == [], "nothing about this agent changed"
 
         # Asking the agent to be something it was not created as is rejected.
@@ -261,7 +261,7 @@ def check_a_fork_carries_the_starter_files_terms_it_had():
         assert ground_truth("before")["starter_files"] == "other", (
             "adopted at its first episode"
         )
-        assert (harness.mirror("before", "notes") / "m9").exists(), "and given at it"
+        assert (harness.mirror("before", "memory") / "m9").exists(), "and given at it"
 
 
 def check_starter_files_config_is_validated():
@@ -316,7 +316,7 @@ def check_fork_reproduces_state_and_account():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
         forked = ground_truth("f")
-        notes = (harness.mirror("f", "notes") / "NOTES.md").read_bytes()
+        notes = (harness.mirror("f", "memory") / "NOTES.md").read_bytes()
 
         was = files_by_path(trace)["memory/NOTES.md"]
         assert notes.decode() == was["text"], "memory/ is the episode it forked at"
@@ -325,8 +325,8 @@ def check_fork_reproduces_state_and_account():
         assert forked["balance_history"] == trace["balance_after"], (
             "invariant 8: the series is what carries"
         )
-        assert not any(harness.mirror("f", "blackboard").rglob("*")), (
-            "the parent's blackboard was empty, so the fork's is"
+        assert not any(harness.mirror("f", "board").rglob("*")), (
+            "the parent's board was empty, so the fork's is"
         )
         assert forked["balance"] == trace["balance_after"][-1]
         assert len(forked["episodes"]) == 1, (
@@ -358,7 +358,7 @@ def check_fork_reproduces_state_and_account():
 def check_a_fork_rebuilds_every_tree_the_agent_wrote():
     """All three writable channels come back, and neither peers nor inboxes do.
 
-    A peer's blackboard and another agent's message are rebuilt from their owners at
+    A peer's board and another agent's message are rebuilt from their owners at
     the next episode, so copying them would deliver the same post twice.
     """
     with temp_root() as root:
@@ -374,28 +374,28 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
 
-        assert (harness.mirror("f", "notes") / "NOTES.md").read_text(
+        assert (harness.mirror("f", "memory") / "NOTES.md").read_text(
             encoding="utf-8"
         ) == "mine\n"
-        assert (harness.mirror("f", "blackboard") / "RESULT").read_text(
+        assert (harness.mirror("f", "board") / "RESULT").read_text(
             encoding="utf-8"
         ) == "posted\n"
-        assert (harness.mirror("f", "mail") / "2").read_text(
+        assert (harness.mirror("f", "mailbox") / "2").read_text(
             encoding="utf-8"
         ) == "psst\n", "a message is one file, and the fork rebuilds it as one"
-        assert (harness.mirror("f", "mail") / "transfer").read_text(
+        assert (harness.mirror("f", "mailbox") / "transfer").read_text(
             encoding="utf-8"
         ) == "2 50\n", (
             "the resolved episode state is rebuilt exactly; the next episode clears the transfer"
         )
-        # And nothing that belonged to the neighbour: its blackboard, and the message
+        # And nothing that belonged to the neighbour: its board, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
         rebuilt = {
             p.name
             for tree in (
-                harness.mirror("f", "notes"),
-                harness.mirror("f", "blackboard"),
-                harness.mirror("f", "mail"),
+                harness.mirror("f", "memory"),
+                harness.mirror("f", "board"),
+                harness.mirror("f", "mailbox"),
             )
             for p in tree.rglob("*")
         }
@@ -426,7 +426,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
         )
 
         def trace(**over):
-            # A peer's blackboard is skipped and not rebuilt, so an entry that
+            # A peer's board is skipped and not rebuilt, so an entry that
             # could never be stored does not stop a fork if it is one.
             t = {
                 "trace_version": harness.TRACE_VERSION,
@@ -436,7 +436,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
                 "files": [
                     {
                         "path": "2/theirs",
-                        "channel": "blackboard",
+                        "channel": "board",
                         "writer": "self",
                         "readers": "all",
                         "size": 5,
@@ -447,7 +447,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
                     },
                     {
                         "path": "memory/a.txt",
-                        "channel": "notes",
+                        "channel": "memory",
                         "writer": "self",
                         "readers": "self",
                         "size": 3,
@@ -534,7 +534,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
         )
         mine = {
             "path": "memory/a.txt",
-            "channel": "notes",
+            "channel": "memory",
             "writer": "self",
             "readers": "self",
             "size": 3,
@@ -566,7 +566,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
             assert harness.fork("p", 1, "f") == 0, (
                 "the corrected fork takes the same id"
             )
-        assert (harness.mirror("f", "notes") / "a.txt").read_text(
+        assert (harness.mirror("f", "memory") / "a.txt").read_text(
             encoding="utf-8"
         ) == "hi\n"
 

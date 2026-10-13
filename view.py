@@ -550,7 +550,7 @@ def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | Non
     """The experiment an agent is seated in, as its agents in seat order.
 
     An agent is seated when the mapping it carries puts it in its own seat; one
-    that leaves the agent out names no blackboard as its own, and None says so.
+    that leaves the agent out names no board as its own, and None says so.
     """
     s = harness.seating_of(agent, account)
     if s.agent_by_seat.get(s.seat) != agent:
@@ -910,7 +910,7 @@ def spoke(t: dict | None) -> dict[str, bool | None]:
     name, in table order.
 
     One entry a channel and not three by kind: the harness settles every channel
-    apart, so a table declaring two blackboards judges two silences and says so
+    apart, so a table declaring two boards judges two silences and says so
     here. Whether the episode was silent and what was taken are two questions: a
     share is taken only from an episode the API answered, past the grace, at a rate
     above zero, so an episode can be silent on every channel and take no silence

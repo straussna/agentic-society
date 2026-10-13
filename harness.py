@@ -196,7 +196,7 @@ RETIRED = {
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": 'rebate_percent on the channel with schema = "transfer"',
     "transfer_silence_penalty_percent": 'silence_penalty_percent on the channel with schema = "transfer"',
-    "blackboard_silence_penalty_percent": "silence_penalty_percent on the blackboard channel",
+    "blackboard_silence_penalty_percent": "silence_penalty_percent on the board channel",
     "mailbox_silence_penalty_percent": "silence_penalty_percent on the mailbox channel",
     "shared_files": 'a [[channel]] with writer = "experimenter" and a source',
 }
@@ -565,10 +565,10 @@ class Channel:
 # The default set: the competition environment, in the paths the starter files
 # name. Code defaults, not config.toml's: no penalty, a full rebate.
 DEFAULT_CHANNELS: tuple[Channel, ...] = (
-    Channel("notes", "self", "self", "directory", path="memory"),
-    Channel("blackboard", "self", "all", "directory", path="{label}", measured=True),
+    Channel("memory", "self", "self", "directory", path="memory"),
+    Channel("board", "self", "all", "directory", path="{label}", measured=True),
     Channel(
-        "mail",
+        "mailbox",
         "self",
         "addressee",
         "mailbox",

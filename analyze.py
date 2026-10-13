@@ -170,7 +170,7 @@ def settled_channels(t: dict) -> list[tuple[harness.Channel, dict]]:
     """Every channel this episode was settled against, with its record, in table order.
 
     The harness settles each channel apart and records it by name, so an experiment
-    declaring two blackboards or three mailboxes is read here as that many settled
+    declaring two boards or three mailboxes is read here as that many settled
     channels. A channel the environment left out - a mailbox with nobody to reach -
     has no record and is not one of them.
     """
@@ -541,7 +541,7 @@ def channel_cols(t: dict) -> dict:
     """Every channel this episode was settled against, named for its channel, and
     the floor.
 
-    One group a channel and not one group a kind, so a second blackboard or a
+    One group a channel and not one group a kind, so a second board or a
     third mailbox gets columns of its own and none is folded into another's. A
     column absent means the table had no such channel that episode, or the agent
     was alone; blank means the record settled nothing.

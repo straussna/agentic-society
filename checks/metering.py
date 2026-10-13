@@ -286,7 +286,7 @@ def check_episodes_reconcile():
     with temp_root(
         floor_at_zero=True,
         channels=tables(
-            transfer={"rebate_percent": 50, **HALF}, blackboard=HALF, mail=HALF
+            transfer={"rebate_percent": 50, **HALF}, board=HALF, mailbox=HALF
         ),
     ) as root:
         seated(root, other={})
@@ -308,14 +308,14 @@ def check_episodes_reconcile():
         assert series[-1] == account["balance"], (
             "the series ends where the account does"
         )
-        assert account["rebated"] == 150 and account["penalised"]["blackboard"] > 0, (
+        assert account["rebated"] == 150 and account["penalised"]["board"] > 0, (
             account
         )
-        assert account["penalised"]["mail"] > 0, account
+        assert account["penalised"]["mailbox"] > 0, account
         # The first episode wrote the line and gave; the second took it away,
         # which moves nothing and is not a transfer it made.
         assert account["penalised"]["transfer"] > 0, account
-        assert [s["channels"]["blackboard"]["posted"] for s in episodes] == [
+        assert [s["channels"]["board"]["posted"] for s in episodes] == [
             False,
             True,
         ], episodes

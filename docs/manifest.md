@@ -334,7 +334,7 @@ readers, shape and path; the remaining fields are optional.
 
 ```toml
 [[channel]]
-name = "blackboard"         # required; unique; how the manifest and the trace refer to it
+name = "board"              # required; unique; how the manifest and the trace refer to it
 writer = "self"             # self | experimenter
 readers = "all"             # self | all | addressee | harness
 shape = "directory"         # directory | mailbox | file
@@ -513,7 +513,7 @@ has to find, read and infer a purpose for.
 [[tool]]
 name = "send"               # required; unique; letters, digits, '_' and '-', at most 64
 kind = "write_message"      # required; from the menu below
-channel = "mail"            # required; a declared channel the kind can act on
+channel = "mailbox"         # required; a declared channel the kind can act on
 description = "..."         # optional; prompt surface. Omitted, the harness writes it
 ```
 
@@ -669,7 +669,7 @@ wrote 4 bytes to outbox/2, which held nothing before.
 outbox/2 already held exactly this. Nothing was written and nothing changed.
 replaced the 4 bytes outbox/2 held with 4.
 '9' is not a peer this channel reaches; it reaches 2. Nothing was written.
-memory/secret is not in the 'blackboard' channel, which holds 1/, 2/. Nothing was read.
+memory/secret is not in the 'board' channel, which holds 1/, 2/. Nothing was read.
 ```
 
 A call the harness will not make is rejected in the result rather than raised: the path
@@ -779,14 +779,14 @@ balance = "n"
 digest = "m"
 
 [[channel]]
-name = "notes"
+name = "memory"
 writer = "self"
 readers = "self"
 shape = "directory"
 path = "memory"
 
 [[channel]]
-name = "blackboard"
+name = "board"
 writer = "self"
 readers = "all"
 shape = "directory"
@@ -794,7 +794,7 @@ path = "{label}"
 measured = true
 
 [[channel]]
-name = "mail"
+name = "mailbox"
 writer = "self"
 readers = "addressee"
 shape = "mailbox"

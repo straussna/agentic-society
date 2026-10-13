@@ -1892,7 +1892,7 @@ def main(argv: list[str] | None = None) -> int:
         bundle = harness.archive_agents(agents, harness.FRESH_START)
         progress.archive(harness.SETTINGS.root, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
-    # peers' blackboards in place. Each is created on its own terms, and one that
+    # peers' boards in place. Each is created on its own terms, and one that
     # exists must have been created on the same.
     for entry in manifest["agents"]:
         account = harness.load_account(entry["id"], **terms_of(entry))

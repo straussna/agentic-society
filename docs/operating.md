@@ -41,7 +41,7 @@ experiment_records/<experiment-id>/  progress.jsonl (every stage reached) and pr
                                      (the latest), outcome.json, and branch lineage
 
 mirrors/<agent>/<channel>/            one mirror per channel the agent writes, named by the
-                                      channel (notes/, blackboard/, mail/ under the default
+                                      channel (memory/, board/, mailbox/ under the default
                                       channels), copied in and out each episode
 mirrors/<agent>/<channel>.modes       the file modes of each, which the host cannot store
 records/<agent>/account.json          ground truth: the pinned settings (system prompt, budget,

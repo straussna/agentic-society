@@ -82,16 +82,16 @@ def check_the_observation_is_the_agents_whole_environment():
     )
 
     # And what m holds: this agent has no peers, so the whole of the
-    # experiment's record is its own blackboard, its own balance and an empty ledger.
+    # experiment's record is its own board, its own balance and an empty ledger.
     assert re.search(r"^=== n1 ===$", record, re.M), record
     assert re.search(rf"^=== {ledger_name()} ===$", record, re.M), record
     assert "=== state" not in record, "a private store is private, m included"
 
 
-def check_the_observation_carries_every_blackboard_and_message():
+def check_the_observation_carries_every_board_and_message():
     """Turn one holds what the experiment wrote, without the agent asking for it.
 
-    The whole point of m: a peer's blackboard and the one aimed at this
+    The whole point of m: a peer's board and the one aimed at this
     agent reach the model before it has spent anything, so what an agent does with
     a rival's writing is measurable and not a function of what it chose to fetch.
     """
@@ -109,7 +109,7 @@ def check_the_observation_carries_every_blackboard_and_message():
         episode_once(say(), seen=seen)
 
     first = next(x for x in seen if x["call"] == "send")["input"]
-    assert "peer says outlast" in first, "a peer's blackboard reaches turn one"
+    assert "peer says outlast" in first, "a peer's board reaches turn one"
     assert "s2" in first, "every file in one, not just the first"
     assert "third says spend" in first, "every seat, not just the nearest"
     assert "just for you" in first, "so does the message addressed to this agent"
@@ -117,7 +117,7 @@ def check_the_observation_carries_every_blackboard_and_message():
     assert "=== 2/message ===" in first and "=== inbox/2 ===" in first, first
 
 
-def check_a_long_blackboard_cannot_crowd_out_the_others():
+def check_a_long_board_cannot_crowd_out_the_others():
     """Each file is clipped on its own, so no seat can fill the initial observation.
 
     Per file and not for the whole: an agent that posted a megabyte would
@@ -157,7 +157,7 @@ def check_what_is_carried_is_rendered_from_ground_truth():
         t2 = episode_once(run(f"cat {digest_name()}"), say())
     after = t2["turns"][0]["tools"][0]["result"]
 
-    assert "as its owner left it" in during, "the peer's blackboard comes from the peer"
+    assert "as its owner left it" in during, "the peer's board comes from the peer"
     assert "mine-this-episode" not in during, (
         "m is composed at episode start, so this episode's own message is not in it yet"
     )
@@ -274,7 +274,7 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
     # Episode 1 writes them, episode 2 is the first shown them, and episode 3 is
     # where "unchanged" can apply at all: that is the one to read.
     restated = tables(
-        notes={"pushed": True, "restated": True}, blackboard={"restated": True}
+        memory={"pushed": True, "restated": True}, board={"restated": True}
     )
     with temp_root(channels=restated) as root:
         seated(root, other={})
@@ -287,7 +287,7 @@ def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
     assert "=== unchanged ===" not in obs, "restated is never named instead of said"
 
     # Without it, both are named at the third episode and not said again.
-    plain = tables(notes={"pushed": True})
+    plain = tables(memory={"pushed": True})
     with temp_root(channels=plain) as root:
         seated(root, other={})
         episode_once(run("echo who > memory/WHO.md; echo post > 1/a"), say())
@@ -311,7 +311,7 @@ def check_a_message_that_moved_is_carried_again():
             },
         )
         episode_once(run(f"cat {digest_name()}"), say())
-        (harness.mirror(ids[1], "blackboard") / "message").write_text(
+        (harness.mirror(ids[1], "board") / "message").write_text(
             "the second position\n", encoding="utf-8", newline="\n"
         )
         second = episode_once(run(f"cat {digest_name()}"), say())
@@ -348,7 +348,7 @@ def check_an_expired_private_message_disappears_silently():
     with temp_root() as root:
         ids = seated(root, other={"outbox/1": "here for now\n"})
         episode_once(run(f"cat {digest_name()}"), say())
-        (harness.mirror(ids[1], "mail") / "1").unlink()
+        (harness.mirror(ids[1], "mailbox") / "1").unlink()
         second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
@@ -361,7 +361,7 @@ def check_an_expired_board_post_disappears_silently():
     with temp_root() as root:
         ids = seated(root, other={"group/message": "here for one round\n"})
         episode_once(run(f"cat {digest_name()}"), say())
-        (harness.mirror(ids[1], "blackboard") / "message").unlink()
+        (harness.mirror(ids[1], "board") / "message").unlink()
         second = episode_once(run(f"cat {digest_name()}"), say())
     said = second["turns"][0]["tools"][0]["result"]
 
@@ -714,7 +714,7 @@ def check_a_failed_mirror_keeps_the_last_record():
     """
     with docker_root():
         episode_once(run("echo kept > memory/keep.txt"), say())
-        state = harness.mirror("t", "notes")
+        state = harness.mirror("t", "memory")
         before = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
         assert "keep.txt" in before, before
 
@@ -739,7 +739,7 @@ def check_mirror_trees_keeps_the_previous_tree_when_the_swap_fails():
     that fails puts the mirror back; False says nothing was updated.
     """
     with rooted(HostSandbox) as root:
-        mirror = root / "mirrors" / "t" / "notes"
+        mirror = root / "mirrors" / "t" / "memory"
         mirror.mkdir(parents=True)
         (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")
 
@@ -760,10 +760,10 @@ def check_mirror_trees_keeps_the_previous_tree_when_the_swap_fails():
             mirror.iterdir()
         )
         assert (mirror / "keep.txt").read_text(encoding="utf-8") == "kept\n"
-        assert not mirror.with_name("notes.incoming").exists(), (
+        assert not mirror.with_name("memory.incoming").exists(), (
             "the staging copy is cleaned up"
         )
-        assert not mirror.with_name("notes.previous").exists(), (
+        assert not mirror.with_name("memory.previous").exists(), (
             "and so is the copy put aside"
         )
         assert not harness.modes_file(mirror).exists(), (
@@ -783,8 +783,8 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
         with quiet():
             account = harness.load_account("t")
         instances = harness.instances("t", account)
-        mirror = harness.mirror("t", "notes")
-        previous = mirror.with_name("notes.previous")
+        mirror = harness.mirror("t", "memory")
+        previous = mirror.with_name("memory.previous")
         (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")
 
         def fetch(dest):
@@ -799,9 +799,9 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
 
             def replace(src, dest):
                 nonlocal refused
-                if src.name == "notes.incoming":
+                if src.name == "memory.incoming":
                     raise OSError("the swap failed")
-                if src.name == "notes.previous" and refused:
+                if src.name == "memory.previous" and refused:
                     refused -= 1
                     raise OSError("the rollback failed")
                 real(src, dest)
@@ -860,7 +860,7 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
             run("rm -f outbox/receipt && echo mine > outbox/receipt"),
             say(),
         )
-        receipt = harness.mirror("t", "mail") / "receipt"
+        receipt = harness.mirror("t", "mailbox") / "receipt"
 
         def build_and_abandon() -> None:
             # A build scrubs the mirror and an abandoned one mirrors nothing back,
@@ -883,7 +883,7 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
             and file["author"] == "self"
             and not file["planted"]
         ), (t["episode"], file)
-        assert file["channel"] == "mail" and not file["starter"], file
+        assert file["channel"] == "mailbox" and not file["starter"], file
     assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), (
         "the receipt is planted over what the agent left there"
     )
@@ -910,7 +910,7 @@ def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wro
             run("rm -f outbox/receipt && echo mine > outbox/receipt && echo REPLACED"),
             say(),
         )
-        kept = (harness.mirror("t", "mail") / "receipt").read_text(encoding="utf-8")
+        kept = (harness.mirror("t", "mailbox") / "receipt").read_text(encoding="utf-8")
     assert "REPLACED" in t["turns"][0]["tools"][0]["result"], t["turns"][0]["tools"][0]
     file = files_by_path(t).get("outbox/receipt")
     assert (
@@ -925,10 +925,10 @@ def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wro
 def check_the_modes_sidecar_is_read_back():
     """The modes sidecar reads as path -> mode, skipping a line with no path."""
     with rooted(HostSandbox) as root:
-        tree = root / "mirrors" / "t" / "notes"
+        tree = root / "mirrors" / "t" / "memory"
         tree.mkdir(parents=True)
         sidecar = harness.modes_file(tree)
-        assert sidecar.parent == tree.parent and sidecar.name == "notes.modes", sidecar
+        assert sidecar.parent == tree.parent and sidecar.name == "memory.modes", sidecar
         sidecar.write_text("644 a/b\n700 s.sh\nbad\n", encoding="utf-8")
         assert harness.read_modes(sidecar) == {"a/b": "644", "s.sh": "700"}
         assert harness.read_modes(tree / "absent") == {}, "no sidecar is no modes"
@@ -1082,7 +1082,7 @@ def check_a_stopped_episode_still_mirrors_and_reaps():
                 ),
             )
         assert t["stop"] == "interrupted" and t["state_saved"], t
-        kept = harness.mirror("t", "notes") / "keep.txt"
+        kept = harness.mirror("t", "memory") / "keep.txt"
         assert kept.is_file() and kept.read_text(encoding="utf-8").strip() == "kept", (
             "the teardown after a stop still mirrors the agent's tree back"
         )

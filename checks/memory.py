@@ -35,7 +35,7 @@ def source_trace(agent: str, episode: int, body: str) -> None:
         "files": [
             {
                 "path": "memory/memory.md",
-                "channel": "notes",
+                "channel": "memory",
                 "writer": "self",
                 "readers": "self",
                 "size": len(data),
@@ -53,7 +53,7 @@ def source_trace(agent: str, episode: int, body: str) -> None:
 
 def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
     """The declared memory crosses exactly; account history and transient channels do not."""
-    with rooted(HostSandbox, tools=offers("write_memory:notes")):
+    with rooted(HostSandbox, tools=offers("write_memory:memory")):
         body = "A complete inherited memory.\nUnicode: →\n"
         source_trace("old", 7, body)
         account = harness.load_account("new")
@@ -61,7 +61,7 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
 
         experiment.inherit_memory(entry, account)
         inherited = harness.account_on_disk("new")
-        copied = harness.mirror("new", "notes") / "memory.md"
+        copied = harness.mirror("new", "memory") / "memory.md"
 
         assert copied.read_bytes() == body.encode("utf-8")
         assert inherited["episodes"] == [] and inherited["balance_history"] == [
@@ -74,7 +74,7 @@ def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
             record["memories"][0]["sha256"]
             == hashlib.sha256(body.encode("utf-8")).hexdigest()
         )
-        assert not harness.mirror("new", "blackboard").joinpath("post.md").exists()
+        assert not harness.mirror("new", "board").joinpath("post.md").exists()
 
         prepare = experiment.preparer(
             "new", {"1": "new"}, {"schedule": "simultaneous", "manifest_sha256": "m"}
@@ -121,7 +121,7 @@ def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
 
     def planted_differently():
         source_trace("old", 7, body)
-        mine = harness.mirror("new", "notes") / "memory.md"
+        mine = harness.mirror("new", "memory") / "memory.md"
         mine.parent.mkdir(parents=True, exist_ok=True)
         mine.write_text("what the new agent already remembers\n", encoding="utf-8")
 
@@ -142,9 +142,9 @@ def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
         "would overwrite": planted_differently,
     }
     for why, arrange in cases.items():
-        with rooted(HostSandbox, tools=offers("write_memory:notes")), quiet():
+        with rooted(HostSandbox, tools=offers("write_memory:memory")), quiet():
             arrange()
-            destination = harness.mirror("new", "notes") / "memory.md"
+            destination = harness.mirror("new", "memory") / "memory.md"
             held = destination.read_bytes() if destination.exists() else None
             entry = {"id": "new", "memory_from": {"agent": "old", "episode": 7}}
             rejected(

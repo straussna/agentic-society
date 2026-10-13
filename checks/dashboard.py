@@ -251,7 +251,7 @@ def check_the_view_serves_its_api():
             # An agent driven on its own is an experiment of one: its memory, the
             # one balance that goes with the seat it holds, and a ledger with
             # nothing in it. Nothing to address and nobody to be addressed by.
-            private = got(base, "/api/experiment/t/tree/notes")[1]["columns"]
+            private = got(base, "/api/experiment/t/tree/memory")[1]["columns"]
             assert [c["agent"] for c in private] == ["t"]
             assert [f["path"] for f in private[0]["files"]] == ["note.txt"]
             head = got(base, "/api/experiment/t")[1]
@@ -261,9 +261,9 @@ def check_the_view_serves_its_api():
                 "an experiment of one has given nothing to anyone"
             )
             assert (
-                got(base, "/api/experiment/t/file?agent=t&channel=notes&path=note.txt")[
-                    1
-                ]["text"]
+                got(
+                    base, "/api/experiment/t/file?agent=t&channel=memory&path=note.txt"
+                )[1]["text"]
                 == "hi\n"
             )
             log = got(base, "/api/experiment/t/messages")[1]
@@ -368,9 +368,12 @@ def check_a_name_off_the_url_cannot_leave_records():
                 "/api/nope",
                 "/api/experiment/nope",
                 "/api/experiment/t/tree/nope",
-                "/api/experiment/t/file?agent=t&channel=notes&path=../../account.json",
-                "/api/experiment/t/file?agent=t&channel=notes&path=..%2F..%2Faccount.json",
-                "/api/experiment/t/file?agent=nope&channel=notes&path=note.txt",
+                "/api/experiment/t/file?agent=t&channel=memory&path=../../account.json",
+                (
+                    "/api/experiment/t/file?agent=t&channel=memory"
+                    "&path=..%2F..%2Faccount.json"
+                ),
+                "/api/experiment/t/file?agent=nope&channel=memory&path=note.txt",
                 "/api/experiment/t/file?agent=t&channel=../records&path=account.json",
             ):
                 try:
@@ -399,9 +402,9 @@ def check_the_observational_view_routes_never_write():
         c = view.experiment_of("t")
         view.header(c)
         view.messages(c)
-        for channel in ("blackboard", "notes"):
+        for channel in ("board", "memory"):
             view.tree_view(c, channel)
-        view.file_view(c, "t", "notes", "note.txt")
+        view.file_view(c, "t", "memory", "note.txt")
         view.agent_view("t", c)
         view.episode_view("t", 1)
 
@@ -468,7 +471,7 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
         "labels": labels,
         "channels": None,
         "harness_files": None,
-        "tools": [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}],
+        "tools": [{"name": "vote", "kind": "vote", "channel": "memory", "every": 5}],
     }
     accounts = {
         "survivor01": {"experiment_stamp": {"manifest_sha256": "stamp"}},
@@ -499,7 +502,7 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
     the poll it lands, before its account is saved, and is an episode once the account
     lists it.
     """
-    tools = [{"name": "post", "kind": "post_public", "channel": "blackboard"}]
+    tools = [{"name": "post", "kind": "post_public", "channel": "board"}]
     reads: list[Path] = []
     real = view.read_json
 
@@ -609,7 +612,7 @@ def check_a_grouping_reads_each_account_once_a_poll():
         trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
         trace["episode"] = 2
         trace["provenance"]["tools"] = [
-            {"name": "post", "kind": "post_public", "channel": "blackboard"}
+            {"name": "post", "kind": "post_public", "channel": "board"}
         ]
         harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
         path = harness.account_path("g01")
@@ -670,7 +673,7 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
         "candidates_left": ["1"],
     }
     with two_seats() as (c, _):
-        c["tools"] = [{"name": "vote", "kind": "vote", "channel": "notes", "every": 5}]
+        c["tools"] = [{"name": "vote", "kind": "vote", "channel": "memory", "every": 5}]
         for agent in ("g01", "g02"):
             account = harness.load_account(agent)
             account["last_election"] = result
@@ -704,9 +707,9 @@ def check_the_view_shows_every_seat_side_by_side():
             c["seated"],
             c["agent_by_seat"],
         )
-        boards = view.tree_view(c, "blackboard")["columns"]
-        stores = view.tree_view(c, "notes")["columns"]
-        opened = view.file_view(c, "g02", "blackboard", "msg")
+        boards = view.tree_view(c, "board")["columns"]
+        stores = view.tree_view(c, "memory")["columns"]
+        opened = view.file_view(c, "g02", "board", "msg")
 
     # Seat order, and every seat present: the numbering is absolute, so column 2
     # is g02 to whoever is reading and not the second one they were shown.
@@ -760,7 +763,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         return [
             {
                 "path": f"{seat}/post.md",
-                "channel": "blackboard",
+                "channel": "board",
                 "author": "self",
                 "planted": False,
                 "size": 8,
@@ -769,7 +772,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
             },
             {
                 "path": "memory/vote",
-                "channel": "notes",
+                "channel": "memory",
                 "author": "self",
                 "planted": False,
                 "size": 2,
@@ -787,8 +790,8 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     with rooted(HostSandbox):
         fake_experiment(acted, agents=("g01", "g02"))
         tools = [
-            {"name": "post", "kind": "post_public", "channel": "blackboard"},
-            {"name": "vote", "kind": "vote", "channel": "notes", "every": 2},
+            {"name": "post", "kind": "post_public", "channel": "board"},
+            {"name": "vote", "kind": "vote", "channel": "memory", "every": 2},
         ]
         for agent in ("g01", "g02"):
             for path in harness.trace_paths(agent):
@@ -796,11 +799,11 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
                 trace["provenance"]["tools"] = tools
                 path.write_text(json.dumps(trace), encoding="utf-8")
         c = view.experiment_by_id("g")
-        live = view.tree_view(c, "blackboard")
-        board = view.tree_view(c, "blackboard", 1)
-        ballot = view.tree_view(c, "notes", 2)
-        opened = view.file_view(c, "g02", "blackboard", "post.md", 1)
-        not_a_vote_round = view.tree_view(c, "notes", 1)
+        live = view.tree_view(c, "board")
+        board = view.tree_view(c, "board", 1)
+        ballot = view.tree_view(c, "memory", 2)
+        opened = view.file_view(c, "g02", "board", "post.md", 1)
+        not_a_vote_round = view.tree_view(c, "memory", 1)
         voting = view.header(c)["round_type"]
         # The election that follows round 2, held as one seat's account records it.
         # Each ballot file names the other seat, and the stored tally is what counts.
@@ -818,19 +821,19 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
             held_unread = view.header(c)["round_type"]
         finally:
             view.read_json = real
-        tallied = view.tree_view(c, "notes", 2)
-        tallied_live = view.tree_view(c, "notes")
+        tallied = view.tree_view(c, "memory", 2)
+        tallied_live = view.tree_view(c, "memory")
         with serving() as base:
-            served = got(base, "/api/experiment/g/tree/blackboard?round=1")[1]
+            served = got(base, "/api/experiment/g/tree/board?round=1")[1]
             served_file = got(
                 base,
-                "/api/experiment/g/file?agent=g02&channel=blackboard&path=post.md&round=1",
+                "/api/experiment/g/file?agent=g02&channel=board&path=post.md&round=1",
             )[1]
         # g01 in flight on round 3, which is a discussion round: no election follows it.
         raw = harness.raw_path("g01", 3)
         raw.parent.mkdir(parents=True, exist_ok=True)
         raw.write_text("", encoding="utf-8")
-        discussing = view.tree_view(c, "notes")
+        discussing = view.tree_view(c, "memory")
 
     assert live["history"] == {
         "kind": "round",
@@ -869,8 +872,8 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
 
 
 # What a human seat is offered in the human history checks: a post and a message.
-HUMAN_POST = {"name": "post", "kind": "post_public", "channel": "blackboard"}
-HUMAN_SEND = {"name": "send", "kind": "send_message_to", "channel": "mail"}
+HUMAN_POST = {"name": "post", "kind": "post_public", "channel": "board"}
+HUMAN_SEND = {"name": "send", "kind": "send_message_to", "channel": "mailbox"}
 HUMAN_OFFERED = tuple(
     ToolSpec(tool["name"], "", {"type": "object"})
     for tool in (HUMAN_POST, HUMAN_SEND)
@@ -915,7 +918,7 @@ def check_the_human_history_adds_each_accepted_human_call_once():
     committed = [
         {
             "path": "1/post.md",
-            "channel": "blackboard",
+            "channel": "board",
             "writer": "self",
             "readers": "all",
             "author": "self",
@@ -992,7 +995,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
     said = [
         {
             "path": "1/post.md",
-            "channel": "blackboard",
+            "channel": "board",
             "writer": "self",
             "readers": "all",
             "author": "self",
@@ -1003,7 +1006,7 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
         },
         {
             "path": "outbox/2",
-            "channel": "mail",
+            "channel": "mailbox",
             "writer": "self",
             "readers": "addressee",
             "author": "self",
@@ -1322,7 +1325,7 @@ def check_the_view_diffs_the_outbox_of_a_trace_naming_no_message_lifetime():
             "files": [
                 {
                     "path": path,
-                    "channel": "mail",
+                    "channel": "mailbox",
                     "writer": "self",
                     "readers": "addressee",
                     "author": "self",
@@ -1369,7 +1372,7 @@ def check_the_view_shows_what_the_receiver_has_not_seen_yet():
         seated(root, g02={}, g03={})
         episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         before = view.messages(view.experiment_of("t"))
-        later = harness.mirror("t", "mail") / "3"
+        later = harness.mirror("t", "mailbox") / "3"
         later.write_text("written behind the harness\n", encoding="utf-8")
         after = view.messages(view.experiment_of("t"))
 
@@ -1411,7 +1414,7 @@ def check_the_view_reads_delivery_off_the_observation():
 def check_the_view_reads_delivery_off_a_letter_heading():
     """Under the letters view an inbox item is delivered under either heading a trace
     can carry for it, "Message from <label>" or "Letter from <label>"."""
-    with temp_root(channels=tables(mail={"agent_view": "letters"})) as root:
+    with temp_root(channels=tables(mailbox={"agent_view": "letters"})) as root:
         seated(root, other={})
         episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         with quiet():
@@ -1445,7 +1448,7 @@ def check_the_view_says_delivery_where_the_observation_carried_nothing():
             "files": [
                 {
                     "path": path,
-                    "channel": "mail",
+                    "channel": "mailbox",
                     "writer": "self",
                     "readers": "addressee",
                     "author": author,
@@ -1542,13 +1545,13 @@ def check_the_view_states_a_silence_the_grace_waived():
         )
 
         assert v["spoke"] == {
-            "blackboard": False,
-            "mail": False,
+            "board": False,
+            "mailbox": False,
             "transfer": False,
         }, v["spoke"]
         assert (
-            t["channels"]["blackboard"]["penalty"],
-            t["channels"]["mail"]["penalty"],
+            t["channels"]["board"]["penalty"],
+            t["channels"]["mailbox"]["penalty"],
             t["transfer"]["penalty"],
         ) == (
             0,
@@ -1556,8 +1559,8 @@ def check_the_view_states_a_silence_the_grace_waived():
             0,
         ), "and the grace charged it for none of them"
         assert [(u["channel"], u["why"], u["penalty"]) for u in v["silent"]] == [
-            ("blackboard", "no post", 0),
-            ("mail", "no message", 0),
+            ("board", "no post", 0),
+            ("mailbox", "no message", 0),
             ("transfer", "no transfer of its own", 0),
         ], v["silent"]
         # The tile and the transcript answer from one place, so neither can
@@ -1587,7 +1590,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         episode_once(run("echo '2 100' > outbox/transfer", "echo r1 >> 1/log"), say())
         mine = tile()
         gt = ground_truth("t")
-        (harness.mirror("t", "mail") / "transfer").unlink()
+        (harness.mirror("t", "mailbox") / "transfer").unlink()
         resolved = tile()["transfer"]
         episode_once(run("rm -f outbox/transfer"), say())
         gone = tile()["transfer"]
@@ -1634,7 +1637,7 @@ def check_the_view_builds_its_tabs_from_the_table():
         journal = view.tree_view(c, "journal")
         board = view.tree_view(c, "noticeboard")
         opened = view.file_view(c, "t", "journal", "IDENTITY.md")
-        missing = view.file_view(c, "t", "blackboard", "post")
+        missing = view.file_view(c, "t", "board", "post")
         v = view.episode_view("t", 1)
         changes = view.episode_changes("t", 1)
         events = view.messages(c)["events"]
@@ -1680,9 +1683,9 @@ def check_the_view_shows_an_experimenter_channel_once():
         tree = view.tree_view(c, "briefing")
         opened = view.file_view(c, "experimenter", "briefing", "RULES")
     assert [(tab["key"], tab["label"]) for tab in h["tabs"]] == [
-        ("mailbox", "mail + transfer"),
-        ("notes", "notes"),
-        ("blackboard", "blackboard"),
+        ("mailbox", "mailbox + transfer"),
+        ("memory", "memory"),
+        ("board", "board"),
         ("briefing", "briefing"),
         ("trace", "trace"),
     ]
@@ -2152,7 +2155,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
                 f"{prefix}/messages",
                 f"{prefix}/human-history?agent=g01",
                 *(f"{prefix}/tree/{name}" for name in view.trees(exp)),
-                f"{prefix}/file?agent=g01&channel=notes&path=mine",
+                f"{prefix}/file?agent=g01&channel=memory&path=mine",
                 "/api/agent/g01",
                 "/api/agent/g01/episode/1",
                 "/api/agent/g02/episode/1",

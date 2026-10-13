@@ -628,7 +628,7 @@ def check_provenance_is_recorded():
                 "max_turns",
                 "command_timeout",
                 "tool_result_limit",
-                # What the initial observation carried, and how much of each blackboard
+                # What the initial observation carried, and how much of each board
                 # reached it. An agent either side of a change to either
                 # opened on a different environment.
                 "digest_file_limit",
@@ -768,7 +768,7 @@ def check_run_once_is_build_then_run_then_commit():
         m.pop("created_at")
     assert m1 == m2 and o1["received"] == o2["received"] == 100, (m1, m2, o1, o2)
     assert one.getvalue() == two.getvalue(), (one.getvalue(), two.getvalue())
-    assert t1["transfer"]["amount"] == 100 and t1["channels"]["blackboard"]["posted"], (
+    assert t1["transfer"]["amount"] == 100 and t1["channels"]["board"]["posted"], (
         t1
     )
 

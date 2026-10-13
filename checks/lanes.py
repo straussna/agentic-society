@@ -336,7 +336,7 @@ def tables(*extra: dict, **per_name: dict) -> list[dict]:
 # the transfer channel at its full rebate.
 HALF = {"silence_penalty_percent": 50}
 
-ALL_OWED = tables(blackboard=HALF, mail=HALF, transfer=HALF)
+ALL_OWED = tables(board=HALF, mailbox=HALF, transfer=HALF)
 
 FULL_REBATE = tables(transfer={"rebate_percent": 100})
 
@@ -344,7 +344,7 @@ FULL_REBATE = tables(transfer={"rebate_percent": 100})
 def offers(*declared: dict) -> list[dict]:
     """[[tool]] tables, one per (kind, channel) pair given as "kind:channel".
 
-    offers("write_message:mail") is one tool named after its kind; a dict is a whole
+    offers("write_message:mailbox") is one tool named after its kind; a dict is a whole
     tool table, for a check that wants its own name. For temp_root(tools=...).
     """
     out = []
@@ -643,8 +643,8 @@ def elements_of(s: dict) -> int:
         + 1
         + bool(s["transfer"]["rebate"] or s["transfer"].get("debit"))
         + bool(s["transfer"]["penalty"])
-        + bool(s["channels"]["blackboard"]["penalty"])
-        + bool(s["channels"]["mail"]["penalty"])
+        + bool(s["channels"]["board"]["penalty"])
+        + bool(s["channels"]["mailbox"]["penalty"])
         + bool(s["floored"])
         # A credit from a peer settling in the same simultaneous round lands
         # inside the receiver's span; sequentially it lands between spans.
@@ -696,16 +696,16 @@ def plant(root: Path, name: str = "s", **files: str) -> Path:
 def lay_out(**agents: dict[str, str]) -> list[str]:
     """Lay out an experiment's directories under the root in force, for the experiment checks to use.
 
-    "group/" goes on that agent's blackboard, "outbox/" in its outbox where only the
+    "group/" goes on that agent's board, "outbox/" in its outbox where only the
     seat it names reads it, and anything else in its private store.
     """
-    trees = {"group/": "blackboard", "outbox/": "mail"}
+    trees = {"group/": "board", "outbox/": "mailbox"}
     for agent, files in agents.items():
-        for where in ("notes", "blackboard", "mail"):
+        for where in ("memory", "board", "mailbox"):
             harness.mirror(agent, where).mkdir(parents=True, exist_ok=True)
         for name, text in files.items():
             prefix = next((k for k in trees if name.startswith(k)), None)
-            tree = harness.mirror(agent, trees.get(prefix, "notes"))
+            tree = harness.mirror(agent, trees.get(prefix, "memory"))
             p = tree / name.removeprefix(prefix or "")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text, encoding="utf-8", newline="\n")
@@ -786,7 +786,7 @@ def unfinished() -> None:
 
 @contextlib.contextmanager
 def two_seats():
-    """An experiment of two, laid out and seated, with a blackboard and a store each."""
+    """An experiment of two, laid out and seated, with a board and a store each."""
     with rooted(HostSandbox) as root:
         ids = seated(
             root,
