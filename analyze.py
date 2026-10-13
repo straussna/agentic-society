@@ -898,7 +898,9 @@ def provenance_lines(ts: list[dict]) -> list[str]:
                 )
             )
     if drifted:
-        out.append(f"  !! provenance drifted between episodes in: {', '.join(drifted)}")
+        out.append(
+            f"  !! configuration drift between episodes in: {', '.join(drifted)}"
+        )
         out.append("     episodes before and after a change are not comparable")
     return out
 

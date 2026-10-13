@@ -69,7 +69,7 @@ Violating one silently invalidates the results.
   every seat or on an `[[agent]]` for one, and it is a pinned setting like the model and
   the budget: fixed in the account when the agent is created, so an agent asked to run
   on a different one is rejected. Whatever is in force reaches every episode's provenance
-  whole and by sha256, `drift()` names the episode a prompt changed at, and agents
+  whole and by sha256, `config_drift()` names the episode a prompt changed at, and agents
   either side of that are separate arms. The pin holds the shipped default alone, which
   is what keeps the bare arm from moving unremarked: `start()` rejects a run on a
   `SYSTEM` that no longer matches `SYSTEM_SHA256`, and `--print-system` prints what the
@@ -89,7 +89,7 @@ Violating one silently invalidates the results.
   The harness's other fixed text states the mechanics a manifest declared, never a
   goal: the generated description of each declared tool, the one-line result of a tool
   call (`"A message needs exactly one receiver. Nothing was sent."`), and, where no
-  `bash` tool is declared, the digest's semantic headings (`Your balance history`,
+  `bash` tool is declared, the digest's agent-view headings (`Your balance history`,
   `Transfer ledger`, `Round status`) and its renderings of balances and transfers in
   micro-dollars. `--print-system --manifest PATH` prints every tool description. Where
   `bash` is declared, turn one is the raw stdout of one command that lists the directory
@@ -140,7 +140,7 @@ Violating one silently invalidates the results.
   provenance, along with the system prompt in force, whole and by sha256. The pinned
   settings - the system prompt, budget, provider, model, starter files and starter
   threshold - are fixed in the agent's account, so a manifest that later says otherwise is
-  rejected. `drift()` reports what changed since the last episode, and the
+  rejected. `config_drift()` reports what changed since the last episode, and the
   episodes either side of a change are separate arms.
 
 **Sparse file formats are not an invariant.** A balance carries no

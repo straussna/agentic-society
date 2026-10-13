@@ -636,7 +636,7 @@ def check_provenance_is_recorded():
                 "live_balance",
                 # The five the starter files state in words. An agent either side of
                 # a change to any of them was told something else, so all
-                # five have to reach drift() and not just the ones that
+                # five have to reach config_drift() and not just the ones that
                 # were here first.
                 "grace_episodes",
                 # What a transfer does to the giver, what the agent was given,

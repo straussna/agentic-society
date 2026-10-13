@@ -29,7 +29,7 @@ Sections, in the order an episode meets them:
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
                                     resolve_mailbox, SETTLEMENTS
- 14. Provenance and the trace       provenance, drift, snapshot
+ 14. Provenance and the trace       provenance, config_drift, snapshot
  15. The steps of one episode       Episode, build_episode, run_episode, settle_episode,
                                     close_episode, commit_episode, run_once, ready,
                                     drive
@@ -1165,7 +1165,7 @@ def apply_channels(
 
 @dataclasses.dataclass(frozen=True)
 class Tool:
-    """One named action an experiment offers its agents. docs/manifest.md section 4.8.
+    """One tool an experiment declares for its agents. docs/manifest.md section 4.8.
 
     A tool is a kind from the menu, TOOL_KINDS, pointed at a declared channel. The kind
     decides what the tool does and what its result reports; a manifest chooses the
@@ -1312,7 +1312,7 @@ def with_tools(
     withholds bash where `base` pushes no digest for an episode to open on, is rejected.
     """
     s = dataclasses.replace(base, tools=tuple(validate_tools(tables, chans, source)))
-    if not s.shell_tool:
+    if not s.bash_declared:
         if not s.tools:
             raise SystemExit(
                 f"{source}: bash is not declared and no [[tool]] is declared, so "
@@ -1409,13 +1409,13 @@ class Settings:
     tools: tuple[Tool, ...] = ()
 
     @property
-    def shell_tool(self) -> bool:
+    def bash_declared(self) -> bool:
         """Whether the shell is offered to the agent as a tool: whether bash is declared.
 
         The container and its shell exist either way - the harness builds the
         environment, runs the initial observation and carries out every declared tool
         through them. What this decides is whether the agent may issue commands of its
-        own, or reaches its environment only through the actions the experiment declared.
+        own, or reaches its environment only through the tools the experiment declared.
         """
         return any(t.kind == "bash" for t in self.tools)
 
@@ -2846,9 +2846,9 @@ def experimenter_digest_paths(
 
 
 def harness_digest_name(name: str, agent: str, account: Account) -> str:
-    """A harness-owned file's semantic heading in a tool-only observation."""
+    """A harness-owned file's agent-view heading in a tool-only observation."""
     s = SETTINGS
-    if s.shell_tool:
+    if s.bash_declared:
         return name
     if name == s.harness_files.get("round"):
         return "Round status"
@@ -2869,8 +2869,8 @@ def harness_digest_name(name: str, agent: str, account: Account) -> str:
 
 
 def digest_body(path: str, body: str, instances: list[Instance]) -> str:
-    """Render a channel item's content in the vocabulary of its semantic view."""
-    if SETTINGS.shell_tool:
+    """Render a channel item's content in the vocabulary of its agent view."""
+    if SETTINGS.bash_declared:
         return body
     inst = owning_instance(path, instances)
     if inst is None or inst.channel.agent_view != "transfer":
@@ -2894,8 +2894,8 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
 
 
 def harness_digest_body(name: str, body: str, agent: str, account: Account) -> str:
-    """Render harness-owned content semantically when the agent has no shell."""
-    if SETTINGS.shell_tool:
+    """Render harness-owned content in agent-view terms when the agent has no shell."""
+    if SETTINGS.bash_declared:
         return body
     seating = seating_of(agent, account)
     for label in seating.labels.values():
@@ -3170,7 +3170,7 @@ def observation(
     listing = listing_command(s.channels if table is None else table)
     digest = s.harness_files["digest"] if digest is None else digest
     pushed = (s.delivery if delivery is None else delivery) == "push" and digest
-    if s.shell_tool if shell is None else shell:
+    if s.bash_declared if shell is None else shell:
         return f"{listing}; cat {shlex.quote(digest)}" if pushed else listing
     return f"cat {shlex.quote(digest)}"
 
@@ -4274,9 +4274,10 @@ class Bound:
         unchanged: str,
         done: str,
     ) -> str:
-        """Replace what `path` holds with `body`, and say how it went in the action's words.
+        """Replace what `path` holds with `body`, and say how it went in the tool's
+        words.
 
-        What an action that names no path answers with: each outcome is one of the
+        What a tool that names no path answers with: each outcome is one of the
         caller's sentences, so neither the backing file nor what the shell said
         reaches the agent. A write that did not land reads as one that could not
         be made.
@@ -4397,7 +4398,7 @@ def unparsed_mailbox(ch: Channel) -> bool:
 
 
 def shell_only(*_: Any) -> NoReturn:
-    """What bash's entry answers for an action on a channel: bash takes no channel,
+    """What bash's entry answers for a call on a channel: bash takes no channel,
     so bind_tools never binds it, and run_tools runs it as the episode shell."""
     raise TypeError("bash is the episode shell and is bound to no channel")
 
@@ -4845,7 +4846,7 @@ def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
     """
     ballot = any(b.kind.ballot for b in bound)
     return tuple(
-        ([SHELL_SPEC] if SETTINGS.shell_tool and not ballot else [])
+        ([SHELL_SPEC] if SETTINGS.bash_declared and not ballot else [])
         + [b.spec() for b in bound]
     )
 
@@ -5071,8 +5072,8 @@ def run_tools(
     for b in calls:
         name = b.name or SHELL_SPEC.name
         args = b.input or {}
-        if action := offered.get(name):
-            text = clip(action.call(shell, args), SETTINGS.tool_result_limit)
+        if tool := offered.get(name):
+            text = clip(tool.call(shell, args), SETTINGS.tool_result_limit)
             turn["tools"].append(
                 {"tool": name, "command": None, "input": args, "result": text}
             )
@@ -5747,8 +5748,8 @@ def provenance(
         "grace_episodes": s.grace_episodes,
         # Whether an agent ends holding the sign flip, or is floored at zero.
         "floor_at_zero": s.floor_at_zero,
-        # Invariant 9: the starter files by name and sha256, so drift() reports the
-        # episode the environment changed at.
+        # Invariant 9: the starter files by name and sha256, so config_drift() reports
+        # the episode the environment changed at.
         "starter_files": starter_name,
         "starter_files_sha256": files_sha256(starter_name) if starter_name else "",
         "starter_files_below": starter_below,
@@ -5787,10 +5788,11 @@ def provenance(
     }
 
 
-def drift(
+def config_drift(
     agent: str, episode: int, now: dict, forked_from: dict | None = None
 ) -> list[str]:
-    """Which provenance fields differ from the previous episode of this agent.
+    """The configuration drift: which provenance fields differ from the previous
+    episode of this agent.
 
     Reported, never enforced: episodes either side of a change are separate arms.
     A fork's first episode follows the one it was forked at, whose trace is the
@@ -5798,7 +5800,7 @@ def drift(
     branch forks every seat, so there a seat held by a fork of the agent the
     parent's trace seated in it has not moved: an agent id never reaches the agent.
     What a branch does change is reported: its experiment_id and manifest_sha256,
-    and a takeover seat's provider and model, since from there on its episodes run
+    and its human seat's provider and model, since from there on its episodes run
     under another manifest and are another arm. An episode with no trace to be
     held against reports nothing.
     """
@@ -5991,7 +5993,7 @@ class Episode:
     ledger_shown: list[tuple[str, str, int]]
     canonical: str  # the balance file as planted
     prov: dict
-    drifted: list[str]
+    config_drift: list[str]
     records: Path
     before: dict[str, Any]  # what each settled channel held at episode start
     started: float = 0.0
@@ -6113,13 +6115,15 @@ def build_episode(agent: str) -> Episode:
         account.get("experiment_stamp"),
         system_of(account),
     )
-    drifted = drift(agent, episode, prov, account.get("forked_from"))
+    drifted = config_drift(agent, episode, prov, account.get("forked_from"))
     for line in drifted:
-        print(f"  provenance drift, {agent} episode {episode}: {line}", file=sys.stderr)
+        print(
+            f"  configuration drift, {agent} episode {episode}: {line}", file=sys.stderr
+        )
 
     # What the tool table comes to in this environment, which is not the table
     # itself: a tool whose channel this seating did not plant is not offered.
-    # with_tools holds the declared table against shell_tool; this holds what is
+    # with_tools holds the declared table against bash_declared; this holds what is
     # left of it, so an agent with nothing to act with is rejected here rather than
     # asked for a turn it has no way to answer.
     bound = bind_tools(
@@ -6130,7 +6134,7 @@ def build_episode(agent: str) -> Episode:
         episode,
         election_held(agent, account, episode),
     )
-    if not s.shell_tool and not bound:
+    if not s.bash_declared and not bound:
         raise SystemExit(
             f"agent {agent} is offered no shell and none of the "
             f"{len(s.tools)} declared tools can act in this environment, so "
@@ -6151,7 +6155,7 @@ def build_episode(agent: str) -> Episode:
         ledger_shown=ledger(agent, account),
         canonical=render_balance(account["balance_history"]),
         prov=prov,
-        drifted=drifted,
+        config_drift=drifted,
         records=records_dir(agent),
         before=before,
         started=time.time(),
@@ -6410,7 +6414,7 @@ def trace_of(
         "resolved_model": out.get("resolved_model"),
         "system_sha256": ep.prov["system_sha256"],
         "provenance": ep.prov,
-        "provenance_drift": ep.drifted,
+        "provenance_drift": ep.config_drift,
         # The tools the episode's model calls carried, by name, the shell among them
         # where it was: what an election reads to tell a seat offered no ballot.
         "offered": [spec.name for spec in episode_specs(ep.bound)],
@@ -7031,7 +7035,7 @@ def print_context(
                 specs = episode_specs(bound)
 
                 print(f"\n--- episode {episode} opening ---")
-                if s.shell_tool:
+                if s.bash_declared:
                     print(f"opening command: {observation()}")
                     print("rendered digest (the container listing precedes it):")
                 else:

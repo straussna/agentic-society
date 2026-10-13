@@ -18,7 +18,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Harness** | The code that builds sandboxes, runs episodes, meters spend and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
+| **Harness** | The code that builds sandboxes, runs episodes, meters spend and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for a tool-only agent, the digest's agent-view headings and renderings |
 | **System prompt** | What is said to an agent on every turn. The experimenter's constant, sent with every model call; the harness ships none, and every manifest declares one, `""` included |
 | **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare on the prompt surface. The harness rejects any change to the system prompt, starter files or an experimenter channel during an agent's life, and records a changed tool description as configuration drift. Configures everything through `config.toml` and a manifest |
 | **Prompt surface** | The four places the experimenter's own words reach an agent: the system prompt, starter files, an experimenter channel, and tool descriptions. Each is recorded in provenance, and a change to any of them starts a new arm |
@@ -379,7 +379,7 @@ channel sits inside a directory the agent writes and comes and goes with it.
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
 unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
-labelled group, so semantic names containing spaces remain distinct. Expired board posts
+labelled group, so agent-view names containing spaces remain distinct. Expired board posts
 and schema-free mailbox messages disappear silently. Every channel defaults to `true`, a
 memory included. Under pull delivery nothing is quoted whatever this says.
 
@@ -406,7 +406,7 @@ file or mailbox, as outgoing and incoming transfers. Storage and access rules
 remain the same, so an experiment can give agents persistent memory without making a
 filesystem part of their environment.
 
-The semantic views are checked against the channel they describe: `"letters"` requires
+Agent views are checked against the channel they describe: `"letters"` requires
 a mailbox, `"board"` a board, `"transfer"` a transfer-schema
 file or mailbox, and `"memory"` a memory or an experimenter channel. What the
 experimenter provides is labelled as such in a memory view rather than presented as the
@@ -414,7 +414,7 @@ agent's memory.
 The board view marks the owning agent's own label with `(you)`.
 
 When no Bash tool is declared, the balance, ledger and receipt status files also use
-semantic digest headings. Their configured filenames remain implementation details and
+agent-view digest headings. Their configured filenames remain implementation details and
 do not enter the model's observation. Balance bodies state the current value and label
 their oldest-to-newest history; ledger rows name round, giver, receiver and amount;
 prior-round transfer notices name their receiver, requested amount and result. A
@@ -559,8 +559,8 @@ channel and invents no behaviour.
 
 The input schemas and results for `send_message`, `send_message_to`, `post_public`,
 `write_memory`, `vote` and `transfer` use the operation's vocabulary. They do not describe
-backing files or return shell diagnostics; an internal failure is recorded as an unchanged
-action without revealing its storage path to the model.
+backing files or return shell diagnostics; an internal failure is recorded as a tool call
+that changed nothing, without revealing its storage path to the model.
 
 **Bash is opt-in**, using this declaration:
 
@@ -611,10 +611,10 @@ actually offered follows from the tool table and the seating, both in provenance
 A tool's `description` is **prompt surface, and the experimenter's**. It reaches the
 model inside the model call exactly as the system prompt does, it is theirs to write, and
 it is recorded whole and by sha256 in the tool table like every other declaration. Two
-wordings of the same action are two arms.
+wordings of the same tool are two arms.
 
 Tool descriptions are the fourth prompt surface, beside the system prompt, the starter
-files and an experimenter channel - and the only one attached to an action. Descriptions
+files and an experimenter channel - and the only one attached to a tool. Descriptions
 can explain when a tool is useful as well as what it does. Asking an agent to use a
 particular tool is an experiment design choice, not an API requirement.
 `experiments/examples/personas.toml` is the worked example.
@@ -701,7 +701,7 @@ a discussion, and is offered every tool but the ballot.
 
 A transfer channel's `ledger` names its ledger file (`"g"` in the default channels): three
 integers a line, giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
-path segments and must not collide with a channel path. In a tool-only agent's semantic
+path segments and must not collide with a channel path. In a tool-only agent's
 digest, the same events are rendered as `giver -> receiver`, its own label is marked
 `(you)`, and the amount is identified as the amount actually moved. A transfer channel's
 inbox and outbox messages label their amount as requested and direct the agent to the
@@ -901,7 +901,7 @@ starter_files_below = 1500000
 ```
 
 `persona-ana`, `persona-bo` and `mechanics-rules` are directories under `files/`. No
-bash tool, so each episode opens on the digest and every action is a declared tool. No
+bash tool, so each episode opens on the digest and every tool call is to a declared tool. No
 transfer channel, so no ledger and no transfer silence penalty.
 
 ## 10. Validation

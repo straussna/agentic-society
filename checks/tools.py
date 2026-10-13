@@ -63,8 +63,9 @@ class BrokenShell:
         )
 
 
-def check_semantic_summaries_and_failures_expose_no_storage_details():
-    """Tool-only labels and failures describe actions rather than their backing paths."""
+def check_tool_summaries_and_failures_expose_no_storage_details():
+    """Tool-only labels and failures describe what a tool does rather than its backing
+    paths."""
     summary = harness.named("unchanged", ["Memory", "Message to 2"])
     assert summary == "=== unchanged ===\n- Memory\n- Message to 2\n", summary
     assert harness.NAMED.match(summary.splitlines()[0])
@@ -107,7 +108,7 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
     ), joined
 
 
-def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
+def check_a_tool_only_observation_uses_agent_view_names_not_backing_paths():
     """A model acting through declared actions sees concepts, not their storage names."""
     channels = tables(
         memory={"pushed": True, "restated": True, "agent_view": "memory"},
@@ -213,7 +214,8 @@ def check_a_memory_view_heads_each_file_by_where_it_came_from():
 
 
 def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
-    """Semantic records identify transfer rounds and itemize the preceding settlement."""
+    """Agent-view records identify transfer rounds and itemize the preceding
+    settlement."""
     channels = tables(
         board={"restated": True, "agent_view": "board"},
         mailbox={"restated": True, "agent_view": "letters"},
@@ -303,7 +305,7 @@ def check_a_board_post_lasts_one_round_and_must_be_published_again():
 
 
 def check_a_transfer_tool_declares_and_settles_from_the_giver():
-    """A transfer action replaces one declaration and settles through the ledger."""
+    """A transfer tool call replaces one declaration and settles through the ledger."""
     transfer = {"name": "transfer_balance", "kind": "transfer", "channel": "transfer"}
     with temp_root(
         channels=tables(transfer={"funded_by": "giver", "rebate_percent": 0}),
@@ -418,9 +420,9 @@ def check_bash_requires_an_explicit_declaration():
     with temp_root():
         chans = harness.channels()
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SETTINGS.shell_tool is True
+        assert harness.SETTINGS.bash_declared is True
         harness.apply_tools([POST], chans, "manifest")
-        assert harness.SETTINGS.shell_tool is False
+        assert harness.SETTINGS.bash_declared is False
         assert harness.validate_tools(None, chans, "manifest") == []
         rejected(
             lambda: harness.apply_tools(None, chans, "manifest"),
@@ -433,7 +435,7 @@ def check_bash_requires_an_explicit_declaration():
 
 
 def check_declared_bash_and_channel_tools_are_offered_together():
-    """Bash and a channel action are both available when both are declared."""
+    """Bash and a channel tool are both available when both are declared."""
     seen = []
     with temp_root(tools=[BASH, POST]) as root:
         seated(root, "t", t={}, o={})
@@ -1384,7 +1386,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
         assert said[2] == "theirs\n", said
 
     # Bash is disabled outside a declared experiment.
-    assert harness.SETTINGS.shell_tool is False, "bash requires a declaration"
+    assert harness.SETTINGS.bash_declared is False, "bash requires a declaration"
     assert "SHELL_TOOL" not in harness.MANIFEST_SETTINGS, (
         "the tool table decides bash access"
     )
@@ -1455,7 +1457,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
     # All three stand once the shell is offered again.
     with temp_root(delivery="pull"):
         harness.apply_tools([BASH], chans, "manifest")
-        assert harness.SETTINGS.shell_tool is True
+        assert harness.SETTINGS.bash_declared is True
 
 
 def check_running_one_seat_carries_the_whole_experiment_it_names():
@@ -1493,7 +1495,7 @@ def check_running_one_seat_carries_the_whole_experiment_it_names():
 def check_a_seat_with_no_shell_and_nothing_that_can_act_is_rejected():
     """A tool table can be full and the model call it comes to still empty.
 
-    apply_tools holds the declared table against shell_tool, but which of those
+    apply_tools holds the declared table against bash_declared, but which of those
     tools can act is the seating's to decide: a mailbox tool alone, in a seat with
     no peers, is left out and leaves nothing behind it. Rejected as the environment
     is built, before the container starts and before anything is billed.

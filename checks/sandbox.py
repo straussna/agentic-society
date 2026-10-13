@@ -327,7 +327,7 @@ def check_a_message_that_moved_is_carried_again():
 
 
 def check_the_previous_transfer_is_shown_once_before_it_expires():
-    """The next episode reports the prior transfer before clearing its action slot."""
+    """The next episode reports the prior transfer before clearing its transfer file."""
     with temp_root() as root:
         seated(root, other={})
         episode_once(

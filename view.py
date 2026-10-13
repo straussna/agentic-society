@@ -2091,7 +2091,9 @@ def raw_view(agent: str, index: int, since: int) -> dict:
         any(t.get("kind") == "bash" for t in found[0]["tools"] or [])
         if found
         else (
-            shell_offered(last["provenance"]) if last else harness.SETTINGS.shell_tool
+            shell_offered(last["provenance"])
+            if last
+            else harness.SETTINGS.bash_declared
         )
     )
     mail = harness.mailbox_channel(table)

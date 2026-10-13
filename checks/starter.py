@@ -574,7 +574,8 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
 
 
 def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
-    """drift() reads the previous episode's trace, and before a fork's first that is the parent's.
+    """config_drift() reads the previous episode's trace, and before a fork's first that
+    is the parent's.
 
     A fork is given its parent's episodes without their traces, so its first episode is
     compared with the parent's trace of the episode it was forked at, and every later

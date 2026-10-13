@@ -1506,7 +1506,7 @@ def check_the_view_splits_the_observation_into_the_listing_and_the_rest():
 def check_the_view_carries_every_provenance_field_the_trace_holds():
     """Everything drift can name reaches the page, because nothing is picked.
 
-    drift() reports on every key provenance() writes, so a panel holding a list
+    config_drift() reports on every key provenance() writes, so a panel holding a list
     of its own can name a field in a banner and then not show it.
     """
     with temp_root() as root:

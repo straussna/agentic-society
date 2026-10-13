@@ -608,7 +608,7 @@ def check_records_of_another_version_are_rejected_by_the_version_they_hold():
         ):
             previous.write_text(json.dumps(trace), encoding="utf-8")
             try:
-                harness.drift("new", 2, {})
+                harness.config_drift("new", 2, {})
             except SystemExit as error:
                 said = str(error)
                 assert f"at episode 1, {named}" in said, said

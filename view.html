@@ -1437,7 +1437,7 @@ function drawTranscript() {
     <div class="txwrap"><div id="tx"><div class="empty">loading&hellip;</div></div>
       <button class="jump" id="jump" style="display:none">jump to latest ↓</button></div>
     ${drifted ? `<div class="note" style="margin-top:8px;color:var(--warn)"
-      >provenance drifted between episodes: ${esc(here.drift.join("; "))}</div>` : ""}
+      >configuration drift between episodes: ${esc(here.drift.join("; "))}</div>` : ""}
     <details style="margin-top:8px"><summary class="note" style="cursor:pointer"
       >provenance · episode ${S.episode}</summary>
       <div class="panel" style="margin-top:8px">${
@@ -1901,7 +1901,7 @@ function submitInteraction() {
         field.dispatchEvent(new Event("input"));
       });
       document.getElementById("interaction-state").textContent = calls.length
-        ? `sent ${calls.length} action${calls.length === 1 ? "" : "s"}` : "submitted";
+        ? `sent ${calls.length} tool call${calls.length === 1 ? "" : "s"}` : "submitted";
       pullPeerStatus(request);
     })
     .catch(error => setInteractionSubmitted(false, error.message));
