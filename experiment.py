@@ -998,7 +998,7 @@ def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
             )
             if attempt == ATTEMPTS:
                 print(
-                    f"{agent}: dropping out, it has no environment to run in",
+                    f"{agent}: unseated, it has no environment to run in",
                     file=sys.stderr,
                 )
                 seated.discard(agent)
@@ -1009,7 +1009,7 @@ def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
 def unseat(agent: str, seated: set[str]) -> None:
     """Unseat an agent whose account is out of play, saying why."""
     why = harness.why_not_in_play(harness.load_account(agent))
-    print(f"{agent:<6} drops out: {why or 'no episode could start on it'}")
+    print(f"{agent:<6} unseated: {why or 'no episode could start on it'}")
     seated.discard(agent)
 
 
@@ -1084,8 +1084,9 @@ def take_seats(agents: list[str], seated: set[str]) -> None:
     for agent in agents:
         if agent in seated and behind(accounts[agent], current_round):
             print(
-                f"{agent:<6} sits out: it took {len(accounts[agent]['episodes'])} episodes "
-                f"and the table has played {current_round} rounds"
+                f"{agent:<6} unseated: it took "
+                f"{len(accounts[agent]['episodes'])} episodes "
+                f"and the current round is {current_round}"
             )
             seated.discard(agent)
 
@@ -1163,7 +1164,7 @@ def sequential_round(
         acted = True
         if unseated_by(trace["stop"]):
             print(
-                f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
+                f"{agent}: unseated, episode {trace['episode']} ended {trace['stop']}",
                 file=sys.stderr,
             )
             seated.discard(agent)
@@ -1387,7 +1388,7 @@ def simultaneous_round(
     for agent, trace in traces.items():
         if unseated_by(trace["stop"]):
             print(
-                f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
+                f"{agent}: unseated, episode {trace['episode']} ended {trace['stop']}",
                 file=sys.stderr,
             )
             seated.discard(agent)

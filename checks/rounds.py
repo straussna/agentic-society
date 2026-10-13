@@ -1351,7 +1351,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
         (0, three, "all_eliminated", [], []),
     ], runs
     assert (
-        "g03    sits out: it took 1 episodes and the table has played 3 rounds" in said
+        "g03    unseated: it took 1 episodes and the current round is 3" in said
     ), said
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
@@ -1541,7 +1541,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
     ], order
     assert code == 0 and took == {"g01": 4, "g02": 2, "g03": 1}, (code, took)
     assert (
-        "g03    sits out: it took 1 episodes and the table has played 4 rounds"
+        "g03    unseated: it took 1 episodes and the current round is 4"
         in output.getvalue()
     ), output.getvalue()
     assert after == before, f"no election was held again: {after}"
@@ -1918,7 +1918,7 @@ def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
         (6, "g03"),
     ], acted
     assert (
-        "g04    sits out: it took 1 episodes and the table has played 4 rounds"
+        "g04    unseated: it took 1 episodes and the current round is 4"
         in output.getvalue()
     ), output.getvalue()
     election = results["g01"]
@@ -2145,7 +2145,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
         f"one episode each, then nothing left to ask for: {took}"
     )
     assert set(rested.values()) == {0}, rested
-    assert buf.getvalue().count("drops out: nothing left to spend") == 3, buf.getvalue()
+    assert buf.getvalue().count("unseated: nothing left to spend") == 3, buf.getvalue()
     assert "every agent is out after 1 rounds" in buf.getvalue(), buf.getvalue()
     assert (
         outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
