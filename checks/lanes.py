@@ -697,7 +697,7 @@ def lay_out(**agents: dict[str, str]) -> list[str]:
     """Lay out an experiment's directories under the root in force, for the experiment checks to use.
 
     "group/" goes on that agent's board, "outbox/" in its outbox where only the
-    seat it names reads it, and anything else in its private store.
+    seat it names reads it, and anything else in its memory.
     """
     trees = {"group/": "board", "outbox/": "mailbox"}
     for agent, files in agents.items():
@@ -786,7 +786,7 @@ def unfinished() -> None:
 
 @contextlib.contextmanager
 def two_seats():
-    """An experiment of two, laid out and seated, with a board and a store each."""
+    """An experiment of two, laid out and seated, with a board and a memory each."""
     with rooted(HostSandbox) as root:
         ids = seated(
             root,

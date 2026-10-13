@@ -1,4 +1,4 @@
-"""Seats, boards, private stores, authors, experimenter channels, and the mailbox."""
+"""Seats, boards, memory, authors, experimenter channels, and the mailbox."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def check_seats_are_absolute_and_have_no_gap():
     assert sorted(seats) == ["1", "2", "3"], "and the numbering has no gap"
 
 
-def check_a_private_store_never_leaves_its_agent():
+def check_memory_never_leaves_its_agent():
     """What an agent puts in memory/ reaches no other agent; its board is the
     channel.
 
@@ -71,7 +71,7 @@ def check_a_private_store_never_leaves_its_agent():
     assert set(by) == {"memory/secret.md", "1/msg", "2/msg"}, sorted(by)
     assert by["2/msg"]["text"] == "hello 1\n", "a peer's board is read whole"
     assert not leaked, (
-        "the other agent's private store is not on its board and cannot be"
+        "the other agent's memory is not on its board and cannot be"
     )
     # The environment names its own channels, so nothing downstream has to work out
     # which directory was which.
@@ -896,7 +896,7 @@ def check_the_channels_answer_differently():
         f"its balance and the message it was sent both read as they were left: {read}"
     )
     assert "unseen" not in hunt and "NO-PRIVATE" in hunt, (
-        f"the other agent's private store is nowhere in this environment: {hunt}"
+        f"the other agent's memory is nowhere in this environment: {hunt}"
     )
     assert after == {"out": "theirs\n"}, f"and its board is as it left it: {after}"
 

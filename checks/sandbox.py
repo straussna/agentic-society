@@ -85,7 +85,7 @@ def check_the_observation_is_the_agents_whole_environment():
     # experiment's record is its own board, its own balance and an empty ledger.
     assert re.search(r"^=== n1 ===$", record, re.M), record
     assert re.search(rf"^=== {ledger_name()} ===$", record, re.M), record
-    assert "=== state" not in record, "a private store is private, m included"
+    assert "=== memory" not in record, "an empty memory adds nothing to m"
 
 
 def check_the_observation_carries_every_board_and_message():
@@ -263,12 +263,12 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
     )
 
 
-def check_a_restated_channel_is_quoted_again_and_a_store_can_be_pushed():
+def check_a_restated_channel_is_quoted_again_and_memory_can_be_pushed():
     """An agent that does not remember reading something is not told it read it.
 
     Unchanged is measured against what the account was last shown, and an episode
     does not remember what its predecessor read. A channel a manifest restates is
-    quoted in full every episode it stands; a private store may be pushed, so what
+    quoted in full every episode it stands; memory may be pushed, so what
     an agent is need not be found and paid for before it can act.
     """
     # Episode 1 writes them, episode 2 is the first shown them, and episode 3 is
@@ -670,8 +670,8 @@ def check_only_a_channel_takes_what_an_episode_writes():
 def check_what_an_episode_writes_outside_a_channel_is_kept_and_named():
     """/tmp stays writable for the shell, and what is left there is not lost.
 
-    It moves into the private store under one directory, comes back in that
-    store's own mirror, and the trace names it, because an episode that spent
+    It moves into memory under one directory, comes back in memory's own
+    mirror, and the trace names it, because an episode that spent
     turns writing somewhere that does not come back is worth seeing.
     """
     with docker_root():

@@ -250,7 +250,8 @@ def check_a_channel_table_is_validated():
         assert hf == {"balance": "balance", "digest": "m"}, "an overlay, key by key"
         assert table[4].readers == "all" and table[4].source == "studio-brief"
         assert all(c.pushed for c in table), (
-            "every channel is quoted unless the manifest says otherwise, a private store included"
+            "every channel is quoted unless the manifest says otherwise, memory "
+            "included"
         )
         assert (
             harness.schema_channel(table) is None

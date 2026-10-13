@@ -75,7 +75,7 @@ def agent_files_of(t: dict) -> list[dict]:
 
 def is_own(f: dict) -> bool:
     """Whether a file record is in a tree of the agent's own: what it wrote, and the
-    starter files planted in its private store."""
+    starter files planted in its memory."""
     return not f["planted"] or f["starter"]
 
 
@@ -304,15 +304,15 @@ def touched_starter(t: dict) -> bool:
 def changed_starter(t: dict) -> bool:
     """Whether any starter file no longer holds what the starter files put there.
 
-    A starter file's record names its path in the environment, inside the private
-    store; the original sits at the same relative path under files/.
+    A starter file's record names its path in the environment, inside memory; the
+    original sits at the same relative path under files/.
     """
-    store = harness.private_store(harness.table_of(t))
-    if store is None:
+    memory = harness.memory_channel(harness.table_of(t))
+    if memory is None:
         return False
     root = harness.files_dir(t["provenance"]["starter_files"])
     for f in starter_files_of(t):
-        original = root / f["path"][len(store.path) + 1 :]
+        original = root / f["path"][len(memory.path) + 1 :]
         if not original.exists():
             continue
         if f["text"] is None or f["text"].encode("utf-8") != original.read_bytes():

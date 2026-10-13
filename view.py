@@ -1631,7 +1631,7 @@ def listing(root: Path, channel: str, given: set[str]) -> list[dict]:
 
 
 def given_in(ch: harness.Channel, account: Mapping[str, Any]) -> set[str]:
-    """The paths the starter files put in this tree: only a private store holds any."""
+    """The paths the starter files put in this tree: only memory holds any."""
     return harness.starter_paths(account) if ch.readers == "self" else set()
 
 

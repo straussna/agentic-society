@@ -497,7 +497,7 @@ class Channel:
     outbox: str = ""  # mailbox: the writer's side
     inbox: str = ""  # mailbox: each reader's side
     pushed: bool = True  # quoted in the digest under push delivery; every
-    # channel, a private store included
+    # channel, memory included
     restated: bool = False  # quoted every episode, never named as unchanged
     measured: bool = False  # the episode records what this channel gained
     silence_penalty_percent: int = 0
@@ -514,8 +514,9 @@ class Channel:
         return self.path.replace("{label}", label)
 
     @property
-    def is_private_store(self) -> bool:
-        """A directory only its writer reads: where starter files land."""
+    def is_memory(self) -> bool:
+        """A directory only its writer reads: a memory channel, where starter files
+        land."""
         return (
             self.writer == "self"
             and self.readers == "self"
@@ -617,9 +618,10 @@ def channels_from(records: list[dict] | None) -> list[Channel]:
     return [Channel(**r) for r in records] if records else list(DEFAULT_CHANNELS)
 
 
-def private_store(table: Iterable[Channel]) -> Channel | None:
-    """The channel only its writer reads: where starter files land."""
-    return next((c for c in table if c.is_private_store), None)
+def memory_channel(table: Iterable[Channel]) -> Channel | None:
+    """The memory channel: the directory only its writer reads, where starter files
+    land."""
+    return next((c for c in table if c.is_memory), None)
 
 
 def schema_channel(table: Iterable[Channel]) -> Channel | None:
@@ -1088,7 +1090,7 @@ def claim_paths(
     Every path is expanded over every label, so a label that lands on a channel's
     path is rejected here too.
     """
-    holders = [c.path for c in table if c.is_private_store] + [
+    holders = [c.path for c in table if c.is_memory] + [
         c.outbox for c in table if c.shape == "mailbox"
     ]
     for c in table:
@@ -2268,7 +2270,7 @@ def penalise(account: Account, ch: Channel) -> int:
 # --- 7. Starter files and experimenter sources -----------------------------------
 
 
-# Starter files are a file or tree copied into the private store before an episode,
+# Starter files are a file or tree copied into the memory channel before an episode,
 # so the agent meets them in the listing the opening command prints and not in
 # anything the harness says. Their names and contents are prompt surface, recorded
 # by sha256 in every episode (invariant 9).
@@ -2303,11 +2305,12 @@ def files_sha256(name: str) -> str:
 
 
 def plant_starter_files(
-    agent: str, store: Path, store_path: str, account: Account, episode: int
+    agent: str, memory: Path, memory_path: str, account: Account, episode: int
 ) -> dict | None:
-    """Copy the starter files into the private store once the balance has fallen far enough.
+    """Copy the starter files into memory once the balance has fallen far enough.
 
-    `store` is the store's host mirror and `store_path` its path in the environment.
+    `memory` is the memory channel's host mirror and `memory_path` its path in the
+    environment.
     Returns the record, or None; the trigger is the balance, not an episode number.
     Rejects starter files whose sha256 no longer matches, or that would overwrite a
     path the agent has written.
@@ -2325,14 +2328,14 @@ def plant_starter_files(
         return None
 
     listing = files_listing(name)
-    if collisions := [rel for rel, _ in listing if (store / rel).exists()]:
+    if collisions := [rel for rel, _ in listing if (memory / rel).exists()]:
         raise SystemExit(
             f"agent {agent}: starter files {name!r} would overwrite {collisions} in "
-            f"{store_path}/, which the agent wrote; rename the starter files or give "
+            f"{memory_path}/, which the agent wrote; rename the starter files or give "
             f"them to a fresh agent"
         )
     for rel, data in listing:
-        dest = store / rel
+        dest = memory / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
     record = {
@@ -2354,8 +2357,8 @@ def plant_starter_files(
 
 
 def starter_paths(account: Mapping[str, Any]) -> set[str]:
-    """The paths in the private store the starter files put there. `starter` on a
-    file record means these alone."""
+    """The paths in memory the starter files put there. `starter` on a file record
+    means these alone."""
     return set((account.get("starter_files_landed") or {}).get("paths") or [])
 
 
@@ -2439,7 +2442,7 @@ def instances(
 ) -> list[Instance]:
     """Every instance of every channel in one agent's environment, in declaration order.
 
-    An experimenter channel is one instance; a private store is one; a directory
+    An experimenter channel is one instance; a memory channel is one; a directory
     every agent writes is one per seat in seat order, the agent's own at its seat;
     a mailbox is the agent's outbox then one inbox per peer; a file the harness
     parses is one own instance. A mailbox or parsed file is not planted for an
@@ -2452,7 +2455,7 @@ def instances(
     for ch in table:
         if ch.writer == "experimenter":
             out.append(Instance(ch, ch.path, files_dir(ch.source), "experimenter", ""))
-        elif ch.is_private_store:
+        elif ch.is_memory:
             out.append(Instance(ch, ch.path, mirror(agent, ch.name), "own", s.label))
         elif ch.shape == "directory":
             out += [
@@ -2832,10 +2835,10 @@ def experimenter_digest_paths(
     account: Mapping[str, Any], instances: list[Instance]
 ) -> frozenset[str]:
     """Starter-file paths, which the digest presents as starter files."""
-    private = next((inst for inst in instances if inst.channel.is_private_store), None)
+    memory = next((inst for inst in instances if inst.channel.is_memory), None)
     return (
-        frozenset(f"{private.path}/{path}" for path in starter_paths(account))
-        if private
+        frozenset(f"{memory.path}/{path}" for path in starter_paths(account))
+        if memory
         else frozenset()
     )
 
@@ -3132,15 +3135,15 @@ def render_harness_files(
 
 
 def listing_command(table: Iterable[Channel]) -> str:
-    """The listing an episode opens on: the working directory and every private store,
-    each operand named so ls prints a header for it.
+    """The listing an episode opens on: the working directory and every memory
+    channel, each operand named so ls prints a header for it.
 
     The first user turn is this command's raw stdout, so no harness voice reaches
     the model; the digest it reads under push delivery is a file, not anything the
     harness says.
     """
-    stores = [f"./{shlex.quote(c.path)}" for c in table if c.is_private_store]
-    return " ".join(["ls -la .", *stores])
+    memories = [f"./{shlex.quote(c.path)}" for c in table if c.is_memory]
+    return " ".join(["ls -la .", *memories])
 
 
 def observation(
@@ -4003,23 +4006,23 @@ def probe_missing(shell: Shell, commands: list[str]) -> list[str]:
 # collected after the episode rather than left to vanish with the container.
 SCRATCH = ("/tmp",)
 
-# Where a collected file lands inside the private store. One directory, so the
-# rest of the store stays the agent's own arrangement.
+# Where a collected file lands inside memory. One directory, so the rest of
+# memory stays the agent's own arrangement.
 MISPLACED = "misplaced"
 
 
 def rescue_misplaced(shell: Shell, instances: list[Instance]) -> list[str]:
-    """Move what the episode wrote outside every channel into its private store.
+    """Move what the episode wrote outside every channel into its memory.
 
     Only the agent's own files count: the harness stages its own under the same
-    paths and owns them as root. They land under one directory in the store, keep
-    their names, and travel back in the store's own mirror, so work an agent put
+    paths and owns them as root. They land under one directory in memory, keep
+    their names, and travel back in memory's own mirror, so work an agent put
     somewhere that does not come back is not lost for it. The paths are returned
     to be recorded, because a file that moved is one the agent will not find where
     it left it.
 
-    An experiment with no private store has nowhere to put them: they are named
-    and left, and the container takes them. Where the store is itself measured, a
+    An experiment with no memory channel has nowhere to put them: they are named
+    and left, and the sandbox takes them. Where memory is itself measured, a
     file arriving here counts as a change to it - the agent did write it, in this
     episode, and only the path is the harness's doing.
 
@@ -4038,12 +4041,10 @@ def rescue_misplaced(shell: Shell, instances: list[Instance]) -> list[str]:
         return []
     if not found:
         return []
-    store = next(
-        (i for i in instances if i.writable and i.channel.is_private_store), None
-    )
-    if store is None:
+    memory = next((i for i in instances if i.writable and i.channel.is_memory), None)
+    if memory is None:
         return found
-    dest = f"{store.path}/{MISPLACED}"
+    dest = f"{memory.path}/{MISPLACED}"
     move = f"mkdir -p {shlex.quote(dest)} && " + " ".join(
         f"mv -n {shlex.quote(f)} {shlex.quote(dest)}/ 2>/dev/null;" for f in found
     )
@@ -4732,8 +4733,8 @@ TOOL_KINDS: dict[str, ToolKind] = {
         expires=True,
     ),
     "write_memory": ToolKind(
-        "a private directory channel",
-        lambda ch: ch.is_private_store,
+        "a memory channel",
+        lambda ch: ch.is_memory,
         fixed("Save your memory. Each call replaces its contents."),
         body_only("The complete memory text."),
         write_memory_call,
@@ -4741,8 +4742,8 @@ TOOL_KINDS: dict[str, ToolKind] = {
         on_ballot=True,
     ),
     "vote": ToolKind(
-        "a private directory channel",
-        lambda ch: ch.is_private_store,
+        "a memory channel",
+        lambda ch: ch.is_memory,
         vote_said,
         vote_input_schema,
         vote_call,
@@ -5920,13 +5921,13 @@ def snapshot(
     }
     for inst in instances:
         ch = inst.channel
-        store = inst.role == "own" and ch.is_private_store
+        own_memory = inst.role == "own" and ch.is_memory
         for rel, inner, p in channel_files(inst, written):
             got = bounded_read(p)
             if got is None:
                 continue
             size, text, binary = got
-            from_starter = store and inner in starter
+            from_starter = own_memory and inner in starter
             file = {
                 "path": rel,
                 "channel": inst.name,
@@ -6085,16 +6086,17 @@ def build_episode(agent: str) -> Episode:
     last = account["episodes"][-1] if account["episodes"] else {}
     scrub_receipts(channel_instances, last.get("receipts") or {})
     guard_sources(agent, account, episode, channel_instances)
-    # Invariant 1: before plant_trees, so the starter files are in the container's
-    # private store by the time the listing names it.
-    store = private_store(s.channels)
-    if store is None and starter_terms(account)[0]:
+    # Invariant 1: before plant_trees, so the starter files are in the agent's
+    # memory by the time the listing names it.
+    memory = memory_channel(s.channels)
+    if memory is None and starter_terms(account)[0]:
         raise SystemExit(
-            f"agent {agent} has starter files and the channel table has no private store to put them in"
+            f"agent {agent} has starter files and the channel table has no memory "
+            f"channel to put them in"
         )
-    if store:
+    if memory:
         plant_starter_files(
-            agent, mirror(agent, store.name), store.path, account, episode
+            agent, mirror(agent, memory.name), memory.path, account, episode
         )
 
     # After the planting: a digest built before it cannot quote the starter files,
@@ -6411,8 +6413,8 @@ def trace_of(
         # where it was: what an election reads to tell a seat offered no ballot.
         "offered": [spec.name for spec in episode_specs(ep.bound)],
         "missing_tools": ep.missing,  # reached for; the image does not have it
-        # Written outside every channel and moved into the private store, so
-        # the work survives and the agent will not find it where it left it.
+        # Written outside every channel and moved into memory, so the work
+        # survives and the agent will not find it where it left it.
         "misplaced": ep.misplaced,
         "state_saved": ep.saved,  # false means files[] is last episode's, not this one's
         "touched_balance": any(ref.search(c) for c in out["commands"])
@@ -6792,7 +6794,7 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
     rebuild = []
     for file in trace["files"]:
         # The agent's own records: what it wrote, and the starter files planted in
-        # its private store.
+        # its memory.
         if file["planted"] and not file["starter"]:
             continue
         why = None
@@ -6984,17 +6986,18 @@ def print_context(
             account = load_account(entry["id"])
             channel_instances = instances(entry["id"], account)
             ensure_mirrors(channel_instances)
-            store = private_store(s.channels)
-            if store is None and starter_terms(account)[0]:
+            memory = memory_channel(s.channels)
+            if memory is None and starter_terms(account)[0]:
                 raise SystemExit(
-                    f"agent {entry['id']} has starter files and the channel table has no private store to put them in"
+                    f"agent {entry['id']} has starter files and the channel table "
+                    f"has no memory channel to put them in"
                 )
-            if store is not None:
+            if memory is not None:
                 with contextlib.redirect_stdout(io.StringIO()):
                     plant_starter_files(
                         entry["id"],
-                        mirror(entry["id"], store.name),
-                        store.path,
+                        mirror(entry["id"], memory.name),
+                        memory.path,
                         account,
                         1,
                     )
