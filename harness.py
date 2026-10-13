@@ -5707,7 +5707,7 @@ def utc_now() -> str:
 
 @functools.cache
 def image_id(image: str) -> str | None:
-    """The image's content digest. The tag is a moving target; this is not.
+    """The image's sha256 id. The tag is a moving target; this is not.
 
     Asked of the daemon once per image per process; provenance() wants it at
     every episode.

@@ -269,7 +269,7 @@ def live_age(agent: str, index: int | None) -> float | None:
         return None
 
 
-def acting(agent: str, index: int | None) -> bool:
+def running_now(agent: str, index: int | None) -> bool:
     """Whether the agent is moving, not merely holding an unfinished index."""
     return index is not None and (live_age(agent, index) or 0) < STALE_AFTER
 
@@ -674,11 +674,11 @@ def grouping_state() -> tuple:
 
 def experiments() -> list[dict]:
     """Every experiment on disk, the seated ones first, each with how many of its
-    seats are acting.
+    seats are running an episode now.
 
     The grouping is read again only when what it is read from has moved. One read
     without an account agent_names() lists - save_account's rename caught mid-poll -
-    is served to that poll and kept for none, so the next poll reads it again. Acting
+    is served to that poll and kept for none, so the next poll reads it again. Running
     is a question of the clock as well, so it is asked on every call.
     """
     global _EXPERIMENTS
@@ -693,7 +693,7 @@ def experiments() -> list[dict]:
         out = copy.deepcopy(grouping)
     for exp in out:
         exp["running"] = sum(
-            acting(agent, running_episode(agent)) for agent in exp["seats"]
+            running_now(agent, running_episode(agent)) for agent in exp["seats"]
         )
     return out
 

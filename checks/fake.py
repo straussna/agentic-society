@@ -76,10 +76,10 @@ def restart(u=None, id=None):
     return run(None, u=u, id=id)
 
 
-def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
+def think(reasoning="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
     return {
         "step_type": "think",
-        "thinking": thinking,
+        "reasoning": reasoning,
         "text": text,
         "u": u,
         "id": id,
@@ -177,7 +177,7 @@ class FakeSession:
         else:
             calls = ()
             texts = (turn["text"],)
-            reasoning = (turn["thinking"],) if turn["step_type"] == "think" else ()
+            reasoning = (turn["reasoning"],) if turn["step_type"] == "think" else ()
         detail = turn.get("details")
         refusal = (
             None

@@ -1742,14 +1742,14 @@ def play_round(
     # The seat order decides who acts on this round's information and who on last
     # round's, so it is on screen beside the round number. Under a simultaneous
     # round nobody acts on this round's.
-    acting = [
+    playing = [
         agent
         for agent in agents
         if agent in seated and (finishing is None or agent in finishing)
     ]
-    print(f"--- round {round} ({' '.join(acting)}) ---")
+    print(f"--- round {round} ({' '.join(playing)}) ---")
 
-    waiting = seated - set(acting)
+    waiting = seated - set(playing)
     seated -= waiting
     try:
         acted = a_round(agents, seated, round, router, stamp, labels, log_stage)

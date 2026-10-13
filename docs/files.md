@@ -66,7 +66,7 @@ it is pinned in `account.json` when the agent is created and recorded by sha256 
 episode's provenance. Token rates and model catalogs live in the named providers. Every
 model call asks for the provider and model pinned in the account; there is no server-side fallback or sticky routing.
 
-Each provider keeps its conversation state in a per-episode session and uses the
+Each provider keeps its conversation state in its session, which lasts one episode, and uses the
 provider's default reasoning behavior. Anthropic maps the canonical conversation to
 Messages blocks. OpenAI uses Responses with `store=false`, carries output and reasoning
 items forward itself, and requests encrypted reasoning state. Both receive the same
