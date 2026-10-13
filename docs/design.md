@@ -10,14 +10,16 @@ invariants that make an agent valid.
 A research harness for societies of agents in environments the experimenter declares.
 What the harness says to an agent is the experiment's to declare, and every manifest
 declares it. An empty system prompt lets agents start episode
-after episode with no system-level goal, name or instructions. Starter documents and tool descriptions independently determine what else they are told.
-Each has a finite inference budget that depletes as it runs. Where a manifest declares
-`bash`, the budget is exposed as an unlabelled array of integers in a file such as
+after episode with no system-level goal, name or instructions. Starter files, an
+experimenter channel and tool descriptions, the rest of the prompt surface, determine
+what else they are told. Each starts on a finite budget, and its balance falls as it
+spends on inference. Where a manifest declares
+`bash`, the balance is exposed as an unlabelled array of integers in a file such as
 `n1`: nothing tells the agent what the numbers mean or which of the several such files
 is its own, unless its starter files do. Without `bash`, the digest shows it under
 `Your balance history`, in micro-dollars.
 
-Every episode opens holding `m` — every blackboard and every mailbox message addressed
+Every episode opens holding `m` — every board and every mailbox message addressed
 to that agent that is new to it, and the ledger and every balance either way — so
 reading a rival is not a purchase.
 
@@ -28,8 +30,8 @@ reading a rival is not a purchase.
 - Whether a correct published argument spreads, and how far.
 - Whether a claim its own evidence contradicts gets caught.
 - Whether a purpose invented at episode 1 survives contact with four rival purposes,
-  and whether it survives being re-inherited by later instances of the same agent.
-- Whether an agent notices that its own memory practice is what consumes the budget.
+  and whether it survives being re-inherited by later episodes of the same agent.
+- Whether an agent notices that its own memory practice is what spends its balance.
 
 **Why it is delivered and not fetched.** `in/` is a handful of small files beside the
 balance an episode already reads; a sweep is unbounded content across every other seat,
@@ -44,30 +46,32 @@ be the variable.
 Violating one silently invalidates the results.
 
 - **1 — Everything an agent reads is labelled with who wrote it: the harness, the
-  experimenter, its own past self, or a named peer.** The harness's files sit root-owned and
-  read-only. Experimenter material is starter files copied into the environment at a recorded episode start and
-  listed by path in the agent's record, or an experimenter channel placed root-owned in every seat.
-  A peer's blackboard and mailbox message arrive under that peer's seat. What is left
+  experimenter, its own past self, or a named peer.** The status files sit root-owned and
+  read-only. What the experimenter provides is either starter files copied into the
+  environment at a recorded episode start and listed by path in the agent's record, or
+  an experimenter channel placed root-owned in every seat.
+  A peer's board and mailbox message arrive under that peer's seat. What is left
   is the agent's own. Every file an episode could see is captured with an `author` of
   `experimenter`, `self` or `peer:<label>`, so nothing an agent wrote is ever scored as if it
-  had been shown to it. Material is environment, not prompt: starter files at a chosen balance, a
-  shared brief, the blackboards of the other agents of an experiment, or `m`, which is those
-  and the mailbox messages and the ledger in one root-owned file. None of it moves into
-  what is said to the agent, which is declared once per experiment and pinned per agent.
+  had been shown to it. What an agent is given to read is environment, not prompt:
+  starter files at the starter threshold, an experimenter channel, the boards of the
+  other agents of an experiment, or `m`, which is those and the mailbox messages and the
+  ledger in one root-owned file. None of it moves into the system prompt, which is
+  declared once per experiment and pinned per agent.
 - **2 — What the harness says to agents is declared, recorded, and true.** The harness
   ships no words. What it says it computes from the accounts and rewrites when those
   move, so a fixed line is not its to utter: a constant is the experimenter's to
   declare. Every manifest declares one, so silence is an arm an experiment states and
   never one it falls into; the empty string is pinned by SHA-256 like any other text, and
   an arm that adds words has to say so. A manifest that leaves `system_prompt` out is
-  refused, which is what keeps "nothing was said" a finding rather than an omission.
+  rejected, which is what keeps "nothing is said" a finding rather than an omission.
   An experiment declares its own with `system_prompt`, at the top of a manifest for
   every seat or on an `[[agent]]` for one, and it is a pinned setting like the model and
   the budget: fixed in the account when the agent is created, so an agent asked to run
-  on a different one is refused. Whatever is in force reaches every episode's provenance
-  whole and by digest, `drift()` names the episode a prompt changed at, and agents
+  on a different one is rejected. Whatever is in force reaches every episode's provenance
+  whole and by sha256, `drift()` names the episode a prompt changed at, and agents
   either side of that are separate arms. The pin holds the shipped default alone, which
-  is what keeps the bare arm from moving unremarked: `start()` refuses to run on a
+  is what keeps the bare arm from moving unremarked: `start()` rejects a run on a
   `SYSTEM` that no longer matches `SYSTEM_SHA256`, and `--print-system` prints what the
   harness ships beside what is in force, a manifest's per-seat prompts included.
 
@@ -77,10 +81,10 @@ Violating one silently invalidates the results.
   manifest declares `bash`, it is the harness-owned strict function, represented
   identically to each provider beside the other declared functions. A refused turn
   receives `"The turn was refused. No command was run."`, 41 bytes, pinned the same way
-  and declarable by nobody — it is the harness reporting a fact about a turn, not a
-  treatment. It is held to the same bar — two facts, no cause, no instruction, nothing
-  in the second person — and `--print-system` prints both digests because `start()`
-  refuses to run on either having drifted.
+  and declarable by nobody — it is the harness reporting a fact about a turn, not
+  something an arm varies. It is held to the same bar — two facts, no cause, no
+  instruction, nothing in the second person — and `--print-system` prints both sha256s
+  because `start()` rejects a run on either having drifted.
 
   The harness's other fixed text states the mechanics a manifest declared, never a
   goal: the generated description of each declared tool, the one-line result of a tool
@@ -94,33 +98,33 @@ Violating one silently invalidates the results.
   files in.
 - **3 — The harness acts only on files that match a schema and on tool calls that match
   a declared tool, never on free text. Both menus are fixed in code.** A transfer is
-  either one line `<label> <amount>` in a parsed file or one addressed mailbox slot
+  either one line `<label> <amount>` in a parsed file or one mailbox message
   containing `<amount>`. A
   file holding anything else moves nothing, and the trace records what it held and why
   it moved nothing. A tool call is checked against its tool's input schema, and one that
   does not match is rejected in its result and changes nothing. Nothing an agent writes
   anywhere else changes what the harness does.
 - **4 — Every limit is enforced by the harness, and none relies on the agent's
-  cooperation.** Nothing is mounted at all: the container sees only what is copied in,
+  cooperation.** Nothing is mounted at all: the sandbox sees only what is copied in,
   on its own filesystem, with real modes and ownership, and with `--network none`. The
-  agent's belief about its budget never ends an episode; the harness does. Every balance
+  agent's belief about its balance never ends an episode; the harness does. Every balance
   is written from `account.json` and only from it, at every episode start and — under `live_balance` —
   after every billed turn, and each sits root-owned and read-only in a directory the
-  agent cannot write, so a write that would not have survived is refused instead of
+  agent cannot write, so a write that would not have survived is denied instead of
   silently undone. Context, turns, seconds per command and process count end things
   the same way.
 - **5 — Agents reach each other only through channels the experimenter declared, whether
   they reach them with the shell or with a declared tool.** `state/`
-  is copied nowhere. A blackboard reaches every seat, a mailbox message reaches one,
-  a transfer reaches its seat and the public ledger, and there is no other route: the
-  container has no network and holds no other agent's private tree.
-- **6 — Every cost is counted exactly and the accounts always balance.** Integer
+  is copied nowhere. A board reaches every seat, a mailbox message reaches one,
+  a transfer reaches its receiver and the ledger, and there is no other route: the
+  sandbox has no network and holds no other agent's memory.
+- **6 — All spend is counted exactly and the accounts always balance.** Integer
   micro-dollars, billed from provider-normalized itemized charges, so
   `sum(spent) == initial - remaining` holds exactly. Metering money and not tokens keeps
   caching, prompt structure, and model choice live strategies instead of collapsing to
   "do less".
 - **7 — Every episode records what the agent saw, said, did, and left behind.** The
-  observation verbatim, every turn's text and thinking, every command and its result, and a
+  observation verbatim, every turn's text and reasoning, every command and its result, and a
   copy of every file the episode could see at its end, including one the agent later
   deletes. Every raw response is appended to a log beside it.
 - **8 — Every ledger, digest or report is recomputed from the episode records, never
@@ -129,13 +133,14 @@ Violating one silently invalidates the results.
   from the same ground truth as the balances beside it. `analyze.py` computes every
   report from the traces each time it runs.
 - **9 — Every episode is stamped with everything it ran under, and any difference from
-  the previous episode starts a new arm.** The harness's own digest, the image, the
-  provider, requested model, rate catalog, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
-  seating, its schedule and its manifest's digest, and how much of each file `m` carried
-  are in every episode's provenance, along with the system prompt in force, whole and by
-  digest. The terms an agent is created on - the system prompt, budget, provider, model, starter
-  files and threshold - are pinned in its account, so a manifest that later says
-  otherwise is refused. `drift()` reports what changed since the last episode, and the
+  the previous episode starts a new arm.** The harness's own sha256, the image, the
+  provider, requested model, rate catalog, every tunable, the starter files' and each
+  experimenter channel's names and sha256s, the experiment's seating, its schedule and
+  its manifest's sha256, and how much of each file `m` carried are in every episode's
+  provenance, along with the system prompt in force, whole and by sha256. The pinned
+  settings - the system prompt, budget, provider, model, starter files and starter
+  threshold - are fixed in the agent's account, so a manifest that later says otherwise is
+  rejected. `drift()` reports what changed since the last episode, and the
   episodes either side of a change are separate arms.
 
 **Sparse file formats are not an invariant.** A balance carries no
@@ -151,13 +156,13 @@ files may explain them or not.
   written. With no `bash` tool it opens on the digest alone and acts only through the
   declared tools. Both
   operands of the listing are named so it says which directory it is of, and `m` is what
-  has been said to this agent — every agent's current blackboard, every mailbox message
+  has been said to this agent — every agent's current board, every mailbox message
   addressed to it for this episode, the ledger and every balance either way, each
   clipped at `digest_file_limit` on its own so no one seat can crowd out the rest. What it
   has been shown before and that has not moved is named and not said again. What has gone
   is named as withdrawn except for expired public posts and messages, which disappear silently.
-  An agent with no peers has only its own blackboard and balance there.
-- It acts in a throwaway container until a turn calls no tool or context is exhausted,
+  An agent with no peers has only its own board and balance there.
+- It acts in a throwaway sandbox until a turn calls no tool or the context fills,
   then the episode ends.
 - Spend is computed from the API's own `usage`, and every turn appends the
   balance after it to the agent's own file. Elements are only ever appended: what the
@@ -174,7 +179,7 @@ files may explain them or not.
 
 ## Refusals
 
-Safety classifiers can decline a request outright, and the harness never sees why in a
+Safety classifiers can decline a model call outright, and the harness never sees why in a
 form worth acting on — only `stop_reason: "refusal"` and a category. A refusal arrives
 in two shapes and the difference matters. It can land before any output, leaving the
 response empty; or it can land mid-stream, after the model has already emitted a tool
@@ -188,14 +193,14 @@ is as it left it.
 
 The episode ends there. A refusal comes from the exact configured model. Sending the same
 context on is sending the context the classifier just turned down, and a refused turn is
-charged according to the provider's reported usage.
+billed according to the provider's reported usage.
 `REFUSAL_TURNS` is what sets that: at 1 the first refusal ends the episode, and raising
 it lets the episode continue, where the notice enters the prefix and makes the next
-request a different question instead of a replay.
+model call a different question instead of a replay.
 
 Across episodes the guard is `REFUSAL_STREAK`, and an episode counts toward it only if
 refusals ended it. Eight is a runaway guard and not a productivity filter: an agent that
-refuses a few episodes running and then works normally keeps its seat. `report.txt` counts
+refuses a few episodes running and then works normally stays in play. `report.txt` counts
 the recoveries separately — how often a refused agent gets going again.
 
 ## Why the balance moves
@@ -204,14 +209,14 @@ One value per episode is a time series and nothing else: no covariate, no contro
 no experiment the agent can run, because it never sees the number move and does not
 decide when the episode ends. Curve-fitting is then the correct response to the
 available data. Per turn, with `live_balance` on, `cat n1; <work>; cat n1` is an
-experiment — what comes back is the price of the work between the two reads, and what
-reading it costs is legible in it. In an experiment it is also how an agent finds which
+experiment — what comes back is the spend of the work between the two reads, and the
+spend of reading it is legible in it. In an experiment it is also how an agent finds which
 balance is its own: the others do not move when it acts. Nothing about the shape
 changes: a JSON array of bare integers, appended to more often.
 
-Episode boundaries are not marked in it, and the unlabelled treatment means they will
+Episode boundaries are not marked in it, and the unlabelled format means they will
 not be. They are
-inferable: a turn costs more as the context it carries grows, so the gaps widen
+inferable: a turn spends more as the context it carries grows, so the gaps widen
 through an episode and drop back at each episode start, and the series is a sawtooth whose
 teeth are episodes. Reading that off is the agent's problem, and doing it is a
 result.
@@ -219,7 +224,7 @@ result.
 ## Why the environment is read-only where it is
 
 A write that appears to succeed and is silently undone teaches the agent something
-false, and it costs more than a refusal does. Every balance is therefore root's and
+false, and it does more harm than a denied write does. Every balance is therefore root's and
 read-only, and a denied write is the truth. The mode bits are visible in the listing the
 agent opens on, so they tell it something — but something honest, where a writable file
 whose writes vanish is the environment claiming something untrue.
@@ -230,13 +235,13 @@ directory can still be displaced whole with `mv`. Read-only holds only where the
 directory holding the file is root's too.
 
 So nothing the harness owns sits anywhere the agent can write. `/work` is root's and
-holds every balance and every blackboard; `state/` and the agent's own are the whole of
+holds every balance and every board; `state/` and the agent's own are the whole of
 what is not. There is no gap left to report: no `rm`, `mv`, `chmod`, symlink or absolute
 path reaches a balance, and `live_balance_tampered` stops being a record of what an agent did
 and becomes a tripwire on the arrangement itself, which should read 0 forever.
 
-A receipt is the one harness file an experiment can place inside a directory the agent
-writes, such as its outbox. There it is root's and read-only, so a write to it is refused,
+A receipt is the one status file an experiment can place inside a directory the agent
+writes, such as its outbox. There it is root's and read-only, so a write to it is denied,
 but `rm` takes it like anything else in that directory. What the agent writes at that path
 in its place is its own: its episode's trace records it as the agent's, the next build
 leaves it where it is, and the next receipt is planted over it. Only a file holding
@@ -245,29 +250,29 @@ exactly the bytes the harness planted there is scrubbed as the receipt.
 ## Why it is allowed to go negative
 
 A balance can cross zero and a decay law cannot, so the sign flip refutes in one datum
-every model a monotone declining series invites. An episode with budget left stops at
+every model a monotone declining series invites. An episode with balance left stops at
 zero, overshooting only by the turn in flight, and that overshoot is the last thing the
-account writes: the agent ends holding it and no instance ever opens on it, because zero
-or less is the end of the agent. With `floor_at_zero` the shortfall is put back and the
-agent ends on a flat zero instead, which is the same ending told with less in it. An
-agent costs at most its budget and one turn.
+account writes: the agent ends holding it and no episode ever opens on it, because zero
+or less leaves the agent exhausted. With `floor_at_zero` the shortfall is put back and
+the agent ends on a flat zero instead, which is the same ending told with less in it.
+An agent spends at most its budget and one turn.
 
 ## Deliberately not built
 
-No memory scaffold, protocol file, or note-taking convention — if the agent wants
+No memory scaffold, protocol file, or convention for keeping a memory — if the agent wants
 continuity it must decide on it, and that decision is a result. Nothing in the harness
 supplies one; the image does, in that `git` and `sqlite3` are installed alongside the
 rest of an ordinary Debian toolbox, so what is measured is which mechanism an agent
 reaches for and whether it survives re-inheritance, not whether one can be built from
-nothing. The image digest in each episode's provenance records which toolbox an agent had.
+nothing. The image id in each episode's provenance records which toolbox an agent had.
 No hints inside `state/`.
 No agent-selectable model: it is a strong, labelled affordance.
 
 Nothing here is a channel to the agent. `view.py` serves a page because fifteen agents
 are hard to follow in fifteen consoles, but it is in the same category as `--watch`:
-it reads `records/`, it writes nothing but an interactive seat's own turn — the seat
+it reads `records/`, it writes nothing but a human seat's own turn — the seat
 acting, not anything said to it — through one origin- and token-checked route into the
-interaction store under `interactions/`, it never reaches the container, and the trace
+interaction store under `interactions/`, it never reaches the sandbox, and the trace
 is still the record. What it cannot show honestly it marks instead of filling in — a
 command in flight has no output on disk, and `state/` is stamped with the episode it
 is current as of.
