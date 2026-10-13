@@ -619,10 +619,9 @@ def check_anthropic_bills_a_refusal_by_what_it_emitted_and_prices_a_long_prefix(
         response("end_turn", [], input_tokens=250_000, output_tokens=100),
         "claude-opus-5",
     )
-    assert {c.kind: c.centi_micros for c in at.charges}["output"] == 100 * 2500, (
-        "the threshold is base"
-    )
-    priced = {c.kind: c.centi_micros for c in past.charges}
+    base = {c.token_class: c.centi_micros for c in at.charges}
+    assert base["output"] == 100 * 2500, "the threshold is base"
+    priced = {c.token_class: c.centi_micros for c in past.charges}
     assert priced["output"] == 100 * 2500 * 3 // 2, priced
     assert priced["uncached_input"] == 250_000 * 500 * 2, priced
 

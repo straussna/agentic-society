@@ -350,7 +350,7 @@ def check_openai_usage_prices_cache_reasoning_and_long_context():
         c.centi_micros for c in short.charges
     )
     assert (
-        next(c for c in long.charges if c.kind == "output").centi_micros
+        next(c for c in long.charges if c.token_class == "output").centi_micros
         == 100 * 1200 * 3 // 2
     )
 

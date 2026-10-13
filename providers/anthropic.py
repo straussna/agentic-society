@@ -67,14 +67,14 @@ def normalize(native: Any, requested_model: str) -> NormalizedResponse:
     content = field(native, "content", []) or []
     texts, reasoning, calls = [], [], []
     for block in content:
-        kind = field(block, "type")
-        if kind == "text":
+        block_type = field(block, "type")
+        if block_type == "text":
             texts.append(str(field(block, "text", "")))
-        elif kind in ("thinking", "redacted_thinking"):
+        elif block_type in ("thinking", "redacted_thinking"):
             text = field(block, "thinking") or field(block, "data")
             if text:
                 reasoning.append(str(text))
-        elif kind == "tool_use":
+        elif block_type == "tool_use":
             calls.append(
                 ToolCall(
                     str(field(block, "id", "")),

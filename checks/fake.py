@@ -128,7 +128,7 @@ def _usage(raw, provider, model):
     output = int(getattr(raw, "output_tokens", 0) or 0)
     normalized = Usage(uncached + read + write, uncached, read, write, output, 0)
     spec = providers.model_spec(provider, model)
-    write_kind = "cache_write_5m" if provider == "anthropic" else "cache_write"
+    write_class = "cache_write_5m" if provider == "anthropic" else "cache_write"
     charges = (
         Charge(
             "uncached_input",
@@ -139,7 +139,9 @@ def _usage(raw, provider, model):
         Charge(
             "cache_read", read, spec.rate("cache_read"), read * spec.rate("cache_read")
         ),
-        Charge(write_kind, write, spec.rate(write_kind), write * spec.rate(write_kind)),
+        Charge(
+            write_class, write, spec.rate(write_class), write * spec.rate(write_class)
+        ),
         Charge("output", output, spec.rate("output"), output * spec.rate("output")),
     )
     return normalized, charges

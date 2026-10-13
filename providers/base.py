@@ -84,9 +84,20 @@ class Usage:
 USAGE_FIELDS = tuple(f.name for f in dataclasses.fields(Usage))
 
 
+def kind_keyed(value: Any, name: str) -> dict[str, Any]:
+    """A dataclass as its record stores it: the field `name` under the key "kind"."""
+    return {
+        "kind" if key == name else key: item
+        for key, item in dataclasses.asdict(value).items()
+    }
+
+
 @dataclasses.dataclass(frozen=True)
 class Charge:
-    kind: str
+    """One itemized line of a response's spend: the tokens of one token class, at the
+    model's rate for that class. Its record keys the token class as "kind"."""
+
+    token_class: str
     tokens: int
     rate_centi_micros: int
     centi_micros: int
@@ -94,18 +105,21 @@ class Charge:
     multiplier_denominator: int = 1
 
     def as_dict(self) -> dict[str, int | str]:
-        return dataclasses.asdict(self)
+        return kind_keyed(self, "token_class")
 
 
 @dataclasses.dataclass(frozen=True)
 class Refusal:
-    kind: str
+    """A model declining, as the provider typed it. Its record keys the refusal type
+    as "kind"."""
+
+    refusal_type: str
     explanation: str | None = None
     recommended_model: str | None = None
     details: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
+        return kind_keyed(self, "refusal_type")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -125,7 +139,10 @@ class NormalizedResponse:
     native_stop_details: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
+        value = dataclasses.asdict(self)
+        value["charges"] = tuple(item.as_dict() for item in self.charges)
+        value["refusal"] = self.refusal.as_dict() if self.refusal else None
+        return value
 
 
 @dataclasses.dataclass(frozen=True)
@@ -141,8 +158,8 @@ class ModelSpec:
     price_valid_through: str | None = None
     price_replacement: str | None = None
 
-    def rate(self, kind: str) -> int:
-        return dict(self.rates)[kind]
+    def rate(self, token_class: str) -> int:
+        return dict(self.rates)[token_class]
 
     def as_dict(self) -> dict[str, Any]:
         return json.loads(json.dumps(dataclasses.asdict(self)))
@@ -345,11 +362,11 @@ def field(value: Any, name: str, default: Any = None) -> Any:
 
 
 def charge(
-    kind: str, tokens: int, rate: int, multiplier: tuple[int, int] = (1, 1)
+    token_class: str, tokens: int, rate: int, multiplier: tuple[int, int] = (1, 1)
 ) -> Charge:
     numerator, denominator = multiplier
     return Charge(
-        kind,
+        token_class,
         tokens,
         rate,
         tokens * rate * numerator // denominator,

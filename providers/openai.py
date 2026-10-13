@@ -81,10 +81,10 @@ MODELS = {
 def _input_item(item: Any) -> dict[str, Any]:
     """Return the request shape for one response item kept as manual state."""
     raw = native_dict(item)
-    kind = raw.get("type")
-    if kind == "function_call":
+    item_type = raw.get("type")
+    if item_type == "function_call":
         keys = ("type", "call_id", "name", "arguments")
-    elif kind == "reasoning":
+    elif item_type == "reasoning":
         keys = ("type", "id", "summary", "content", "encrypted_content")
     else:
         return {key: value for key, value in raw.items() if value is not None}
@@ -94,8 +94,8 @@ def _input_item(item: Any) -> dict[str, Any]:
 def normalize(native: Any, requested_model: str) -> NormalizedResponse:
     texts, reasoning, calls, refusals = [], [], [], []
     for item in field(native, "output", []) or []:
-        kind = field(item, "type")
-        if kind == "function_call":
+        item_type = field(item, "type")
+        if item_type == "function_call":
             arguments = field(item, "arguments", "{}") or "{}"
             try:
                 parsed = (
@@ -123,17 +123,17 @@ def normalize(native: Any, requested_model: str) -> NormalizedResponse:
                     parsed,
                 )
             )
-        elif kind == "reasoning":
+        elif item_type == "reasoning":
             for summary in field(item, "summary", []) or []:
                 text = field(summary, "text")
                 if text:
                     reasoning.append(str(text))
-        elif kind == "message":
+        elif item_type == "message":
             for part in field(item, "content", []) or []:
-                part_kind = field(part, "type")
-                if part_kind == "output_text":
+                part_type = field(part, "type")
+                if part_type == "output_text":
                     texts.append(str(field(part, "text", "")))
-                elif part_kind == "refusal":
+                elif part_type == "refusal":
                     refusals.append(str(field(part, "refusal", "")))
     raw_usage = field(native, "usage", {}) or {}
     input_tokens = int(field(raw_usage, "input_tokens", 0) or 0)
