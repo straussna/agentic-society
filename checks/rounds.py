@@ -714,7 +714,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
     """
     gate = threading.Barrier(3, timeout=10)
 
-    def requested(turn):
+    def sent(turn):
         if turn == 1:
             gate.wait()
             harness.STOPPING = True
@@ -735,7 +735,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
             g01=(use("vote", to="2"), say()),
             g02=(use("vote", to="1"), say()),
             g03=(run("echo one"), say()),
-            on_request=requested,
+            on_send=sent,
         )
         with quiet() as output:
             code = experiment.main(
@@ -1131,15 +1131,15 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
                 head="stop_when_one_remains = true\n",
             )
             router = fake(*steps)
-            requests: list[int] = []
+            sent: list[int] = []
 
             def stop_as_g02_ends(turn):
-                requests.append(turn)
-                if len(requests) == 7:
+                sent.append(turn)
+                if len(sent) == 7:
                     harness.STOPPING = True
 
             if name in finishes:
-                router.on_request = stop_as_g02_ends
+                router.on_send = stop_as_g02_ends
             harness.start = lambda config=None, **kw: router
             codes = []
             with quiet() as output:
@@ -2490,10 +2490,10 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
     """The episodes of a simultaneous round are in flight together, not one after another."""
     gate = threading.Barrier(3, timeout=10)
 
-    def requested(_):
+    def sent(_):
         gate.wait()
 
-    create = per_agent(default=(say(),), on_request=requested)
+    create = per_agent(default=(say(),), on_send=sent)
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -2885,13 +2885,13 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
     def stopping_create():
         gate = threading.Barrier(3, timeout=10)
 
-        def requested(turn):
+        def sent(turn):
             if turn == 1:
                 gate.wait()
                 harness.STOPPING = True
 
         return per_agent(
-            default=(run("echo one"), run("echo two"), say()), on_request=requested
+            default=(run("echo one"), run("echo two"), say()), on_send=sent
         )
 
     with temp_root() as root:

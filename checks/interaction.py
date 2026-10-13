@@ -30,7 +30,7 @@ from interaction import (
     UnreadableRecord,
 )
 from interaction import cli
-from providers import SessionContext, ToolResult, ToolSpec, Usage
+from providers import SessionInfo, ToolResult, ToolSpec, Usage
 from providers.human import HumanProvider, HumanSession
 
 from checks.lanes import episode_once, temp_root
@@ -763,19 +763,19 @@ def human_session(
         "system",
         TOOLS,
         100,
-        SessionContext(agent, f"Seat {agent}", 4, root / "interactions", cancelled),
+        SessionInfo(agent, f"Seat {agent}", 4, root / "interactions", cancelled),
     ), published
 
 
-def requesting(
+def sending(
     session: HumanSession, content
 ) -> tuple[threading.Thread, dict[str, Any]]:
-    """session.request(content) on a thread: the thread, and what it returned or raised."""
+    """session.send(content) on a thread: the thread, and what it returned or raised."""
     outcome: dict[str, Any] = {}
 
     def ask() -> None:
         try:
-            outcome["response"] = session.request(content)
+            outcome["response"] = session.send(content)
         except BaseException as error:
             outcome["error"] = error
 
@@ -787,7 +787,7 @@ def requesting(
 def check_human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn():
     with temp_root() as root:
         session, published = human_session(root, "a")
-        thread, outcome = requesting(session, "observation")
+        thread, outcome = sending(session, "observation")
         assert published.wait(5), "the human provider published no request"
         store = InteractionStore(root / "interactions")
         pending = store.current("a")
@@ -814,7 +814,7 @@ def check_human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn
 def check_human_provider_ends_the_turn_on_an_end_turn_submission():
     with temp_root() as root:
         session, published = human_session(root, "a")
-        thread, outcome = requesting(session, (ToolResult("call-1", "stored"),))
+        thread, outcome = sending(session, (ToolResult("call-1", "stored"),))
         assert published.wait(5), (
             "the human provider published no request for the tool results"
         )
@@ -835,7 +835,7 @@ def check_human_provider_cancels_its_request_when_the_episode_stops():
     with temp_root() as root:
         stopping = threading.Event()
         session, published = human_session(root, "b", stopping)
-        thread, outcome = requesting(session, "observation")
+        thread, outcome = sending(session, "observation")
         assert published.wait(5), "the human provider published no request"
         store = InteractionStore(root / "interactions")
         pending = store.current("b")

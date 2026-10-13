@@ -7,7 +7,7 @@ import threading
 
 import harness
 import providers
-from providers import Charge, NormalizedTurn, PendingResponse, Refusal, ToolCall, Usage
+from providers import Charge, NormalizedResponse, RawResponse, Refusal, ToolCall, Usage
 from providers.base import classify_error
 
 
@@ -146,22 +146,22 @@ def _usage(raw, provider, model):
 
 
 class FakeSession:
-    def __init__(self, steps, provider, model, seen=None, on_request=None):
+    def __init__(self, steps, provider, model, seen=None, on_send=None):
         self.steps = steps
         self.provider = provider
         self.requested_model = model
         self.seen = seen
-        self.on_request = on_request
+        self.on_send = on_send
         self.n = 0
 
-    def request(self, content):
+    def send(self, content):
         self.n += 1
-        if self.on_request:
-            self.on_request(self.n)
+        if self.on_send:
+            self.on_send(self.n)
         if self.seen is not None:
             self.seen.append(
                 {
-                    "kind": "request",
+                    "kind": "send",
                     "provider": self.provider,
                     "model": self.requested_model,
                     "input": content,
@@ -201,7 +201,7 @@ class FakeSession:
         )
         if step["stop"] == "refusal" and not calls:
             charges = ()
-        turn = NormalizedTurn(
+        response = NormalizedResponse(
             rid,
             self.provider,
             self.requested_model,
@@ -223,7 +223,7 @@ class FakeSession:
             "content": [call.as_dict() for call in calls],
             "usage": normalized_usage.as_dict(),
         }
-        return PendingResponse(self.provider, native, lambda: turn)
+        return RawResponse(self.provider, native, lambda: response)
 
 
 class FakeRouter:
@@ -233,20 +233,20 @@ class FakeRouter:
         seen=None,
         scripts=None,
         default=(),
-        on_request=None,
+        on_send=None,
         on_open=None,
     ):
         self.steps = list(steps)
         self.seen = seen
         self.scripts = {name: list(values) for name, values in (scripts or {}).items()}
         self.default = list(default)
-        self.on_request = on_request
+        self.on_send = on_send
         self.on_open = on_open
 
     def preflight(self):
         return None
 
-    def open_session(self, provider, model, system, tools, max_tokens, context):
+    def open_session(self, provider, model, system, tools, max_tokens, info):
         if self.on_open:
             self.on_open()
         if self.seen is not None:
@@ -258,12 +258,12 @@ class FakeRouter:
                     "system": system,
                     "tools": [tool.as_dict() for tool in tools],
                     "max_tokens": max_tokens,
-                    "context": {
-                        "agent": context.agent,
-                        "label": context.label,
-                        "episode": context.episode,
-                        "interaction_root": context.interaction_root.name,
-                        "cancellable": context.cancelled is not None,
+                    "info": {
+                        "agent": info.agent,
+                        "label": info.label,
+                        "episode": info.episode,
+                        "interaction_root": info.interaction_root.name,
+                        "cancellable": info.cancelled is not None,
                     },
                 }
             )
@@ -273,16 +273,16 @@ class FakeRouter:
             steps = self.steps if self.steps else list(self.default)
             if self.scripts:
                 self.scripts[name] = steps
-        return FakeSession(steps, provider, model, self.seen, self.on_request)
+        return FakeSession(steps, provider, model, self.seen, self.on_send)
 
 
 def fake(*steps, seen=None):
     return FakeRouter(steps, seen)
 
 
-def per_agent(default=(), on_request=None, on_open=None, **scripts):
+def per_agent(default=(), on_send=None, on_open=None, **scripts):
     return FakeRouter(
-        scripts=scripts, default=default, on_request=on_request, on_open=on_open
+        scripts=scripts, default=default, on_send=on_send, on_open=on_open
     )
 
 
@@ -291,7 +291,7 @@ def stopping_at(turn: int, *steps):
         if n == turn:
             harness.STOPPING = True
 
-    return FakeRouter(steps, on_request=stop)
+    return FakeRouter(steps, on_send=stop)
 
 
 DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())

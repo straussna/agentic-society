@@ -856,8 +856,8 @@ def check_a_refusal_notice_reaches_the_agent():
     seen = []
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse("cat n1"), say(), seen=seen)
-    # A refusal carrying a call leaves a tool_use the next request must answer.
-    sent = [x["input"] for x in seen if x["kind"] == "request"][-1]
+    # A refusal carrying a call leaves a tool_use the next send must answer.
+    sent = [x["input"] for x in seen if x["kind"] == "send"][-1]
     blocks = [b for b in sent if b.content == harness.REFUSAL_NOTICE]
     assert len(blocks) == 1 and blocks[0].is_error is True, blocks
 
@@ -865,7 +865,7 @@ def check_a_refusal_notice_reaches_the_agent():
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse(), say(), seen=seen)
     # A refusal with no content has no call to answer, and no words to replay.
-    sent = [x["input"] for x in seen if x["kind"] == "request"][-1]
+    sent = [x["input"] for x in seen if x["kind"] == "send"][-1]
     assert sent == harness.REFUSAL_NOTICE, sent
 
 
@@ -922,8 +922,8 @@ def check_refusals_end_the_episode_at_the_cap():
 
     assert t["stop"] == "refusal", t["stop"]
     assert t["refused_turns"] == 3, t["refused_turns"]
-    requests = [x for x in seen if x["kind"] == "request"]
-    assert len(requests) == 3, f"asked {len(requests)} times past the cap"
+    sends = [x for x in seen if x["kind"] == "send"]
+    assert len(sends) == 3, f"asked {len(sends)} times past the cap"
 
 
 def check_a_recovered_refusal_is_not_a_refused_episode():

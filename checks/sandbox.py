@@ -41,7 +41,7 @@ def check_the_observation_is_the_agents_whole_environment():
         t = episode_once(say(), seen=seen)
 
     # What was sent: the raw listing, with the prompt and caching that go with it.
-    first = next(x for x in seen if x["kind"] == "request")["input"]
+    first = next(x for x in seen if x["kind"] == "send")["input"]
     assert "\nn1\n" not in first, "not a wrapper"
     assert " n1\n" in first or first.rstrip().endswith(" n1"), first
 
@@ -108,7 +108,7 @@ def check_the_observation_carries_every_blackboard_and_message():
         )
         episode_once(say(), seen=seen)
 
-    first = next(x for x in seen if x["kind"] == "request")["input"]
+    first = next(x for x in seen if x["kind"] == "send")["input"]
     assert "peer says outlast" in first, "a peer's blackboard reaches turn one"
     assert "s2" in first, "every file in one, not just the first"
     assert "third says spend" in first, "every seat, not just the nearest"

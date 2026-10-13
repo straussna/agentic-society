@@ -6,9 +6,9 @@ from collections.abc import Iterable
 
 from .base import (
     ModelSpec,
-    NormalizedTurn,
-    PendingResponse,
-    SessionContext,
+    NormalizedResponse,
+    RawResponse,
+    SessionInfo,
     StopReason,
     ToolResult,
     ToolSpec,
@@ -34,34 +34,34 @@ class HumanSession:
         model: str,
         system: str,
         tools: tuple[ToolSpec, ...],
-        context: SessionContext,
+        info: SessionInfo,
     ):
         self.requested_model = model
         self.system = system
         self.tools = tools
-        self.context = context
+        self.info = info
         # interaction imports providers.base, so this adapter imports the store when a
         # session opens; a module-level import closes a cycle through providers/__init__.
         from interaction.store import InteractionStore
 
-        self.store = InteractionStore(context.interaction_root)
+        self.store = InteractionStore(info.interaction_root)
         self.turn = 0
 
-    def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse:
+    def send(self, content: str | tuple[ToolResult, ...]) -> RawResponse:
         from interaction.store import InteractionCancelled
 
         self.turn += 1
         request = self.store.publish(
-            self.context.agent,
-            self.context.label,
-            self.context.episode,
+            self.info.agent,
+            self.info.label,
+            self.info.episode,
             self.turn,
             self.system,
             content,
             self.tools,
         )
         try:
-            submission = self.store.wait(request, self.context.is_cancelled)
+            submission = self.store.wait(request, self.info.is_cancelled)
         except InteractionCancelled as error:
             raise KeyboardInterrupt from error
         calls = submission.tool_calls
@@ -77,7 +77,7 @@ class HumanSession:
             "content": [call.as_dict() for call in calls],
             "usage": Usage().as_dict(),
         }
-        turn = NormalizedTurn(
+        response = NormalizedResponse(
             submission.submission_id,
             self.provider,
             self.requested_model,
@@ -90,7 +90,7 @@ class HumanSession:
             Usage(),
             (),
         )
-        return PendingResponse(self.provider, native, lambda: turn)
+        return RawResponse(self.provider, native, lambda: response)
 
 
 class HumanProvider:
@@ -110,6 +110,6 @@ class HumanProvider:
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> HumanSession:
-        return HumanSession(model, system, tools, context)
+        return HumanSession(model, system, tools, info)

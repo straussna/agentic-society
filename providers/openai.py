@@ -8,11 +8,11 @@ from typing import Any
 
 from .base import (
     ModelSpec,
-    NormalizedTurn,
-    PendingResponse,
+    NormalizedResponse,
     ProviderError,
+    RawResponse,
     Refusal,
-    SessionContext,
+    SessionInfo,
     StopReason,
     ToolCall,
     ToolResult,
@@ -91,7 +91,7 @@ def _input_item(item: Any) -> dict[str, Any]:
     return {key: raw[key] for key in keys if raw.get(key) is not None}
 
 
-def normalize(native: Any, requested_model: str) -> NormalizedTurn:
+def normalize(native: Any, requested_model: str) -> NormalizedResponse:
     texts, reasoning, calls, refusals = [], [], [], []
     for item in field(native, "output", []) or []:
         kind = field(item, "type")
@@ -173,7 +173,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
         stop = "other"
     refusal = Refusal("refusal", "\n".join(refusals)) if refusals else None
     stop_details = native_dict(incomplete) if incomplete else None
-    return NormalizedTurn(
+    return NormalizedResponse(
         str(field(native, "id", "")),
         "openai",
         requested_model,
@@ -208,7 +208,7 @@ class OpenAISession:
         self.max_tokens = max_tokens
         self.items: list[dict[str, Any]] = []
 
-    def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse:
+    def send(self, content: str | tuple[ToolResult, ...]) -> RawResponse:
         if isinstance(content, str):
             additions = [
                 {"role": "user", "content": [{"type": "input_text", "text": content}]}
@@ -248,15 +248,15 @@ class OpenAISession:
             raise classify_error(error, self.provider) from error
         raw = native_dict(response)
 
-        def finish() -> NormalizedTurn:
-            turn = normalize(response, self.requested_model)
+        def finish() -> NormalizedResponse:
+            normalized = normalize(response, self.requested_model)
             self.items = [
                 *items,
                 *[_input_item(item) for item in field(response, "output", []) or []],
             ]
-            return turn
+            return normalized
 
-        return PendingResponse(self.provider, raw, finish)
+        return RawResponse(self.provider, raw, finish)
 
 
 class OpenAIProvider:
@@ -299,6 +299,6 @@ class OpenAIProvider:
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> OpenAISession:
         return OpenAISession(self.client, model, system, tools, max_tokens)

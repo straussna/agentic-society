@@ -21,7 +21,7 @@ Sections, in the order an episode meets them:
  10. The sandbox and the shell      Sandbox, Container, Shell, plant_trees,
                                     mirror_trees, clip, Bound, TOOL_KINDS, bind_tools,
                                     episode_specs
- 11. The API                        call, log_raw, watch
+ 11. The API                        with_retries, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
                                     resolve_mailbox, SETTLEMENTS
@@ -79,12 +79,12 @@ from typing import (
 import product
 import providers
 from providers import (
-    NormalizedTurn,
+    NormalizedResponse,
     ProviderError,
     ProviderRouter,
+    SessionInfo,
     ToolCall,
     ToolResult,
-    SessionContext,
     ToolSpec,
 )
 
@@ -1449,7 +1449,7 @@ HARNESS_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # another's with it.
 CONTAINER_PREFIX = "mtr-"
 
-# call()'s retry policy: attempts, the base of the backoff in seconds (zero
+# with_retries()'s retry policy: attempts, the base of the backoff in seconds (zero
 # retries without waiting), the longest single wait, and the jitter on it.
 RETRY_ATTEMPTS = 5
 RETRY_BASE = 2
@@ -4672,15 +4672,15 @@ def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
 # --- 11. The API -----------------------------------------------------------------
 
 
-def bill_once(turn: NormalizedTurn, seen: set[str]) -> tuple[tuple, int, bool]:
+def bill_once(response: NormalizedResponse, seen: set[str]) -> tuple[tuple, int, bool]:
     """Return charges and their total once per response id."""
-    if turn.id in seen:
+    if response.id in seen:
         return (), 0, True
-    seen.add(turn.id)
-    return turn.charges, sum(item.centi_micros for item in turn.charges), False
+    seen.add(response.id)
+    return response.charges, sum(item.centi_micros for item in response.charges), False
 
 
-def call[T](request: Callable[[], T], log: list[dict[str, Any]]) -> T:
+def with_retries[T](send: Callable[[], T], log: list[dict[str, Any]]) -> T:
     """Retry 429/5xx/network up to RETRY_ATTEMPTS with jittered backoff.
 
     Only a ProviderError its adapter classified as retryable is tried again;
@@ -4690,7 +4690,7 @@ def call[T](request: Callable[[], T], log: list[dict[str, Any]]) -> T:
     attempt = 1
     while True:
         try:
-            return request()
+            return send()
         except ProviderError as e:
             if not e.retryable or attempt >= RETRY_ATTEMPTS:
                 raise
@@ -4710,7 +4710,7 @@ def call[T](request: Callable[[], T], log: list[dict[str, Any]]) -> T:
             attempt += 1
 
 
-def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) -> None:
+def log_raw(path: Path | None, turn: int, raw_response: providers.RawResponse) -> None:
     """Append one response to the episode's raw log, verbatim.
 
     Written before the response is read for anything else, so a turn that goes
@@ -4724,8 +4724,8 @@ def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) ->
             "kind": "native_response",
             "turn": turn,
             "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "provider": pending.provider,
-            "native_response": pending.native,
+            "provider": raw_response.provider,
+            "native_response": raw_response.native,
         }
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, default=str) + "\n")
@@ -4733,7 +4733,7 @@ def log_raw(path: Path | None, turn: int, pending: providers.PendingResponse) ->
         print(f"  raw log: {type(e).__name__}: {e}", file=sys.stderr)
 
 
-def log_normalized(path: Path | None, turn: int, response: NormalizedTurn) -> None:
+def log_normalized(path: Path | None, turn: int, response: NormalizedResponse) -> None:
     """Append the canonical response after the preceding native response was persisted."""
     if path is None:
         return
@@ -4831,7 +4831,7 @@ def new_episode_record() -> dict:
 
 def turn_record(
     turn: int,
-    response: NormalizedTurn,
+    response: NormalizedResponse,
     charges: tuple,
     duplicate: bool,
     previous: int,
@@ -5009,8 +5009,8 @@ def run_turns(
     refused = 0  # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
     out, next_input = open_episode(shell, index, provider, model, remaining)
-    context = SessionContext(agent, label, index, interactions_root(), lambda: STOPPING)
-    session = router.open_session(provider, model, system, specs, s.max_tokens, context)
+    info = SessionInfo(agent, label, index, interactions_root(), lambda: STOPPING)
+    session = router.open_session(provider, model, system, specs, s.max_tokens, info)
 
     try:
         for turn in range(1, s.max_turns + 1):
@@ -5026,11 +5026,13 @@ def run_turns(
                 out["stop"] = "budget_exhausted"
                 break
 
-            pending = call(lambda: session.request(next_input), out["retries"])
+            raw_response = with_retries(
+                lambda: session.send(next_input), out["retries"]
+            )
             # Before the response is read for anything: a turn that fails below is
             # still on disk exactly as it arrived.
-            log_raw(raw, turn, pending)
-            response = pending.normalize()
+            log_raw(raw, turn, raw_response)
+            response = raw_response.normalize()
             log_normalized(raw, turn, response)
 
             rid = response.id or f"anon-{turn}"

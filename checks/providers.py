@@ -16,7 +16,7 @@ from types import SimpleNamespace as NS
 import experiment
 import harness
 import providers
-from providers import SessionContext, ToolResult, ToolSpec
+from providers import SessionInfo, ToolResult, ToolSpec
 from providers.anthropic import AnthropicProvider
 from providers.base import classify_error
 from providers.openai import OpenAIProvider, normalize as normalize_openai
@@ -36,7 +36,7 @@ TOOLS = (
         },
     ),
 )
-CONTEXT = SessionContext("a", "1", 1, Path("interactions"))
+INFO = SessionInfo("a", "1", 1, Path("interactions"))
 
 
 class Messages:
@@ -160,11 +160,11 @@ def check_anthropic_messages_wire_shape_and_state():
     )
     messages = Messages(response)
     session = AnthropicProvider(NS(messages=messages)).open_session(
-        "claude-sonnet-5", "system", TOOLS, 123, CONTEXT
+        "claude-sonnet-5", "system", TOOLS, 123, INFO
     )
-    first = session.request("hello")
+    first = session.send("hello")
     turn = first.normalize()
-    session.request((ToolResult("call1", "ok"),))
+    session.send((ToolResult("call1", "ok"),))
     sent = messages.sent
     assert set(sent[0]) == {
         "model",
@@ -236,10 +236,10 @@ def check_openai_responses_wire_shape_and_manual_state():
     )
     responses = Responses(response)
     session = OpenAIProvider(NS(responses=responses)).open_session(
-        "gpt-5.6-terra", "system", TOOLS, 321, CONTEXT
+        "gpt-5.6-terra", "system", TOOLS, 321, INFO
     )
-    turn = session.request("hello").normalize()
-    session.request((ToolResult("call1", "ok"),))
+    turn = session.send("hello").normalize()
+    session.send((ToolResult("call1", "ok"),))
     sent = responses.sent
     assert sent[0]["store"] is False
     assert sent[0]["include"] == ["reasoning.encrypted_content"]
@@ -311,11 +311,11 @@ def check_provider_tool_schemas_are_identical():
     )
     am, om = Messages(anthropic_response), Responses(openai_response)
     AnthropicProvider(NS(messages=am)).open_session(
-        "claude-sonnet-5", "", TOOLS, 1, CONTEXT
-    ).request("x")
+        "claude-sonnet-5", "", TOOLS, 1, INFO
+    ).send("x")
     OpenAIProvider(NS(responses=om)).open_session(
-        "gpt-5.6-terra", "", TOOLS, 1, CONTEXT
-    ).request("x")
+        "gpt-5.6-terra", "", TOOLS, 1, INFO
+    ).send("x")
     a = am.sent[0]["tools"][0]
     o = om.sent[0]["tools"][0]
     assert (a["name"], a["description"], a["input_schema"], a["strict"]) == (
@@ -658,15 +658,15 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
     sessions = {
         "anthropic": lambda raising: AnthropicProvider(
             NS(messages=raising)
-        ).open_session("claude-sonnet-5", "", TOOLS, 1, CONTEXT),
+        ).open_session("claude-sonnet-5", "", TOOLS, 1, INFO),
         "openai": lambda raising: OpenAIProvider(NS(responses=raising)).open_session(
-            "gpt-5.6-terra", "", TOOLS, 1, CONTEXT
+            "gpt-5.6-terra", "", TOOLS, 1, INFO
         ),
     }
     for error, category in cases:
         for name, session in sessions.items():
             try:
-                session(Raising(error)).request("x")
+                session(Raising(error)).send("x")
             except providers.ProviderError as failure:
                 assert (failure.provider, failure.category) == (name, category), (
                     name,

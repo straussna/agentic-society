@@ -1066,7 +1066,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                     ids,
                     live,
                     1,
-                    per_agent(default=(say(),), on_request=after_g01),
+                    per_agent(default=(say(),), on_send=after_g01),
                     progress=progress,
                 )
 

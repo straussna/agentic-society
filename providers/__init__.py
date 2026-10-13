@@ -14,13 +14,13 @@ from .base import (
     ModelProvider,
     ModelSession,
     ModelSpec,
-    NormalizedTurn,
-    PendingResponse,
+    NormalizedResponse,
     ProviderConfigurationError,
     ProviderError,
     ProviderRouter,
+    RawResponse,
     Refusal,
-    SessionContext,
+    SessionInfo,
     StopReason,
     ToolCall,
     ToolResult,
@@ -122,11 +122,11 @@ class DirectProviderRouter:
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> ModelSession:
         model_spec(provider, model)
         return self.providers[provider].open_session(
-            model, system, tools, max_tokens, context
+            model, system, tools, max_tokens, info
         )
 
 
@@ -137,13 +137,13 @@ __all__ = [
     "ModelProvider",
     "ModelSession",
     "ModelSpec",
-    "NormalizedTurn",
-    "PendingResponse",
+    "NormalizedResponse",
     "ProviderConfigurationError",
     "ProviderError",
     "ProviderRouter",
+    "RawResponse",
     "Refusal",
-    "SessionContext",
+    "SessionInfo",
     "StopReason",
     "ToolCall",
     "ToolResult",

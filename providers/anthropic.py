@@ -8,10 +8,10 @@ from typing import Any
 from .base import (
     Charge,
     ModelSpec,
-    NormalizedTurn,
-    PendingResponse,
+    NormalizedResponse,
+    RawResponse,
     Refusal,
-    SessionContext,
+    SessionInfo,
     StopReason,
     ToolCall,
     ToolResult,
@@ -63,7 +63,7 @@ STOPS: dict[str, StopReason] = {
 }
 
 
-def normalize(native: Any, requested_model: str) -> NormalizedTurn:
+def normalize(native: Any, requested_model: str) -> NormalizedResponse:
     content = field(native, "content", []) or []
     texts, reasoning, calls = [], [], []
     for block in content:
@@ -137,7 +137,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedTurn:
             field(details, "recommended_model"),
             native_dict(details) if details else None,
         )
-    return NormalizedTurn(
+    return NormalizedResponse(
         str(field(native, "id", "")),
         "anthropic",
         requested_model,
@@ -172,7 +172,7 @@ class AnthropicSession:
         self.max_tokens = max_tokens
         self.messages: list[dict[str, Any]] = []
 
-    def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse:
+    def send(self, content: str | tuple[ToolResult, ...]) -> RawResponse:
         if isinstance(content, str):
             user = {"role": "user", "content": content}
         else:
@@ -212,15 +212,15 @@ class AnthropicSession:
             raise classify_error(error, self.provider) from error
         raw = native_dict(response)
 
-        def finish() -> NormalizedTurn:
-            turn = normalize(response, self.requested_model)
+        def finish() -> NormalizedResponse:
+            normalized = normalize(response, self.requested_model)
             response_content = field(response, "content", []) or []
             self.messages = [*messages]
             if response_content:
                 self.messages.append({"role": "assistant", "content": response_content})
-            return turn
+            return normalized
 
-        return PendingResponse(self.provider, raw, finish)
+        return RawResponse(self.provider, raw, finish)
 
 
 class AnthropicProvider:
@@ -258,6 +258,6 @@ class AnthropicProvider:
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> AnthropicSession:
         return AnthropicSession(self.client, model, system, tools, max_tokens)

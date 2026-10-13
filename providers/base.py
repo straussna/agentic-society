@@ -23,8 +23,10 @@ RETRYABLE = {"APIConnectionError", "APITimeoutError", "ConnectionError", "Timeou
 
 
 @dataclasses.dataclass(frozen=True)
-class SessionContext:
-    """Host context available to a provider for the lifetime of one episode."""
+class SessionInfo:
+    """What the host tells a provider of the episode a session serves: the agent, its
+    label, the episode number, where interactions are kept, and whether the episode
+    was cancelled."""
 
     agent: str
     label: str
@@ -107,7 +109,7 @@ class Refusal:
 
 
 @dataclasses.dataclass(frozen=True)
-class NormalizedTurn:
+class NormalizedResponse:
     id: str
     provider: str
     requested_model: str
@@ -246,21 +248,21 @@ def require_key(variable: str, provider: str) -> None:
         )
 
 
-class PendingResponse:
+class RawResponse:
     """A native response whose canonical form is produced only after raw logging."""
 
     def __init__(
         self,
         provider: str,
         native: dict[str, Any],
-        normalize: Callable[[], NormalizedTurn],
+        normalize: Callable[[], NormalizedResponse],
     ):
         self.provider = provider
         self.native = native
         self._normalize = normalize
-        self._normalized: NormalizedTurn | None = None
+        self._normalized: NormalizedResponse | None = None
 
-    def normalize(self) -> NormalizedTurn:
+    def normalize(self) -> NormalizedResponse:
         if self._normalized is None:
             self._normalized = self._normalize()
         return self._normalized
@@ -271,7 +273,7 @@ class ModelSession(Protocol):
     provider: str
     requested_model: str
 
-    def request(self, content: str | tuple[ToolResult, ...]) -> PendingResponse: ...
+    def send(self, content: str | tuple[ToolResult, ...]) -> RawResponse: ...
 
 
 @runtime_checkable
@@ -303,7 +305,7 @@ class ModelProvider(Protocol):
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> ModelSession: ...
 
 
@@ -317,7 +319,7 @@ class ProviderRouter(Protocol):
         system: str,
         tools: tuple[ToolSpec, ...],
         max_tokens: int,
-        context: SessionContext,
+        info: SessionInfo,
     ) -> ModelSession: ...
 
 
