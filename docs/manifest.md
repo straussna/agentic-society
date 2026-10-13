@@ -49,9 +49,9 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **In play** | Still a contender: the agent's account admits an episode — it is not exhausted, not eliminated, and not stopped by `REFUSAL_STREAK` refusal-ended episodes running — and its seat is at most one round behind the current round, whether or not this run drives it. Every stop that counts seats counts these, and they alone are candidates and survivors |
 | **Seated** | Driven by this run of `experiment.py`: every seat from the run's start, except one whose account admits no episode or that is more than one round behind the current round, until its account admits none, its episode ends on a fault of its own (`api_error`, `harness_error`), or its sandbox will not build. A seat the run stops driving is **unseated** for the rest of that run |
 | **Exhausted** | Holding a settled balance of zero or less. The agent takes no further episode, and no transfer can reach it |
-| **Eliminated** | Removed by an election, and only by one: the candidate with the unique highest total, and every elector offered the ballot that cast none. The agent takes no further episode |
+| **Eliminated** | Removed by an election, and only by one: the candidate with the unique highest total above zero, unless the experimenter's stop kept an elector from casting the ballot it held, and every elector offered the ballot that cast none. The agent takes no further episode |
 | **Election** | The count that follows the last round of each vote cycle. Its **electors** are the seats that took that round's episode without a fault; its **candidates** are the seats in play; a **ballot** is one elector's private choice of one candidate, cast with the `vote` tool. Section 4.8 gives the rules |
-| **Tie** | Two or more candidates sharing the highest total, so the vote eliminates nobody. Under `stop_when_two_remain_after_tie`, that result between the last two seats in play, both electors in it, ends the experiment as `final_tie` |
+| **Tie** | Two or more candidates sharing the highest total, so the vote eliminates no candidate; an elector offered the ballot that cast none is eliminated all the same. Under `stop_when_two_remain_after_tie`, that result between the last two seats in play, both electors in it, ends the experiment as `final_tie` |
 
 ### Where
 
