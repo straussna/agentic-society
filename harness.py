@@ -9,7 +9,7 @@ Sections, in the order an episode meets them:
 
   1. What the harness says          SYSTEM, REFUSAL_NOTICE, PINNED, SHELL_SPEC, system_of
   2. Providers                      providers package catalogs and adapters
-  3. Tunables                       PROCESS, TREATMENT, read_config, overlay
+  3. Tunables                       PROCESS, TREATMENT, read_config, rejecter, overlay
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
                                     Tool, validate_tools, Settings, SETTINGS
   5. Process constants              HARNESS_SHA256, limits, stop sets, regexes
@@ -2154,7 +2154,8 @@ def plant_starter_files(
 
     `store` is the store's host mirror and `store_path` its path in the environment.
     Returns the record, or None; the trigger is the balance, not an episode number.
-    Rejects a digest that no longer matches, or a path the agent has written.
+    Rejects starter files whose digest no longer matches, or that would overwrite a
+    path the agent has written.
     """
     name, below = starter_terms(account)
     planted = account.get("starter_files_landed")
