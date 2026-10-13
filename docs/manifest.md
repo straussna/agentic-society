@@ -1036,7 +1036,9 @@ records its `tally`, whether the top vote was `tied`, and the `candidates_left`.
 A fresh CLI run moves matching prior records and mirrors under `archive/<timestamp>/`.
 `--resume`, `--fork-from`, `--branch-from` and `memory_from` read version-3 accounts and
 version-5 traces only, and reject a record of any other version, naming the version it
-holds or saying it holds none.
+holds or saying it holds none. The dashboard and `analyze.py` also read version-2
+accounts and version-4 traces, and the dashboard version-1 progress and outcome records,
+as history: each under the names the current version gives the same values.
 
 ## 12. Invariants, restated in this vocabulary
 

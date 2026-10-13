@@ -117,7 +117,8 @@ _TRACE_LOCK = threading.Lock()
 
 
 def load_trace(path: Path) -> dict | None:
-    """One trace, parsed once.
+    """One trace, parsed once, in the current trace shape: a version-4 trace is read
+    through harness.trace_as_current.
 
     A trace is written whole when its episode ends and never touched again, so
     it is cached against the mtime and size that identify it.
@@ -132,6 +133,7 @@ def load_trace(path: Path) -> dict | None:
     trace = read_json(path)
     if trace is None:
         return None
+    trace = dict(harness.trace_as_current(trace))
     with _TRACE_LOCK:
         _TRACES[path] = (key, trace)
     return trace
@@ -151,8 +153,9 @@ def agent_names() -> list[str]:
 
 
 def account_of(agent: str) -> Mapping[str, Any]:
-    """One agent's account, empty where it has none this poll."""
-    return read_json(harness.account_path(agent)) or {}
+    """One agent's account, empty where it has none this poll, in the current account
+    shape: a version-2 account is read through harness.account_as_current."""
+    return harness.account_as_current(read_json(harness.account_path(agent)) or {})
 
 
 def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
@@ -698,7 +701,7 @@ def read_experiments() -> tuple[list[dict], bool]:
     """
     listed = agent_names()
     accounts = {
-        agent: account
+        agent: harness.account_as_current(account)
         for agent in listed
         if (account := read_json(harness.account_path(agent))) is not None
     }

@@ -29,10 +29,12 @@ TOKEN_STACK_FIELDS = (
 
 
 def load(agent_id: str | None) -> dict[str, list[dict]]:
-    """Read every committed episode's trace, keyed by agent and ordered by episode.
+    """Read every committed episode's trace, keyed by agent and ordered by episode, in
+    the current trace shape.
 
     A trace past the episodes its account lists is no episode of the agent's, as
-    harness.committed_traces reads it.
+    harness.committed_traces reads it. A version-4 trace is read through
+    harness.trace_as_current; a trace of any other version stops the load, named.
     """
     agents = {}
     for d in sorted(harness.records_root().glob("*")):
@@ -41,17 +43,16 @@ def load(agent_id: str | None) -> dict[str, list[dict]]:
         traces = harness.committed_traces(d.name, harness.account_on_disk(d.name))
         if traces:
             loaded = [json.loads(p.read_text(encoding="utf-8")) for p in traces]
-            incompatible = [
-                t.get("trace_version")
-                for t in loaded
-                if t.get("trace_version") != harness.TRACE_VERSION
-            ]
-            if incompatible:
-                raise SystemExit(
-                    f"{d}: contains incompatible trace versions {sorted(set(incompatible))}; "
-                    f"version-{harness.TRACE_VERSION} provider records require fresh agent ids"
-                )
-            agents[d.name] = loaded
+            for p, t in zip(traces, loaded):
+                found = t.get("trace_version")
+                if found not in (4, harness.TRACE_VERSION):
+                    held = "no version" if found is None else f"version {found}"
+                    raise SystemExit(
+                        f"{p} records {held}; analyze.py reads version-"
+                        f"{harness.TRACE_VERSION} traces, and version-4 traces as "
+                        "history"
+                    )
+            agents[d.name] = [dict(harness.trace_as_current(t)) for t in loaded]
     return agents
 
 

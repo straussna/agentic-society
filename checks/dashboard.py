@@ -15,13 +15,15 @@ import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
+import analyze
 import experiment
 import harness
+import progress
 import view
 from interaction import InteractionStore
 from providers import ToolSpec
 
-from checks.fake import DEFAULT, fake, run, say, usage
+from checks.fake import DEFAULT, fake, refuse, run, say, think, usage
 from checks.lanes import (
     ALL_OWED,
     HostSandbox,
@@ -39,6 +41,7 @@ from checks.lanes import (
     rejected,
     rooted,
     seated,
+    seats_manifest,
     shared,
     serving,
     temp_root,
@@ -1867,3 +1870,273 @@ def check_the_page_makes_long_transcript_content_explicitly_expandable():
     assert "Show full ${esc(label)}" in page
     assert 'closest("[data-expand]")' in page
     assert "max-height:26em" not in page
+
+
+# The key names a version-2 account, a version-4 trace and a version-1 experiment
+# record hold that the current versions name otherwise or drop.
+EARLIER_KEYS = {
+    "initial",
+    "remaining",
+    "series",
+    "series_from",
+    "series_to",
+    "series_before",
+    "series_after",
+    "peers",
+    "seen",
+    "presentation",
+    "presentation_order",
+    "message_delivery",
+    "shell_tool",
+    "forgiven",
+    "experiment",
+    "top_tied",
+    "thinking",
+    "role",
+    "ours",
+    "termination_reason",
+    "draw",
+    "scores",
+}
+
+
+def keys_in(value) -> set[str]:
+    """Every key of every mapping inside `value`."""
+    if isinstance(value, dict):
+        return set(value).union(*(keys_in(v) for v in value.values()))
+    if isinstance(value, list):
+        return set().union(*(keys_in(v) for v in value))
+    return set()
+
+
+def earlier_account(account: dict) -> dict:
+    """An account as a version-2 harness wrote it: the same values under its names."""
+    episode_names = {
+        "turn_count": "turns",
+        "balance_from": "series_from",
+        "balance_to": "series_to",
+        "floored": "forgiven",
+        "received_this_episode": "received",
+    }
+    election_names = {"tied": "top_tied", "candidates_left": "remaining"}
+    names = {
+        "budget": "initial",
+        "balance": "remaining",
+        "balance_history": "series",
+        "seating": "peers",
+        "floored": "forgiven",
+        "experiment_stamp": "experiment",
+    }
+    out = {names.get(k, k): v for k, v in account.items()}
+    out["account_version"] = 2
+    seating = {"agent_by_seat": "seen", "seat_order": "presentation"}
+    out["peers"] = {seating.get(k, k): v for k, v in out["peers"].items()}
+    out["episodes"] = [
+        {episode_names.get(k, k): v for k, v in e.items()} for e in out["episodes"]
+    ]
+    out["elections"] = [
+        {election_names.get(k, k): v for k, v in e.items()} for e in out["elections"]
+    ]
+    out["last_election"] = {
+        election_names.get(k, k): v for k, v in out["last_election"].items()
+    }
+    out["starter_files_landed"] = {
+        ("remaining" if k == "balance" else k): v
+        for k, v in out["starter_files_landed"].items()
+    }
+    return out
+
+
+def earlier_trace(trace: dict) -> dict:
+    """A trace as a version-4 harness wrote it: the same values under its names, with
+    the provenance's shell_tool and each file record's role and ours."""
+    names = {
+        "balance_before": "series_before",
+        "balance_after": "series_after",
+        "balance": "remaining",
+        "floored": "forgiven",
+    }
+    out = {names.get(k, k): v for k, v in trace.items()}
+    out["trace_version"] = 4
+    provenance = {
+        "seating": "peers",
+        "seat_order": "presentation_order",
+        "message_lifetime": "message_delivery",
+    }
+    out["provenance"] = {
+        provenance.get(k, k): v for k, v in out["provenance"].items()
+    }
+    out["provenance"]["shell_tool"] = any(
+        t["kind"] == "bash" for t in out["provenance"]["tools"]
+    )
+    turns = []
+    for turn in out["turns"]:
+        turn = {("thinking" if k == "reasoning" else k): v for k, v in turn.items()}
+        turn["charges"] = [
+            {("kind" if k == "token_class" else k): v for k, v in charge.items()}
+            for charge in turn["charges"]
+        ]
+        if turn["refusal"]:
+            turn["refusal"] = {
+                ("kind" if k == "refusal_type" else k): v
+                for k, v in turn["refusal"].items()
+            }
+        turns.append(turn)
+    out["turns"] = turns
+    files = []
+    for file in out["files"]:
+        role = (
+            "own"
+            if not file["planted"] or file["starter"]
+            else "peer"
+            if file["author"].startswith("peer:")
+            else "experimenter"
+        )
+        file = {("ours" if k == "planted" else k): v for k, v in file.items()}
+        files.append({**file, "role": role})
+    out["files"] = files
+    return out
+
+
+def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
+    """A version-2 account, version-4 traces and version-1 experiment records read in
+    the dashboard and analyze.py as the current versions hold the same values, every
+    key under its current name; --resume and --fork-from reject the account and name
+    the version it holds."""
+    with temp_root() as root:
+        ids = seated(root, "g01", g02={})
+        with quiet():
+            harness.run_once("g01", fake(run("echo mine > state/mine"), refuse()))
+            harness.run_once("g02", fake(think("weighing it", "spoken")))
+        election = {
+            "round": 1,
+            "tally": {"1": 0, "2": 1},
+            "electors": ["1", "2"],
+            "abstainers": [],
+            "interrupted": [],
+            "voted_out": "",
+            "top_votes": 1,
+            "tied": False,
+            "candidates_left": ["1", "2"],
+        }
+        current = {}
+        for agent in ids:
+            account = harness.load_account(agent)
+            account["seating"]["seat_order"] = list(account["seating"]["agent_by_seat"])
+            account["experiment_stamp"] = {"experiment_id": "earlier", "schedule": ""}
+            account["floored"] = 0
+            account["elections"], account["last_election"] = [election], election
+            account["starter_files_landed"] = {
+                "name": "s",
+                "episode": 1,
+                "balance": account["balance"],
+                "paths": [],
+            }
+            harness.save_account(agent, account)
+            current[agent] = (
+                json.loads(harness.account_path(agent).read_text(encoding="utf-8")),
+                json.loads(harness.trace_path(agent, 1).read_text(encoding="utf-8")),
+            )
+            account_on_disk, trace_on_disk_now = current[agent]
+            harness.account_path(agent).write_text(
+                json.dumps(earlier_account(account_on_disk)), encoding="utf-8"
+            )
+            harness.trace_path(agent, 1).write_text(
+                json.dumps(earlier_trace(trace_on_disk_now)), encoding="utf-8"
+            )
+        assert any(
+            turn["reasoning"] for turn in current["g02"][1]["turns"]
+        ) and any(turn["refusal"] for turn in current["g01"][1]["turns"]), current
+
+        base = progress.directory(root, "earlier")
+        base.mkdir(parents=True)
+        (base / "outcome.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "experiment_id": "earlier",
+                    "termination_reason": "all_eliminated",
+                    "winners": [],
+                    "survivors": [],
+                    "draw": False,
+                    "elimination_order": [
+                        {"round": 1, "seat": "2", "reason": "voted out"}
+                    ],
+                    "scores": {"1": 0, "2": 0},
+                    "resources": {"1": {"micro_dollars": 0}},
+                    "reveal": {"at_completion": ["scores", "draw", "winners"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        waiting = {"at": "t", "phase": "waiting_player", "round": 1}
+        done = {"at": "t", "phase": "completed", "round": 1}
+        done["termination_reason"] = "all_eliminated"
+        (base / "progress.json").write_text(
+            json.dumps({"version": 1, "experiment_id": "earlier", "latest": done}),
+            encoding="utf-8",
+        )
+        (base / "progress.jsonl").write_text(
+            "".join(json.dumps(event) + "\n" for event in (waiting, done)),
+            encoding="utf-8",
+        )
+
+        for agent in ids:
+            account, trace = current[agent]
+            read = view.account_of(agent)
+            assert read == {**account, "account_version": 2}, (agent, read)
+            traced = view.load_trace(harness.trace_path(agent, 1))
+            assert traced == {**trace, "trace_version": 4}, (agent, traced)
+            assert not keys_in(read) & EARLIER_KEYS, keys_in(read) & EARLIER_KEYS
+            assert not keys_in(traced) & EARLIER_KEYS, keys_in(traced) & EARLIER_KEYS
+        loaded = analyze.load(None)
+        assert loaded == {
+            agent: [{**current[agent][1], "trace_version": 4}] for agent in ids
+        }, loaded
+
+        records = progress.records(root, "earlier")
+        outcome = records["outcome"]
+        assert not keys_in(outcome) & EARLIER_KEYS, outcome
+        assert (outcome["end_reason"], outcome["tie"]) == ("none_in_play", False)
+        assert outcome["elimination_order"] == [
+            {"round": 1, "label": "2", "reason": "voted out"}
+        ], outcome
+        assert outcome["reveal"] == {"at_completion": ["tie", "winners"]}, outcome
+        events = records["progress"]["events"]
+        assert [event["phase"] for event in events] == ["waiting_human", "completed"]
+        assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
+
+        exp = view.experiment_of("g01")
+        tiles = view.header(exp)["seat_tiles"]
+        assert [tile["budget"] for tile in tiles] == [
+            current[agent][0]["budget"] for agent in ids
+        ], tiles
+        shown = view.agent_view("g02", exp)
+        assert shown["episodes"][0]["balance"] == current["g02"][1]["balance"], shown
+        turns = view.episode_view("g02", 1)["turns"]
+        assert [t["reasoning"] for t in turns] == ["weighing it"], turns
+
+        manifest = seats_manifest(root, ids)
+        harness.start = lambda config=None, **kw: fake()
+        refusals = {
+            "harness.py --resume": lambda: harness.main(
+                ["--agent", "g01", "--manifest", str(manifest), "--resume"]
+            ),
+            "experiment.py --resume": lambda: experiment.main(
+                ["--manifest", str(manifest), "--resume"]
+            ),
+            "harness.py --fork-from": lambda: harness.main(
+                ["--agent", "f", "--fork-from", "g01", "--at-episode", "1"]
+            ),
+        }
+        for how, call in refusals.items():
+            try:
+                with quiet():
+                    call()
+            except SystemExit as error:
+                assert "a version-2 account" in str(error), (how, str(error))
+            else:
+                raise AssertionError(f"{how} accepted a version-2 account")
+        assert all(harness.account_path(agent).exists() for agent in ids), (
+            "a rejected resume leaves the records where they are"
+        )

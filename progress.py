@@ -319,6 +319,72 @@ def revealed(
     }
 
 
+# What a version-1 progress or outcome record calls a field, a stage or an end reason
+# that version 2 names otherwise, and the version-2 name; None for an outcome field
+# version 2 does not keep.
+OUTCOME_1_FIELDS: dict[str, str | None] = {
+    "termination_reason": "end_reason",
+    "draw": "tie",
+    "scores": None,
+}
+STAGES_1 = {"waiting_player": "waiting_human"}
+END_REASONS_1 = {"all_eliminated": "none_in_play"}
+
+
+def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
+    """A version-1 progress event under the version-2 names of its stage and its end
+    reason."""
+    out = {
+        ("end_reason" if key == "termination_reason" else key): value
+        for key, value in event.items()
+    }
+    if "phase" in out:
+        out["phase"] = STAGES_1.get(out["phase"], out["phase"])
+    if "end_reason" in out:
+        out["end_reason"] = END_REASONS_1.get(out["end_reason"], out["end_reason"])
+    return out
+
+
+def progress_as_current(record: dict[str, Any]) -> dict[str, Any]:
+    """recorded_progress's record of a version-1 progress.json under the version-2
+    names, its recorded version kept; one of any other version as it is."""
+    if record.get("version") != 1:
+        return record
+    out = dict(record)
+    if isinstance(out.get("latest"), dict):
+        out["latest"] = event_as_current(out["latest"])
+    out["events"] = [event_as_current(event) for event in out.get("events") or []]
+    return out
+
+
+def outcome_as_current(record: dict[str, Any]) -> dict[str, Any]:
+    """A version-1 outcome.json under the version-2 names, its recorded version kept:
+    its fields, its end reason, each eliminated seat's label and the fields its reveal
+    policy names. One of any other version as it is."""
+    if record.get("version") != 1:
+        return record
+
+    def field(name: str) -> str | None:
+        return OUTCOME_1_FIELDS.get(name, name)
+
+    out = {
+        current: value
+        for key, value in record.items()
+        if (current := field(key)) is not None
+    }
+    if "end_reason" in out:
+        out["end_reason"] = END_REASONS_1.get(out["end_reason"], out["end_reason"])
+    out["elimination_order"] = [
+        {("label" if key == "seat" else key): value for key, value in entry.items()}
+        for entry in out.get("elimination_order") or []
+    ]
+    out["reveal"] = {
+        phase: [current for name in names if (current := field(name)) is not None]
+        for phase, names in (out.get("reveal") or {}).items()
+    }
+    return out
+
+
 def recorded_progress(base: Path) -> dict[str, Any] | None:
     """progress.json with its history as `events`: the log's, or the list progress.json
     holds itself when there is no log. None when there is no progress.json."""
@@ -334,7 +400,8 @@ def recorded_progress(base: Path) -> dict[str, Any] | None:
 
 def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
     """An experiment's progress, outcome and lineage for display, each None when it is
-    absent or does not read."""
+    absent or does not read. A version-1 progress or outcome record is read under the
+    version-2 names."""
     try:
         base = directory(runtime_root, experiment_id)
     except ValueError:
@@ -346,8 +413,10 @@ def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
         except ValueError:
             return None
 
+    progress = shown(lambda: recorded_progress(base))
+    outcome = shown(lambda: read(base / "outcome.json"))
     return {
-        "progress": shown(lambda: recorded_progress(base)),
-        "outcome": shown(lambda: read(base / "outcome.json")),
+        "progress": progress_as_current(progress) if progress else None,
+        "outcome": outcome_as_current(outcome) if outcome else None,
         "lineage": shown(lambda: read(base / "lineage.json")),
     }

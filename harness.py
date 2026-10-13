@@ -1850,6 +1850,105 @@ def stale(record: Mapping[str, Any], kind: str) -> str | None:
     return f"{held}, and harness.py reads version-{current} {kind}s only"
 
 
+# The keys a version-2 account and a version-4 trace hold under other names than
+# the current versions do, by where each key sits, each with its current name. The
+# dashboard and analyze.py read those records as history through
+# account_as_current and trace_as_current; nothing reads them to run an episode.
+ACCOUNT_2_KEYS = {
+    "initial": "budget",
+    "remaining": "balance",
+    "series": "balance_history",
+    "peers": "seating",
+    "forgiven": "floored",
+    "experiment": "experiment_stamp",
+}
+SEATING_2_KEYS = {"seen": "agent_by_seat", "presentation": "seat_order"}
+EPISODE_2_KEYS = {
+    "turns": "turn_count",
+    "series_from": "balance_from",
+    "series_to": "balance_to",
+    "forgiven": "floored",
+    "received": "received_this_episode",
+}
+ELECTION_2_KEYS = {"remaining": "candidates_left", "top_tied": "tied"}
+STARTER_2_KEYS = {"remaining": "balance"}
+TRACE_4_KEYS = {
+    "series_before": "balance_before",
+    "series_after": "balance_after",
+    "remaining": "balance",
+    "forgiven": "floored",
+}
+PROVENANCE_4_KEYS = {
+    "peers": "seating",
+    "presentation_order": "seat_order",
+    "message_delivery": "message_lifetime",
+}
+TURN_4_KEYS = {"thinking": "reasoning"}
+CHARGE_4_KEYS = {"kind": "token_class"}
+REFUSAL_4_KEYS = {"kind": "refusal_type"}
+FILE_4_KEYS = {"ours": "planted"}
+
+
+def renamed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any]:
+    """A copy of `record` with every key `keys` names under the name it maps to."""
+    return {keys.get(key, key): value for key, value in record.items()}
+
+
+def account_as_current(account: Mapping[str, Any]) -> Mapping[str, Any]:
+    """A version-2 account in the shape of the current version, its recorded
+    account_version kept; any other account as it is."""
+    if account.get("account_version") != 2:
+        return account
+    out = renamed(account, ACCOUNT_2_KEYS)
+    if "seating" in out:
+        out["seating"] = renamed(out["seating"], SEATING_2_KEYS)
+    out["episodes"] = [
+        renamed(episode, EPISODE_2_KEYS) for episode in out.get("episodes") or []
+    ]
+    if "elections" in out:
+        out["elections"] = [
+            renamed(election, ELECTION_2_KEYS) for election in out["elections"]
+        ]
+    if "last_election" in out:
+        out["last_election"] = renamed(out["last_election"], ELECTION_2_KEYS)
+    if "starter_files_landed" in out:
+        out["starter_files_landed"] = renamed(
+            out["starter_files_landed"], STARTER_2_KEYS
+        )
+    return out
+
+
+def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
+    """A version-4 trace in the shape of the current version, its recorded
+    trace_version kept; any other trace as it is.
+
+    shell_tool goes from the provenance, whose tool table says the same: whether bash
+    was declared. A file record's role goes, its author and starter flag saying what
+    it said, and ours is planted.
+    """
+    if trace.get("trace_version") != 4:
+        return trace
+    out = renamed(trace, TRACE_4_KEYS)
+    provenance = renamed(out.get("provenance") or {}, PROVENANCE_4_KEYS)
+    provenance.pop("shell_tool", None)
+    out["provenance"] = provenance
+    turns = []
+    for turn in out.get("turns") or []:
+        turn = renamed(turn, TURN_4_KEYS)
+        turn["charges"] = [
+            renamed(charge, CHARGE_4_KEYS) for charge in turn.get("charges") or []
+        ]
+        if turn.get("refusal"):
+            turn["refusal"] = renamed(turn["refusal"], REFUSAL_4_KEYS)
+        turns.append(turn)
+    out["turns"] = turns
+    files = [renamed(file, FILE_4_KEYS) for file in out.get("files") or []]
+    out["files"] = [
+        {key: value for key, value in file.items() if key != "role"} for file in files
+    ]
+    return out
+
+
 def load_account(
     agent: str,
     *,
