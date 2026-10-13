@@ -439,7 +439,7 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
     assert "both survive and the experiment ends" in output.getvalue(), (
         output.getvalue()
     )
-    assert outcome["termination_reason"] == "final_tie" and outcome["draw"], outcome
+    assert outcome["end_reason"] == "final_tie" and outcome["tie"], outcome
     assert outcome["winners"] == outcome["survivors"] == ["2", "3"], outcome
 
 
@@ -557,11 +557,11 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
         experiment.sequential_round = driven
     assert stop_code == 130 and resume_code == 0, (stop_code, resume_code)
     assert stopped == [(2, "g01"), (2, "g02"), (2, "g03")], stopped
-    assert interrupted["termination_reason"] == "interrupted", interrupted
+    assert interrupted["end_reason"] == "interrupted", interrupted
     assert interrupted["survivors"] == ["1", "3"] and interrupted[
         "elimination_order"
     ] == [
-        {"round": 2, "seat": "2", "reason": "received the most votes (2) in round 2"}
+        {"round": 2, "label": "2", "reason": "received the most votes (2) in round 2"}
     ], interrupted
     assert resumed == [(3, "g01"), (3, "g03")], (
         f"the election is not held again: {resumed}"
@@ -574,7 +574,7 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
         f"the election ends it before any round: {killed}"
     )
     assert "g02: eliminated after round 2: did not vote in round 2" in output.getvalue()
-    assert ended["termination_reason"] == "one_remains" and ended["winners"] == ["1"], (
+    assert ended["end_reason"] == "one_remains" and ended["winners"] == ["1"], (
         ended
     )
 
@@ -621,10 +621,10 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
         stopped,
     )
     assert "both survive and the experiment ends" in said, said
-    assert tie["termination_reason"] == "final_tie" and tie["draw"], tie
+    assert tie["end_reason"] == "final_tie" and tie["tie"], tie
     assert tie["winners"] == tie["survivors"] == ["1", "2"], tie
     assert (
-        latest["phase"] == "completed" and latest["termination_reason"] == "final_tie"
+        latest["phase"] == "completed" and latest["end_reason"] == "final_tie"
     ), latest
     assert resume_code == 0 and resumed == [], (
         f"no round follows the final tie: {resumed}"
@@ -632,7 +632,7 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
     assert "both survive and the experiment ends" in output.getvalue(), (
         output.getvalue()
     )
-    assert again["termination_reason"] == "final_tie" and again["winners"] == [
+    assert again["end_reason"] == "final_tie" and again["winners"] == [
         "1",
         "2",
     ], again
@@ -767,7 +767,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
     ), elections
     assert set(out.values()) == {None}, f"no seat is out of play for the stop: {out}"
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "interrupted", outcome
+    assert outcome["end_reason"] == "interrupted", outcome
     assert (
         outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == []
     ), outcome
@@ -833,7 +833,7 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
         for election in elections.values()
     ), elections
     assert outcome["elimination_order"] == [
-        {"round": 2, "seat": "3", "reason": "did not vote in round 2"}
+        {"round": 2, "label": "3", "reason": "did not vote in round 2"}
     ], outcome
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
@@ -855,7 +855,7 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
         out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
         outcome = progress.records(root, "seats")["outcome"]
     assert code == 130 and set(out.values()) == {None}, (code, out, output.getvalue())
-    assert outcome["termination_reason"] == "interrupted", outcome
+    assert outcome["end_reason"] == "interrupted", outcome
     assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], (
         outcome
     )
@@ -924,7 +924,7 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
     ), elections
     assert out["g01"] is None and out["g02"] is None and out["g03"], out
     assert "both survive" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], (
+    assert outcome["end_reason"] == "round_limit" and not outcome["tie"], (
         outcome
     )
     assert outcome["survivors"] == ["1", "2"] and outcome["winners"] == [], outcome
@@ -969,7 +969,7 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
     assert harness.why_not_in_play(g02) is None, g02
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert (
-        outcome["termination_reason"] == "round_limit"
+        outcome["end_reason"] == "round_limit"
         and outcome["elimination_order"] == []
     ), outcome
 
@@ -1024,10 +1024,10 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
                 ended[name] = (
                     codes,
                     acted,
-                    outcome["termination_reason"],
+                    outcome["end_reason"],
                     outcome["winners"],
                     outcome["survivors"],
-                    outcome["draw"],
+                    outcome["tie"],
                 )
     finally:
         experiment.sequential_round = driven
@@ -1088,7 +1088,7 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
     assert code == 0, output.getvalue()
     assert acted == [(2, "g03"), (3, "g01"), (3, "g03")], acted
     assert "both survive" not in output.getvalue(), output.getvalue()
-    assert outcome["termination_reason"] == "round_limit" and not outcome["draw"], (
+    assert outcome["end_reason"] == "round_limit" and not outcome["tie"], (
         outcome
     )
 
@@ -1165,20 +1165,20 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
             ended[name] = (
                 codes,
                 episodes_taken(ids),
-                outcome["termination_reason"],
+                outcome["end_reason"],
                 outcome["winners"],
                 outcome["elimination_order"],
             )
             said[name] = output.getvalue()
             last = ground_truth("g03")["episodes"][-1]["stop"]
     voted_out = [
-        {"round": 2, "seat": "3", "reason": "received the most votes (2) in round 2"}
+        {"round": 2, "label": "3", "reason": "received the most votes (2) in round 2"}
     ]
     took = {"g01": 2, "g02": 2, "g03": 2}
     assert ended == {
-        "whole": ([0], took, "all_eliminated", [], voted_out),
-        "stopped": ([130, 0], took, "all_eliminated", [], voted_out),
-        "stopped twice": ([130, 130], took, "all_eliminated", [], voted_out),
+        "whole": ([0], took, "none_in_play", [], voted_out),
+        "stopped": ([130, 0], took, "none_in_play", [], voted_out),
+        "stopped twice": ([130, 130], took, "none_in_play", [], voted_out),
     }, ended
     assert "--- round 2 (g03) ---" in said["stopped"], said["stopped"]
     assert last == "interrupted", last
@@ -1220,7 +1220,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
             (
                 code,
                 took,
-                outcome["termination_reason"],
+                outcome["end_reason"],
                 outcome["winners"],
                 outcome["survivors"],
                 "experiment ends" in output.getvalue(),
@@ -1248,7 +1248,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
     assert code == 0 and "no agent is in play" not in output.getvalue(), (
         output.getvalue()
     )
-    assert outcome["termination_reason"] == "none_can_act", outcome
+    assert outcome["end_reason"] == "none_can_act", outcome
     assert outcome["survivors"] == ["1", "2"] and outcome["elimination_order"] == [], (
         outcome
     )
@@ -1276,7 +1276,7 @@ def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
                 (
                     code,
                     episodes_taken(ids),
-                    outcome["termination_reason"],
+                    outcome["end_reason"],
                     outcome["winners"],
                     output.getvalue(),
                 )
@@ -1338,7 +1338,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
                 (
                     code,
                     episodes_taken(ids),
-                    outcome["termination_reason"],
+                    outcome["end_reason"],
                     outcome["survivors"],
                     outcome["winners"],
                 )
@@ -1350,7 +1350,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
         (0, two, "round_limit", ["1", "2", "3"], []),
         (0, three, "round_limit", ["1", "2"], []),
         (0, three, "one_remains", ["1"], ["1"]),
-        (0, three, "all_eliminated", [], []),
+        (0, three, "none_in_play", [], []),
     ], runs
     assert (
         "g03    unseated: it took 1 episodes and the current round is 3" in said
@@ -1378,7 +1378,7 @@ def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
     assert (
         "g02: eliminated after round 4: did not vote in round 4" in output.getvalue()
     ), output.getvalue()
-    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == [
+    assert outcome["end_reason"] == "one_remains" and outcome["winners"] == [
         "1"
     ], outcome
     assert outcome["survivors"] == ["1"], outcome
@@ -1425,12 +1425,12 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
         "2",
     ], election
     assert election["voted_out"] == "3" and not election["tied"], election
-    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == [
+    assert outcome["end_reason"] == "round_limit" and outcome["survivors"] == [
         "1",
         "2",
     ], outcome
     assert outcome["elimination_order"] == [
-        {"round": 2, "seat": "3", "reason": "received the most votes (2) in round 2"}
+        {"round": 2, "label": "3", "reason": "received the most votes (2) in round 2"}
     ], outcome
 
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
@@ -1490,7 +1490,7 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
         g01["last_election"]["electors"] == ["1"]
         and g01["last_election"]["abstainers"] == []
     ), g01["last_election"]
-    assert outcome["termination_reason"] == "round_limit" and outcome["survivors"] == [
+    assert outcome["end_reason"] == "round_limit" and outcome["survivors"] == [
         "1"
     ], outcome
 
@@ -1537,7 +1537,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
         (event["phase"], event["round"])
         for event in records["progress"]["events"][logged:]
     ]
-    assert first == 0 and [(e["round"], e["seat"]) for e in order] == [
+    assert first == 0 and [(e["round"], e["label"]) for e in order] == [
         (2, "2"),
         (4, "1"),
     ], order
@@ -1547,7 +1547,7 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
         in output.getvalue()
     ), output.getvalue()
     assert after == before, f"no election was held again: {after}"
-    assert records["outcome"]["termination_reason"] == "all_eliminated", records[
+    assert records["outcome"]["end_reason"] == "none_in_play", records[
         "outcome"
     ]
     assert (
@@ -1584,10 +1584,10 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated(
     assert election["abstainers"] == ["2"] and election["voted_out"] == "", election
     assert "last_election" not in g03 and harness.why_not_in_play(g03) is None, g03
     assert (
-        outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
+        outcome["end_reason"] == "none_in_play" and outcome["survivors"] == []
     ), outcome
     assert outcome["elimination_order"] == [
-        {"round": 2, "seat": "2", "reason": "did not vote in round 2"}
+        {"round": 2, "label": "2", "reason": "did not vote in round 2"}
     ], outcome
 
 
@@ -2077,7 +2077,7 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
         ] == [
             {
                 "round": 2,
-                "seat": "2",
+                "label": "2",
                 "reason": "received the most votes (2) in round 2",
             }
         ], (older, outcome)
@@ -2114,7 +2114,7 @@ def check_a_seat_that_cannot_finish_its_round_on_resume_leaves_the_rest_playing(
     assert code == 0 and took == {"g01": 2, "g02": 0, "g03": 2}, (code, took)
     said = output.getvalue()
     assert "--- round 1 (g02) ---" in said and "--- round 2 (g01 g03) ---" in said, said
-    assert outcome["termination_reason"] == "round_limit", outcome
+    assert outcome["end_reason"] == "round_limit", outcome
 
 
 def check_a_round_nobody_can_act_in_ends_the_rounds():
@@ -2151,7 +2151,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     assert buf.getvalue().count("unseated: nothing left to spend") == 3, buf.getvalue()
     assert "no agent is in play after 1 rounds" in buf.getvalue(), buf.getvalue()
     assert (
-        outcome["termination_reason"] == "all_eliminated" and outcome["survivors"] == []
+        outcome["end_reason"] == "none_in_play" and outcome["survivors"] == []
     ), outcome
 
     with temp_root() as root:
@@ -2181,7 +2181,7 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
     assert "no agent could take an episode in round 1" in buf.getvalue(), buf.getvalue()
-    assert outcome["termination_reason"] == "none_can_act", outcome
+    assert outcome["end_reason"] == "none_can_act", outcome
     assert (
         outcome["survivors"] == ["1", "2", "3"] and outcome["elimination_order"] == []
     ), outcome
@@ -2207,8 +2207,11 @@ def check_the_outcome_names_no_seat_the_last_round_exhausted_a_survivor():
                 ]
             )
         outcome = progress.records(root, "seats")["outcome"]
-    assert code == 0 and outcome["termination_reason"] == "round_limit", outcome
-    assert outcome["survivors"] == [] and outcome["scores"] == {"1": 0, "2": 0}, outcome
+    assert code == 0 and outcome["end_reason"] == "round_limit", outcome
+    assert outcome["survivors"] == [] and outcome["resources"] == {
+        "1": {"micro_dollars": 0},
+        "2": {"micro_dollars": 0},
+    }, outcome
 
 
 def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winner():
@@ -2234,7 +2237,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 5, "g02": 0, "g03": 0}, took
-    assert outcome["termination_reason"] == "round_limit" and not outcome["winners"], (
+    assert outcome["end_reason"] == "round_limit" and not outcome["winners"], (
         outcome
     )
     assert "experiment ends" not in buf.getvalue(), buf.getvalue()
@@ -2264,7 +2267,7 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
         outcome = progress.records(root, "seats")["outcome"]
     assert code == 0, code
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
-    assert outcome["termination_reason"] == "one_remains" and outcome["winners"] == [
+    assert outcome["end_reason"] == "one_remains" and outcome["winners"] == [
         "1"
     ], outcome
     assert "g01 is the only agent in play; the experiment ends" in buf.getvalue(), (

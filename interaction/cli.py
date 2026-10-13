@@ -23,7 +23,7 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
         f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}"
     )
     supplied = request.input
-    if supplied["kind"] == "initial_observation":
+    if supplied["input_type"] == "initial_observation":
         print("\nInitial observation:\n" + supplied.get("text", ""))
     else:
         print("\nTool results:")

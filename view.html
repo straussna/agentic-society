@@ -847,7 +847,7 @@ function renderHeader() {
   const result = terminal ? h.outcome : null;
   const lineage = h.lineage;
   const productState = result
-    ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.termination_reason)}</div></div>
+    ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
        <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
          : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
     : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc(latest.phase.replaceAll("_", " "))}</div></div>
@@ -1622,7 +1622,7 @@ function refresh() {
 
 function interactionInputHtml(request) {
   const input = request.input || {};
-  if (input.kind !== "initial_observation") return (input.results || []).map(result =>
+  if (input.input_type !== "initial_observation") return (input.results || []).map(result =>
     inputCardHtml(result.tool_call_id || "Tool result", `<pre>${esc(result.content || "(empty)")}</pre>`, true,
       result.is_error ? "error" : "", result.is_error ? "error" : "")).join("")
     || `<div class="note">No tool results.</div>`;

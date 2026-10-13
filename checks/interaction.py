@@ -140,7 +140,7 @@ def check_new_interaction_request_isolated_from_stale_submissions_and_keeps_draf
         else:
             raise AssertionError("an old request satisfied a newer turn")
         assert store.current("a").request_id == new.request_id
-        assert new.input["kind"] == "tool_results"
+        assert new.input["input_type"] == "tool_results"
 
 
 def check_a_store_write_retries_a_rename_a_reader_holds_up():
@@ -791,9 +791,10 @@ def check_human_provider_returns_a_submitted_call_as_a_zero_charge_tool_use_turn
         assert published.wait(5), "the human provider published no request"
         store = InteractionStore(root / "interactions")
         pending = store.current("a")
-        assert pending is not None and pending.input["kind"] == "initial_observation", (
-            pending
-        )
+        assert (
+            pending is not None
+            and pending.input["input_type"] == "initial_observation"
+        ), pending
         store.submit("a", pending.request_id, submission(pending))
         thread.join(5)
         assert not thread.is_alive(), (
@@ -820,7 +821,9 @@ def check_human_provider_ends_the_turn_on_an_end_turn_submission():
         )
         store = InteractionStore(root / "interactions")
         pending = store.current("a")
-        assert pending is not None and pending.input["kind"] == "tool_results", pending
+        assert (
+            pending is not None and pending.input["input_type"] == "tool_results"
+        ), pending
         store.submit("a", pending.request_id, end_submission(pending))
         thread.join(5)
         assert not thread.is_alive(), (

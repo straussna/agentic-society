@@ -34,7 +34,7 @@ def check_product_controls_are_declared_and_validated():
     text = (
         'experiment_id = "pilot-7"\nsystem_prompt = ""\n'
         "[cost]\nmaximum = 1000\nreserved_completion = 100\nwarning = 700\n"
-        'ceiling_policy = "stop"\n[reveal]\nat_completion = ["winners", "scores"]\n'
+        'ceiling_policy = "stop"\n[reveal]\nat_completion = ["winners", "resources"]\n'
         'experimenter_only = ["evidence"]\n'
         '[[agent]]\nid = "p1"\nquality_tier = "premium"\n'
     )
@@ -47,7 +47,7 @@ def check_product_controls_are_declared_and_validated():
             "warning": 700,
             "ceiling_policy": "stop",
         }
-        assert loaded["reveal"]["at_completion"] == ["winners", "scores"]
+        assert loaded["reveal"]["at_completion"] == ["winners", "resources"]
         assert loaded["agents"][0]["quality_tier"] == "premium"
         for bad in (
             'experiment_id = "../bad"\n',
@@ -101,11 +101,11 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
             "the reserve is protected before another round starts"
         )
         progress.log_stage(root, "pilot", "preparing_round", 1)
-        progress.log_stage(root, "pilot", "waiting_player", 1, {"agents": ["player"]})
+        progress.log_stage(root, "pilot", "waiting_human", 1, {"agents": ["player"]})
         recorded = progress.records(root, "pilot")["progress"]
         assert [event["phase"] for event in recorded["events"]] == [
             "preparing_round",
-            "waiting_player",
+            "waiting_human",
         ]
         assert recorded["latest"] == recorded["events"][-1], recorded
         assert recorded["latest"]["agents"] == ["player"], recorded
@@ -121,7 +121,10 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
             {"at_completion": ["winners"], "experimenter_only": ["evidence"]},
         )
         assert outcome["winners"] == ["P"] and outcome["survivors"] == ["P"]
-        assert outcome["scores"] == {"A": 70, "P": 90}
+        assert outcome["resources"] == {
+            "A": {"micro_dollars": 70},
+            "P": {"micro_dollars": 90},
+        }, outcome
         assert len(outcome["evidence"]) == 2
         assert all(
             item["trace_sha256"]
@@ -131,7 +134,7 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
             for item in outcome["evidence"]
         ), outcome["evidence"]
         public = progress.revealed(outcome, "at_completion")
-        assert public["winners"] == ["P"] and "scores" not in public
+        assert public["winners"] == ["P"] and "resources" not in public
         assert "evidence" not in public, (
             "experimenter-only evidence is not player output"
         )
@@ -832,7 +835,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     latest = records["progress"]["latest"]
     assert (
         latest["phase"] == "cost_ceiling"
-        and latest["termination_reason"] == "cost_ceiling"
+        and latest["end_reason"] == "cost_ceiling"
     ), latest
     stopped_at = [
         event
@@ -849,7 +852,7 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         ("preparing_round", 3),
         ("cost_ceiling", 3),
     ], records["progress"]["events"][-2:]
-    assert records["outcome"]["termination_reason"] == "cost_ceiling", records[
+    assert records["outcome"]["end_reason"] == "cost_ceiling", records[
         "outcome"
     ]
 
@@ -868,10 +871,10 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
     assert code == 0 and alone == {"p1": 1, "p2": 1}, (code, alone)
     latest = records["progress"]["latest"]
     assert (
-        latest["phase"] == "completed" and latest["termination_reason"] == "one_remains"
+        latest["phase"] == "completed" and latest["end_reason"] == "one_remains"
     ), latest
     outcome = records["outcome"]
-    assert outcome["termination_reason"] == "one_remains", outcome
+    assert outcome["end_reason"] == "one_remains", outcome
     assert outcome["winners"] == outcome["survivors"] == ["1"], outcome
 
     # The ceiling is judged first: where it is reached and one agent remains as well,
@@ -895,10 +898,10 @@ def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
         ("preparing_round", 2),
         ("cost_ceiling", 2),
     ], records["progress"]["events"][-2:]
-    assert records["progress"]["latest"]["termination_reason"] == "cost_ceiling", (
+    assert records["progress"]["latest"]["end_reason"] == "cost_ceiling", (
         records["progress"]
     )
-    assert records["outcome"]["termination_reason"] == "cost_ceiling", records[
+    assert records["outcome"]["end_reason"] == "cost_ceiling", records[
         "outcome"
     ]
 
@@ -1007,15 +1010,15 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
     it settles. In a simultaneous round an episode that ends while a peer's still runs
     leaves the round waiting, and the last to end leaves it resolving actions.
 
-    Where a person plays g02, the round waits on a player for g02's episode: a
-    simultaneous round names its players apart from its autonomous agents, and g01's
-    episode ending while g02's still runs leaves the round waiting on the player.
+    Where a person plays g02, the round waits on a human for g02's episode: a
+    simultaneous round names its human seats apart from its autonomous agents, and
+    g01's episode ending while g02's still runs leaves the round waiting on the human.
     """
     ran, settled, committed, waiting = "ran", "settled", "committed", "waiting"
-    for player in (False, True):
+    for human in (False, True):
         with temp_root() as root:
             ids = seated(root, "g01", g02={})
-            if player:
+            if human:
                 account = harness.load_account("g02")
                 account["provider"], account["model"] = "human", "interactive"
                 harness.save_account("g02", account)
@@ -1082,7 +1085,7 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                     log_stage=log_stage,
                 )
 
-        g02_waits = "waiting_player" if player else "waiting_autonomous"
+        g02_waits = "waiting_human" if human else "waiting_autonomous"
         assert sequential == [
             (
                 "waiting_autonomous",
@@ -1126,17 +1129,17 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                 {"g01": committed, "g02": settled},
                 250,
             ),
-        ], (player, sequential)
+        ], (human, sequential)
         assert held_back == [True], (
-            f"g02's episode ran on after g01's had ended: {player} {held_back}"
+            f"g02's episode ran on after g01's had ended: {human} {held_back}"
         )
         unrun = {"g01": waiting, "g02": waiting}
         started = (
             [
                 ("waiting_autonomous", 2, {"agents": ["g01"]}, unrun, 250),
-                ("waiting_player", 2, {"agents": ["g02"]}, unrun, 250),
+                ("waiting_human", 2, {"agents": ["g02"]}, unrun, 250),
             ]
-            if player
+            if human
             else [("waiting_autonomous", 2, {"agents": ids}, unrun, 250)]
         )
         ended = [
@@ -1148,9 +1151,9 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                 250,
             )
         ]
-        # g02's episode ending is written only where g02 is autonomous: a player's end
-        # finds the round already waiting on it.
-        if not player:
+        # g02's episode ending is written only where g02 is autonomous: a human seat's
+        # end finds the round already waiting on it.
+        if not human:
             ended.append(
                 (
                     "resolving_actions",
@@ -1169,7 +1172,7 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
                 {"g01": settled, "g02": settled},
                 250,
             ),
-        ], (player, seen)
+        ], (human, seen)
 
 
 def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play():
@@ -1192,7 +1195,7 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
                 event["round"],
                 event.get("agents")
                 or event.get("active")
-                or event.get("termination_reason"),
+                or event.get("end_reason"),
             )
             for event in progress.records(root, "seats")["progress"]["events"]
         ]

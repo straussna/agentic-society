@@ -125,10 +125,10 @@ class InteractionStore:
             self.cancel(agent, previous.request_id)
         request_id = uuid.uuid4().hex
         supplied = (
-            {"kind": "initial_observation", "text": content}
+            {"input_type": "initial_observation", "text": content}
             if isinstance(content, str)
             else {
-                "kind": "tool_results",
+                "input_type": "tool_results",
                 "results": [item.as_dict() for item in content],
             }
         )

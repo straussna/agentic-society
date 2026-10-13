@@ -15,12 +15,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 
-VERSION = 1
+VERSION = 2
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
 STAGES = (
     "preparing_round",
     "waiting_autonomous",
-    "waiting_player",
+    "waiting_human",
     "resolving_actions",
     "settling_round",
     "round_completed",
@@ -279,15 +279,14 @@ def outcome(
         "version": VERSION,
         "experiment_id": experiment_id,
         "recorded_at": now(),
-        "termination_reason": reason,
+        "end_reason": reason,
         "winners": winners,
         "survivors": survivors,
-        "draw": reason == "final_tie",
+        "tie": reason == "final_tie",
         "elimination_order": [
-            {"round": round, "seat": seat, "reason": why}
-            for round, seat, why in eliminated
+            {"round": round, "label": label, "reason": why}
+            for round, label, why in eliminated
         ],
-        "scores": {label_by_agent[a]: accounts[a].get("balance", 0) for a in agents},
         "resources": {
             label_by_agent[a]: {"micro_dollars": accounts[a].get("balance", 0)}
             for a in agents

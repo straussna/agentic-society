@@ -102,11 +102,10 @@ REVEAL_KEYS = {"during_play", "at_elimination", "at_completion", "experimenter_o
 OUTCOME_FIELDS = {
     "winners",
     "survivors",
-    "draw",
+    "tie",
     "elimination_order",
-    "scores",
     "resources",
-    "termination_reason",
+    "end_reason",
     "evidence",
 }
 
@@ -1155,11 +1154,11 @@ def sequential_round(
             raise KeyboardInterrupt
         if agent not in seated:
             continue
-        player = providers.is_interactive(
+        human = providers.is_interactive(
             harness.account_on_disk(agent).get("provider")
         )
         log_stage(
-            "waiting_player" if player else "waiting_autonomous",
+            "waiting_human" if human else "waiting_autonomous",
             round,
             {"agents": [agent]},
         )
@@ -1302,7 +1301,7 @@ def simultaneous_round(
                 name for name in built if name not in outs and name not in errors
             ]
             stage = (
-                "waiting_player"
+                "waiting_human"
                 if any(interactive[name] for name in running)
                 else "waiting_autonomous"
                 if running
@@ -1315,12 +1314,12 @@ def simultaneous_round(
         for agent, ep in built.items()
     ]
     autonomous = [agent for agent in built if not interactive[agent]]
-    players = [agent for agent in built if interactive[agent]]
+    humans = [agent for agent in built if interactive[agent]]
     try:
         if autonomous:
             log_stage("waiting_autonomous", round, {"agents": autonomous})
-        if players:
-            log_stage("waiting_player", round, {"agents": players})
+        if humans:
+            log_stage("waiting_human", round, {"agents": humans})
         for t in threads:
             t.start()
     except BaseException:
@@ -1622,11 +1621,11 @@ def over(
     agents_in_play: list[str], rounds: int, stop_when_one_remains: bool
 ) -> str | None:
     """Why the experiment is over after `rounds` rounds with `agents_in_play` in play,
-    saying so, or None where it is not: "all_eliminated" when none is in play, and
+    saying so, or None where it is not: "none_in_play" when none is in play, and
     "one_remains" when one is and the manifest stops there."""
     if not agents_in_play:
         print(f"no agent is in play after {rounds} rounds")
-        return "all_eliminated"
+        return "none_in_play"
     if stop_when_one_remains and len(agents_in_play) == 1:
         print(f"{agents_in_play[0]} is the only agent in play; the experiment ends")
         return "one_remains"
@@ -1726,9 +1725,9 @@ def play_round(
     election stands and its stops are judged at once; after any other round they are
     judged before the next, as for any round.
 
-    The reason is the outcome's termination_reason, judged on the agents in play:
+    The reason is the outcome's end_reason, judged on the agents in play:
     concluded()'s where the round's election ends the experiment, and, where the round
-    left no agent seated, "none_can_act" when some are in play and "all_eliminated" when
+    left no agent seated, "none_can_act" when some are in play and "none_in_play" when
     none is.
     """
     # Asked before the round, so the header names who will act. Between here and
@@ -1755,7 +1754,7 @@ def play_round(
         # Every seated agent either takes an episode or is unseated, so a round
         # nobody took one in has left no agent seated.
         print(f"no agent could take an episode in round {round}; the rounds end here")
-        return "none_can_act" if in_play(agents) else "all_eliminated"
+        return "none_can_act" if in_play(agents) else "none_in_play"
     return concluded(
         resolve_vote(agents, seated, labels, vote),
         agents,
@@ -2014,7 +2013,7 @@ def main(argv: list[str] | None = None) -> int:
     log_stage(
         reason if reason in ("interrupted", "cost_ceiling") else "completed",
         max(prepared_round, current_round),
-        {"termination_reason": reason},
+        {"end_reason": reason},
     )
     progress.outcome(
         harness.SETTINGS.root,

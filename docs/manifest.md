@@ -179,22 +179,25 @@ runs one.
 Each experiment writes under `experiment_records/<experiment_id>/`: the progress log,
 `progress.jsonl`, one line per stage each round reaches as it reaches it, the last naming
 the round the rounds ended at, so its rounds never go back; `progress.json`, the latest of
-those; `outcome.json`; and, for a branch, `lineage.json`. A round that a stop counting
+those; `outcome.json`; and, for a branch, `lineage.json`. `progress.json` and
+`outcome.json` record `version` 2, and a stage that waits on a human seat is
+`waiting_human`. A round that a stop counting
 seats ends the rounds before has no line, and the round the cost ceiling ends them before
 has its preparation alone, which carries the spend that ended them. The outcome's
-`termination_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,
-`all_eliminated`, `none_can_act` or `interrupted`. Every stop that counts seats is judged
+`end_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,
+`none_in_play`, `none_can_act` or `interrupted`. Every stop that counts seats is judged
 on the seats in play, whose accounts admit an episode and which are at most one round
 behind the current round, whether or not this run seats them: a seat whose episode ended
 on a fault of its own, or whose sandbox would not build, is unseated for the rest of that
 run and stays in play until it falls further behind, which is once the current round is
 two past the last it played. One further behind is unseated in every round of every run,
 and is no longer in play: it counts toward no stop, survives nothing and stands in no
-election. `all_eliminated` is no seat left in play, however each one left;
+election. `none_in_play` is no seat left in play, however each one left;
 `none_can_act` is seats left in play and not one of them seated in this run. The
 outcome's `survivors` are the seats in play as the run ends, and its `elimination_order`
-the seats an election eliminated, so a seat that left play any other way is in neither,
-and what it holds is in `scores`. Human seats are answered as [docs/human.md](human.md) describes.
+the seats an election eliminated, each by `round`, `label` and `reason`, so a seat that
+left play any other way is in neither, and what it holds is in `resources`. `tie` is
+true where the run ended `final_tie`. Human seats are answered as [docs/human.md](human.md) describes.
 
 ## 2. Top level
 
@@ -226,8 +229,8 @@ at most `maximum`; `warning` only marks `warning_reached` in the progress log.
 
 `[reveal]` may list outcome fields under `during_play`, `at_elimination`,
 `at_completion`, and `experimenter_only`. The permitted fields are `winners`,
-`survivors`, `draw`, `elimination_order`, `scores`, `resources`,
-`termination_reason`, and `evidence`. The outcome record remains the complete
+`survivors`, `tie`, `elimination_order`, `resources`, `end_reason`, and
+`evidence`. The outcome record remains the complete
 experimenter record; the table is the declarative policy a human-facing display uses.
 
 Seat order determines identity, presentation and settlement order. Every agent sees
