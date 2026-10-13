@@ -232,7 +232,7 @@ def check_the_csv_row_flattens_a_trace():
         r2["changed_starter"],
     )
 
-    # The receiver's seat, where a label that is not the seat number tells the two apart.
+    # The receiver's seat, told apart from its label where the label is not a number.
     with temp_root() as root:
         seated(root, labels=PERSONA_LABELS, other={})
         given = episode_once(run("echo 'Game 100' > out/transfer"), say())
@@ -267,7 +267,7 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
         v = view.episode_view("t", 1)
         mine = next(
             s
-            for s in view.header(view.experiment_of("t"))["seats"]
+            for s in view.header(view.experiment_of("t"))["seat_tiles"]
             if s["agent"] == "t"
         )
 

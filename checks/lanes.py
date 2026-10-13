@@ -854,7 +854,7 @@ def fake_experiment(
             ),
             encoding="utf-8",
         )
-    return view.experiment_named("g")
+    return view.experiment_by_id("g")
 
 
 # A persona channel table without a brief: a journal with an identity file inside

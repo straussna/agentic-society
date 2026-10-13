@@ -55,8 +55,8 @@ STALE_AFTER = 180
 # for pixels that do not exist, once per seat, on every poll.
 SPARK_POINTS = 240
 
-# The leading letters of an agent id, which is what names a set of them when
-# nothing better is on disk: comp01..comp05 are the comp agents.
+# The leading letters of an agent id, which is what an experiment's derived id is
+# made of when no experiment_id is on disk: comp01..comp05 are the comp agents.
 AGENT_PREFIX = re.compile(r"^[^\d]*")
 
 # Stands for a path an outbox did not hold, which is not the same as a path it
@@ -509,24 +509,26 @@ def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dic
 # --- who is at the table ----------------------------------------------------
 
 
-def group_of(agent: str, account: Mapping[str, Any]) -> str:
-    """The set of agents this one belongs to, as one name.
+def derived_experiment_id(agent: str, account: Mapping[str, Any]) -> str:
+    """The id of the experiment an agent sits in where no experiment_id is on disk,
+    derived from agent ids.
 
-    An experiment knows its own membership, so that is used where it exists; the
-    leading letters of the id cover agents started one at a time.
+    An experiment knows its own seats, so they are used where they exist: the
+    leading letters they share, or their ids joined. The leading letters of the
+    agent's own id cover agents started one at a time.
     """
     peers = (account.get("peers") or {}).get("seen") or {}
     if not peers:
         return AGENT_PREFIX.match(agent).group(0) or agent
-    members = sorted({agent, *peers.values()})
-    head = AGENT_PREFIX.match(members[0]).group(0)
+    agents = sorted({agent, *peers.values()})
+    head = AGENT_PREFIX.match(agents[0]).group(0)
     return (
-        head if head and all(m.startswith(head) for m in members) else "+".join(members)
+        head if head and all(a.startswith(head) for a in agents) else "+".join(agents)
     )
 
 
 def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | None:
-    """The experiment an agent is seated in, as its members in seat order.
+    """The experiment an agent is seated in, as its agents in seat order.
 
     An agent is seated when the mapping it carries puts it in its own seat; one
     that leaves the agent out names no blackboard as its own, and None says so.
@@ -576,12 +578,6 @@ def seat_of_label(exp: dict, label: str | None) -> str | None:
     return next((s for s, l in exp["labels"].items() if l == label), None)
 
 
-def named_group(members: list[str]) -> str:
-    """One stable short name for a complete manifest membership."""
-    seen = {str(i): agent for i, agent in enumerate(members, 1)}
-    return group_of(members[0], {"peers": {"seen": seen}})
-
-
 def anchored_groups(
     accounts: Mapping[str, Mapping[str, Any]],
     catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None,
@@ -605,7 +601,7 @@ def anchored_groups(
             for agent in declared
         ):
             continue
-        members = [
+        seats = [
             agent
             for agent in declared
             if agent in accounts
@@ -614,22 +610,21 @@ def anchored_groups(
                 in (None, digest)
             )
         ]
-        if not members:
+        if not seats:
             continue
-        seats = {
+        agent_by_seat = {
             seat: agent
             for seat, agent in experiment.seats_of(declared).items()
-            if agent in members
+            if agent in seats
         }
-        labels = {seat: manifest["labels"][seat] for seat in seats}
+        labels = {seat: manifest["labels"][seat] for seat in agent_by_seat}
         table, _ = manifest_environment(manifest, path)
         out.append(
             {
-                "name": named_group(declared),
-                "seated": True,
-                "seats": seats,
                 "experiment_id": manifest.get("experiment_id", path.stem),
-                "members": members,
+                "seated": True,
+                "agent_by_seat": agent_by_seat,
+                "seats": seats,
                 "posts": bool(
                     harness.mailbox_channel(table) or harness.schema_channel(table)
                 ),
@@ -638,7 +633,7 @@ def anchored_groups(
                 "tools": manifest["tools"] or [],
             }
         )
-        claimed.update(members)
+        claimed.update(seats)
     return out, claimed
 
 
@@ -657,8 +652,8 @@ def grouping_state() -> tuple:
 
 
 def experiments() -> list[dict]:
-    """Every set of agents on disk, the seated ones first, each with how many of its
-    members are acting.
+    """Every experiment on disk, the seated ones first, each with how many of its
+    seats are acting.
 
     The grouping is read again only when what it is read from has moved. One read
     without an account agent_names() lists - save_account's rename caught mid-poll -
@@ -677,18 +672,20 @@ def experiments() -> list[dict]:
         out = copy.deepcopy(grouping)
     for exp in out:
         exp["running"] = sum(
-            acting(agent, live_index(agent)) for agent in exp["members"]
+            acting(agent, live_index(agent)) for agent in exp["seats"]
         )
     return out
 
 
 def read_experiments() -> tuple[list[dict], bool]:
-    """Every set of agents on disk, the seated ones first, read afresh, and whether
+    """Every experiment on disk, the seated ones first, read afresh, and whether
     every account agent_names() lists was read into it.
 
-    Agents sharing a seating are one experiment, named by group_of. One whose mapping
-    does not seat it is grouped by its id's letters and marked unseated. Each account
-    is read once: what an experiment shows of its members comes from that read.
+    Agents sharing a seating are one experiment, keyed by the experiment_id their
+    accounts are stamped with, or by derived_experiment_id where they carry none. One
+    whose mapping does not seat it is grouped by its id's letters and marked unseated.
+    Each account is read once: what an experiment shows of its seats comes from that
+    read.
     """
     listed = agent_names()
     accounts = {
@@ -703,38 +700,39 @@ def read_experiments() -> tuple[list[dict], bool]:
             continue
         key = seating_key(agent, account)
         seen = harness.seating_of(agent, account).seen
-        ident = key or ("unseated", group_of(agent, account))
+        ident = key or ("unseated", derived_experiment_id(agent, account))
         exp: dict[str, Any] | None = groups.get(ident)
         if exp is None:
             exp = groups[ident] = {
-                "name": group_of(agent, account),
-                "seated": key is not None,
                 "experiment_id": (account.get("experiment") or {}).get("experiment_id")
-                or group_of(agent, account),
-                "seats": dict(seen) if key else {},
-                "members": [],
+                or derived_experiment_id(agent, account),
+                "seated": key is not None,
+                "agent_by_seat": dict(seen) if key else {},
+                "seats": [],
                 "posts": False,
             }
-        exp["members"].append(agent)
+        exp["seats"].append(agent)
 
     out = sorted(
-        [*anchored, *groups.values()], key=lambda exp: (not exp["seated"], exp["name"])
+        [*anchored, *groups.values()],
+        key=lambda exp: (not exp["seated"], exp["experiment_id"]),
     )
-    # Two sets can arrive at one name: a seated experiment and a leftover agent whose
-    # id starts with the same letters. The seated one is sorted first and keeps
-    # the short name, so what the other is called says what it is.
+    # Two experiments can arrive at one id: a seated experiment and a leftover agent
+    # stamped with the same experiment_id, or whose id starts with the same letters.
+    # The seated one is sorted first and keeps the id, so what the other is keyed by
+    # says what it is.
     taken: set[str] = set()
     for exp in out:
-        exp["members"].sort()
-        if exp["name"] in taken:
-            exp["name"] = "+".join(exp["members"])
-        taken.add(exp["name"])
-        # The table and the labels the members ran under, from the records of the
-        # first member that has any: every member of one experiment ran under the
-        # same ones.
+        exp["seats"].sort()
+        if exp["experiment_id"] in taken:
+            exp["experiment_id"] = "+".join(exp["seats"])
+        taken.add(exp["experiment_id"])
+        # The table and the labels the seats ran under, from the records of the
+        # first seat that has any: every seat of one experiment ran under the same
+        # ones.
         if "channels" not in exp:
             first = next(
-                (a for a in exp["members"] if harness.trace_paths(a)), exp["members"][0]
+                (a for a in exp["seats"] if harness.trace_paths(a)), exp["seats"][0]
             )
             account = accounts[first]
             last = latest_trace(first, account)
@@ -755,14 +753,16 @@ def read_experiments() -> tuple[list[dict], bool]:
     return out, len(accounts) == len(listed)
 
 
-def experiment_named(name: str) -> dict | None:
-    """The experiment by this name, or None."""
-    return next((exp for exp in experiments() if exp["name"] == name), None)
+def experiment_by_id(experiment_id: str) -> dict | None:
+    """The experiment keyed by this experiment_id, or None."""
+    return next(
+        (exp for exp in experiments() if exp["experiment_id"] == experiment_id), None
+    )
 
 
 def experiment_of(agent: str) -> dict | None:
     """The experiment this agent sits in."""
-    return next((exp for exp in experiments() if agent in exp["members"]), None)
+    return next((exp for exp in experiments() if agent in exp["seats"]), None)
 
 
 def places_of(exp: dict) -> list[tuple[str | None, str]]:
@@ -772,8 +772,8 @@ def places_of(exp: dict) -> list[tuple[str | None, str]]:
     each other in, and by name where there are none.
     """
     if exp["seated"]:
-        return list(exp["seats"].items())
-    return [(None, agent) for agent in exp["members"]]
+        return list(exp["agent_by_seat"].items())
+    return [(None, agent) for agent in exp["seats"]]
 
 
 # --- the round --------------------------------------------------------------
@@ -999,19 +999,19 @@ def header(exp: dict) -> dict:
     """
     rows = experiment_episodes(exp)
     rnd = round_now(exp, rows)
-    first = exp["members"][0]
+    first = exp["seats"][0]
     account = account_of(first)
     last = rows[-1]["trace"] if rows else None
     table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
-    seats = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
+    seat_tiles = [seat_row(seat, agent, rows, rnd) for seat, agent in places_of(exp)]
     vote = next(
         (tool for tool in exp.get("tools", []) if tool.get("kind") == "vote"), None
     )
     elections = {}
-    for seat in seats:
-        election = seat.get("last_election") or {}
+    for tile in seat_tiles:
+        election = tile.get("last_election") or {}
         if isinstance(election.get("round"), int):
             elections[election["round"]] = election
     every = vote.get("every") if vote else None
@@ -1022,12 +1022,9 @@ def header(exp: dict) -> dict:
         if every and rnd and rnd % every == 0
         else "discussion"
     )
-    experiment_id = (
-        exp.get("experiment_id") or stamp.get("experiment_id") or exp["name"]
-    )
-    records = product.records(harness.SETTINGS.root, experiment_id)
+    records = product.records(harness.SETTINGS.root, exp["experiment_id"])
     cost = product.cost(
-        exp["members"], account_of, stamp.get("cost") or {}, providers.is_interactive
+        exp["seats"], account_of, stamp.get("cost") or {}, providers.is_interactive
     )
     try:
         ledger = (
@@ -1036,23 +1033,22 @@ def header(exp: dict) -> dict:
     except OSError, ValueError:
         ledger = []
     return {
-        "experiment": exp["name"],
-        "experiment_id": experiment_id,
+        "experiment_id": exp["experiment_id"],
         "seated": exp["seated"],
         "posts": exp["posts"],
-        "members": exp["members"],
+        "seats": exp["seats"],
         "tabs": tabs(exp),
         "labels": exp["labels"],
         "balance": hf["balance"],
         "ledger_name": schema.ledger if schema else "",
-        "seats": seats,
+        "seat_tiles": seat_tiles,
         "ledger": ledger,
         "round": rnd,
         "schedule": (last["provenance"].get("schedule") if last else None)
         or stamp.get("schedule")
         or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
-        "active": sum(seat["out_reason"] is None for seat in seats),
+        "active": sum(tile["out_reason"] is None for tile in seat_tiles),
         "vote_every": every,
         "phase": phase,
         "cycle": ((rnd - 1) // every + 1) if every and rnd else None,
@@ -1194,7 +1190,7 @@ def message_event(
         "from_agent": row["agent"],
         "to_seat": seat,
         "to_label": label,
-        "to_agent": exp["seats"].get(seat) if seat else None,
+        "to_agent": exp["agent_by_seat"].get(seat) if seat else None,
         "path": path,
         "kind": "transfer" if transfer_path(room, path) else "message",
         "change": change,
@@ -1221,7 +1217,9 @@ def message_event(
             line.group("label") if line else None
         )
         ev["to_seat"] = resolved.get("seat") or seat_of_label(exp, ev["to_label"])
-        ev["to_agent"] = resolved.get("agent") or exp["seats"].get(ev["to_seat"] or "")
+        ev["to_agent"] = resolved.get("agent") or exp["agent_by_seat"].get(
+            ev["to_seat"] or ""
+        )
     return ev
 
 
@@ -1325,7 +1323,7 @@ def messages(exp: dict, since: int = 0) -> dict:
     for ev in events:
         ev["delivered"] = delivery_of(ev, rows, carried_paths, room)
     return {
-        "experiment": exp["name"],
+        "experiment_id": exp["experiment_id"],
         "posts": exp["posts"],
         "seats": len(places_of(exp)),
         "committed": len(events),
@@ -1395,7 +1393,7 @@ def player_history(exp: dict, agent: str) -> dict:
     ]
 
     player_seat = next(
-        (seat for seat, member in places_of(exp) if member == agent), None
+        (seat for seat, other in places_of(exp) if other == agent), None
     )
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
     rounds = {row["episode"]: row["round"] for row in rows if row["agent"] == agent}
@@ -1445,7 +1443,7 @@ def player_history(exp: dict, agent: str) -> dict:
                             "from_agent": agent,
                             "to_seat": seat,
                             "to_label": label,
-                            "to_agent": exp["seats"].get(seat) if seat else None,
+                            "to_agent": exp["agent_by_seat"].get(seat or ""),
                             "text": text,
                             "accepted": True,
                         }
@@ -1468,7 +1466,7 @@ def player_history(exp: dict, agent: str) -> dict:
         )
     )
     return {
-        "experiment": exp["name"],
+        "experiment_id": exp["experiment_id"],
         "agent": agent,
         "public": public,
         "private": private,
@@ -1662,7 +1660,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
                 }
             )
         return {
-            "experiment": exp["name"],
+            "experiment_id": exp["experiment_id"],
             "kind": kind,
             "what": what_of(ch),
             "static": False,
@@ -1672,7 +1670,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
     if ch.writer == "experimenter":
         files = listing(harness.files_dir(ch.source), kind, set())
         return {
-            "experiment": exp["name"],
+            "experiment_id": exp["experiment_id"],
             "kind": kind,
             "what": what_of(ch),
             "static": True,
@@ -1706,7 +1704,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
             }
         )
     return {
-        "experiment": exp["name"],
+        "experiment_id": exp["experiment_id"],
         "kind": kind,
         "what": what_of(ch),
         "static": False,
@@ -1718,7 +1716,7 @@ def tree_view(exp: dict, kind: str, round_at: int | None = None) -> dict | None:
 def file_view(
     exp: dict, agent: str, kind: str, inner: str, round_at: int | None = None
 ) -> dict | None:
-    """One file of one tree of one member of `exp`, found in a listing and never
+    """One file of one tree of one seat of `exp`, found in a listing and never
     joined onto a root.
 
     The name off the URL is compared for equality against paths rglob produced
@@ -1729,7 +1727,7 @@ def file_view(
     if (
         ch is None
         or (source and agent != "experimenter")
-        or (not source and agent not in exp["members"])
+        or (not source and agent not in exp["seats"])
     ):
         return None
     if round_at is not None:
@@ -1746,7 +1744,7 @@ def file_view(
             None,
         )
         seat = next(
-            (place for place, member in places_of(exp) if member == agent), None
+            (place for place, other in places_of(exp) if other == agent), None
         )
         account = account_of(agent)
         label = exp.get("labels", {}).get(seat) or account.get("label") or seat or agent
@@ -1847,7 +1845,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     seating = harness.seating_of(agent, account)
     return {
         "agent": agent,
-        "experiment": exp["name"] if exp else "",
+        "experiment_id": exp["experiment_id"] if exp else "",
         "provider": account.get("provider"),
         "model": account.get("model"),
         "initial": account.get("initial"),
@@ -2140,7 +2138,7 @@ class View(http.server.BaseHTTPRequestHandler):
                 return self.send_json({"request": None})
             return self.send_json({"request": request.as_dict()})
         if len(parts) >= 3 and parts[:2] == ["api", "experiment"]:
-            exp = experiment_named(parts[2])
+            exp = experiment_by_id(parts[2])
             if exp is None:
                 return self.send_json(
                     {"error": f"no experiment {parts[2]}"}, status=404
@@ -2155,7 +2153,7 @@ class View(http.server.BaseHTTPRequestHandler):
                 )
             if rest == ["player-history"]:
                 agent = query.get("agent", [""])[0]
-                if agent not in exp["members"]:
+                if agent not in exp["seats"]:
                     return self.send_json(
                         {"error": f"no agent {agent} in experiment"}, status=404
                     )
@@ -2283,22 +2281,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--port", type=int, default=PORT, help=f"default {PORT}; 0 picks a free one"
     )
-    ap.add_argument("--experiment", help="open on this set of agents")
+    ap.add_argument("--experiment", help="open on the experiment with this id")
     ap.add_argument("--agent", help="open on the experiment this agent sits in")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser")
     a = ap.parse_args(argv)
 
-    sets = experiments()
+    known = experiments()
     focus = a.experiment
     if a.agent:
         if a.agent not in agent_names():
             ap.error(f"no agent {a.agent} under {harness.records_root()}")
         held = experiment_of(a.agent)
-        focus = held["name"] if held else None
-    if focus and not any(exp["name"] == focus for exp in sets):
-        ap.error(
-            f"no experiment {focus}; there is {', '.join(exp['name'] for exp in sets) or 'nothing'}"
-        )
+        focus = held["experiment_id"] if held else None
+    if focus and not any(exp["experiment_id"] == focus for exp in known):
+        ids = ", ".join(exp["experiment_id"] for exp in known) or "nothing"
+        ap.error(f"no experiment {focus}; there is {ids}")
 
     try:
         httpd = serve(a.port, focus)
@@ -2307,8 +2304,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
-    seated = sum(exp["seated"] for exp in sets)
-    print(f"{url}  ({len(sets)} sets, {seated} seated, under {harness.records_root()})")
+    seated = sum(exp["seated"] for exp in known)
+    print(
+        f"{url}  ({len(known)} experiments, {seated} seated,"
+        f" under {harness.records_root()})"
+    )
     print(
         "observer views are read-only; the player panel submits only to interactive seats"
     )

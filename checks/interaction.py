@@ -1079,7 +1079,7 @@ def check_the_view_reports_a_pending_pointer_that_does_not_read_and_serves_the_r
             with urllib.request.urlopen(base + "/api/interaction") as response:
                 listed = json.loads(response.read().decode("utf-8"))["requests"]
             with urllib.request.urlopen(base + "/api/experiment/t") as response:
-                seats = json.loads(response.read().decode("utf-8"))["seats"]
+                seats = json.loads(response.read().decode("utf-8"))["seat_tiles"]
         finally:
             httpd.shutdown()
             httpd.server_close()

@@ -235,7 +235,8 @@ def check_the_view_serves_its_api():
                     "the served page carries its control token"
                 )
                 assert "__INTERACTION_CONTROL_TOKEN__" not in page
-            assert got(base, "/api/experiments")[1]["experiments"][0]["name"] == "t"
+            listed = got(base, "/api/experiments")[1]["experiments"]
+            assert listed[0]["experiment_id"] == "t", listed
             assert [s["episode"] for s in got(base, "/api/agent/t")[1]["episodes"]] == [
                 1
             ]
@@ -248,7 +249,8 @@ def check_the_view_serves_its_api():
             assert [c["agent"] for c in private] == ["t"]
             assert [f["path"] for f in private[0]["files"]] == ["note.txt"]
             head = got(base, "/api/experiment/t")[1]
-            assert [s["n"] for s in head["seats"]] == [ground_truth()["series"][-1]]
+            balances = [s["n"] for s in head["seat_tiles"]]
+            assert balances == [ground_truth()["series"][-1]], balances
             assert head["ledger"] == [], (
                 "an experiment of one has given nothing to anyone"
             )
@@ -295,8 +297,8 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
             else:
                 out[path] = (
                     status,
-                    body.get("members"),
-                    [s["live"] for s in body.get("seats", [])],
+                    body.get("seats"),
+                    [s["live"] for s in body.get("seat_tiles", [])],
                     body.get("ledger"),
                 )
         return out
@@ -304,7 +306,7 @@ def check_a_poll_that_cannot_read_an_account_still_serves_the_agent():
     with temp_root() as root:
         seated(root, u={})
         episode_once(*DEFAULT)
-        name = view.experiment_of("t")["name"]
+        name = view.experiment_of("t")["experiment_id"]
         routes = (f"/api/experiment/{name}", "/api/agent/t", "/api/agent/t/episode/1")
         account = harness.account_path("t")
         real = view.read_json
@@ -415,29 +417,31 @@ def check_the_observational_view_routes_never_write():
     assert watched == running, sorted(set(watched) ^ set(running)) or "contents changed"
 
 
-def check_the_view_names_a_set_of_agents():
-    """An experiment names itself; an agent started alone is named by its id's letters.
+def check_the_view_derives_an_experiment_id_from_its_agent_ids():
+    """An experiment with no experiment_id on disk is keyed by the letters its agent ids
+    share; an agent started alone, by its own id's letters.
 
-    Every member has to arrive at the same name, or the sidebar's filter splits
-    one experiment across sets, so the name comes from the membership.
+    Every seat has to arrive at the same id, or the picker splits one experiment in
+    two, so the id comes from every seat's agent.
     """
-    seats = {"1": "q01", "2": "q02", "3": "q03"}
-    peers = {"q01": seats, "q02": seats, "q03": seats}
+    agent_by_seat = {"1": "q01", "2": "q02", "3": "q03"}
+    peers = {"q01": agent_by_seat, "q02": agent_by_seat, "q03": agent_by_seat}
     named = {
-        agent: view.group_of(agent, {"peers": {"seen": seen}})
+        agent: view.derived_experiment_id(agent, {"peers": {"seen": seen}})
         for agent, seen in peers.items()
     }
     assert set(named.values()) == {"q"}, named
 
-    # No prefix in common: still one set, and still one name for it.
+    # No prefix in common: still one experiment, and still one id for it.
     both = [
-        view.group_of("alpha", {"peers": {"seen": {"2": "beta"}}}),
-        view.group_of("beta", {"peers": {"seen": {"1": "alpha"}}}),
+        view.derived_experiment_id("alpha", {"peers": {"seen": {"2": "beta"}}}),
+        view.derived_experiment_id("beta", {"peers": {"seen": {"1": "alpha"}}}),
     ]
     assert both == ["alpha+beta", "alpha+beta"], both
 
     # Started alone, with no experiment to ask: live01 and live02 sit together.
-    assert [view.group_of(r, {}) for r in ("live01", "live02", "b01s", "solo")] == [
+    alone = ("live01", "live02", "b01s", "solo")
+    assert [view.derived_experiment_id(r, {}) for r in alone] == [
         "live",
         "live",
         "b",
@@ -466,8 +470,8 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
             accounts, {"stamp": (manifest, Path("grouped-fixture.toml"))}
         )
 
-    assert len(groups) == 1 and groups[0]["name"] == "survivor", groups
-    assert groups[0]["seats"] == {
+    assert len(groups) == 1 and groups[0]["experiment_id"] == "grouped-fixture", groups
+    assert groups[0]["agent_by_seat"] == {
         "1": "survivor01",
         "2": "survivor02",
         "3": "survivor03",
@@ -497,7 +501,7 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
         first = fake_experiment([("g01", "00:01")])
         view.read_json = counted
         try:
-            again = view.experiment_named("g")
+            again = view.experiment_by_id("g")
             polled = list(reads)
             account = json.loads(
                 harness.account_path("g01").read_text(encoding="utf-8")
@@ -506,29 +510,29 @@ def check_the_experiment_grouping_is_kept_until_the_records_move():
             harness.account_path("g01").write_text(
                 json.dumps(account), encoding="utf-8"
             )
-            renamed = view.experiment_named("g")
+            renamed = view.experiment_by_id("renamed")
             harness.records_dir("h01").mkdir(parents=True)
             harness.account_path("h01").write_text(
                 json.dumps({"agent": "h01"}), encoding="utf-8"
             )
-            joined = [exp["name"] for exp in view.experiments()]
+            joined = [exp["experiment_id"] for exp in view.experiments()]
             trace = json.loads(harness.trace_path("g01", 1).read_text(encoding="utf-8"))
             trace["episode"], trace["provenance"]["tools"] = 2, tools
             harness.trace_path("g01", 2).write_text(json.dumps(trace), encoding="utf-8")
             reads.clear()
-            uncommitted = view.experiment_named("g")
+            uncommitted = view.experiment_by_id("renamed")
             read_on_landing = list(reads)
             account["episodes"].append({"episode": 2, "stop": "end_turn", "spent": 1})
             harness.account_path("g01").write_text(
                 json.dumps(account), encoding="utf-8"
             )
-            landed = view.experiment_named("g")
+            landed = view.experiment_by_id("renamed")
         finally:
             view.read_json = real
 
     assert again == first and not polled, f"a poll with nothing moved read {polled}"
     assert renamed is not None and renamed["experiment_id"] == "renamed", renamed
-    assert joined == ["g", "h"], joined
+    assert joined == ["h", "renamed"], joined
     assert read_on_landing, "a trace landing moved nothing the grouping is read from"
     assert uncommitted is not None and uncommitted["tools"] == [], (
         f"a trace its account does not list is no episode: {uncommitted}"
@@ -544,7 +548,7 @@ def check_a_record_holding_no_object_reads_as_no_record():
         harness.records_dir("k01").mkdir(parents=True)
         harness.account_path("k01").write_text("[1, 2]", encoding="utf-8")
         read = view.read_json(harness.account_path("k01"))
-        names = [exp["name"] for exp in view.experiments()]
+        names = [exp["experiment_id"] for exp in view.experiments()]
 
     assert read is None, read
     assert names == ["g"], names
@@ -557,17 +561,17 @@ def check_a_grouping_read_without_an_account_is_read_again_next_poll():
     moved since."""
     with rooted(HostBox):
         fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
-        before = [exp["members"] for exp in view.experiments()]
+        before = [exp["seats"] for exp in view.experiments()]
         account = harness.account_path("g01")
         st = account.stat()
         os.utime(account, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
         real = view.read_json
         view.read_json = lambda path: None if path == account else real(path)
         try:
-            missed = [exp["members"] for exp in view.experiments()]
+            missed = [exp["seats"] for exp in view.experiments()]
         finally:
             view.read_json = real
-        again = [exp["members"] for exp in view.experiments()]
+        again = [exp["seats"] for exp in view.experiments()]
 
     assert before == [["g01", "g02"]], before
     assert missed == [["g02"]], missed
@@ -634,8 +638,8 @@ def check_a_trace_that_predates_the_harness_file_names_still_groups():
         trace = json.loads(path.read_text(encoding="utf-8"))
         del trace["provenance"]["harness_files"]
         path.write_text(json.dumps(trace), encoding="utf-8")
-        names = [exp["name"] for exp in view.experiments()]
-        exp = view.experiment_named("g")
+        names = [exp["experiment_id"] for exp in view.experiments()]
+        exp = view.experiment_by_id("g")
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
@@ -671,7 +675,7 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
 
     assert head["active"] == 1 and head["vote_every"] == 5
     assert head["elections"] == [result], head["elections"]
-    second = head["seats"][1]
+    second = head["seat_tiles"][1]
     assert second["out_reason"] == "did not vote in round 5"
     assert second["eliminated"]["round"] == 5
 
@@ -683,7 +687,10 @@ def check_the_view_shows_every_seat_side_by_side():
     no column of the blackboards and no column but its own of the stores.
     """
     with two_seats() as (c, seats):
-        assert c["seated"] and c["seats"] == seats, (c["seated"], c["seats"])
+        assert c["seated"] and c["agent_by_seat"] == seats, (
+            c["seated"],
+            c["agent_by_seat"],
+        )
         boards = view.tree_view(c, "blackboard")["columns"]
         stores = view.tree_view(c, "notes")["columns"]
         opened = view.file_view(c, "g02", "blackboard", "msg")
@@ -724,7 +731,7 @@ def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
     acted = [("g01", "00:01"), ("g02", "00:02"), ("g01", "00:03")]
     with rooted(HostBox):
         fake_experiment(acted, agents=("g01", "g02"))
-        c = view.experiment_named("g")
+        c = view.experiment_by_id("g")
         rows = view.experiment_episodes(c)
         assert view.completed_rounds(c, rows) == [1], "g02 has not taken round 2"
         harness.account_path("g02").unlink()
@@ -773,7 +780,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
                 trace = json.loads(path.read_text(encoding="utf-8"))
                 trace["provenance"]["tools"] = tools
                 path.write_text(json.dumps(trace), encoding="utf-8")
-        c = view.experiment_named("g")
+        c = view.experiment_by_id("g")
         live = view.tree_view(c, "blackboard")
         board = view.tree_view(c, "blackboard", 1)
         ballot = view.tree_view(c, "notes", 2)
@@ -894,7 +901,7 @@ def check_the_player_history_adds_each_accepted_human_call_once():
             encoding="utf-8",
         )
         store.publish("g01", "1", 2, 4, "", "observation", PLAYER_OFFERED)
-        c = view.experiment_named("g")
+        c = view.experiment_by_id("g")
         history = view.player_history(c, "g01")
         with serving() as base:
             status, served = got(base, "/api/experiment/g/player-history?agent=g01")
@@ -980,7 +987,7 @@ def check_the_player_history_matches_a_forked_seats_calls_on_its_own_episode():
             ("post", {"body": "next round"}),
             ("send", {"to": "2", "body": "later"}),
         )
-        c = view.experiment_named("g")
+        c = view.experiment_by_id("g")
         history = view.player_history(c, "g01") if c else {}
 
     assert [
@@ -1007,16 +1014,16 @@ def check_the_view_shows_every_balance_from_its_own_account():
     with two_seats() as (c, _):
         h = view.header(c)
 
-    assert [(s["seat"], s["agent"], s["n"]) for s in h["seats"]] == [
+    assert [(s["seat"], s["agent"], s["n"]) for s in h["seat_tiles"]] == [
         ("1", "g01", 900),
         ("2", "g02", 800),
     ]
     assert h["ledger"] == [], "an experiment that has given nothing has an empty ledger"
     assert h["round"] == 0, "no episode has been committed, so no round has been taken"
-    assert [s["transfer"] for s in h["seats"]] == [None, None], (
+    assert [s["transfer"] for s in h["seat_tiles"]] == [None, None], (
         "and nobody has declared one"
     )
-    assert [s["starter_files"] for s in h["seats"]] == [
+    assert [s["starter_files"] for s in h["seat_tiles"]] == [
         "objective-notes",
         "objective-notes",
     ]
@@ -1370,7 +1377,7 @@ def check_the_view_states_an_obligation_the_grace_waived():
         v = view.episode_view("t", 1)
         mine = next(
             s
-            for s in view.header(view.experiment_of("t"))["seats"]
+            for s in view.header(view.experiment_of("t"))["seat_tiles"]
             if s["agent"] == "t"
         )
 
@@ -1411,7 +1418,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
     def tile() -> dict:
         return next(
             s
-            for s in view.header(view.experiment_of("t"))["seats"]
+            for s in view.header(view.experiment_of("t"))["seat_tiles"]
             if s["agent"] == "t"
         )
 
@@ -1478,7 +1485,7 @@ def check_the_view_builds_its_tabs_from_the_table():
         ("agent", "transcripts"),
     ], h["tabs"]
     assert h["balance"] == "balance" and h["labels"] == PERSONA_LABELS
-    assert [s["label"] for s in h["seats"]] == ["Studio", "Game"]
+    assert [s["label"] for s in h["seat_tiles"]] == ["Studio", "Game"]
     assert journal["what"] == "no other agent ever reads this one"
     assert board["what"] == "every agent reads this one"
     assert [f["path"] for f in journal["columns"][0]["files"]] == ["IDENTITY.md"]
@@ -1670,7 +1677,7 @@ def check_the_page_exposes_the_dashboard_navigation_to_assistive_technology():
         "the data dashboard is read before the tabs beneath it"
     )
     assert 'aria-selected="${S.tab === key}"' in page
-    assert 'aria-pressed="${c.name === S.experiment}"' in page
+    assert 'aria-pressed="${c.experiment_id === S.experiment}"' in page
     assert 'id="mode-toggle"' in page
     assert '"Switch to observer view" : "Switch to player view"' in page
     assert "#page.play-mode #top, #page.play-mode #body { display:none; }" in page

@@ -624,11 +624,11 @@ const PENDING = "output arrives when the episode ends";
 const ago = (s) => s == null ? "" : s < 90 ? `${Math.round(s)}s ago`
   : s < 5400 ? `${Math.round(s / 60)}m ago` : `${(s / 3600).toFixed(1)}h ago`;
 const running = (d) => d && d.live != null && d.live_age != null && d.live_age < S.stale;
-// Every seat of the experiment on the page, and one of them by its number.
-const seats = () => S.head ? S.head.seats : [];
-const seatOf = (n) => seats().find(x => String(x.seat) === String(n));
+// Every seat tile of the experiment on the page, and one of them by its number.
+const seatTiles = () => S.head ? S.head.seat_tiles : [];
+const seatOf = (n) => seatTiles().find(x => String(x.seat) === String(n));
 const seatName = (n) => {
-  const s = seatOf(n) || seats().find(x => x.label === n);
+  const s = seatOf(n) || seatTiles().find(x => x.label === n);
   return s ? s.agent : null;
 };
 // What the other agents call a seat: its balance file, which is the balance
@@ -676,12 +676,12 @@ const inkOf = (i) => INK[i % INK.length];
 
 // Every seat on one scale, which is the comparison a chart of one agent cannot
 // make: who is ahead, and where the lines crossed.
-function overlay(seats) {
-  const all = seats.flatMap(s => s.series || []);
+function overlay(tiles) {
+  const all = tiles.flatMap(s => s.series || []);
   if (all.length < 2) return `<div class="note">no billed turns yet</div>`;
   const lo = loOf(all), hi = hiOf(all);
-  const n = seats.reduce((a, s) => Math.max(a, (s.series || []).length), 0);
-  const lines = seats.map((s, i) => {
+  const n = tiles.reduce((a, s) => Math.max(a, (s.series || []).length), 0);
+  const lines = tiles.map((s, i) => {
     const d = path(s.series || [], 240, 54, 3, lo, hi, n);
     return d ? `<path d="${d}" fill="none" stroke="${inkOf(i)}" stroke-width="1.25"
       opacity=".85" vector-effect="non-scaling-stroke"/>` : "";
@@ -699,15 +699,15 @@ function renderPicks() {
   const el = document.getElementById("picks");
   // One set is not a choice between sets.
   if (S.experiments.length < 2) { el.innerHTML = ""; return; }
-  const why = (c) => c.seated ? `${c.members.length} seated` : "no seating: no blackboard or mailbox between them";
-  el.innerHTML = S.experiments.map(c => `<button class="filt ${c.name === S.experiment ? "on" : ""}"
-      data-c="${esc(c.name)}" aria-pressed="${c.name === S.experiment}" title="${esc(why(c))}">${esc(c.name)}<em>${c.members.length}</em></button>`).join("");
+  const why = (c) => c.seated ? `${c.seats.length} seated` : "no seating: no blackboard or mailbox between them";
+  el.innerHTML = S.experiments.map(c => `<button class="filt ${c.experiment_id === S.experiment ? "on" : ""}"
+      data-c="${esc(c.experiment_id)}" aria-pressed="${c.experiment_id === S.experiment}" title="${esc(why(c))}">${esc(c.experiment_id)}<em>${c.seats.length}</em></button>`).join("");
   el.querySelectorAll(".filt").forEach(b => b.onclick = () => pickExperiment(b.dataset.c));
 }
 
-function pickExperiment(name) {
-  if (name === S.experiment) return;
-  S.experiment = name;
+function pickExperiment(id) {
+  if (id === S.experiment) return;
+  S.experiment = id;
   S.msgs = []; S.tips = []; S.msgn = 0; S.pair = null;
   S.tree = {}; S.treeRound = {}; S.inspect = {}; S.body = {}; S.mailQuery = "";
   S.agent = null; S.detail = null; S.episode = null; S.view = null; S.drawn = 0;
@@ -806,19 +806,19 @@ function renderHeader() {
   if (!h) return;
   renderFold();
   document.getElementById("whosub").innerHTML =
-    `${h.active} of ${h.seats.length} active · round ${h.round}` +
+    `${h.active} of ${h.seat_tiles.length} active · round ${h.round}` +
     (h.schedule ? ` · ${esc(h.schedule)}` : "") +
     (h.vote_every ? ` · ${h.cycle ? `cycle ${h.cycle} · ` : ""}${esc(h.phase)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
     (h.seated ? "" : ` · no seating: these agents have no blackboard or mailbox between them`);
-  const current = h.seats.map(s => s.live_balance != null ? s.live_balance : s.n);
+  const current = h.seat_tiles.map(s => s.live_balance != null ? s.live_balance : s.n);
   const remaining = current.reduce((sum, n) => sum + Number(n || 0), 0);
-  const initial = h.seats.reduce((sum, s) => sum + Number(s.initial || 0), 0);
-  const roundSpent = h.seats.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
-  const totalSpent = h.seats.reduce((sum, s) => sum + Number(s.spent || 0), 0);
+  const initial = h.seat_tiles.reduce((sum, s) => sum + Number(s.initial || 0), 0);
+  const roundSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent_this_round || 0), 0);
+  const totalSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent || 0), 0);
   const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
-  const live = h.seats.filter(running).length;
-  const attention = h.seats.filter(s => s.halted || (s.drift || []).length || (s.unmet || []).length
+  const live = h.seat_tiles.filter(running).length;
+  const attention = h.seat_tiles.filter(s => s.halted || (s.drift || []).length || (s.unmet || []).length
     || (s.live != null && !running(s))).length;
   const pct = initial ? `${Math.max(0, remaining / initial * 100).toFixed(0)}% of initial` : "current balance";
   document.getElementById("metrics").innerHTML = [
@@ -827,10 +827,10 @@ function renderHeader() {
     ["spent total", num(totalSpent), h.cost && h.cost.maximum != null
       ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
       : `${num(autonomousSpent)} autonomous`, h.cost && h.cost.warning_reached ? "attn" : ""],
-    ["active now", `${h.active}/${h.seats.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
+    ["active now", `${h.active}/${h.seat_tiles.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
     ["needs attention", num(attention), attention ? "unfinished, unmet, halted, or drifted" : "no current alerts", attention ? "attn" : ""]
   ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
-  document.getElementById("seats").innerHTML = h.seats.map(tileHtml).join("");
+  document.getElementById("seats").innerHTML = h.seat_tiles.map(tileHtml).join("");
   // The ledger reads the same three bare numbers for everyone, including the
   // agent a transfer was aimed at. The gloss is the page's.
   const rows = h.ledger.map(([giver, taker, amount]) => `<tr>
@@ -852,11 +852,11 @@ function renderHeader() {
     ${h.ledger_name ? `<div class="ledger-block"><div class="kv"><div class="k">${esc(h.ledger_name)} · the transfer ledger</div></div>
     ${rows ? `<div class="led"><table>${rows}</table></div>`
            : `<div class="note" style="margin-top:8px">no transfer has moved</div>`}</div>` : ""}
-    <div class="chart-block">${overlay(h.seats)}</div></div>`);
+    <div class="chart-block">${overlay(h.seat_tiles)}</div></div>`);
   const tabs = h.tabs || [];
   if (!tabs.some(t => t.key === S.tab)) S.tab = (tabs[0] || {}).key;
   document.getElementById("tabs").innerHTML = tabs.map(({key, label}) => {
-    const off = key === "mailbox" && (!h.posts || h.seats.length < 2);
+    const off = key === "mailbox" && (!h.posts || h.seat_tiles.length < 2);
     return `<button class="tab ${S.tab === key ? "on" : ""}" role="tab" aria-selected="${S.tab === key}"
       data-t="${key}">${esc(label)}${
       key === "mailbox" && S.msgn ? `<em>${S.msgn}</em>` : ""}${off ? `<em>–</em>` : ""}</button>`;
@@ -878,7 +878,7 @@ function renderHeader() {
 const pairKey = (a, b) => [a, b].sort((x, y) => Number(x) - Number(y)).join("·");
 
 const seatInk = (seat) => {
-  const i = seats().findIndex(s => String(s.seat) === String(seat));
+  const i = seatTiles().findIndex(s => String(s.seat) === String(seat));
   return i < 0 ? "var(--ink)" : inkOf(i);
 };
 
@@ -888,7 +888,7 @@ const seatTag = (seat) => `<b style="color:${seatInk(seat)}">${esc(nameOf(seat))
 // agents that have never addressed each other are a fact about the round, and a
 // thread that only appeared once it had traffic could not be looked for.
 function threadsOf() {
-  const seated = seats().filter(s => s.seat != null);
+  const seated = seatTiles().filter(s => s.seat != null);
   const by = new Map();
   for (let i = 0; i < seated.length; i++) {
     for (let j = i + 1; j < seated.length; j++) {
@@ -1013,7 +1013,7 @@ function threadHtml(t) {
 
 function renderMessages() {
   const el = document.getElementById("body"), h = S.head;
-  if (h && h.seats.length < 2) {
+  if (h && h.seat_tiles.length < 2) {
     blank(el, `<div class="empty">an experiment of one: there is nobody to address</div>`);
     return;
   }
@@ -1322,7 +1322,7 @@ function pullFiles(kind) {
   if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) return Promise.resolve();
   let q = `agent=${encodeURIComponent(chosen.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(chosen.path)}`;
   if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
-  return get(`/api/experiment/${S.experiment}/file?${q}`)
+  return get(`/api/experiment/${encodeURIComponent(S.experiment)}/file?${q}`)
     .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; });
 }
 
@@ -1336,7 +1336,7 @@ function pullChannelFiles(kind) {
     if (cached && JSON.stringify(cached.stamp) === JSON.stringify(f.stamp)) continue;
     let q = `agent=${encodeURIComponent(c.agent)}&channel=${encodeURIComponent(kind)}&path=${encodeURIComponent(f.path)}`;
     if (S.treeRound[kind] != null) q += `&round=${encodeURIComponent(S.treeRound[kind])}`;
-    pulls.push(get(`/api/experiment/${S.experiment}/file?${q}`)
+    pulls.push(get(`/api/experiment/${encodeURIComponent(S.experiment)}/file?${q}`)
       .then(value => { S.body[key] = value; }).catch(() => { S.body[key] = null; }));
   }
   return Promise.all(pulls);
@@ -1389,7 +1389,7 @@ function pullTurns(reset) {
 function drawTranscript() {
   const d = S.detail, el = document.getElementById("body");
   if (!d) return;
-  const chips = seats().map(s =>
+  const chips = seatTiles().map(s =>
     `<button class="chip ${s.agent === S.agent ? "on" : ""} ${running(s) ? "live" : ""}"
        data-agent="${esc(s.agent)}" aria-pressed="${s.agent === S.agent}">${s.seat == null ? "" : esc(s.seat) + " · "}${esc(s.agent)}</button>`).join("");
   // A round the agent has no episode in is one it was already out of, and there
@@ -1569,7 +1569,7 @@ function renderTranscript(fresh) {
 
 function renderTab() {
   if (S.tab === "mailbox") {
-    return get(`/api/experiment/${S.experiment}/messages?since=${S.msgn}`).then(d => {
+    return get(`/api/experiment/${encodeURIComponent(S.experiment)}/messages?since=${S.msgn}`).then(d => {
       S.msgs = S.msgs.concat(d.events); S.msgn = d.committed; S.tips = d.tip;
       renderMessages();
     }).catch(() => {});
@@ -1577,7 +1577,7 @@ function renderTab() {
   if (S.tab !== "agent") {
     const selected = S.treeRound[S.tab];
     const query = selected == null ? "" : `?round=${encodeURIComponent(selected)}`;
-    return get(`/api/experiment/${S.experiment}/tree/${encodeURIComponent(S.tab)}${query}`).then(d => {
+    return get(`/api/experiment/${encodeURIComponent(S.experiment)}/tree/${encodeURIComponent(S.tab)}${query}`).then(d => {
       if (!Object.prototype.hasOwnProperty.call(S.treeRound, S.tab)
           && d.history && d.history.rounds.length) {
         S.treeRound[S.tab] = d.history.rounds[d.history.rounds.length - 1];
@@ -1588,7 +1588,7 @@ function renderTab() {
       return pull(S.tab).then(() => renderTree(S.tab));
     }).catch(() => {});
   }
-  const at = seats();
+  const at = seatTiles();
   if (!at.length) return Promise.resolve();
   if (S.agent == null || !at.some(s => s.agent === S.agent)) {
     return openAgent(((at.find(running) || at[0]) || {}).agent);
@@ -1605,7 +1605,7 @@ function renderTab() {
 }
 
 function refresh() {
-  return get(`/api/experiment/${S.experiment}`).then(h => {
+  return get(`/api/experiment/${encodeURIComponent(S.experiment)}`).then(h => {
     S.head = h;
     renderHeader();
     return renderTab();
@@ -1687,7 +1687,7 @@ function renderPeerStatus(head, playerAgent) {
   const completed = new Set((head.progress && head.progress.events || [])
     .filter(event => event.round === head.round && event.completed_autonomous)
     .map(event => event.completed_autonomous));
-  const badges = (head.seats || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason)
+  const badges = (head.seat_tiles || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason)
     .map(seat => {
       let state = "queued", label = "not started";
       if (completed.has(seat.agent) || (seat.round === head.round && seat.acted && seat.live == null)) {
@@ -1751,7 +1751,7 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
   draw();
 }
 
-function renderPlayerHistory(history, playerAgent, seats, currentEpisode) {
+function renderPlayerHistory(history, playerAgent, tiles, currentEpisode) {
   const board = document.getElementById("player-board"), publicEvents = history.public || [];
   const deliveredEpisode = currentEpisode - 1;
   const requestKey = `${playerAgent}:${(S.interaction || {}).request_id || currentEpisode}`;
@@ -1770,7 +1770,7 @@ function renderPlayerHistory(history, playerAgent, seats, currentEpisode) {
   const drafts = new Map([...privateRoot.querySelectorAll("[data-recipient]")]
     .map(field => [field.dataset.recipient, field.value]));
   const canMessage = privateRoot.hasAttribute("data-message-tool");
-  const peers = (seats || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason);
+  const peers = (tiles || []).filter(seat => seat.agent !== playerAgent && !seat.eliminated && !seat.out_reason);
   const sig = JSON.stringify([currentEpisode, peers.map(peer => [peer.agent, peer.label]),
     privateEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
   if (privateRoot.dataset.sig === sig) return;
@@ -1794,9 +1794,9 @@ function pullPeerStatus(request) {
     ? Promise.resolve(S.playerExperiment)
     : get("/api/experiments").then(data => {
         S.poll = data.poll; S.stale = data.stale;
-        const match = (data.experiments || []).find(experiment => (experiment.members || []).includes(request.agent));
+        const match = (data.experiments || []).find(experiment => (experiment.seats || []).includes(request.agent));
         S.playerExperimentAgent = request.agent;
-        S.playerExperiment = match && match.name;
+        S.playerExperiment = match && match.experiment_id;
         return S.playerExperiment;
       });
   return findExperiment.then(name => name && Promise.all([
@@ -1806,7 +1806,7 @@ function pullPeerStatus(request) {
     .then(result => {
       if (result && S.interaction && S.interaction.request_id === request.request_id) {
         renderPeerStatus(result[0], request.agent);
-        renderPlayerHistory(result[1], request.agent, result[0].seats, request.episode);
+        renderPlayerHistory(result[1], request.agent, result[0].seat_tiles, request.episode);
       }
     }).catch(() => {});
 }
@@ -1897,7 +1897,7 @@ function submitInteraction() {
 function pullInteraction() {
   return get("/api/interaction").then(value => {
     const requests = value.requests || [];
-    const agents = new Set(seats().map(seat => seat.agent));
+    const agents = new Set(seatTiles().map(seat => seat.agent));
     const visible = S.playerMode ? requests : requests.filter(request => agents.has(request.agent));
     const request = visible.find(item => item.agent === (S.interaction || {}).agent)
       || visible.find(item => item.agent === S.agent) || visible[0] || null;
@@ -1917,12 +1917,12 @@ function poll() {
         `<div class="empty">no agents under ${esc(d.root)}/records</div>`);
       return;
     }
-    if (S.experiment == null || !S.experiments.some(c => c.name === S.experiment)) {
+    if (S.experiment == null || !S.experiments.some(c => c.experiment_id === S.experiment)) {
       // An experiment actually moving beats one merely on disk: a set that stopped
       // months ago should not be what the page opens on.
-      const first = S.experiments.find(c => c.name === d.focus)
+      const first = S.experiments.find(c => c.experiment_id === d.focus)
         || S.experiments.find(c => c.running) || S.experiments[0];
-      S.experiment = first.name;
+      S.experiment = first.experiment_id;
     }
     renderPicks();
     return refresh();
