@@ -25,8 +25,8 @@ RETRYABLE = {"APIConnectionError", "APITimeoutError", "ConnectionError", "Timeou
 @dataclasses.dataclass(frozen=True)
 class SessionInfo:
     """What the host tells a provider of the episode a session serves: the agent, its
-    label, the episode number, where interactions are kept, and whether the episode
-    was cancelled."""
+    label, the episode number, the root of the interaction store, and whether the
+    episode was cancelled."""
 
     agent: str
     label: str
