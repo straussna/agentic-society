@@ -1195,7 +1195,7 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
     ids = ["g01", "g02"]
     cost = turn_cost()
     ended = {}
-    for name, head, budget, steps, rounds in (
+    for name, head, budget, turns, rounds in (
         ("round limit", "", None, (), "2"),
         (
             "one remains",
@@ -1214,7 +1214,7 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
                 encoding="utf-8",
                 newline="\n",
             )
-            harness.start = lambda config=None, steps=steps, **kw: fake(*steps)
+            harness.start = lambda config=None, turns=turns, **kw: fake(*turns)
             with quiet():
                 code = experiment.main(
                     ["--manifest", str(manifest), "--rounds", rounds, "--resume"]

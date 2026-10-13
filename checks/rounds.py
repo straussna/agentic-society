@@ -1100,7 +1100,7 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
     the stop lands as g02's episode ends, before g03's. g03 finishes the round with no peer
     left to vote for, and the two ballots vote it out.
     """
-    steps = (
+    turns = (
         say(),
         say(),
         say(),
@@ -1130,7 +1130,7 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
                 shell=True,
                 head="stop_when_one_remains = true\n",
             )
-            router = fake(*steps)
+            router = fake(*turns)
             sent: list[int] = []
 
             def stop_as_g02_ends(turn):
@@ -2462,11 +2462,11 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
         def opened():
             RecordingSandbox.note("create", threading.current_thread().name)
 
-        create = per_agent(default=DEFAULT, on_open=opened)
+        router = per_agent(default=DEFAULT, on_open=opened)
 
         live = set(ids)
         with quiet():
-            acted = experiment.simultaneous_round(ids, live, 0, create)
+            acted = experiment.simultaneous_round(ids, live, 0, router)
         took = episodes_taken(ids)
     first = next(i for i, (what, _) in enumerate(events) if what == "create")
     before = [what for what, _ in events[:first]]
@@ -2493,13 +2493,13 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
     def sent(_):
         gate.wait()
 
-    create = per_agent(default=(say(),), on_send=sent)
+    router = per_agent(default=(say(),), on_send=sent)
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
         live = set(ids)
         with quiet():
-            experiment.simultaneous_round(ids, live, 0, create)
+            experiment.simultaneous_round(ids, live, 0, router)
         stops = {r: harness.load_account(r)["episodes"][0]["stop"] for r in ids}
     assert set(stops.values()) == {"no_tool_call"}, (
         f"an episode that waited alone would have erred instead: {stops}"
@@ -2882,7 +2882,7 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
 def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight():
     """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are committed."""
 
-    def stopping_create():
+    def stopping_router():
         gate = threading.Barrier(3, timeout=10)
 
         def sent(turn):
@@ -2899,7 +2899,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
         live = set(ids)
         with quiet():
             try:
-                experiment.simultaneous_round(ids, live, 0, stopping_create())
+                experiment.simultaneous_round(ids, live, 0, stopping_router())
             except KeyboardInterrupt:
                 pass
             else:
@@ -2918,7 +2918,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
             'schedule = "simultaneous"\nsystem_prompt = ""\n'
             + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids),
         )
-        harness.start = lambda config=None, **kw: stopping_create()
+        harness.start = lambda config=None, **kw: stopping_router()
         with quiet() as buf:
             code = experiment.main(["--manifest", str(p), "--rounds", "5", "--resume"])
         took = episodes_taken(ids)

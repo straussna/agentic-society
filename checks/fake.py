@@ -51,7 +51,7 @@ def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None
 
 def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
     return {
-        "kind": "agent",
+        "kind": "run",
         "cmds": list(cmds),
         "u": u,
         "id": id,
@@ -146,8 +146,8 @@ def _usage(raw, provider, model):
 
 
 class FakeSession:
-    def __init__(self, steps, provider, model, seen=None, on_send=None):
-        self.steps = steps
+    def __init__(self, turns, provider, model, seen=None, on_send=None):
+        self.turns = turns
         self.provider = provider
         self.requested_model = model
         self.seen = seen
@@ -167,31 +167,31 @@ class FakeSession:
                     "input": content,
                 }
             )
-        step = self.steps.pop(0) if self.steps else say()
-        if isinstance(step, BaseException):
-            raise step
-        rid = step["id"] or f"msg{self.n}"
-        resolved = step.get("model") or f"{self.requested_model}-20990101"
+        turn = self.turns.pop(0) if self.turns else say()
+        if isinstance(turn, BaseException):
+            raise turn
+        rid = turn["id"] or f"msg{self.n}"
+        resolved = turn.get("model") or f"{self.requested_model}-20990101"
         normalized_usage, charges = _usage(
-            step.get("u"), self.provider, self.requested_model
+            turn.get("u"), self.provider, self.requested_model
         )
-        if step["kind"] == "agent":
+        if turn["kind"] == "run":
             calls = tuple(
                 ToolCall(f"t{self.n}_{i}", "bash", {"command": command})
-                for i, command in enumerate(step["cmds"])
+                for i, command in enumerate(turn["cmds"])
             )
             texts, reasoning = (), ()
-        elif step["kind"] == "call":
-            calls = (ToolCall(f"t{self.n}_0", step["name"], dict(step["args"])),)
+        elif turn["kind"] == "call":
+            calls = (ToolCall(f"t{self.n}_0", turn["name"], dict(turn["args"])),)
             texts, reasoning = (), ()
         else:
             calls = ()
-            texts = (step["text"],)
-            reasoning = (step["thinking"],) if step["kind"] == "think" else ()
-        detail = step.get("details")
+            texts = (turn["text"],)
+            reasoning = (turn["thinking"],) if turn["kind"] == "think" else ()
+        detail = turn.get("details")
         refusal = (
             None
-            if step["stop"] != "refusal"
+            if turn["stop"] != "refusal"
             else Refusal(
                 getattr(detail, "type", "refusal"),
                 getattr(detail, "explanation", None),
@@ -199,15 +199,15 @@ class FakeSession:
                 getattr(detail, "__dict__", None),
             )
         )
-        if step["stop"] == "refusal" and not calls:
+        if turn["stop"] == "refusal" and not calls:
             charges = ()
         response = NormalizedResponse(
             rid,
             self.provider,
             self.requested_model,
             resolved,
-            step["stop"],
-            step["stop"],
+            turn["stop"],
+            turn["stop"],
             texts,
             reasoning,
             calls,
@@ -219,7 +219,7 @@ class FakeSession:
         native = {
             "id": rid,
             "model": resolved,
-            "stop_reason": step["stop"],
+            "stop_reason": turn["stop"],
             "content": [call.as_dict() for call in calls],
             "usage": normalized_usage.as_dict(),
         }
@@ -229,14 +229,14 @@ class FakeSession:
 class FakeRouter:
     def __init__(
         self,
-        steps=(),
+        turns=(),
         seen=None,
         scripts=None,
         default=(),
         on_send=None,
         on_open=None,
     ):
-        self.steps = list(steps)
+        self.turns = list(turns)
         self.seen = seen
         self.scripts = {name: list(values) for name, values in (scripts or {}).items()}
         self.default = list(default)
@@ -268,16 +268,16 @@ class FakeRouter:
                 }
             )
         name = threading.current_thread().name
-        steps = self.scripts.get(name)
-        if steps is None:
-            steps = self.steps if self.steps else list(self.default)
+        turns = self.scripts.get(name)
+        if turns is None:
+            turns = self.turns if self.turns else list(self.default)
             if self.scripts:
-                self.scripts[name] = steps
-        return FakeSession(steps, provider, model, self.seen, self.on_send)
+                self.scripts[name] = turns
+        return FakeSession(turns, provider, model, self.seen, self.on_send)
 
 
-def fake(*steps, seen=None):
-    return FakeRouter(steps, seen)
+def fake(*turns, seen=None):
+    return FakeRouter(turns, seen)
 
 
 def per_agent(default=(), on_send=None, on_open=None, **scripts):
@@ -286,12 +286,12 @@ def per_agent(default=(), on_send=None, on_open=None, **scripts):
     )
 
 
-def stopping_at(turn: int, *steps):
+def stopping_at(at: int, *turns):
     def stop(n):
-        if n == turn:
+        if n == at:
             harness.STOPPING = True
 
-    return FakeRouter(steps, on_send=stop)
+    return FakeRouter(turns, on_send=stop)
 
 
 DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())

@@ -587,10 +587,10 @@ def got(base: str, path: str) -> tuple[int, dict]:
         return r.status, json.loads(r.read().decode("utf-8"))
 
 
-def episode_once(*steps, seen=None):
+def episode_once(*turns, seen=None):
     """One episode against a fresh agent, output suppressed."""
     with quiet():
-        return harness.run_once("t", fake(*steps, seen=seen))
+        return harness.run_once("t", fake(*turns, seen=seen))
 
 
 def ground_truth(agent="t") -> dict:

@@ -2,9 +2,10 @@
 
     py -3 check.py [names...] [--real | --no-docker] [--list] [-j N] [--sweep-all]
 
-A fake `create` goes into harness.run_once, so the pipeline runs unbilled. The checks
-live under checks/, one module per topic; this file runs them, several at a time, and
-removes any container a worker of this suite died holding."""
+A fake router goes into harness.run_once, and its sessions answer each `send` from a
+script, so the pipeline runs unbilled. The checks live under checks/, one module per
+topic; this file runs them, several at a time, and removes any container a worker of
+this suite died holding."""
 
 from __future__ import annotations
 

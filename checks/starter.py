@@ -94,13 +94,13 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     # The gap is two of the cheap agent's turns, so it crosses inside the four
     # episodes run whatever a turn costs under the model in force.
     below = 500_000 - 2 * turn_cost()
-    for name, steps in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
+    for name, turns in [("cheap", (say(),)), ("dear", (run("echo hi"), say()))]:
         with temp_root(
             budget=500_000, starter_files="s", starter_files_below=below
         ) as root:
             plant(root)
             with quiet():
-                harness.run_episodes(name, fake(*steps), 4)
+                harness.run_episodes(name, fake(*turns), 4)
             account = ground_truth(name)
             landed[name] = account["starter_files_landed"]
 
