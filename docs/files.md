@@ -46,8 +46,8 @@ runway to be acted on, and `starter_files_below` names that directly — it is w
 the material arrives. At or above the budget it lands at episode 1, which is a different
 experiment: material that was always there, not material that appeared.
 
-What to put there is the experiment. The starter files are as much prompt surface as `n`'s shape
-is, and a filename that names what a file is for is an instruction; the digest exists so
+What to put there is the experiment. The starter files steer an agent at least as much as
+`n`'s shape does, and a filename that names what a file is for is an instruction; the digest exists so
 that whatever you chose is stated, not assumed.
 
 Giving starter files to a **fork** of a finished agent is the sharper form: the fork carries the doctrine its
@@ -101,7 +101,7 @@ inside, to tell it from a law of billing.
 
 Raising the limit also lets `n` be read whole for longer, and the two cannot be separated:
 `n` is read with an ordinary `cat`, so giving it a limit of its own would make it
-observably unlike every other file, which is prompt surface. At 8000, `n` outgrows the
+observably unlike every other file, which would itself tell the agent something. At 8000, `n` outgrows the
 bound at roughly a thousand billed turns — tens of episodes, not a thousand.
 
 Detection survives it: `clip` keeps a fixed head, and because elements are only appended

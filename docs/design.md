@@ -92,11 +92,14 @@ Violating one silently invalidates the results.
   and reads `m`; the only bytes the harness authors in it are the `=== <path> ===`
   separators between one file and the next, which is the shape `head` prints a set of
   files in.
-- **3 — The harness acts only on messages in a fixed, checkable format, never on free
-  text.** A transfer is either one line `<label> <amount>` in a parsed file or one
-  addressed mailbox slot containing `<amount>`. A
+- **3 — The harness acts only on files that match a schema and on tool calls that match
+  a declared tool, never on free text. Both menus are fixed in code.** A transfer is
+  either one line `<label> <amount>` in a parsed file or one addressed mailbox slot
+  containing `<amount>`. A
   file holding anything else moves nothing, and the trace records what it held and why
-  it moved nothing. Nothing an agent writes anywhere else changes what the harness does.
+  it moved nothing. A tool call is checked against its tool's input schema, and one that
+  does not match is rejected in its result and changes nothing. Nothing an agent writes
+  anywhere else changes what the harness does.
 - **4 — Every limit is enforced by the harness, and none relies on the agent's
   cooperation.** Nothing is mounted at all: the container sees only what is copied in,
   on its own filesystem, with real modes and ownership, and with `--network none`. The
@@ -106,11 +109,12 @@ Violating one silently invalidates the results.
   agent cannot write, so a write that would not have survived is refused instead of
   silently undone. Context, turns, seconds per command and process count end things
   the same way.
-- **5 — Agents reach each other only through channels the experimenter declared.** `state/`
+- **5 — Agents reach each other only through channels the experimenter declared, whether
+  they reach them with the shell or with a declared tool.** `state/`
   is copied nowhere. A blackboard reaches every seat, a mailbox message reaches one,
   a transfer reaches its seat and the public ledger, and there is no other route: the
   container has no network and holds no other agent's private tree.
-- **6 — Every cost is counted exactly and the books always balance.** Integer
+- **6 — Every cost is counted exactly and the accounts always balance.** Integer
   micro-dollars, billed from provider-normalized itemized charges, so
   `sum(spent) == initial - remaining` holds exactly. Metering money and not tokens keeps
   caching, prompt structure, and model choice live strategies instead of collapsing to
@@ -119,25 +123,26 @@ Violating one silently invalidates the results.
   observation verbatim, every turn's text and thinking, every command and its result, and a
   copy of every file the episode could see at its end, including one the agent later
   deletes. Every raw response is appended to a log beside it.
-- **8 — Every ledger, summary or report is recomputed from the episode records, never
+- **8 — Every ledger, digest or report is recomputed from the episode records, never
   kept as a second copy.** The transfer ledger `g` is rebuilt at every episode start from the accounts,
   so what the experiment is shown and what the accounts did cannot disagree. `m` is rendered
   from the same ground truth as the balances beside it. `analyze.py` computes every
   report from the traces each time it runs.
 - **9 — Every episode is stamped with everything it ran under, and any difference from
-  the previous episode splits the agent.** The harness's own digest, the image, the
+  the previous episode starts a new arm.** The harness's own digest, the image, the
   provider, requested model, rate catalog, every tunable, the starter files' and each experimenter channel's names and digests, the experiment's
   seating, its schedule and its manifest's digest, and how much of each file `m` carried
   are in every episode's provenance, along with the system prompt in force, whole and by
   digest. The terms an agent is created on - the system prompt, budget, provider, model, starter
   files and threshold - are pinned in its account, so a manifest that later says
-  otherwise is refused. `drift()` reports what changed since the last episode, and an agent whose
-  material changed mid-flight is two agents.
+  otherwise is refused. `drift()` reports what changed since the last episode, and the
+  episodes either side of a change are separate arms.
 
 **Sparse file formats are not an invariant.** A balance carries no
 labels: `n1` is a JSON array of bare integers, `g` is three bare integers a line, and
-the writable blackboard identifies the reader's seat. Filenames and JSON keys are prompt
-surface, so the shapes are recorded in provenance and starter files may explain them or not.
+the writable board identifies the reader's seat. Filenames and JSON keys steer an agent
+as much as its prompt surface does, so the shapes are recorded in provenance and starter
+files may explain them or not.
 
 ## How an episode behaves
 
@@ -216,7 +221,7 @@ result.
 A write that appears to succeed and is silently undone teaches the agent something
 false, and it costs more than a refusal does. Every balance is therefore root's and
 read-only, and a denied write is the truth. The mode bits are visible in the listing the
-agent opens on, which is prompt surface — but honest surface, where a writable file
+agent opens on, so they tell it something — but something honest, where a writable file
 whose writes vanish is the environment claiming something untrue.
 
 **A mode is not enough on its own.** `rm` and `mv` ask the *directory*, not the file, so

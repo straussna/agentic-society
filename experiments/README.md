@@ -28,7 +28,7 @@ is the full grammar and defines every key, including `experiment_id`, `delivery`
 The two examples sit at opposite ends of the grammar, which is what makes them the two
 worth shipping.
 
-Sandbox supplies no behavioral instructions on any surface: the system prompt is
+Sandbox supplies no behavioral instructions on any prompt surface: the system prompt is
 empty, there is no starter document, and Bash uses its built-in API contract.
 Private persistent storage is available without any obligation to use it. There
 is one seat and no social channels or silence penalties. Model calls
@@ -49,9 +49,10 @@ still define the environment.
 
 ## Personas: instruction placement
 
-The personas example uses all three surfaces, each for a distinct purpose.
+The personas example writes on three of the four prompt surfaces, each for a distinct
+purpose; it declares no experimenter channel.
 
-| Surface | Content | Reason |
+| Prompt surface | Content | Reason |
 |---|---|---|
 | System prompt | Seat name, peer name, and a short conversational disposition, including openness to revision | These are stable treatment conditions repeated on every turn. Detailed biography or a required relationship outcome would prescribe what the experiment seeks to observe. |
 | Starter document | Shared orientation: fresh conversations, persistent memory, delayed letters, and optional memory practices | This gives both agents the same starting knowledge in an editable document. It lands once; its current contents are restated in the opening context. It is not an immutable rule. |
@@ -89,7 +90,7 @@ here.
 | `model` | a model in that provider's catalog | The exact model requested for the agent. Required with `provider` and pinned at creation |
 | `budget` | positive integer | Micro-dollars the agent starts with; 1000000 is $1.00. Pinned at creation, and the ceiling on what the agent can cost |
 | `starter_files` | a file or directory prefixed with `./` or `../` relative to the manifest, a name under `files/`, or `""` | What the experimenter places in the agent's private store. Pinned at creation |
-| `starter_files_below` | non-negative integer | The balance at or below which those files land. Set with `starter_files` or not at all: files that never land and a threshold with nothing to land are both agents you did not mean to start |
+| `starter_files_below` | integer ≥ 0; > 0 exactly when `starter_files` is not `""` | The starter threshold: the balance at or below which those files land. Set with `starter_files` or not at all: files that never land and a threshold with nothing to land are both agents you did not mean to start |
 | `context_fraction` | 0 < x ≤ 1 | The fraction of the model's context window at which an episode ends. Cost scales with the square of it |
 | `grace_episodes` | non-negative integer | Opening episodes of an agent that answer for no silence penalty. Turns are billed as usual throughout; only the penalties are waived |
 | `floor_at_zero` | `true`, `false` | Whether a balance below zero is put back to zero. Either way, zero or less ends the agent for good |
@@ -144,7 +145,7 @@ Every action must be declared, including bash. A manifest with no tools is refus
 | `kind` | `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `read_path`, `transfer`, `vote` | What the harness does. `write_slot` replaces what a mailbox slot holds; `send_message` sends one episode-scoped message to the one reachable peer, and `send_message_to` to the peer named by label; `post_public` publishes the agent's post for the next round; `write_memory` replaces the agent's private memory; `write_file` replaces a path inside the one instance the agent writes; `read_path` returns what a whole path holds; `transfer` submits one transfer for the current episode, in either a parsed file or a transfer mailbox; `vote` records an elimination ballot on its scheduled episodes, with abstention, unique-highest and tie resolution handled after the round |
 | `channel` | a channel this manifest declares | Omitted for bash. What the action acts on. A kind takes the shape it fits: `write_slot`, `send_message` and `send_message_to` a mailbox, `post_public` a public directory the agent writes, `write_memory` a private directory, `write_file` a directory the agent writes, `read_path` any channel, `transfer` an enabled transfer schema channel, and `vote` a private directory channel |
 | `description` | any string, optional | Omitted for bash. What the model is told the action is for. Omitted, the harness writes one from the channel and the seating |
-| `every` | positive integer | Required on `vote` and refused on every other kind. Each Nth episode offers voting and private memory while withholding communication tools and the shell |
+| `every` | positive integer | Required on `vote` and refused on every other kind. The vote cycle in rounds: a seat's `every`th round and each multiple of it offers voting and memory while withholding communication tools and the shell |
 
 A declared `description` is prompt surface, the same as a system prompt: it reaches the
 model in the request, it is the experiment's to write, and it is recorded whole and by

@@ -25,12 +25,14 @@ together as an **experiment**, one episode each per round, in rotation or all at
 Each has a finite inference budget that depletes as it runs, shown to it as a file of
 bare integers, and the harness meters every token.
 
-The shipped default is a competition: numbered seats, a blackboard and a mailbox each,
-a transfer channel that moves budget between seats, and a penalty for staying silent.
-What the agents decide to do with it is the result. [docs/manifest.md](docs/manifest.md)
-is the grammar for declaring something else.
+The shipped competition, `experiments/competition.toml`, gives five numbered seats a
+board and a mailbox each, a transfer channel that moves balance between seats, and a
+silence penalty on all three. What the agents decide to do with it is the result. A
+manifest that declares no channels gets the default channels instead, which carry no
+silence penalty. [docs/manifest.md](docs/manifest.md) is the grammar for declaring
+something else.
 
-## What the default experiment measures
+## What the competition measures
 
 - Whether an agent acts on what its peers say, or only on what it can compute from
   the balances.
@@ -49,13 +51,13 @@ intended. The full statement of each is in [docs/design.md](docs/design.md).
 |---|---|
 | **1** | Everything an agent reads is labelled with who wrote it: the harness, the experimenter, its own past self, or a named peer. |
 | **2** | What the harness says to agents is declared, recorded, and true. |
-| **3** | The harness acts only on messages in a fixed, checkable format, never on free text. |
+| **3** | The harness acts only on files that match a schema and on tool calls that match a declared tool, never on free text. Both menus are fixed in code. |
 | **4** | Every limit is enforced by the harness, and none relies on the agent's cooperation. |
-| **5** | Agents reach each other only through channels the experimenter declared. |
-| **6** | Every cost is counted exactly and the books always balance. |
+| **5** | Agents reach each other only through channels the experimenter declared, whether they reach them with the shell or with a declared tool. |
+| **6** | Every cost is counted exactly and the accounts always balance. |
 | **7** | Every episode records what the agent saw, said, did, and left behind. |
-| **8** | Every ledger, summary or report is recomputed from the episode records, never kept as a second copy. |
-| **9** | Every episode is stamped with everything it ran under, and any difference from the previous episode splits the agent. |
+| **8** | Every ledger, digest or report is recomputed from the episode records, never kept as a second copy. |
+| **9** | Every episode is stamped with everything it ran under, and any difference from the previous episode starts a new arm. |
 
 ## Quickstart
 
@@ -92,8 +94,8 @@ See [docs/operating.md](docs/operating.md) before an episode that bills.
 |---|---|
 | `py -3 harness.py --agent live01 --manifest experiments/<name>.toml` | One episode for one seat of an experiment. `--episodes N` for up to N back to back, `--watch` to echo it as it happens. |
 | `py -3 experiment.py <name> -r 20` | Every agent the manifest seats, each where it can read the others. The manifest gives each agent its own prompt, starter files, budget and model, the experiment its settings, its channels and the named actions it offers beside the shell, and picks the schedule: one episode at a time, or every environment built first and the episodes run at once ([docs/manifest.md](docs/manifest.md)). A bare name is looked for under `experiments/` and then `experiments/examples/`; anything with a suffix or a directory in it is the path it is, and `-m/--manifest` and `-r/--rounds` are the long forms. |
-| `py -3 experiment.py competition -r 20` | The default experiment: five seats on one starter brief, simultaneous, each with a blackboard, a message mailbox and a giver-funded currency mailbox, 50% silence penalties after one grace episode, and declared tools in place of a shell. The rounds end when one seat alone is still in the competition. |
-| `py -3 experiment.py personas -r 20` | Two named agents with a private journal and one letter each to the other, nothing scored, a shared starter orientation, and optional correspondence through three declared tools: with no declared Bash tool, they reach their environment through those actions, and the episode opens on the digest rather than a listing, so neither ever reads a filesystem. |
+| `py -3 experiment.py competition -r 20` | The shipped competition: five seats on one set of starter files, simultaneous, each with a board, a mailbox for messages and a giver-funded transfer channel in mailbox form, 50% silence penalties after one grace episode, and declared tools in place of a shell. The rounds end when one seat alone is in play. |
+| `py -3 experiment.py personas -r 20` | Two named agents, each with a memory and one message an episode to the other, nothing scored, shared starter files, and two declared tools, `write_letter` and `remember`: with no declared Bash tool, they reach their environment through those tools, and the episode opens on the digest rather than a listing, so neither ever reads a filesystem. |
 | `py -3 experiment.py sandbox -r 20` | One agent with an empty system prompt, no starter document, Bash and private persistent storage. No persona, objective, social channels or silence penalties. Copy it to start an experiment of your own. |
 | `py -3 check.py` | 366 checks against a fake API. Nothing billed, no key. `--no-docker` skips the 26 that need a container. |
 | `py -3 view.py` | Dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's transcript, refreshing as episodes run. Its one write is an interactive seat's submission from the Play view, through an origin- and token-checked route into `interactions/` ([docs/human.md](docs/human.md)). |
@@ -144,7 +146,7 @@ across them and runs them in a process pool.
 | | |
 |---|---|
 | [docs/design.md](docs/design.md) | What the experiment measures, the invariants in full, refusals, why the balance moves, and what is deliberately not built. |
-| [docs/experiments.md](docs/experiments.md) | Seating, blackboards, mailboxes, transfers, the ledger, and the silence penalties, as the default table and `competition.toml` declare them. |
+| [docs/experiments.md](docs/experiments.md) | Seating, blackboards, mailboxes, transfers, the ledger, and the silence penalties, as the default channels and the shipped competition declare them. |
 | [docs/files.md](docs/files.md) | Material an agent may be given, when it arrives, and how a turn is billed. |
 | [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that bills. |
 | [docs/human.md](docs/human.md) | Interactive seats: the manifest terms, attaching with `human.py`, and how a human turn is recorded. |

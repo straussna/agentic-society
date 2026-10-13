@@ -21,6 +21,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
 | **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, and every manifest declares one, `""` included |
 | **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness refuses to let any of it stop being constant. Configures everything through `config.toml` and a manifest |
+| **Prompt surface** | The four places the experimenter's own words reach an agent: the system prompt, starter files, an experimenter channel, and tool descriptions. Each is recorded in provenance, and a change to any of them starts a new arm |
 | **Agent** | One participant: an account, a seat, a private store inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
 | **Label** | How an agent is named to its peers in paths and files. Defaults to its seat number |
@@ -114,7 +115,7 @@ Three principles bind the language:
   the manifest. The defaults use sparse names; a persona experiment
   chooses its own.
 - **The default environment is the code's.** An experiment that declares no
-  `[[channel]]` gets the table in section 8. It must still declare at least one
+  `[[channel]]` gets the default channels of section 8. It must still declare at least one
   `[[tool]]`. What is said to an agent has no default: a manifest declares it or is
   refused.
 
@@ -248,7 +249,7 @@ pinned by digest like the shipped prompt.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `starter_files` | a file or directory under `files/`, or a `./` or `../` path beside the manifest | `""` | Copied once into the agent's private directory. Pinned |
-| `starter_files_below` | int > 0 when `starter_files` is set | 0 | The balance at or below which they land. At or above the budget, the first episode |
+| `starter_files_below` | int ≥ 0; > 0 exactly when `starter_files` is not `""` | 0 | The starter threshold: the balance at or below which they land. At or above the budget, the first episode |
 
 `starter_files` and `starter_files_below` are set together or not at all. What lands is
 recorded in the account by name, digest, episode and paths, and lands once.
@@ -484,11 +485,12 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a public directory channel the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a private directory channel | `body` | Replaces the agent's private memory without exposing storage paths |
-| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only on each `every`th episode, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
+| `vote` | a private directory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier recipient. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
-**The election** follows each `every`th round. Every seat still in the competition is a
+**The election** follows the last round of each vote cycle: `every` rounds, counted by
+the seat's own round, its episode count plus one. Every seat still in the competition is a
 candidate, and a ballot counts toward the candidate it names. The electors are the seats
 that took the round's episode without a fault; a seat that takes the round after its
 election was held is none, and takes it as a discussion, offered every tool but the
@@ -565,7 +567,7 @@ model inside the request exactly as the system prompt does, it is theirs to writ
 is recorded whole and by digest in the tool table like every other declaration. Two
 wordings of the same action are two arms.
 
-This is the fourth slot an experiment can speak in, beside the system prompt, the starter
+Tool descriptions are the fourth prompt surface, beside the system prompt, the starter
 files and an experimenter channel - and the only one attached to an action. Descriptions
 can explain when an action is useful as well as what it does. An action-specific
 obligation is an experiment design choice, not an API requirement.
@@ -715,9 +717,12 @@ about an agent comes from the experiment's settings.
 | `sequential` | One episode at a time in fixed seat order | Each episode reads what the ones before it in the round wrote |
 | `simultaneous` | Every environment built first; episodes run at once; settled in seat order | Nobody reads this round's writes; a transfer made in round *r* is credited in round *r* and visible at round *r + 1*. A BSP superstep |
 
-## 8. The default manifest
+## 8. The default channels
 
-What an experiment gets when it declares no `[[channel]]` and no `[harness_files]`.
+What an experiment gets when it declares no `[[channel]]` and no `[harness_files]`. It is
+not a manifest of its own: no tools, no system prompt and no agents. The shipped
+competition, `experiments/competition.toml`, is a separate manifest that declares its own
+channels, with silence penalties.
 
 ```toml
 [harness_files]
@@ -874,7 +879,8 @@ Every refusal is a `SystemExit` naming the file and the key.
   names a seat in the new experiment, names a missing or incomplete trace, or cannot
   match the source and target `write_memory` tools exactly.
 - `starter_files` without `starter_files_below` or the reverse; a `starter_files_below`
-  of 0 with `starter_files` set; a file or directory that does not exist.
+  of 0 with `starter_files` naming a source, or above 0 with `starter_files = ""`; a
+  negative `starter_files_below`; a file or directory that does not exist.
 - A manifest with no `system_prompt`, at the settings level or on every agent. Every
   string is allowed, `""` included: an experiment may declare that the harness says
   nothing, and must declare even that.
