@@ -1896,7 +1896,9 @@ def main(argv: list[str] | None = None) -> int:
         f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, {manifest['schedule']})"
     )
     take_seats(agents, seated)
-    log_stage = functools.partial(progress.log_stage, harness.SETTINGS.root, experiment_id)
+    log_stage = functools.partial(
+        progress.log_stage, harness.SETTINGS.root, experiment_id
+    )
     reason = "round_limit"
     code = 0
     # The last round this run prepared.

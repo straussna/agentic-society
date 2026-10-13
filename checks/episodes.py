@@ -720,7 +720,8 @@ def check_watch_is_quiet_and_display_only():
 
 
 def check_run_once_is_build_then_run_then_commit():
-    """run_once is the steps composed: a driver composing them itself gets the same record.
+    """run_once is the steps composed: a driver composing them itself gets the same
+    record.
 
     Same trace, same accounts, same console, so a simultaneous round that holds the
     steps apart commits exactly what an episode run on its own would have.

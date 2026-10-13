@@ -135,7 +135,8 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
         assert "evidence" not in public, (
             "experimenter-only evidence is not player output"
         )
-        assert progress.revealed(outcome, "at_completion", experimenter=True)["evidence"]
+        private = progress.revealed(outcome, "at_completion", experimenter=True)
+        assert private["evidence"]
 
 
 def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():

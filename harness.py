@@ -1798,7 +1798,8 @@ def save_trace(agent: str, episode: int, trace: dict) -> None:
 
 
 def replace_file(src: Path, dest: Path) -> None:
-    """os.replace, retried while a Windows reader holds `dest` open: progress.replace."""
+    """os.replace, retried while a Windows reader holds `dest` open:
+    progress.replace."""
     progress.replace(src, dest)
 
 
