@@ -407,7 +407,7 @@ def check_a_declared_table_reshapes_the_environment():
         and by["from/Game"]["author"] == "peer:Game"
     )
     assert set(t["channels"]) == {"noticeboard", "letters"}, (
-        "the two obligations the table declares"
+        "the two settled channels the table declares"
     )
     assert t["channels"]["noticeboard"]["posted"] and t["channels"]["letters"][
         "addressed"
@@ -473,8 +473,9 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
     assert analyze.label_of(t) == "alpha" and analyze.labels_of(t) == labels
 
 
-def check_a_second_blackboard_channel_is_its_own_obligation():
-    """Two directories every agent reads are two obligations, settled and charged apart."""
+def check_a_second_board_channel_takes_its_own_silence_penalty():
+    """Two directories every agent reads take two silence penalties, settled and
+    charged apart."""
     gallery = {
         "name": "gallery",
         "writer": "self",
@@ -581,9 +582,10 @@ def check_a_receipt_itemizes_the_last_episode_settlement():
     ]
 
 
-def check_a_receipt_says_what_each_obligation_came_to():
-    """Each obligated channel a receipt names is met or not, and says what that was in
-    its settlement rule's own words: a post, a message and to whom, a transfer."""
+def check_a_receipt_says_what_each_silence_penalty_came_to():
+    """Each settled channel a receipt names states its silence penalty, none where the
+    episode spoke on it, and says what the episode did in its settlement rule's own
+    words: a post, a message and to whom, a transfer."""
 
     def said(records: dict) -> list[str]:
         account = {
@@ -601,10 +603,10 @@ def check_a_receipt_says_what_each_obligation_came_to():
             ],
         }
         text = harness.receipt_text(account, harness.channel("transfer"))
-        return [line for line in text.splitlines() if " obligation: " in line]
+        return [line for line in text.splitlines() if " silence penalty: " in line]
 
     with temp_root(channels=ALL_OWED):
-        met = said(
+        spoke = said(
             {
                 "blackboard": {"posted": True, "penalty": 0},
                 "mail": {"broken": [], "addressed": ["2", "3"], "penalty": 0},
@@ -617,24 +619,35 @@ def check_a_receipt_says_what_each_obligation_came_to():
                 },
             }
         )
-        unmet = said(
+        silent = said(
             {
                 "blackboard": {"posted": False, "penalty": 50},
                 "mail": {"broken": [], "addressed": [], "penalty": 45},
                 "transfer": {**harness.EMPTY_TRANSFER, "penalty": 40},
             }
         )
+        # Silent and charged nothing, as inside the grace: 0, which is not none.
+        untaken = said(
+            {
+                "blackboard": {"posted": False, "penalty": 0},
+                "transfer": {**harness.EMPTY_TRANSFER},
+            }
+        )
 
-    assert met == [
-        "blackboard obligation: met (board post published)",
-        "mail obligation: met (message sent to 2, 3)",
-        "transfer obligation: met (transfer moved money)",
-    ], met
-    assert unmet == [
-        "blackboard obligation: not met (no board post)",
-        "mail obligation: not met (no message sent)",
-        "transfer obligation: not met (no transfer moved money)",
-    ], unmet
+    assert spoke == [
+        "blackboard silence penalty: none (board post published)",
+        "mail silence penalty: none (message sent to 2, 3)",
+        "transfer silence penalty: none (transfer moved money)",
+    ], spoke
+    assert silent == [
+        "blackboard silence penalty: 50 (no board post)",
+        "mail silence penalty: 45 (no message sent)",
+        "transfer silence penalty: 40 (no transfer moved money)",
+    ], silent
+    assert untaken == [
+        "blackboard silence penalty: 0 (no board post)",
+        "transfer silence penalty: 0 (no transfer moved money)",
+    ], untaken
 
 
 def check_a_receipt_is_roots_in_the_container():

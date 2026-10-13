@@ -821,8 +821,8 @@ def branch_experiment(
     for seat, entry, parent, episode in sources:
         paid = sum(
             amount
-            for round, _, taker, amount in ledger
-            if taker == manifest["labels"][seat] and round <= at_round
+            for round, _, receiver, amount in ledger
+            if receiver == manifest["labels"][seat] and round <= at_round
         )
         if (seat_totals := branch_totals(parent, episode, paid)) is None:
             raise SystemExit(

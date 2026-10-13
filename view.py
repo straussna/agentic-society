@@ -905,27 +905,29 @@ def latest_transfer(latest: dict, table: list[harness.Channel]) -> dict | None:
     }
 
 
-def obligations(t: dict | None) -> dict[str, bool | None]:
-    """What each obligation this episode owed came to, by channel name, in table order.
+def spoke(t: dict | None) -> dict[str, bool | None]:
+    """Whether this episode spoke on each channel it was settled against, by channel
+    name, in table order.
 
-    One entry a channel and not three by kind: the harness settles every obligated
-    channel apart, so a table declaring two blackboards owes two things and says
-    so here. What was met and what was charged are two questions: a share is taken
-    only from an episode the API answered, past the grace, at a rate above zero,
-    so an episode can leave every obligation undone and be charged for none. Empty
-    with no trace. Every pane that states an obligation states it from here, so no
-    two of them can answer differently.
+    One entry a channel and not three by kind: the harness settles every channel
+    apart, so a table declaring two blackboards judges two silences and says so
+    here. Whether the episode was silent and what was taken are two questions: a
+    share is taken only from an episode the API answered, past the grace, at a rate
+    above zero, so an episode can be silent on every channel and take no silence
+    penalty. Empty with no trace. Every pane that states whether an episode spoke
+    states it from here, so no two of them can answer differently.
     """
     if t is None:
         return {}
     return {
-        ch.name: analyze.met_of(ch, channel_result)
+        ch.name: analyze.spoke_on(ch, channel_result)
         for ch, channel_result in analyze.settled_channels(t)
     }
 
 
-def unmet(t: dict | None) -> list[dict]:
-    """Each obligation this episode left undone, in table order, and what it cost.
+def silent(t: dict | None) -> list[dict]:
+    """Each channel this episode was silent on, in table order, why, and what its
+    silence penalty took.
 
     Said in the words the harness's own console line uses, from the same
     harness.SETTLEMENTS entry, so the page and the console cannot describe one
@@ -936,11 +938,11 @@ def unmet(t: dict | None) -> list[dict]:
     """
     out = []
     for ch, channel_result in analyze.settled_channels(t or {}):
-        if analyze.met_of(ch, channel_result) is not False:
+        if analyze.spoke_on(ch, channel_result) is not False:
             continue
-        why = channel_result.get("error") or harness.SETTLEMENTS[ch.settles_as].why(
-            channel_result, ch
-        )
+        why = channel_result.get("error") or harness.SETTLEMENTS[
+            ch.settles_as
+        ].silence(channel_result, ch)
         penalty = channel_result.get("penalty") or 0
         out.append({"channel": ch.name, "why": why, "penalty": penalty})
     return out
@@ -1047,9 +1049,9 @@ def seat_row(
         + going["spent"],
         "stop": last["stop"] if last else None,
         "stopped_by_run": stopped_by_run,
-        # What the last committed episode owed and left undone, one entry a
-        # channel, each in the words the console line uses.
-        "unmet": unmet(last),
+        # Every channel the last committed episode was silent on, each in the words
+        # the console line uses.
+        "silent": silent(last),
         "refused": sum(len(analyze.refused_turns_of(t)) for t in ts),
         "drift": (last or {}).get("provenance_drift") or [],
         # Everything that moved the balance without being a turn. Read off the
@@ -2044,8 +2046,8 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         "transfer": trace.get("transfer") or {},
         "channels": analyze.channel_records(trace),
         "floored": trace.get("floored") or 0,
-        "obligations": obligations(trace),
-        "unmet": unmet(trace),
+        "spoke": spoke(trace),
+        "silent": silent(trace),
         "turns": from_trace(trace),
     }
     if since == 0:
@@ -2111,8 +2113,8 @@ def raw_view(agent: str, index: int, since: int) -> dict:
         "transfer": {},
         "channels": {},
         "floored": 0,
-        "obligations": obligations(None),
-        "unmet": unmet(None),
+        "spoke": spoke(None),
+        "silent": silent(None),
         "turns": going["turns"],
     }
     if since == 0:

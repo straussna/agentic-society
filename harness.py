@@ -529,7 +529,7 @@ class Channel:
         return self.writer == "self" and self.shape != "file"
 
     @property
-    def obligated(self) -> bool:
+    def is_settled(self) -> bool:
         """Whether an episode is settled against this channel.
 
         Three reasons, each configured on its own: a schema, whose settlement is
@@ -542,7 +542,7 @@ class Channel:
 
     @property
     def settles_as(self) -> SettlesAs:
-        """The rule an obligated channel is settled by: its schema's where it has one,
+        """The rule a settled channel is settled by: its schema's where it has one,
         a mailbox's where it is one, and otherwise a directory's, which asks what the
         channel gained."""
         if self.schema:
@@ -1378,7 +1378,7 @@ class Settings:
     )
     # Rewrite the balance file in the container after every billed turn.
     live_balance: bool = True
-    # Episodes at the start of an agent that answer for no obligation.
+    # Episodes at the start of an agent that take no silence penalty.
     grace_episodes: int = 0
     floor_at_zero: bool = False  # put a balance below zero back to zero
     # A file or directory under files/, or a path beside the manifest; "" is an empty
@@ -2227,9 +2227,9 @@ def credit_account(account: Account, amount: int) -> None:
 def credit_on_disk(agent: str, amount: int) -> None:
     """Credit a transfer to a receiver's account on disk, or take one back with a negative
     amount: the receiver is not in flight."""
-    taker = load_account(agent)
-    credit_account(taker, amount)
-    save_account(agent, taker)
+    receiver = load_account(agent)
+    credit_account(receiver, amount)
+    save_account(agent, receiver)
 
 
 def credit_episode(ep: Episode, amount: int) -> None:
@@ -2509,7 +2509,7 @@ def reserved(instances: list[Instance], paths: list[str]) -> list[Instance]:
     """Keep the harness's own files out of the directories they are planted in.
 
     A receipt sits inside a directory the agent writes and comes back with it at
-    the episode's end; excluding it keeps it out of the digest, the obligation and
+    the episode's end; excluding it keeps it out of the digest, the settlement and
     the record, where it would read as the agent's. A file the agent puts at that
     path in its place is its own: snapshot records it and scrub_receipts leaves it.
     """
@@ -2592,7 +2592,7 @@ def render_ledger(rows: list[tuple[str, str, int]]) -> str:
     beside the balances as one more file of bare integers. What each column means
     is stated in the starter files or not at all.
     """
-    return "".join(f"{giver} {taker} {amount}\n" for giver, taker, amount in rows)
+    return "".join(f"{giver} {receiver} {amount}\n" for giver, receiver, amount in rows)
 
 
 def balances(agent: str, account: Account) -> dict[str, list[int]]:
@@ -2623,13 +2623,16 @@ def ledger_events(
         for episode in source.get("episodes") or []:
             transfer = episode.get("transfer") or {}
             if amount := transfer.get("amount") or 0:
-                taker = transfer.get("label") or s.labels.get(
+                receiver = transfer.get("label") or s.labels.get(
                     transfer["seat"], transfer["seat"]
                 )
-                rows.append((episode["episode"], seat, s.labels[seat], taker, amount))
+                rows.append(
+                    (episode["episode"], seat, s.labels[seat], receiver, amount)
+                )
     rows.sort(key=lambda row: (row[0], int(row[1])))
     return [
-        (episode, giver, taker, amount) for episode, _, giver, taker, amount in rows
+        (episode, giver, receiver, amount)
+        for episode, _, giver, receiver, amount in rows
     ]
 
 
@@ -2641,8 +2644,8 @@ def ledger(agent: str, account: Mapping[str, Any]) -> list[tuple[str, str, int]]
     the same order.
     """
     return [
-        (giver, taker, amount)
-        for _, giver, taker, amount in ledger_events(agent, account)
+        (giver, receiver, amount)
+        for _, giver, receiver, amount in ledger_events(agent, account)
     ]
 
 
@@ -2667,9 +2670,10 @@ def receipt_text(account: Account, ch: Channel) -> str:
     transfer_made = bool(transfer.get("amount"))
     grace = episode.get("episode", 0) <= SETTINGS.grace_episodes
     giver = seating_of(account["agent"], account).label
-    recipient = transfer.get("label") or transfer.get("seat")
+    receiver = transfer.get("label") or transfer.get("seat")
     moved = (
-        f"{giver} (you) -> {recipient}; actual amount moved: {transfer['amount']} micro-dollars"
+        f"{giver} (you) -> {receiver}; "
+        f"actual amount moved: {transfer['amount']} micro-dollars"
         if transfer.get("amount")
         else f"nothing ({transfer.get('error') or 'no declaration'})"
     )
@@ -2677,7 +2681,7 @@ def receipt_text(account: Account, ch: Channel) -> str:
         f"round: {episode.get('episode', '?')}",
         f"starting balance: {start}",
         f"API spend: {episode.get('spent', 0)}",
-        f"obligation penalties waived by grace: {'yes' if grace else 'no'}",
+        f"grace episode: {'yes (silence penalties waived)' if grace else 'no'}",
         f"transfer declaration: {declared[0] if declared else 'nothing'}",
         f"transfer made: {'yes' if transfer_made else 'no'}",
         f"transfer moved: {moved}",
@@ -2685,23 +2689,28 @@ def receipt_text(account: Account, ch: Channel) -> str:
         f"transfer rebate: {transfer.get('rebate', 0)}",
     ]
     for channel in channels():
-        if not channel.obligated or channel.name not in records:
+        if not channel.is_settled or channel.name not in records:
             continue
         record = records[channel.name]
         settlement = SETTLEMENTS[channel.settles_as]
-        met = settlement.met(record)
+        spoke = settlement.spoke(record)
+        # A channel the episode spoke on takes no silence penalty. A silent one states
+        # what was taken, which is 0 inside the grace, at a rate of 0, and wherever its
+        # rule takes nothing.
+        penalty = "none" if spoke else record.get("penalty", 0)
         lines.append(
-            f"{channel.name} obligation: {'met' if met else 'not met'} ({settlement.detail(record, met)})"
+            f"{channel.name} silence penalty: {penalty} "
+            f"({settlement.detail(record, spoke)})"
         )
-        lines.append(f"{channel.name} penalty: {record.get('penalty', 0)}")
     lines += [
-        f"total penalties: {penalties}",
+        f"total silence penalties: {penalties}",
         f"received from peers: {received}",
         f"balance-floor adjustment: {floored}",
         f"ending balance: {ending}",
         (
-            "reconciliation: starting balance - API spend - transfer debit + transfer rebate "
-            "- total penalties + received from peers + balance-floor adjustment = ending balance"
+            "reconciliation: starting balance - API spend - transfer debit "
+            "+ transfer rebate - total silence penalties + received from peers "
+            "+ balance-floor adjustment = ending balance"
         ),
     ]
     return "\n".join(lines) + "\n"
@@ -2858,7 +2867,7 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
     if len(fields) != 2 or not fields[1].isdigit():
         return "No valid transfer was submitted last round.\n"
     return (
-        f"recipient: {fields[0]}\n"
+        f"receiver: {fields[0]}\n"
         f"requested amount: {fields[1]} micro-dollars\n"
         "status: submitted last round; the transfer ledger reports the amount actually moved\n"
     )
@@ -2889,10 +2898,11 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
             return f"{label} (you)" if label == own else label
 
         return (
-            "Completed transfers (giver -> recipient; amount actually moved):\n"
+            "Completed transfers (giver -> receiver; amount actually moved):\n"
             + "".join(
-                f"- round {episode}: {shown(giver)} -> {shown(taker)}; actual amount moved: {amount} micro-dollars\n"
-                for episode, giver, taker, amount in events
+                f"- round {episode}: {shown(giver)} -> {shown(receiver)}; "
+                f"actual amount moved: {amount} micro-dollars\n"
+                for episode, giver, receiver, amount in events
             )
         )
     return body
@@ -3232,7 +3242,8 @@ def file_sha256(p: Path) -> str:
     """The sha256 of one declared file, or "" where there is none.
 
     Absent and empty read alike: neither declares anything. Compared against the
-    same file at episode start, since the obligation is a declaration of the episode's own.
+    same file at episode start, since a transfer settles only a declaration of the
+    episode's own.
     """
     if not p.is_file():
         return ""
@@ -3243,16 +3254,16 @@ def file_sha256(p: Path) -> str:
 def before_sha256(
     instances: list[Instance], reach: dict[str, str], labels: dict[str, str]
 ) -> dict[str, Any]:
-    """What every obligated channel the agent writes held at episode start, by name.
+    """What every settled channel the agent writes held at episode start, by name.
 
     A directory by path, a mailbox by slot, a parsed file as one sha256. Channels
-    whose obligation is a change compare their final state against this record.
+    whose rule asks for a change compare their final state against this record.
     """
     slots = [labels[seat] for seat in reach]
     before: dict[str, Any] = {}
     for inst in instances:
         ch = inst.channel
-        if not inst.writable or not ch.obligated:
+        if not inst.writable or not ch.is_settled:
             continue
         if ch.schema and ch.shape == "file":
             before[ch.name] = file_sha256(inst.host)
@@ -5338,7 +5349,7 @@ class TransferFault:
 def transfer_declaration(
     ch: Channel, path: Path, peer_labels: Iterable[str]
 ) -> TransferParsed | TransferFault:
-    """Read this episode's transfer: what was declared, and either the recipient and
+    """Read this episode's transfer: what was declared, and either the receiver and
     amount it names or why it names none."""
     if ch.shape == "file":
         if not path.exists():
@@ -5510,8 +5521,8 @@ def resolve_mailbox(
 
     A message is a file: <outbox>/<label> arrives at that peer as
     <inbox>/<this agent's label>. Any number of reachable slots may be filled; the
-    obligation is met when at least one is. Only a reachable peer's slot is judged.
-    A message moves no money, so `spent` and `credit` go unread.
+    episode speaks on the mailbox when at least one is. Only a reachable peer's slot
+    is judged. A message moves no money, so `spent` and `credit` go unread.
     """
     slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
     channel_result: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
@@ -5536,8 +5547,9 @@ def resolve_mailbox(
     return channel_result
 
 
-def outbox_why(channel_result: Mapping[str, Any], ch: Channel) -> str:
-    """What the outbox was charged for, named by slot where a slot is at fault.
+def outbox_silence(channel_result: Mapping[str, Any], ch: Channel) -> str:
+    """What the outbox's silence penalty was taken for, named by slot where a slot is
+    at fault.
 
     One share covers however many ways an episode broke the rule, so this names
     all of them. Slots are how the sender reads its own outbox.
@@ -5551,55 +5563,57 @@ def outbox_why(channel_result: Mapping[str, Any], ch: Channel) -> str:
     return " and ".join(why)
 
 
-def transfer_met(transfer: Mapping[str, Any]) -> bool:
-    """A transfer meets the obligation only when the episode moved money and no share
+def transfer_spoke(transfer: Mapping[str, Any]) -> bool:
+    """The episode spoke on the transfer channel only when it moved money and no share
     was taken for having moved none."""
     return bool(transfer["amount"]) and not transfer["penalty"]
 
 
 @dataclasses.dataclass(frozen=True)
 class Settlement:
-    """One rule an obligated channel is settled by: what settling it does, what met
-    means, what an unmet one is called, and what a receipt says either way.
+    """One rule a settled channel is settled by: what settling it does, what speaking
+    on the channel means, what a silent episode is said to have left undone, and what
+    a receipt says either way.
 
     `resolve` settles one episode against the agent's own instance and returns the
     record the account and the trace keep. It is handed what any rule settles with -
     the episode, the instance, what the episode spent, whether it settles, and how a
-    credit reaches its receiver - and reads what its own rule needs. `met` reads a
-    record back, just settled or out of a trace, as whether the obligation was met.
-    `why` names what an unmet one left undone, in the words the console line and
-    the viewer share. `detail` says what a record came to, handed whether it met the
-    obligation, in the words receipt_text itemizes it in.
+    credit reaches its receiver - and reads what its own rule needs. `spoke` reads a
+    record back, just settled or out of a trace, as whether the episode spoke on the
+    channel, which is what spares it the silence penalty. `silence` names what a
+    silent one left undone, in the words the console line and the viewer share.
+    `detail` says what a record came to, handed whether the episode spoke, in the
+    words receipt_text itemizes it in.
     """
 
     resolve: Callable[
         [Episode, Instance, int, bool, Callable[[str, int], None]], Mapping[str, Any]
     ]
-    met: Callable[[Mapping[str, Any]], bool]
-    why: Callable[[Mapping[str, Any], Channel], str]
+    spoke: Callable[[Mapping[str, Any]], bool]
+    silence: Callable[[Mapping[str, Any], Channel], str]
     detail: Callable[[Mapping[str, Any], bool], str]
 
 
 # One entry a rule, keyed by Channel.settles_as. settle_episode resolves by it, the
-# console line and view.unmet say what went undone by it, a receipt itemizes by it,
-# and analyze.met_of judges by it, so no two of them can take one channel for
+# console line and view.silent say what went undone by it, a receipt itemizes by it,
+# and analyze.spoke_on judges by it, so no two of them can take one channel for
 # different kinds.
 SETTLEMENTS: dict[SettlesAs, Settlement] = {
     "transfer": Settlement(
         resolve_transfer,
-        transfer_met,
+        transfer_spoke,
         lambda transfer, ch: "no transfer of its own",
-        lambda transfer, met: (
-            "transfer moved money" if met else "no transfer moved money"
+        lambda transfer, spoke: (
+            "transfer moved money" if spoke else "no transfer moved money"
         ),
     ),
     "mailbox": Settlement(
         resolve_mailbox,
         lambda channel_result: bool(channel_result["addressed"]),
-        outbox_why,
-        lambda channel_result, met: (
+        outbox_silence,
+        lambda channel_result, spoke: (
             "message sent to " + ", ".join(channel_result["addressed"])
-            if met
+            if spoke
             else "no message sent"
         ),
     ),
@@ -5607,22 +5621,25 @@ SETTLEMENTS: dict[SettlesAs, Settlement] = {
         resolve_directory,
         lambda channel_result: bool(channel_result["posted"]),
         lambda channel_result, ch: "no post",
-        lambda channel_result, met: (
-            "board post published" if met else "no board post"
+        lambda channel_result, spoke: (
+            "board post published" if spoke else "no board post"
         ),
     ),
 }
 
 
-def settled_why(settled: Iterable[tuple[Channel, Mapping[str, Any]]]) -> str:
-    """What each channel settled for, for the console line, named by channel.
+def silence_penalties_said(
+    settled: Iterable[tuple[Channel, Mapping[str, Any]]],
+) -> str:
+    """What each channel's silence penalty took, for the console line, named by
+    channel.
 
     Takes the channels settle_episode settled beside their records, so the
     statement is made of what the episode ran under and not of the table in force.
     A channel is named where a share was taken, in its rule's words.
     """
     return "".join(
-        f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(channel_result, ch)}, "
+        f"  {ch.name}: {SETTLEMENTS[ch.settles_as].silence(channel_result, ch)}, "
         f"took {channel_result['penalty']}"
         for ch, channel_result in settled
         if channel_result["penalty"]
@@ -5708,7 +5725,7 @@ def provenance(
         "live_balance": s.live_balance,
         # How long a schema-free mailbox message lives: one episode.
         "message_lifetime": "episode",
-        # Episodes at the start of an agent that answer for no obligation.
+        # Episodes at the start of an agent that take no silence penalty.
         "grace_episodes": s.grace_episodes,
         # Whether an agent ends holding the sign flip, or is floored at zero.
         "floor_at_zero": s.floor_at_zero,
@@ -5935,7 +5952,7 @@ class Episode:
     """One episode's environment, built and ready to run.
 
     Everything build_episode read or made: the account and what the episode was
-    shown, what its obligated channels held by sha256, the container with
+    shown, what its settled channels held by sha256, the container with
     the environment planted, and the shell. run_episode adds what came back;
     settle_episode and close_episode commit it. A driver holds one per agent for
     the length of a round.
@@ -5958,7 +5975,7 @@ class Episode:
     prov: dict
     drifted: list[str]
     records: Path
-    before: dict[str, Any]  # what each obligated channel held at episode start
+    before: dict[str, Any]  # what each settled channel held at episode start
     started: float = 0.0
     sandbox: Sandbox | None = None  # None until build_episode has started one
     shell: Shell | None = None
@@ -6197,11 +6214,11 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
 def settle_episode(
     ep: Episode, out: dict, credit: Callable[[str, int], None] | None = None
 ) -> dict:
-    """Take the spend from the balance and settle every obligation the channel table
-    declares.
+    """Take the spend from the balance and settle every channel the channel table
+    declares settled.
 
-    The parsed channel settles first, then every other obligated channel in
-    declaration order, and each penalty that moves the balance appends to the
+    The parsed channel settles first, then every other settled channel in
+    declaration order, and each silence penalty that moves the balance appends to the
     balance history. Every penalty is a share of what is left, so the order decides the
     amounts. An episode the API never answered chose none of them and is charged
     for none, and grace_episodes waives the charges without stopping the
@@ -6218,7 +6235,7 @@ def settle_episode(
     settles = bool(out["turns"]) and ep.episode > SETTINGS.grace_episodes
     credits: list[tuple[str, int]] = []
     pay = credit or (lambda receiver, amount: credits.append((receiver, amount)))
-    own = [i for i in ep.instances if i.writable and i.channel.obligated]
+    own = [i for i in ep.instances if i.writable and i.channel.is_settled]
     ordered = sorted(own, key=lambda i: not i.channel.schema)
     records: dict[str, Mapping[str, Any]] = {}
     for inst in ordered:
@@ -6400,7 +6417,7 @@ def trace_of(
         # when this episode started.
         "ledger": ep.ledger_shown,
         # What settled after the last billed turn: the parsed channel, every
-        # obligated channel by name, the floor, and what arrived.
+        # settled channel by name, the floor, and what arrived.
         "transfer": settled["transfer"],
         "channels": settled["channels"],
         "floored": floored,
@@ -6442,7 +6459,7 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
         line += f"  refused={trace['refused_turns']}x  why={refusal_category(trace['turns'])}"
     if transfer["amount"]:
         line += f"  transfer={transfer['amount']}->{transfer['label']}"
-    line += settled_why(settled["settled"])
+    line += silence_penalties_said(settled["settled"])
     if trace["floored"]:
         line += f"  FLOORED +{trace['floored']}"
     return line

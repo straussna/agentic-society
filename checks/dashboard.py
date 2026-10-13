@@ -1524,11 +1524,12 @@ def check_the_view_carries_every_provenance_field_the_trace_holds():
     )
 
 
-def check_the_view_states_an_obligation_the_grace_waived():
-    """What an episode owed and what it was charged are two questions.
+def check_the_view_states_a_silence_the_grace_waived():
+    """Whether an episode was silent and what it was charged are two questions.
 
-    A share is taken only past the grace, so an episode inside it can leave all
-    three undone for nothing. Every pane says the same thing about that episode.
+    A silence penalty is taken only past the grace, so an episode inside it can be
+    silent on all three for nothing. Every pane says the same thing about that
+    episode.
     """
     with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
@@ -1540,11 +1541,11 @@ def check_the_view_states_an_obligation_the_grace_waived():
             if s["agent"] == "t"
         )
 
-        assert v["obligations"] == {
+        assert v["spoke"] == {
             "blackboard": False,
             "mail": False,
             "transfer": False,
-        }, v["obligations"]
+        }, v["spoke"]
         assert (
             t["channels"]["blackboard"]["penalty"],
             t["channels"]["mail"]["penalty"],
@@ -1554,14 +1555,14 @@ def check_the_view_states_an_obligation_the_grace_waived():
             0,
             0,
         ), "and the grace charged it for none of them"
-        assert [(u["channel"], u["why"], u["penalty"]) for u in v["unmet"]] == [
+        assert [(u["channel"], u["why"], u["penalty"]) for u in v["silent"]] == [
             ("blackboard", "no post", 0),
             ("mail", "no message", 0),
             ("transfer", "no transfer of its own", 0),
-        ], v["unmet"]
+        ], v["silent"]
         # The tile and the transcript answer from one place, so neither can
-        # state an obligation the other leaves out.
-        assert mine["unmet"] == v["unmet"], (mine["unmet"], v["unmet"])
+        # state a silence the other leaves out.
+        assert mine["silent"] == v["silent"], (mine["silent"], v["silent"])
 
 
 def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():

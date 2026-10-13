@@ -151,7 +151,7 @@ def check_the_report_names_what_the_traces_hold():
         ("starter_files", f"s ({sha256[:12]}), configured to land below 500000"),
         ("starter_files first seen", 1),
         ("first named a starter", 1),
-        ("episodes that met mail", "1 of 2"),
+        ("episodes that spoke on mail", "1 of 2"),
         ("first addressed a seat", 1),
         ("first crowded a seat", "never"),
         ("its own seat", "1, label 1, balance n1"),
@@ -247,8 +247,8 @@ def check_the_csv_row_flattens_a_trace():
 
 
 def check_the_analysis_counts_every_channel_the_harness_charged():
-    """A table with two directories every agent reads is two obligations wherever
-    an episode is read back: the CSV, the report and the page.
+    """A table with two directories every agent reads is two settled channels
+    wherever an episode is read back: the CSV, the report and the page.
 
     The harness settles each apart and keeps the shares apart in the account. A
     reader that answered from the first channel of each kind would under-report
@@ -278,30 +278,32 @@ def check_the_analysis_counts_every_channel_the_harness_charged():
     assert took == {"gallery": t["channels"]["gallery"]["penalty"]}, took
 
     # Each board has columns of its own, and neither is folded into the other's.
-    assert (r["blackboard_met"], r["blackboard_penalised"]) == (True, 0), r
-    assert (r["gallery_met"], r["gallery_penalised"]) == (False, took["gallery"]), r
-    assert r["mail_met"] is False and r["transfer_met"] is False, r
+    assert (r["blackboard_spoke"], r["blackboard_penalised"]) == (True, 0), r
+    assert (r["gallery_spoke"], r["gallery_penalised"]) == (False, took["gallery"]), r
+    assert r["mail_spoke"] is False and r["transfer_spoke"] is False, r
 
     # The report states the share by the channel it was taken on, and how many
-    # episodes met each obligation, one line a channel.
+    # episodes spoke on each channel, one line a channel.
     assert (
         analyze.report_line("taken for silence on gallery", took["gallery"]) in text
     ), text
-    assert analyze.report_line("episodes that met gallery", "0 of 1") in text, text
-    assert analyze.report_line("episodes that met blackboard", "1 of 1") in text, text
+    assert analyze.report_line("episodes that spoke on gallery", "0 of 1") in text, text
+    assert (
+        analyze.report_line("episodes that spoke on blackboard", "1 of 1") in text
+    ), text
 
     # And the page names the channel, so the tile and the transcript cannot state
-    # an obligation the other leaves out.
-    assert v["obligations"] == {
+    # a silence the other leaves out.
+    assert v["spoke"] == {
         "blackboard": True,
         "gallery": False,
         "mail": False,
         "transfer": False,
-    }, v["obligations"]
-    assert ("gallery", "no post") in [(u["channel"], u["why"]) for u in v["unmet"]], v[
-        "unmet"
-    ]
-    assert mine["unmet"] == v["unmet"], (mine["unmet"], v["unmet"])
+    }, v["spoke"]
+    assert ("gallery", "no post") in [
+        (u["channel"], u["why"]) for u in v["silent"]
+    ], v["silent"]
+    assert mine["silent"] == v["silent"], (mine["silent"], v["silent"])
 
 
 def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():

@@ -169,25 +169,27 @@ def channel_records(t: dict) -> dict[str, dict]:
 def settled_channels(t: dict) -> list[tuple[harness.Channel, dict]]:
     """Every channel this episode was settled against, with its record, in table order.
 
-    The harness settles each obligated channel apart and records it by name, so an
-    experiment declaring two blackboards or three mailboxes is read here as the
-    obligations it had. A channel the environment left out - a mailbox with nobody
-    to reach - has no record and is not one of them.
+    The harness settles each channel apart and records it by name, so an experiment
+    declaring two blackboards or three mailboxes is read here as that many settled
+    channels. A channel the environment left out - a mailbox with nobody to reach -
+    has no record and is not one of them.
     """
     records = channel_records(t)
     return [(c, records[c.name]) for c in harness.table_of(t) if c.name in records]
 
 
-def met_of(ch: harness.Channel, channel_result: dict) -> bool | None:
-    """Whether one settled channel's obligation was met, by its rule in harness.SETTLEMENTS.
+def spoke_on(ch: harness.Channel, channel_result: dict) -> bool | None:
+    """Whether the episode spoke on one settled channel, by its rule in
+    harness.SETTLEMENTS.
 
-    None where the record is empty, which is a channel that settled nothing. What
-    was met and what was charged are two questions: a share is taken only from an
-    episode the API answered, past the grace, at a rate above zero.
+    None where the record is empty, which is a channel that settled nothing. Whether
+    the episode was silent and what was taken are two questions: a silence penalty
+    is taken only from an episode the API answered, past the grace, at a rate above
+    zero.
     """
     if not channel_result:
         return None
-    return harness.SETTLEMENTS[ch.settles_as].met(channel_result)
+    return harness.SETTLEMENTS[ch.settles_as].spoke(channel_result)
 
 
 def mailbox_channel_of(t: dict) -> harness.Channel | None:
@@ -536,7 +538,7 @@ def transfer_cols(t: dict) -> dict:
 
 
 def channel_cols(t: dict) -> dict:
-    """Every obligation this episode was settled against, named for its channel, and
+    """Every channel this episode was settled against, named for its channel, and
     the floor.
 
     One group a channel and not one group a kind, so a second blackboard or a
@@ -546,13 +548,13 @@ def channel_cols(t: dict) -> dict:
     """
     cols: dict = {}
     for ch, channel_result in settled_channels(t):
-        met = met_of(ch, channel_result)
-        cols[f"{ch.name}_met"] = "" if met is None else met
+        spoke = spoke_on(ch, channel_result)
+        cols[f"{ch.name}_spoke"] = "" if spoke is None else spoke
         cols[f"{ch.name}_penalised"] = channel_result.get("penalty", "")
         if ch.settles_as == "mailbox":
             # Which labels this episode newly said something to, against which of
-            # them it left holding anything but one file. One of these is the
-            # obligation and the other is the break.
+            # them it left holding anything but one file. One of these is what
+            # spares the silence penalty and the other is the break.
             cols[f"{ch.name}_addressed"] = ";".join(channel_result["addressed"])
             cols[f"{ch.name}_crowded"] = ";".join(channel_result["broken"])
     cols["floored"] = t.get("floored", 0)
@@ -735,28 +737,30 @@ def peer_lines(ts: list[dict]) -> list[str]:
         first_line("first named a peer", ts, touched_peer),
         first_line("first public file", ts, own_public_files),
         report_line("public files, last seen", len(own_public_files(ts[-1]))),
-        *met_lines(ts),
+        *spoke_lines(ts),
         first_line("first addressed a seat", ts, addressed_labels),
         first_line("first read an inbox", ts, inbox_files),
         first_line("first crowded a seat", ts, lambda t: mailbox_of(t).get("broken")),
     ]
 
 
-def met_lines(ts: list[dict]) -> list[str]:
-    """How many episodes met each obligation, one line a channel, in table order.
+def spoke_lines(ts: list[dict]) -> list[str]:
+    """How many episodes spoke on each settled channel, one line a channel, in table
+    order.
 
     Counted over the episodes that had the channel, so one the table gained
-    partway through is not marked unmet in the episodes that never owed it.
+    partway through is not marked silent in the episodes that never had it.
     """
     seen: dict[str, list[bool | None]] = {}
     for t in ts:
         for ch, channel_result in settled_channels(t):
-            seen.setdefault(ch.name, []).append(met_of(ch, channel_result))
+            seen.setdefault(ch.name, []).append(spoke_on(ch, channel_result))
     return [
         report_line(
-            f"episodes that met {name}", f"{sum(1 for m in mets if m)} of {len(mets)}"
+            f"episodes that spoke on {name}",
+            f"{sum(1 for spoke in spokes if spoke)} of {len(spokes)}",
         )
-        for name, mets in seen.items()
+        for name, spokes in seen.items()
     ]
 
 
@@ -767,7 +771,7 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     environment says a negative balance ends the agent, and the shortfall was returned.
     """
     given = [t for t in ts if t["transfer"]["amount"]]
-    # Every obligation is charged apart, so the totals are kept apart: one sum
+    # Every silence penalty is taken apart, so the totals are kept apart: one sum
     # over all of them would say an agent went quiet but never on what.
     taken: dict[str, int] = collections.Counter()
     for t in ts:

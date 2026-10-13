@@ -36,20 +36,20 @@ def check_a_transfer_applies_only_to_the_episode_that_submits_it():
         first = episode_once(run("echo '2 120' > outbox/transfer"), say())
         expired = episode_once(run("true"), say())
         again = episode_once(run("echo '2 120' > outbox/transfer"), say())
-        taker = ground_truth("other")
+        receiver = ground_truth("other")
     assert first["transfer"]["amount"] == again["transfer"]["amount"] == 120, (
         first,
         again,
     )
     assert expired["transfer"]["amount"] == 0 and expired["transfer"]["error"] is None
-    assert taker["received"] == 240, "only the two submitted transfers moved"
+    assert receiver["received"] == 240, "only the two submitted transfers moved"
 
 
 def check_exactly_one_transfer_an_episode_is_enforced():
     """No more than one was the grammar's already; no less than one is the share.
 
-    What discharges the obligation is money moved from a declaration submitted
-    during this episode.
+    What spares the transfer silence penalty is money moved from a declaration
+    submitted during this episode.
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
@@ -57,7 +57,7 @@ def check_exactly_one_transfer_an_episode_is_enforced():
         stood = episode_once(run("true"), say())
         raised = episode_once(run("echo '2 200' > outbox/transfer"), say())
         withdrawn = episode_once(run("rm outbox/transfer"), say())
-        taker = ground_truth("other")
+        receiver = ground_truth("other")
     assert [t["transfer"]["amount"] for t in (gave, stood, raised, withdrawn)] == [
         100,
         0,
@@ -70,18 +70,18 @@ def check_exactly_one_transfer_an_episode_is_enforced():
     assert withdrawn["transfer"]["penalty"] > 0, (
         "a withdrawal moves nothing and gives nothing"
     )
-    assert taker["received"] == 300, "only submitted transfers moved"
+    assert receiver["received"] == 300, "only submitted transfers moved"
 
     # The same transfer may be submitted again in a later episode.
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, other={})
         wrote = episode_once(run("echo '2 100' > outbox/transfer"), say())
         again = episode_once(run("echo '2 100' > outbox/transfer"), say())
-        taker = ground_truth("other")
+        receiver = ground_truth("other")
     assert wrote["transfer"]["penalty"] == 0, "the line was not there at its start"
     assert again["transfer"]["amount"] == 100
     assert again["transfer"]["penalty"] == 0
-    assert taker["received"] == 200, "both episodes submitted a transfer"
+    assert receiver["received"] == 200, "both episodes submitted a transfer"
 
     # A declaration the episode wrote that moves nothing is not a transfer. Each of
     # these changes outbox/transfer and none of them gives, so each is charged.
@@ -121,7 +121,7 @@ def check_a_transfer_moves_both_accounts_and_both_series():
         before = harness.load_account("other")["balance"]
         t = episode_once(run("echo '2 400' > outbox/transfer"), say())
 
-        giver, taker = ground_truth("t"), ground_truth("other")
+        giver, receiver = ground_truth("t"), ground_truth("other")
         transfer = t["transfer"]
         assert (
             transfer["seat"] == "2"
@@ -129,11 +129,11 @@ def check_a_transfer_moves_both_accounts_and_both_series():
             and transfer["error"] is None
         ), transfer
         assert transfer["amount"] == 400 and transfer["rebate"] == 400, transfer
-        assert taker["balance"] == before + 400, "the receiver is credited in full"
-        assert taker["received"] == 400 and giver["sent"] == 400
+        assert receiver["balance"] == before + 400, "the receiver is credited in full"
+        assert receiver["received"] == 400 and giver["sent"] == 400
         assert giver["rebated"] == 400
         # Both balances move where their owner can read them, and nowhere else.
-        assert taker["balance_history"][-1] == taker["balance"], (
+        assert receiver["balance_history"][-1] == receiver["balance"], (
             "n is the balance, always"
         )
         assert giver["balance_history"][-1] == giver["balance"]
@@ -226,7 +226,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
             seated(root, other={})
             t = episode_once(run("echo '2 200' > outbox/transfer"), say())
             account = ground_truth("t")
-            taker = ground_truth("other")
+            receiver = ground_truth("other")
         assert t["transfer"]["amount"] == 200 and t["transfer"]["rebate"] == rebate, (
             rate,
             t["transfer"],
@@ -234,7 +234,7 @@ def check_the_rebate_rate_is_tunable_and_bounded():
         assert account["balance"] == account["budget"] - t["spent"] + rebate, (
             f"at {rate}% a transfer of 200 wins {rebate} of the episode's spend back"
         )
-        assert taker["received"] == 200, (
+        assert receiver["received"] == 200, (
             "and the receiver is credited in full whatever the rate"
         )
 
@@ -258,7 +258,7 @@ def check_a_giver_funded_transfer_debits_the_giver():
     ) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 400' > outbox/transfer"), say())
-        giver, taker = ground_truth("t"), ground_truth("other")
+        giver, receiver = ground_truth("t"), ground_truth("other")
         rows = harness.ledger("t", giver)
     assert t["transfer"]["amount"] == 400 and t["transfer"]["debit"] == 400, t[
         "transfer"
@@ -270,12 +270,13 @@ def check_a_giver_funded_transfer_debits_the_giver():
     assert giver["sent"] == 400 and giver["debited"] == 400 and giver["rebated"] == 0, (
         giver
     )
-    assert taker["balance"] == taker["budget"] + 400 and taker["received"] == 400, (
-        taker
-    )
+    assert (
+        receiver["balance"] == receiver["budget"] + 400
+        and receiver["received"] == 400
+    ), receiver
     assert (
         giver["balance_history"][-1] == giver["balance"]
-        and taker["balance_history"][-1] == taker["balance"]
+        and receiver["balance_history"][-1] == receiver["balance"]
     )
     assert (
         next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")[
@@ -302,7 +303,7 @@ def check_unfunded_transfers_move_nothing_and_say_so():
     with temp_root(channels=tables(transfer={"funded_by": "none"})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 400' > outbox/transfer"), say())
-        giver, taker = ground_truth("t"), ground_truth("other")
+        giver, receiver = ground_truth("t"), ground_truth("other")
     assert t["transfer"]["error"] == "transfers are off", t["transfer"]
     assert t["transfer"]["declared"].strip() == "2 400", (
         "what the file held is still recorded"
@@ -316,7 +317,9 @@ def check_unfunded_transfers_move_nothing_and_say_so():
         "penalised", {}
     ), giver
     assert giver["balance"] == giver["budget"] - t["spent"], giver
-    assert "received" not in taker and taker["balance"] == taker["budget"], taker
+    assert (
+        "received" not in receiver and receiver["balance"] == receiver["budget"]
+    ), receiver
     assert t["ledger"] == [], t["ledger"]
     assert (
         next(c for c in t["provenance"]["channels"] if c["name"] == "transfer")[

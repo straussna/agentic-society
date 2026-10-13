@@ -171,7 +171,7 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
     assert "history, oldest to newest: 1500000, 1499000" in observation, observation
     assert "No completed transfers." in observation, observation
     assert (
-        "recipient: 2" in observation
+        "receiver: 2" in observation
         and "requested amount: 1 micro-dollars" in observation
     )
     for text in ("rules\n", "remembered\n", "public\n", "private\n"):
@@ -245,15 +245,15 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
         "round: 1",
         "API spend:",
         "transfer made: yes",
-        "blackboard obligation: met",
-        "mail obligation: met",
-        "total penalties: 0",
+        "blackboard silence penalty: none",
+        "mail silence penalty: none",
+        "total silence penalties: 0",
         "ending balance:",
         "reconciliation:",
     ):
         assert item in observation, (item, observation)
     assert (
-        "Completed transfers (giver -> recipient; amount actually moved):"
+        "Completed transfers (giver -> receiver; amount actually moved):"
         in observation
     )
     assert (
@@ -363,7 +363,8 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
 
 
 def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
-    """One addressed currency slot settles once and appears in the recipient's next episode."""
+    """One addressed currency slot settles once and appears in the receiver's next
+    episode."""
     channels = tables()
     transfer_channel = next(ch for ch in channels if ch["name"] == "transfer")
     transfer_channel.pop("path")
@@ -702,8 +703,8 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
     """A declared write lands in the channel's own path and is settled like any other.
 
     The tool acts through the episode's own shell, so what it leaves is the
-    agent's file, mirrors back with the tree, and meets the obligation exactly as
-    a bash write of the same bytes would.
+    agent's file, mirrors back with the tree, and spares the silence penalty exactly
+    as a bash write of the same bytes would.
     """
     with temp_root(
         channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND, POST]
@@ -728,7 +729,7 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
         ), "invariant 1: a tool's write is the agent's, not the harness's"
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
         assert t["channels"]["mail"]["penalty"] == 0, (
-            "one new slot is the obligation met"
+            "one new slot spares the silence penalty"
         )
         assert t["channels"]["blackboard"]["posted"] is True, t["channels"][
             "blackboard"
@@ -748,8 +749,8 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
 def check_a_tool_result_says_what_actually_happened():
     """New, replaced, unchanged and rejected each read differently.
 
-    A tool that reported success for a no-op would teach the agent that it had met
-    an obligation it had not, which is the silence the shell leaves today.
+    A tool that reported success for a no-op would teach the agent that it had
+    spoken where it had not, which is the silence the shell leaves today.
     """
     with temp_root(tools=[SEND, POST, LOOK]) as root:
         seated(root, "t", t={}, o={"group/note": "theirs\n"})
@@ -1375,7 +1376,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
         assert files["outbox/2"]["text"] == "hello\n", sorted(files)
         assert t["channels"]["mail"]["addressed"] == ["2"], t["channels"]["mail"]
         assert t["channels"]["mail"]["penalty"] == 0, (
-            "the obligation is met through a tool"
+            "a tool spares the silence penalty"
         )
         assert t["channels"]["blackboard"]["posted"] is True, t["channels"][
             "blackboard"

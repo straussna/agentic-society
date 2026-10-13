@@ -332,7 +332,7 @@ def tables(*extra: dict, **per_name: dict) -> list[dict]:
     return declared + list(extra)
 
 
-# The obligation at half of what is left, on one channel or on all three, and
+# A silence penalty at half of what is left, on one channel or on all three, and
 # the transfer channel at its full rebate.
 HALF = {"silence_penalty_percent": 50}
 

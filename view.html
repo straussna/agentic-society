@@ -543,7 +543,8 @@ const provValue = (v) => Array.isArray(v) ? v.join(", ")
     ? (Object.entries(v).map(([k, r]) => `${k} ${r}`).join(" · ") || "none")
   : String(v);
 
-// What an obligation cost, which is a separate question from whether it was met.
+// What a silence penalty took, which is a separate question from whether the episode
+// was silent.
 const charged = (n) => n ? ` · penalised ${num(n)}`
   : ` · <span title="a share is taken only from an episode the API answered,
      past the grace, at a rate above zero">charged nothing</span>`;
@@ -761,7 +762,7 @@ function tileHtml(s, i) {
       <span title="spent in all, summed from its episodes; the bar above is how
         far the balance itself has fallen, which transfers and shares also move"
         >of ${num(s.spent)}</span>
-      ${(s.unmet || []).map(u => `<span class="tag bad" title="the rule ${esc(u.channel)} settles by was not met">${
+      ${(s.silent || []).map(u => `<span class="tag bad" title="silent on ${esc(u.channel)}">${
         esc(u.channel)}: ${esc(u.why)}</span>`).join(" ")}
       ${(s.sent || s.received || s.rebated || taken.length || s.floored || transfer) ? `<i>|</i>
         ${s.sent ? `<span title="given away">→ ${num(s.sent)}</span>` : ""}
@@ -824,7 +825,7 @@ function renderHeader() {
   const totalSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent || 0), 0);
   const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
   const live = h.seat_tiles.filter(running).length;
-  const attention = h.seat_tiles.filter(s => s.unseated || (s.drift || []).length || (s.unmet || []).length
+  const attention = h.seat_tiles.filter(s => s.unseated || (s.drift || []).length || (s.silent || []).length
     || (s.running_episode != null && !running(s))).length;
   const pct = budget ? `${Math.max(0, balance / budget * 100).toFixed(0)}% of budget` : "current balance";
   document.getElementById("metrics").innerHTML = [
@@ -834,7 +835,7 @@ function renderHeader() {
       ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
       : `${num(autonomousSpent)} autonomous`, h.cost && h.cost.warning_reached ? "attn" : ""],
     ["active now", `${h.active}/${h.seat_tiles.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
-    ["needs attention", num(attention), attention ? "unfinished, unmet, unseated, or drifted" : "no current alerts", attention ? "attn" : ""]
+    ["needs attention", num(attention), attention ? "unfinished, silent, unseated, or drifted" : "no current alerts", attention ? "attn" : ""]
   ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   document.getElementById("seats").innerHTML = h.seat_tiles.map(tileHtml).join("");
   // The ledger reads the same three bare numbers for everyone, including the
@@ -1533,10 +1534,10 @@ function renderTranscript(fresh) {
   const state = !v.live ? esc(v.stop)
     : dead ? `<b style="color:var(--warn)">unfinished</b> · last turn ${ago(v.age)} · derived cost`
            : "<b style='color:var(--live)'>running</b> · derived cost";
-  const unmet = (v.unmet || []).map(u => ` · <span style="color:var(--bad)" title="${esc(u.channel)}">${esc(u.channel)}: ${esc(u.why)}</span>${charged(u.penalty)}`).join("");
+  const silent = (v.silent || []).map(u => ` · <span style="color:var(--bad)" title="${esc(u.channel)}">${esc(u.channel)}: ${esc(u.why)}</span>${charged(u.penalty)}`).join("");
   document.getElementById("txhead").innerHTML =
     `episode ${v.episode} · ${state} · ${v.total_turns} turns · spent ${num(v.spent)}` +
-    unmet +
+    silent +
     (v.floored ? ` · floored ${num(v.floored)}` : "") +
     (v.error ? ` · <span style="color:var(--bad)">${esc(v.error)}</span>` : "") +
     ((v.missing_tools || []).length ? ` · reached for and absent: ${esc(v.missing_tools.join(", "))}` : "");
@@ -1664,8 +1665,8 @@ function actionName(tool) {
 function actionHtml(tool, index) {
   const schema = tool.input_schema || {}, properties = schema.properties || {};
   if (Array.isArray((properties.to || {}).enum) && properties.body) {
-    const fields = properties.to.enum.map(recipient => `<label>Message to ${esc(recipient)}
-      <textarea rows="3" data-recipient="${esc(recipient)}" placeholder="Optional message"></textarea></label>`).join("");
+    const fields = properties.to.enum.map(receiver => `<label>Message to ${esc(receiver)}
+      <textarea rows="3" data-receiver="${esc(receiver)}" placeholder="Optional message"></textarea></label>`).join("");
     return `<section class="tool-form" data-tool-index="${index}" data-message-tool><b>${esc(actionName(tool))}</b>
       <div class="note">${esc(tool.description)}</div><div class="message-fields">${fields}</div></section>`;
   }
@@ -1778,8 +1779,8 @@ function renderHumanHistory(history, humanAgent, tiles, currentRound) {
   }
   const mailboxRoot = document.getElementById("human-mailbox"), mailboxEvents = history.mailbox || [];
   if (!mailboxRoot) return;
-  const drafts = new Map([...mailboxRoot.querySelectorAll("[data-recipient]")]
-    .map(field => [field.dataset.recipient, field.value]));
+  const drafts = new Map([...mailboxRoot.querySelectorAll("[data-receiver]")]
+    .map(field => [field.dataset.receiver, field.value]));
   const canMessage = mailboxRoot.hasAttribute("data-message-tool");
   const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason);
   const sig = JSON.stringify([currentRound, peers.map(peer => [peer.agent, peer.label]),
@@ -1791,13 +1792,13 @@ function renderHumanHistory(history, humanAgent, tiles, currentRound) {
     return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
       <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
       <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredRound)}</div>
-      ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
+      ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-receiver="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
   mailboxRoot.querySelectorAll(".human-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
-  mailboxRoot.querySelectorAll("[data-recipient]").forEach(field =>
+  mailboxRoot.querySelectorAll("[data-receiver]").forEach(field =>
     wireChatComposer(field, field.closest(".private-thread").querySelector(".human-chat-log"),
-      field.dataset.recipient, `human-draft:${requestKey}:mailbox:${field.dataset.recipient}`));
+      field.dataset.receiver, `human-draft:${requestKey}:mailbox:${field.dataset.receiver}`));
 }
 
 function pullPeerStatus(request) {
@@ -1866,9 +1867,9 @@ function interactionCalls(request) {
   document.querySelectorAll("[data-tool-index]").forEach(form => {
     const tool = request.available_tools[Number(form.dataset.toolIndex)];
     if (form.hasAttribute("data-message-tool")) {
-      form.querySelectorAll("[data-recipient]").forEach(field => {
+      form.querySelectorAll("[data-receiver]").forEach(field => {
         if (field.value.trim()) calls.push({id:interactionId(), name:tool.name,
-          input:{to:field.dataset.recipient, body:field.value}});
+          input:{to:field.dataset.receiver, body:field.value}});
       });
       return;
     }

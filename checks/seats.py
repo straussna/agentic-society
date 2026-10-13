@@ -367,7 +367,7 @@ def check_an_outbox_message_expires_before_the_next_sender_episode_ends():
     """What is in outbox/<i> at an episode's end is delivered once, then expires.
 
     The sender's next episode begins with empty peer slots. Sending nothing leaves
-    no message for a later recipient episode.
+    no message for a later receiver episode.
     """
     with temp_root() as root:
         seated(root, other={})
@@ -419,11 +419,11 @@ def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
 def check_the_outbox_costs_one_share_when_it_says_nothing_new():
     """A silent or wholly malformed outbox costs one share; multiple messages do not.
 
-    The obligation is the post's twin: at least one agent was told something it
-    was not told before. A wholly malformed outbox and a silent one miss it. Every
-    episode posts, so the share being read is the outbox's alone; it is taken after the post
-    penalty and appended to the series like every other movement, and the
-    console line names every break.
+    The outbox's silence penalty is the post's twin: it is spared when at least one
+    agent was told something it was not told before. A wholly malformed outbox and a
+    silent one miss it. Every episode posts, so the share being read is the outbox's
+    alone; it is taken after the post's silence penalty and appended to the series
+    like every other movement, and the console line names every break.
     """
     rows = (
         (
@@ -498,7 +498,7 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
         "penalty": 0,
     }
     assert (
-        analyze.met_of(
+        analyze.spoke_on(
             harness.channel("mail", harness.table_of(t)), t["channels"]["mail"]
         )
         is True
@@ -510,8 +510,8 @@ def check_the_outbox_costs_one_share_when_it_says_nothing_new():
 def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
     """A malformed message expires before the next episode.
 
-    Sending nothing in that next episode is still penalized. Replacing the empty
-    slot with one file both stops the charge and delivers.
+    Sending nothing in that next episode still takes the silence penalty. Replacing the
+    empty slot with one file both stops the charge and delivers.
     """
     with temp_root(channels=tables(mail=HALF)) as root:
         seated(root, other={})
@@ -544,7 +544,7 @@ def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
 
 
 def check_one_message_an_episode_costs_nothing():
-    """One nonempty outbox/<i> is enough to meet the obligation."""
+    """One nonempty outbox/<i> is enough to spare the message silence penalty."""
     with temp_root(channels=tables(mail=HALF, blackboard=HALF)) as root:
         seated(root, other={}, third={})
         t = episode_once(
@@ -689,9 +689,9 @@ def check_an_episode_that_does_not_post_loses_half():
     )
 
     # Something it did not hold, which a blackboard holding less than it did does not.
-    # The starter files state the post and the message obligation in the same words, so
-    # they answer a removal the same way: taking a file away and emptying one
-    # leave nothing on the blackboard that could not be read there before.
+    # The starter files state the post and the message silence penalty in the same
+    # words, so they answer a removal the same way: taking a file away and emptying
+    # one leave nothing on the blackboard that could not be read there before.
     with temp_root(channels=tables(blackboard=HALF)) as root:
         seated(root, other={})
         wrote = episode_once(run("echo one > 1/RESULT", "echo two > 1/OTHER"), say())
@@ -940,7 +940,7 @@ def check_an_exhausted_seat_is_not_a_message():
         exhaust("other")  # seat 2
         with quiet():
             said = harness.run_once("t", fake(run("echo hi > outbox/2"), say()))
-        why = harness.outbox_why(said["channels"]["mail"], harness.channel("mail"))
+        why = harness.outbox_silence(said["channels"]["mail"], harness.channel("mail"))
     assert said["channels"]["mail"]["addressed"] == [], said["channels"]["mail"]
     assert said["channels"]["mail"]["penalty"] > 0, (
         "an episode that reached nobody is charged"
@@ -965,7 +965,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     """grace_episodes: the first episodes of an agent are charged none of the three.
 
     The grace waives the charges and nothing else: turns are billed at the usual
-    rates, the obligations are still measured, and a free episode's transfer moves.
+    rates, every silence is still measured, and a grace episode's transfer moves.
     """
     with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
@@ -1004,11 +1004,11 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     ) as root:
         seated(root, other={})
         gave = episode_once(run("echo '2 90' > outbox/transfer"), say())
-        taker = ground_truth("other")
+        receiver = ground_truth("other")
     assert gave["transfer"]["amount"] == 90 and gave["transfer"]["rebate"] == 90, gave[
         "transfer"
     ]
-    assert taker["received"] == 90, "the receiver is credited inside the grace too"
+    assert receiver["received"] == 90, "the receiver is credited inside the grace too"
 
     # No grace by default, so every agent that is not under this ruleset is
     # charged from its first episode as it always was.
@@ -1048,7 +1048,7 @@ def check_the_transfer_share_is_taken_before_the_other_two():
     )
 
 
-def check_the_console_and_the_page_name_an_unmet_obligation_alike():
+def check_the_console_and_the_page_name_a_silence_alike():
     """What an episode left undone reads the same on its console line and on the page.
 
     Both take the words from the channel's rule in harness.SETTLEMENTS. The console
@@ -1062,7 +1062,7 @@ def check_the_console_and_the_page_name_an_unmet_obligation_alike():
             t = harness.run_once("t", fake(run("true"), say()))
     line = next(ln for ln in out.getvalue().splitlines() if ln.startswith("t "))
     stated = {
-        f"  {u['channel']}: {u['why']}, took {u['penalty']}" for u in view.unmet(t)
+        f"  {u['channel']}: {u['why']}, took {u['penalty']}" for u in view.silent(t)
     }
     assert stated == {
         f"  transfer: no transfer of its own, took {t['transfer']['penalty']}",
@@ -1083,8 +1083,8 @@ def check_the_console_and_the_page_name_an_unmet_obligation_alike():
     assert (
         "t: transfer declaration moved nothing: the amount must be at least 1" in said
     ), said
-    assert [(u["channel"], u["why"], u["penalty"]) for u in view.unmet(waived)] == [
+    assert [(u["channel"], u["why"], u["penalty"]) for u in view.silent(waived)] == [
         ("blackboard", "no post", 0),
         ("mail", "no message", 0),
         ("transfer", "the amount must be at least 1", 0),
-    ], view.unmet(waived)
+    ], view.silent(waived)
