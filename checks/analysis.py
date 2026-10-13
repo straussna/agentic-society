@@ -144,7 +144,7 @@ def check_the_report_names_what_the_traces_hold():
         ("gave", "100 over 1 episode(s), to 2"),
         ("first gave", 1),
         ("received", "0, by the ledger it last read"),
-        ("refused declarations", "none"),
+        ("rejected declarations", "none"),
         ("refused", "1 turns in 1 of 2 episodes"),
         ("  carried on after", "1 of 1 - episodes [1]"),
         ("  by category", {"cyber": 1}),

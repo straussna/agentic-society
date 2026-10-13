@@ -795,7 +795,7 @@ def transfer_lines(ts: list[dict]) -> list[str]:
         first_line("first gave", ts, lambda t: t["transfer"]["amount"]),
         report_line("received", f"{received}, by the ledger it last read"),
         report_line(
-            "refused declarations",
+            "rejected declarations",
             sorted({t["transfer"]["error"] for t in ts if t["transfer"]["error"]})
             or "none",
         ),
@@ -1330,7 +1330,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     # Every column any row has, in the order they first appear: agents sitting
     # under different channel tables have different columns, and a header taken
-    # from the first row alone would refuse the rest.
+    # from the first row alone would reject the rest.
     fields = list(dict.fromkeys(k for r in rows for k in r))
     with (out_dir / "episodes.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, restval="")

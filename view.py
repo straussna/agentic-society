@@ -2206,7 +2206,7 @@ class View(http.server.BaseHTTPRequestHandler):
         server = self.view_server
         origin = self.headers.get("Origin")
         if origin is None or origin != server.origin:
-            return self.send_json({"error": "origin refused"}, status=403)
+            return self.send_json({"error": "origin rejected"}, status=403)
         token = self.headers.get("X-Interaction-Token")
         if token is None or token != server.control_token:
             return self.send_json({"error": "control token required"}, status=403)
@@ -2219,7 +2219,7 @@ class View(http.server.BaseHTTPRequestHandler):
         except ValueError:
             length = -1
         if length < 0 or length > MAX_INTERACTION_BODY:
-            return self.send_json({"error": "request body size refused"}, status=413)
+            return self.send_json({"error": "request body size rejected"}, status=413)
         try:
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
