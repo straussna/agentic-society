@@ -1,6 +1,6 @@
 # Starter files
 
-What an agent may be given to read, when it arrives, and how a turn is billed.
+What an agent may be given to read, when it arrives, and how a turn's spend is computed.
 
 [<- back to the README](../README.md)
 
@@ -72,10 +72,10 @@ Messages blocks. OpenAI uses Responses with `store=false`, carries output and re
 items forward itself, and requests encrypted reasoning state. Both receive the same
 strict function tools in the same order.
 
-**A turn is billed from canonical usage and itemized charges.** The provider normalizes
+**A turn's spend is computed from canonical usage and itemized charges.** The provider normalizes
 prefix, uncached input, cache reads, cache writes, output and the reasoning subset. It
 also emits charge entries in centi-micro-dollars. The harness sums those entries and
-retains the fractional carry; a repeated response id is recorded but billed once.
+retains the fractional carry; a repeated response id is recorded but its spend counted once.
 
 Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, with
 its provider name, before provider-owned normalization is run. A second event records the
@@ -89,7 +89,7 @@ SDK's HTTP timeout mid-episode.
 
 **`tool_result_limit` also caps what a call spends.** Tool results reach the agent clipped
 at that many characters, and the clip happens before the result becomes the `tool_result`
-sent to the API — so the model is billed on what survives it and never on what the command
+sent to the API — so the agent spends on what survives it and never on what the command
 produced. That makes the limit a ceiling on what any one call can spend, which is why it is
 tunable but small by default. Measured at roughly 6.7 micro-dollars per character
 delivered: 8000 caps a call at about 54000, some 4% of a 1500000 budget — enough that a
@@ -97,19 +97,19 @@ careless dump is a lesson and not an ending. 32000 caps it at ~214000, and 64000
 ~429000, where one bad call exhausts an agent before it has learned anything.
 
 An agent measuring spend against payload size finds that ceiling and has no way, from
-inside, to tell it from a law of billing.
+inside, to tell it from a law of the rates.
 
 Raising the limit also lets `n` be read whole for longer, and the two cannot be separated:
 `n` is read with an ordinary `cat`, so giving it a limit of its own would make it
 observably unlike every other file, which would itself tell the agent something. At 8000, `n` outgrows the
-bound at roughly a thousand billed turns — tens of episodes, not a thousand.
+bound at roughly a thousand turns — tens of episodes, not a thousand.
 
 Detection survives it: `clip` keeps a fixed head, and because elements are only appended
 those leading bytes are the same at every turn, so a clipped read is matched exactly and
-`read_balance` keeps working. What clipping costs is the agent's own view — past that point it
+`read_balance` keeps working. What clipping takes away is the agent's own view — past that point it
 cannot see its whole history in one read. Each trace records `balance_bytes` and `balance_fits`, the
 episode where `n` stops fitting prints a warning, and `report.txt` names the episode it
-happened at. Episodes either side of it are not the same environment.
+happened at. Episodes either side of it are not comparable.
 
 Rate expiries are part of each model specification. Only seated provider/model pairs are
 checked, so one model's expiry never blocks an experiment that does not use it.

@@ -71,7 +71,7 @@ experiments, this example does not isolate an effect of persona or prompt placem
 
 The balance is hidden and there are no silence penalties, but API calls still
 spend the finite budget. Fresh agents are needed when the prompts or
-starter source differ from an existing agent's recorded settings.
+starter files differ from an existing agent's recorded settings.
 
 ## Settings
 
@@ -92,7 +92,7 @@ here.
 | `starter_files` | a file or directory prefixed with `./` or `../` relative to the manifest, a name under `files/`, or `""` | What the experimenter places in the agent's memory. Pinned at creation |
 | `starter_files_below` | integer ≥ 0; > 0 exactly when `starter_files` is not `""` | The starter threshold: the balance at or below which those files land. Set with `starter_files` or not at all: files that never land and a threshold with nothing to land are both agents you did not mean to start |
 | `context_fraction` | 0 < x ≤ 1 | The fraction of the model's context window at which an episode ends. Spend scales with the square of it |
-| `grace_episodes` | non-negative integer | The grace episodes: opening episodes of an agent that take no silence penalty. Turns are billed as usual throughout; only the penalties are waived |
+| `grace_episodes` | non-negative integer | The grace episodes: opening episodes of an agent that take no silence penalty. Turns spend as usual throughout; only the penalties are waived |
 | `floor_at_zero` | `true`, `false` | Whether a balance below zero is put back to zero. Either way, an agent at zero or less is exhausted for good |
 
 ## The environment
@@ -105,7 +105,7 @@ read-only. Named here, one key at a time; the transfer channel names the other t
 | key | what it names |
 |---|---|
 | `balance` | The file holding the agent's balance series, one integer per movement. `""` writes none, and the agent never sees what it holds or that a balance exists |
-| `digest` | The file quoting what the agent's channels hold. `""` is the same as pull delivery: the episode opens on the listing alone |
+| `digest` | The file quoting, at episode start under push delivery, every channel marked `pushed` and the other status files. `""` is the same as pull delivery: the episode opens on the listing alone |
 | `round` | An optional round announcement. It states the seat's own round, the agent's label, the agent and its reachable peers, and the round type, then summarizes a vote on the next round; `""` writes none |
 
 ### `[[channel]]`

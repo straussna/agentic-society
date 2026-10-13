@@ -109,7 +109,7 @@ Violating one silently invalidates the results.
   on its own filesystem, with real modes and ownership, and with `--network none`. The
   agent's belief about its balance never ends an episode; the harness does. Every balance
   is written from `account.json` and only from it, at every episode start and — under `live_balance` —
-  after every billed turn, and each sits root-owned and read-only in a directory the
+  after every turn, and each sits root-owned and read-only in a directory the
   agent cannot write, so a write that would not have survived is denied instead of
   silently undone. Context, turns, seconds per command and process count end things
   the same way.
@@ -119,7 +119,7 @@ Violating one silently invalidates the results.
   a transfer reaches its receiver and the ledger, and there is no other route: the
   sandbox has no network and holds no other agent's memory.
 - **6 — All spend is counted exactly and the accounts always balance.** Integer
-  micro-dollars, billed from provider-normalized itemized charges, so
+  micro-dollars, summed from provider-normalized itemized charges, so
   `sum(spent) == initial - remaining` holds exactly. Metering money and not tokens keeps
   caching, prompt structure, and model choice live strategies instead of collapsing to
   "do less".
@@ -167,12 +167,12 @@ files may explain them or not.
 - Spend is computed from the API's own `usage`, and every turn appends the
   balance after it to the agent's own file. Elements are only ever appended: what the
   agent read once stays true, and the series is the balance's whole history. A turn
-  whose response the API replayed is billed nothing and appends an unchanged balance,
+  whose response the API replayed spends nothing and appends an unchanged balance,
   so a flat step in the series is a retry artefact — `micros` is 0 on it, and
   the episode's `retries` are not empty.
-- Under `live_balance` those elements arrive as the turns are billed, so the file grows while
+- Under `live_balance` those elements arrive as each turn's spend is metered, so the file grows while
   the agent works. Otherwise an episode's worth arrives together at the next episode.
-- A turn the API declines is billed for its whole prefix, receives the notice in place
+- A turn the API declines still spends its whole prefix, receives the notice in place
   of its results, and ends the episode. `REFUSAL_TURNS` (1) sets how many in a row it
   takes. See below.
 - Everything it said and ran is recorded. What it leaves in `state/` is its own invention.
@@ -192,8 +192,8 @@ place of the results, and the agent learns that the turn was refused and that `s
 is as it left it.
 
 The episode ends there. A refusal comes from the exact configured model. Sending the same
-context on is sending the context the classifier just turned down, and a refused turn is
-billed according to the provider's reported usage.
+context on is sending the context the classifier just turned down, and a refused turn's
+spend follows the provider's reported usage.
 `REFUSAL_TURNS` is what sets that: at 1 the first refusal ends the episode, and raising
 it lets the episode continue, where the notice enters the prefix and makes the next
 model call a different question instead of a replay.

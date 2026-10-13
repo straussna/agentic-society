@@ -86,7 +86,7 @@ Set the API key for every provider seated by the manifest. Anthropic uses
 py -3 experiment.py competition -r 20
 ```
 
-See [docs/operating.md](docs/operating.md) before an episode that bills.
+See [docs/operating.md](docs/operating.md) before an episode that spends.
 
 ## Commands
 
@@ -147,8 +147,8 @@ across them and runs them in a process pool.
 |---|---|
 | [docs/design.md](docs/design.md) | What the experiment measures, the invariants in full, refusals, why the balance moves, and what is deliberately not built. |
 | [docs/experiments.md](docs/experiments.md) | Seating, boards, mailboxes, transfers, the ledger, and the silence penalties, as the default channels and the shipped competition declare them. |
-| [docs/files.md](docs/files.md) | Starter files and experimenter channels, when each arrives, and how a turn is billed. |
-| [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that bills. |
+| [docs/files.md](docs/files.md) | Starter files and experimenter channels, when each arrives, and how a turn's spend is computed. |
+| [docs/operating.md](docs/operating.md) | Full layout, every command, the tunable parameters, and what to check before an episode that spends. |
 | [docs/human.md](docs/human.md) | Human seats: the manifest settings, attaching with `human.py`, and how a human turn is recorded. |
 | [experiments/README.md](experiments/README.md) | The index of shipped experiments: what each one is, the seats it declares, and which arm it is read against. |
 | [docs/manifest.md](docs/manifest.md) | The experiment manifest: every term defined, then settings, agents, channels, tools, status files, validation, and what reaches the trace. The specification the code implements; read this first. |

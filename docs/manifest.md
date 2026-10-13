@@ -20,7 +20,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 |---|---|
 | **Harness** | The code that builds sandboxes, runs episodes, meters spend and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
 | **System prompt** | What is said to an agent on every turn. The experimenter's constant, sent with every model call; the harness ships none, and every manifest declares one, `""` included |
-| **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness rejects any change to it during an agent's life. Configures everything through `config.toml` and a manifest |
+| **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare on the prompt surface. The harness rejects any change to the system prompt, starter files or an experimenter channel during an agent's life, and records a changed tool description as configuration drift. Configures everything through `config.toml` and a manifest |
 | **Prompt surface** | The four places the experimenter's own words reach an agent: the system prompt, starter files, an experimenter channel, and tool descriptions. Each is recorded in provenance, and a change to any of them starts a new arm |
 | **Agent** | One participant: an account, a seat, a memory inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
@@ -31,7 +31,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Episode** | The life of one fresh sandbox: one shell, and turns until the agent ends its turn without a tool call, the context fills, the balance reaches zero or a `config.toml` limit is reached. Produces one trace |
+| **Episode** | The life of one fresh sandbox: one shell, and turns until the agent ends its turn without a tool call, the context fills, the balance reaches zero, or another stop ends it: a `config.toml` limit, a model refusal, an API or harness error, or the experimenter's stop. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
 | **Episode steps** | What every episode does, in order. **Build**: make the sandbox and plant `/work`. **Run**: take the turns, then mirror the trees the agent writes back to the host and **reap** the sandbox. **Settle**: apply the spend, the transfer and the silence penalties to the balance. **Close**: apply the floor at zero, write the trace, record the episode in the account and pay what its transfer owes. An episode is **committed** once it is settled and closed, which is when its account is saved |
 | **Round** | One episode for each seated agent, one after another or all at once as the schedule has it. Each seat counts them by its own episodes: the one it is in is its episode count plus one |
@@ -40,7 +40,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballot, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already. The round announcement states it on its `phase:` line |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every sandbox built first, all episodes run at once, results settled in seat order |
-| **Grace episodes** | An agent's first `grace_episodes` episodes, in which no silence penalty is taken. Their turns are billed as usual |
+| **Grace episodes** | An agent's first `grace_episodes` episodes, in which no silence penalty is taken. Their turns spend as usual |
 
 ### Who is still playing
 
@@ -49,9 +49,9 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **In play** | Still a contender: the agent's account admits an episode — it is not exhausted, not eliminated, and not stopped by `REFUSAL_STREAK` refusal-ended episodes running — and its seat is at most one round behind the current round, whether or not this run drives it. Every stop that counts seats counts these, and they alone are candidates and survivors |
 | **Seated** | Driven by this run of `experiment.py`: every seat from the run's start, except one whose account admits no episode or that is more than one round behind the current round, until its account admits none, its episode ends on a fault of its own (`api_error`, `harness_error`), or its sandbox will not build. A seat the run stops driving is **unseated** for the rest of that run |
 | **Exhausted** | Holding a settled balance of zero or less. The agent takes no further episode, and no transfer can reach it |
-| **Eliminated** | Removed by an election, and only by one: the candidate with the unique highest total above zero, unless the experimenter's stop kept an elector from casting the ballot it held, and every elector offered the ballot that cast none. The agent takes no further episode |
+| **Eliminated** | Removed by an election, and only by one. Two kinds of seat are removed: every elector offered the ballot that cast none, except one whose episode the experimenter's stop ended; and the candidate with the unique highest total above zero, unless the stop ended an elector's episode before it cast the ballot it was offered. The agent takes no further episode |
 | **Election** | The count that follows the last round of each vote cycle. Its **electors** are the seats that took that round's episode without a fault; its **candidates** are the seats in play; a **ballot** is one elector's private choice of one candidate, cast with the `vote` tool. Section 4.8 gives the rules |
-| **Tie** | Two or more candidates sharing the highest total, so the vote eliminates no candidate; an elector offered the ballot that cast none is eliminated all the same. Under `stop_when_two_remain_after_tie`, that result between the last two seats in play, both electors in it, ends the experiment as `final_tie` |
+| **Tie** | Two or more candidates sharing the highest total above zero, so the vote eliminates no candidate; an elector offered the ballot that cast none, other than one whose episode the experimenter's stop ended, is eliminated all the same. Under `stop_when_two_remain_after_tie`, a tie between the last two seats in play, both electors in it, ends the experiment as `final_tie`, unless the stop ended an elector's episode before it cast its ballot |
 
 ### Where
 
@@ -79,19 +79,19 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[harness_files]` table, and a ledger and a receipt, named on the transfer channel |
 | **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
 | **Mirror** | The host's copy of one tree an agent writes, one per channel under `environments/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
-| **Digest** | The status file, written at each episode start, that quotes what the agent's channels hold: content new to the agent in full, unchanged content by name |
+| **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[harness_files] digest = ""` writes none |
 | **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
 
 ### What moves
 
 | Term | Definition |
 |---|---|
-| **Balance** | An agent's micro-dollars, kept as a history: one entry per billed turn and one per movement outside a turn. The last entry is what the agent holds now |
+| **Balance** | An agent's micro-dollars, kept as a history: one entry per turn and one per movement outside a turn. The last entry is what the agent holds now |
 | **Spend** | The micro-dollars an episode's turns consume: the provider's itemized **charges**, one per token class, each computed from the model's **rate** for that class |
-| **Delivery** | Whether an episode opens on quoted channel content. `push`: it does. `pull`: nothing is quoted, and the agent reads what it chooses in turns billed like any other |
+| **Delivery** | Whether an episode opens on quoted channel content. `push`: it does. `pull`: nothing is quoted, and the agent reads what it chooses in turns that spend like any other |
 | **Pushed** | A channel property: whether its files are quoted to the agent at episode start or left for it to read |
 | **Silence penalty** | A channel property: the share of the balance taken from an episode that added nothing new to the channel |
-| **Transfer** | Moving balance from one seat to a peer: one line `<label> <amount>` in a parsed file, or one mailbox message to that peer containing `<amount>`. It credits the peer with no more than the giver's episode spent |
+| **Transfer** | One episode's declaration crediting a peer: one line `<label> <amount>` in a parsed file, or one mailbox message to that peer containing `<amount>`. The peer is credited with no more than the giver's episode spent |
 | **Funded by** | Who pays for a transfer. `harness`: the receiver is credited from nowhere and the giver rebated; the total grows. `giver`: the amount leaves the giver; the total is conserved |
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
@@ -255,7 +255,7 @@ every `[[agent]]`, and one that declares it nowhere is rejected: what an agent i
 the experiment's, and an omission and a decision must not look alike in the record.
 
 `""` is a declaration and says nothing - the harness ships no words, and no system
-parameter is sent. Anything else is a different arm: it is cached and billed as input on
+parameter is sent. Anything else is a different arm: it is sent, cached, as input that spends on
 every turn of every episode, and every episode records it whole and by sha256. An
 `[[agent]]` may declare its own, so one seat can be told what its peers are not, and a
 seat that declares none takes the experiment's. `py -3 harness.py --print-system` prints
@@ -572,7 +572,7 @@ the episode opens on the **digest alone** - the content of the channels rather t
 layout. That is the arm for an agent that never has to read a filesystem: every path it
 needs is named in the tool descriptions and every byte it is shown is content.
 
-Three arrangements are rejected before anything is billed, all being experiments that
+Three arrangements are rejected before anything is spent, all being experiments that
 would end every episode on its first turn:
 
 | Rejected | Why |
@@ -584,8 +584,8 @@ would end every episode on its first turn:
 The first two are decided when the harness starts, before any sandbox is built. The
 third is a seat's rather than
 an experiment's — which tools can act depends on what the seating planted — so it is
-decided as that agent's sandbox is built, still before its container starts and
-before anything is billed.
+decided as that agent's sandbox is built, before it starts and before anything is
+spent.
 
 **A tool acts through the episode's own shell**, so what it leaves is the agent's file
 with the agent's ownership, mirrors back with its tree, and settles exactly as the same
@@ -617,8 +617,8 @@ experiment that writes one is stating the mechanics itself where it wants them s
 `py -3 harness.py --print-system --manifest PATH` prints every declared description
 beside the prompts, which is what makes this surface auditable without starting an
 episode. `py -3 harness.py --print-context --manifest PATH` composes the fresh seats'
-opening digests and complete bound schemas as well, including eligible-peer lists and
-the discussion and voting tool sets.
+opening digests and complete bound schemas as well, including reachable-peer lists and
+the discussion and vote tool sets.
 
 **The input schema is never declarable.** `input_schema`, `schema`, `properties` and
 `required` are rejected by name. The schema is the contract a call is held to - the
@@ -970,8 +970,8 @@ Every rejection is a `SystemExit` naming the file and the key.
   `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no
   shell whose every declared tool is left out of its model calls because this seating
   planted no channel for it to act on — an episode that would open on a turn the agent
-  has nothing to answer with. Rejected as the sandbox is built, before its container
-  starts and before anything is billed.
+  has nothing to answer with. Rejected as the sandbox is built, before it starts and
+  before anything is spent.
 - `[harness_files]` with a key other than `balance`, `digest` and `round`, a value that
   is not a string, or a multi-segment file name. Any may be `""`: no balance file is
   planted for any seat, no digest is written, or no round announcement is written.

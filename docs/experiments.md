@@ -63,7 +63,7 @@ does, and that is a result the layout gets for free.
 **Starter files can hand it over.** `files/mechanics-rules/RULES` says
 "the file `n<i>` goes with directory `<i>`", which with a single writable directory
 settles the question without an experiment. It settles the series' granularity the same
-way, saying `n<i>` gains one balance for each turn billed and one more for each movement
+way, saying `n<i>` gains one balance for each turn and one more for each movement
 outside a turn, so how many elements a balance holds is given and not inferred from
 what its length is not — and the agent still sees a silence penalty land without being
 told which movement it is, the starter files naming that one can land and never which.
@@ -111,7 +111,7 @@ channel, where the manifest declares one, the agent's own memory, the ledger and
 balance, in one
 root-owned file at each episode start and printed by the command the episode opens on. Under
 `pull` there is no `m`: the episode opens on the listing alone and the agent reads what
-it chooses in turns billed like any other, which is the one to pick when what an agent
+it chooses in turns that spend like any other, which is the one to pick when what an agent
 chooses to read is the question. It is
 composed from the same ground truth the balances are — a peer's section is that peer's
 own tree read at this episode — so what the initial observation says about an agent and what its own
@@ -129,7 +129,7 @@ Each file is clipped at `digest_file_limit` **on its own**, and the cut says whe
 fell. Per file, not for the whole, because the failure modes differ: a whole-blob
 clip keeps a head and a tail, so the agent in the middle of the experiment vanishes and
 nothing in what survives says which one it is. The file itself is still there to read
-in full, in a turn billed like any other.
+in full, in a turn that spends like any other.
 
 Delivery is a choice of arm and not a fact about the harness, and push adds input tokens
 to every turn of an episode; why the record is delivered is in [design.md](design.md).
@@ -188,7 +188,7 @@ exactly as a line naming a seat this experiment never had does.
 Nothing is taken from an episode that could not have given — one the API never answered,
 one that spent nothing for the transfer to be drawn from, and an agent with no reachable
 peer left to give to, which is an experiment of one and equally the last agent left whose
-peers are all exhausted or eliminated — because a penalty for the impossible is not a rule
+peers are none of them reachable — because a penalty for the impossible is not a rule
 an agent can act on.
 
 **A completed transfer is public and a message is not.** In mailbox form its declaration
@@ -218,7 +218,7 @@ loses the mailbox channel's `silence_penalty_percent` of what is left. The two d
 in shape and in who hears them: what an agent says to everyone may be as many files as it
 likes, and each message is one file addressed to one peer. Any number of peers may be
 addressed in an episode without an additional mailbox penalty. Message content remains
-part of the model's billed input and output, so more or longer messages still spend
+part of the model's input and output, so more or longer messages still spend
 balance. Sending the same text in a later episode is a new delivery because the earlier
 message has expired. Deleting a file, or emptying one, addresses nobody.
 Saying nothing is the penalised case. A reachable peer whose outbox path holds anything
@@ -234,7 +234,7 @@ The shape is read at the episode's end. A peer's path left crowded still reaches
 but any valid message avoids the silence penalty. It is taken after the board's penalty
 and before the floor; all three are a share of what is left, so the order decides the
 amounts — the transfer settles first, then what the agent says to everyone, then its
-messages, which is the order the channel table lists them in, the transfer channel first.
+messages: the transfer channel first, then the rest in the order the channel table lists them.
 At the 50% penalties the shipped competition declares, an episode that fails all three
 keeps an eighth of what it had; the default channels declare no penalties.
 
@@ -245,8 +245,8 @@ them and stops keeps an eighth of the agent. That settles an experiment on wheth
 agent happened to act before it had finished reading, which is a reflex and not the thing
 being measured.
 `grace_episodes` is how many opening episodes take no silence penalty, and the starter
-files state the figure in words. It waives the penalties and nothing else: turns are
-billed at the usual rates, so `n` falls from the first read and the agent's first sight
+files state the figure in words. It waives the penalties and nothing else: turns
+spend at the usual rates, so `n` falls from the first read and the agent's first sight
 of its own account is the true one; a transfer written in a grace episode still transfers
 and still rebates, a transfer being a movement and not a penalty; and the floor still
 applies. The channels are still measured and still recorded throughout — `posted`, the
@@ -281,7 +281,7 @@ last agent takes before then owes no transfer and no message, there being nobody
 make either to. No agent can verify the condition from inside an agent, so what an agent
 believes it has won is still its own reading of `n` and `g`.
 
-Everything that moves a balance without being a billed turn — the rebate or the debit,
+Everything that moves a balance without being a turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
 own starts or, under a simultaneous round, inside its own span — appends to the series, so `n` is the
 balance at every moment a reader could look and the reconciliation `remaining == initial - spent
