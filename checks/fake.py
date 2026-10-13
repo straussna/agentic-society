@@ -39,7 +39,7 @@ def attempt(model, output_tokens, kind="message", **kw):
 
 def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None):
     return {
-        "kind": "say",
+        "step_type": "say",
         "text": text,
         "u": u,
         "id": id,
@@ -51,7 +51,7 @@ def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None
 
 def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
     return {
-        "kind": "run",
+        "step_type": "run",
         "cmds": list(cmds),
         "u": u,
         "id": id,
@@ -63,7 +63,7 @@ def run(*cmds, u=None, id=None, stop="tool_use", details=None, model=None):
 
 def use(name, u=None, id=None, stop="tool_use", **args):
     return {
-        "kind": "call",
+        "step_type": "call",
         "name": name,
         "args": args,
         "u": u,
@@ -90,7 +90,7 @@ def restart(u=None, id=None):
 
 def think(thinking="reasoning.", text="done.", u=None, id=None, stop="end_turn"):
     return {
-        "kind": "think",
+        "step_type": "think",
         "thinking": thinking,
         "text": text,
         "u": u,
@@ -177,19 +177,19 @@ class FakeSession:
         normalized_usage, charges = _usage(
             turn.get("u"), self.provider, self.requested_model
         )
-        if turn["kind"] == "run":
+        if turn["step_type"] == "run":
             calls = tuple(
                 ToolCall(f"t{self.n}_{i}", "bash", {"command": command})
                 for i, command in enumerate(turn["cmds"])
             )
             texts, reasoning = (), ()
-        elif turn["kind"] == "call":
+        elif turn["step_type"] == "call":
             calls = (ToolCall(f"t{self.n}_0", turn["name"], dict(turn["args"])),)
             texts, reasoning = (), ()
         else:
             calls = ()
             texts = (turn["text"],)
-            reasoning = (turn["thinking"],) if turn["kind"] == "think" else ()
+            reasoning = (turn["thinking"],) if turn["step_type"] == "think" else ()
         detail = turn.get("details")
         refusal = (
             None
