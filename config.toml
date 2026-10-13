@@ -1,8 +1,8 @@
 # Process parameters: the machine, the API and the safety stops, true of every run
 # whatever the experiment. Everything an agent's situation is made of - what is said
 # to it, the money, the files it is given, the channels it reaches its peers through -
-# is an experiment's, declared in a manifest under experiments/, and refused here.
-# Unknown keys, wrong types and values outside the ranges below are refused at startup;
+# is an experiment's, declared in a manifest under experiments/, and rejected here.
+# Unknown keys, wrong types and values outside the ranges below are rejected at startup;
 # provider catalogs own token rates and docs/manifest.md is the full grammar.
 
 # The sandbox image; rebuild it after editing the Dockerfile.
