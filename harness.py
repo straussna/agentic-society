@@ -5802,7 +5802,7 @@ class Episode:
 
     @property
     def built(self) -> tuple[Sandbox, Shell]:
-        """The environment and its shell. Every Episode build_episode returns has both;
+        """The sandbox and its shell. Every Episode build_episode returns has both;
         asked of one without them, this raises."""
         if self.container is None or self.shell is None:
             raise RuntimeError(
@@ -5992,8 +5992,8 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
     """Run the episode in a built environment, then mirror the environment back and reap it.
 
     The one phase that bills. Whatever run_turns returns - a whole episode, or
-    one that ended on an API error it swallowed - the container is saved and
-    closed on the way out.
+    one that ended on an API error it swallowed - the sandbox's trees are
+    mirrored back and the sandbox closed on the way out.
     """
     sandbox, shell = ep.built
     WATCH_AGENT.set(f"{ep.agent}| ")
