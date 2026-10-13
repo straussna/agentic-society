@@ -7,7 +7,8 @@ docs/manifest.md defines every term; docs/design.md gives the reasons.
 
 Sections, in the order an episode meets them:
 
-  1. What the harness says          SYSTEM, REFUSAL_NOTICE, PINNED, SHELL_SPEC, system_of
+  1. What the harness says          SYSTEM, REFUSAL_NOTICE, SHIPPED_TEXT, SHELL_SPEC,
+                                    system_of
   2. Providers                      providers package catalogs and adapters
   3. Tunables                       PROCESS, TREATMENT, read_config, rejecter, overlay
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
@@ -113,7 +114,7 @@ REFUSAL_NOTICE_SHA256 = (
 # Every string the harness ships, as (name, text, pinned sha256). One list, so
 # --print-system audits exactly what start() rejects a run on. The pin holds the
 # shipped default to its sha256; a declared prompt is held by provenance instead.
-PINNED = (
+SHIPPED_TEXT = (
     ("SYSTEM", SYSTEM, SYSTEM_SHA256),
     ("REFUSAL_NOTICE", REFUSAL_NOTICE, REFUSAL_NOTICE_SHA256),
 )
@@ -1809,7 +1810,7 @@ def replace_file(src: Path, dest: Path) -> None:
 
 
 # The pinned settings, as load_account's keyword -> the account key that holds each.
-CREATION_TERMS = {
+PINNED_SETTINGS = {
     "system_prompt": "system_prompt",
     "provider": "provider",
     "model": "model",
@@ -1839,9 +1840,9 @@ def load_account(
 
     The pinned settings - the system prompt, provider, model, budget, starter files and
     their threshold - are read once and recorded in account.json, which is what the agent
-    uses from then on. Provider and model are always explicit; other omitted terms use
-    their experiment tunables. A setting given for an existing agent must match what it
-    was created on.
+    uses from then on. Provider and model are always explicit; other omitted settings
+    use their experiment tunables. A setting given for an existing agent must match what
+    it was created on.
     """
     s = SETTINGS
     given = {
@@ -1922,13 +1923,14 @@ def load_account(
         providers.model_spec(account["provider"], account["model"])
     except providers.ProviderConfigurationError as error:
         raise SystemExit(f"agent {agent}: {error}; start a fresh agent id") from None
-    for term, key in CREATION_TERMS.items():
-        if given[term] is None:
+    for setting, key in PINNED_SETTINGS.items():
+        if given[setting] is None:
             continue
-        if key in account and account[key] != given[term]:
+        if key in account and account[key] != given[setting]:
             raise SystemExit(
-                f"agent {agent} was created with {key}={term_shown(key, account[key])}, and is now "
-                f"asked to run with {term_shown(key, given[term])}. Episodes either side of that "
+                f"agent {agent} was created with {key}="
+                f"{term_shown(key, account[key])}, and is now asked to run with "
+                f"{term_shown(key, given[setting])}. Episodes either side of that "
                 f"are not one experiment; start a new agent"
             )
         if key not in account:
@@ -6348,7 +6350,7 @@ def start(
         print(why, file=sys.stderr)
         raise SystemExit(2)
 
-    for name, text, expected in PINNED:
+    for name, text, expected in SHIPPED_TEXT:
         if system_sha256(text) != expected:
             reject(
                 f"{name} drifted from its pinned sha256; if the change was meant, run "
@@ -6671,7 +6673,7 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
     auditable. Starts no episode, bills nothing, and installs no setting.
     """
     drifted = []
-    for name, text, expected in PINNED:
+    for name, text, expected in SHIPPED_TEXT:
         sha256 = system_sha256(text)
         drifted += [name] if sha256 != expected else []
         print(f"{name}: {text!r}")

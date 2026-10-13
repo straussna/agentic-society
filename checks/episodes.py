@@ -141,7 +141,7 @@ def check_print_system_and_print_files_audit_without_starting():
         assert harness.SETTINGS is before, (
             "an audit leaves the settings as it found them"
         )
-        for name, _, sha256 in harness.PINNED:
+        for name, _, sha256 in harness.SHIPPED_TEXT:
             assert name in buf.getvalue() and sha256 in buf.getvalue(), (
                 name,
                 buf.getvalue(),
@@ -811,8 +811,8 @@ def check_the_refusal_notice_is_pinned():
         "REFUSAL_NOTICE",
         harness.REFUSAL_NOTICE,
         harness.REFUSAL_NOTICE_SHA256,
-    ) in harness.PINNED, (
-        "start() rejects a run on what --print-system audits, so both read PINNED"
+    ) in harness.SHIPPED_TEXT, (
+        "start() rejects a run on what --print-system audits, so both read SHIPPED_TEXT"
     )
     low = harness.REFUSAL_NOTICE.lower()
     for word in (

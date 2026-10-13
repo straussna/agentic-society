@@ -414,7 +414,7 @@ SEAMS = {
     "load_account",
     "replace_file",
     "console_line",
-    "PINNED",
+    "SHIPPED_TEXT",
     "WATCH",
     "REFUSAL_TURNS",
     # Set per check and put back by pinned(), so no check carries into the

@@ -656,7 +656,9 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
             '"" is a prompt an experiment can declare, not an absent one'
         )
         # The pin is on what the harness ships, so a declaration does not lift it.
-        harness.PINNED = (("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),)
+        harness.SHIPPED_TEXT = (
+            ("SYSTEM", harness.SYSTEM + " ", harness.SYSTEM_SHA256),
+        )
         with quiet() as buf:
             rejected(
                 harness.start,
