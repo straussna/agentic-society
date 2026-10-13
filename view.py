@@ -1400,8 +1400,8 @@ def human_history(exp: dict, agent: str) -> dict:
                 if isinstance(text, str) and text:
                     public.append(
                         {
-                            "episode": row["round"],
-                            "agent_episode": row["episode"],
+                            "round": row["round"],
+                            "episode": row["episode"],
                             "from_agent": row["agent"],
                             "from_label": label,
                             "text": text,
@@ -1422,7 +1422,7 @@ def human_history(exp: dict, agent: str) -> dict:
     )
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
     public_keys = {
-        (event["agent_episode"], event["from_agent"], event["text"]) for event in public
+        (event["episode"], event["from_agent"], event["text"]) for event in public
     }
     private_keys = {
         (event["episode"], event["from_agent"], event["to_label"], event["text"])
@@ -1443,8 +1443,8 @@ def human_history(exp: dict, agent: str) -> dict:
                 if key not in public_keys:
                     public.append(
                         {
-                            "episode": round,
-                            "agent_episode": episode,
+                            "round": round,
+                            "episode": episode,
                             "from_agent": agent,
                             "from_label": request.label,
                             "text": text,
@@ -1474,8 +1474,8 @@ def human_history(exp: dict, agent: str) -> dict:
                     private_keys.add(key)
     public.sort(
         key=lambda event: (
+            event["round"],
             event["episode"],
-            event.get("agent_episode", 0),
             event["from_agent"],
             event["text"],
         )

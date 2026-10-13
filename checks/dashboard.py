@@ -917,10 +917,15 @@ def check_the_human_history_adds_each_accepted_human_call_once():
             else:
                 outsider = 200
 
-    assert [(e["text"], e.get("accepted", False)) for e in history["public"]] == [
-        ("hello all\n", False),
-        ("second post", True),
+    # A post is in a round and an episode, under those names, as a message is.
+    assert [
+        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        for e in history["public"]
+    ] == [
+        (1, 1, "hello all\n", False),
+        (2, 2, "second post", True),
     ], history["public"]
+    assert not [e for e in history["public"] if "agent_episode" in e], history["public"]
     private = [
         (e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted"))
         for e in history["private"]
@@ -995,10 +1000,11 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
         history = view.human_history(c, "g01") if c else {}
 
     assert [
-        (e["episode"], e["text"], e.get("accepted", False)) for e in history["public"]
+        (e["round"], e["episode"], e["text"], e.get("accepted", False))
+        for e in history["public"]
     ] == [
-        (3, "hello all\n", False),
-        (4, "next round", True),
+        (3, 3, "hello all\n", False),
+        (4, 4, "next round", True),
     ], history["public"]
     assert [
         (e["round"], e["episode"], e["text"], e.get("accepted", False))

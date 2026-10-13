@@ -462,9 +462,9 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
   letter-spacing:.07em; text-transform:uppercase; animation:update-glow 1.4s ease-in-out infinite; }
 .chat-update::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
 @keyframes update-glow { 50% { box-shadow:0 0 14px rgba(194,160,107,.48); filter:brightness(1.18); } }
-.episode-divider { display:flex; align-items:center; gap:9px; margin:12px 0 10px; color:var(--faint);
+.round-divider { display:flex; align-items:center; gap:9px; margin:12px 0 10px; color:var(--faint);
   font:600 10px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase; }
-.episode-divider::before, .episode-divider::after { content:""; height:1px; flex:1; background:var(--line); }
+.round-divider::before, .round-divider::after { content:""; height:1px; flex:1; background:var(--line); }
 .chat-message { display:grid; grid-template-columns:30px minmax(0,1fr); gap:9px; align-items:start; margin-bottom:10px; }
 .chat-message.mine { grid-template-columns:minmax(0,1fr) 30px; }
 .chat-avatar { width:28px; height:28px; display:grid; place-items:center; border:1px solid rgba(127,155,176,.45);
@@ -1708,19 +1708,21 @@ function chatInitials(label) {
   return String(label || "?").replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
 }
 
-function humanChatHtml(events, humanAgent, isPrivate, deliveredEpisode) {
+// Posts and messages are grouped by the round they were said in, and the round
+// before the human's own is what its episode was handed as new.
+function humanChatHtml(events, humanAgent, isPrivate, deliveredRound) {
   if (!events.length) return `<div class="empty">No messages yet.</div>`;
-  let episode = null, html = "";
+  let round = null, html = "";
   for (const event of events) {
-    const at = Number(event.episode || event.round || 0);
-    if (at !== episode) {
-      episode = at;
-      html += `<div class="episode-divider"><span>Episode ${num(at)}</span></div>`;
+    const at = Number(event.round || 0);
+    if (at !== round) {
+      round = at;
+      html += `<div class="round-divider"><span>Round ${num(at)}</span></div>`;
     }
     const mine = event.from_agent === humanAgent;
     const sender = mine ? "You" : event.from_label;
     const destination = isPrivate ? (mine ? ` → ${event.to_label}` : " → you") : "";
-    const updated = at === deliveredEpisode;
+    const updated = at === deliveredRound;
     const accepted = event.accepted ? `<span class="chat-draft">sent</span>` : "";
     html += `<article class="chat-message ${mine ? "mine" : ""}">
       <span class="chat-avatar" aria-hidden="true">${esc(chatInitials(sender))}</span>
@@ -1755,15 +1757,15 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
   draw();
 }
 
-function renderHumanHistory(history, humanAgent, tiles, currentEpisode) {
+function renderHumanHistory(history, humanAgent, tiles, currentRound) {
   const board = document.getElementById("human-board"), publicEvents = history.public || [];
-  const deliveredEpisode = currentEpisode - 1;
-  const requestKey = `${humanAgent}:${(S.interaction || {}).request_id || currentEpisode}`;
+  const deliveredRound = currentRound - 1;
+  const requestKey = `${humanAgent}:${(S.interaction || {}).request_id || currentRound}`;
   if (board) {
-    const sig = JSON.stringify(publicEvents.map(event => [event.episode, event.from_agent, event.text]));
+    const sig = JSON.stringify(publicEvents.map(event => [event.round, event.episode, event.from_agent, event.text]));
     if (board.dataset.sig !== sig) {
       board.dataset.sig = sig;
-      board.innerHTML = humanChatHtml(publicEvents, humanAgent, false, deliveredEpisode);
+      board.innerHTML = humanChatHtml(publicEvents, humanAgent, false, deliveredRound);
       board.scrollTop = board.scrollHeight;
     }
     wireChatComposer(board.parentElement.querySelector(".chat-compose textarea"), board, "",
@@ -1775,7 +1777,7 @@ function renderHumanHistory(history, humanAgent, tiles, currentEpisode) {
     .map(field => [field.dataset.recipient, field.value]));
   const canMessage = privateRoot.hasAttribute("data-message-tool");
   const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason);
-  const sig = JSON.stringify([currentEpisode, peers.map(peer => [peer.agent, peer.label]),
+  const sig = JSON.stringify([currentRound, peers.map(peer => [peer.agent, peer.label]),
     privateEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
   if (privateRoot.dataset.sig === sig) return;
   privateRoot.dataset.sig = sig;
@@ -1783,7 +1785,7 @@ function renderHumanHistory(history, humanAgent, tiles, currentEpisode) {
     const events = privateEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
     return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
       <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
-      <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredEpisode)}</div>
+      <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredRound)}</div>
       ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
@@ -1810,6 +1812,7 @@ function pullPeerStatus(request) {
     .then(result => {
       if (result && S.interaction && S.interaction.request_id === request.request_id) {
         renderPeerStatus(result[0], request.agent);
+        // A request's round is its episode's number, as the harness announces it.
         renderHumanHistory(result[1], request.agent, result[0].seat_tiles, request.episode);
       }
     }).catch(() => {});
