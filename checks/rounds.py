@@ -2387,7 +2387,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
         plant(root, "a")
         plant(root, "b", m1="bravo\n")
         p = manifest_file(root, text)
-        digest = hashlib.sha256(p.read_bytes()).hexdigest()
+        manifest_sha256 = hashlib.sha256(p.read_bytes()).hexdigest()
         asked = []
 
         def start(config=None, overrides=None, requirements=(), **kw):
@@ -2447,7 +2447,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
             t["provenance"],
         )
         assert t["provenance"]["schedule"] == "sequential"
-        assert t["provenance"]["manifest_sha256"] == digest
+        assert t["provenance"]["manifest_sha256"] == manifest_sha256
         assert t["provenance"]["grace_episodes"] == 2, (
             "the experiment's default reached every agent"
         )

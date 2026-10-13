@@ -384,7 +384,7 @@ def check_the_observational_view_routes_never_write():
     category as --watch, and an agent must not be able to tell it was watched.
     """
 
-    def digest(root):
+    def sha256_by_path(root):
         return {
             p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(root.rglob("*"))
@@ -403,15 +403,15 @@ def check_the_observational_view_routes_never_write():
 
     with temp_root() as root:
         episode_once(*DEFAULT)
-        finished = digest(root)
+        finished = sha256_by_path(root)
         sweep()
-        settled = digest(root)
+        settled = sha256_by_path(root)
         # And again with the episode unfinished, which is the path that reads
         # the raw log and derives instead of reading a field.
         unfinished()
-        running = digest(root)
+        running = sha256_by_path(root)
         sweep()
-        watched = digest(root)
+        watched = sha256_by_path(root)
 
     assert settled == finished, (
         sorted(set(settled) ^ set(finished)) or "contents changed"

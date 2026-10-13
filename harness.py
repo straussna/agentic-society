@@ -17,7 +17,7 @@ Sections, in the order an episode meets them:
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, instances, digest_for,
                                     render_harness_files
-  9. What the agent's channels held before_digests
+  9. What the agent's channels held before_sha256
  10. The sandbox and the shell      Sandbox, Container, Shell, plant_trees,
                                     mirror_trees, clip, Bound, TOOL_KINDS, bind_tools,
                                     episode_specs
@@ -110,9 +110,9 @@ REFUSAL_NOTICE_SHA256 = (
     "4263e6bab90f883bbbcb2a9676a27a4aef7bde825461b3f56a2b2665f68c0c8b"
 )
 
-# Every string the harness ships, as (name, text, pinned digest). One list, so
+# Every string the harness ships, as (name, text, pinned sha256). One list, so
 # --print-system audits exactly what start() rejects a run on. The pin holds the
-# shipped default to its digest; a declared prompt is held by provenance instead.
+# shipped default to its sha256; a declared prompt is held by provenance instead.
 PINNED = (
     ("SYSTEM", SYSTEM, SYSTEM_SHA256),
     ("REFUSAL_NOTICE", REFUSAL_NOTICE, REFUSAL_NOTICE_SHA256),
@@ -131,7 +131,7 @@ SHELL_SPEC = ToolSpec(
 
 
 def system_sha256(text: str) -> str:
-    """The digest of a system prompt, which is how provenance carries what was said."""
+    """The sha256 of a system prompt, which is how provenance carries what was said."""
     return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -1368,7 +1368,7 @@ class Settings:
     # What the harness says to every agent, which is whatever the experiment declared it
     # should. Every manifest declares it, so this default stands only for a round driven
     # straight from a list of ids; "" sends no system parameter at all. Pinned per agent
-    # at creation, and recorded whole and by digest in every episode's provenance.
+    # at creation, and recorded whole and by sha256 in every episode's provenance.
     system_prompt: str = SYSTEM
     budget: int = 500_000  # micro-dollars per agent, at creation only
     context_fraction: float = (
@@ -1440,7 +1440,7 @@ def using(settings: Settings) -> Iterator[Settings]:
 
 # --- 5. Process constants --------------------------------------------------------
 
-# The digest of this file as it was loaded, read once at import. Every trace
+# The sha256 of this file as it was loaded, read once at import. Every trace
 # records it.
 HARNESS_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -1713,7 +1713,7 @@ class AccountEpisode(TypedDict):
     series_from, series_to: where in the series it starts and ends. transfer,
     channels: what settle_episode recorded. forgiven: what the floor put back.
     received: what peers settling in the same round credited inside its span.
-    receipts: what was planted at each receipt path, by digest.
+    receipts: what was planted at each receipt path, by sha256.
     """
 
     episode: int
@@ -1820,7 +1820,7 @@ CREATION_TERMS = {
 
 
 def term_shown(key: str, value: Any) -> str:
-    """A pinned setting as a rejection names it: a prompt by digest, everything else
+    """A pinned setting as a rejection names it: a prompt by sha256, everything else
     whole."""
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
 
@@ -2116,7 +2116,7 @@ def penalise(account: Account, ch: Channel) -> int:
 # Starter files are a file or tree copied into the private store before an episode,
 # so the agent meets them in the listing the opening command prints and not in
 # anything the harness says. Their names and contents are prompt surface, recorded
-# by digest in every episode (invariant 9).
+# by sha256 in every episode (invariant 9).
 def files_dir(name: str) -> Path:
     """Where starter files or an experimenter channel's source lives.
     Committed, unlike environments/ and records/."""
@@ -2124,7 +2124,7 @@ def files_dir(name: str) -> Path:
 
 
 def files_listing(name: str) -> list[tuple[str, bytes]]:
-    """A source as (relative path, bytes), ordered so the digest is stable."""
+    """A source as (relative path, bytes), ordered so its sha256 is stable."""
     root = files_dir(name)
     if root.is_file():
         return [(root.name, root.read_bytes())]
@@ -2154,7 +2154,7 @@ def plant_starter_files(
 
     `store` is the store's host mirror and `store_path` its path in the environment.
     Returns the record, or None; the trigger is the balance, not an episode number.
-    Rejects starter files whose digest no longer matches, or that would overwrite a
+    Rejects starter files whose sha256 no longer matches, or that would overwrite a
     path the agent has written.
     """
     name, below = starter_terms(account)
@@ -2162,7 +2162,7 @@ def plant_starter_files(
     if planted and name and planted["sha256"] != files_sha256(name):
         raise SystemExit(
             f"agent {agent} received starter_files {planted['name']!r} ({planted['sha256'][:12]}) at episode "
-            f"{planted['episode']}, and files/{name} now digests to {files_sha256(name)[:12]}. "
+            f"{planted['episode']}, and files/{name} now has sha256 {files_sha256(name)[:12]}. "
             f"Episodes either side of that are not one experiment; start a new agent"
         )
     if planted or not name or account["remaining"] > below:
@@ -2217,17 +2217,17 @@ def guard_sources(
         if inst.role != "experimenter":
             continue
         ch = inst.channel
-        digest = files_sha256(ch.source)
+        sha256 = files_sha256(ch.source)
         was = seen.get(ch.name)
-        if was and was["sha256"] != digest:
+        if was and was["sha256"] != sha256:
             raise SystemExit(
                 f"agent {agent} first read channel {ch.name!r} from files/{was['source']} "
                 f"({was['sha256'][:12]}) at episode {was['episode']}, and files/{ch.source} now "
-                f"digests to {digest[:12]}. Episodes either side of that are not one experiment; "
+                f"has sha256 {sha256[:12]}. Episodes either side of that are not one experiment; "
                 f"start a new agent"
             )
         if not was:
-            seen[ch.name] = {"source": ch.source, "sha256": digest, "episode": index}
+            seen[ch.name] = {"source": ch.source, "sha256": sha256, "episode": index}
             changed = True
     if changed:
         save_account(agent, account)
@@ -2833,7 +2833,7 @@ def render_round_status(account: Account) -> str:
 def digest_for(
     agent: str, account: Account, files: dict[str, str], carried: set[str]
 ) -> tuple[str, dict[str, str]]:
-    """The digest: what has been said to this agent, and the digests of what it quotes.
+    """The digest: what has been said to this agent, and the sha256 of what it quotes.
 
     The round announcement comes first where one is declared. It is followed by
     one section per file of every pushed instance in instances() order, the
@@ -2844,7 +2844,7 @@ def digest_for(
     and every channel a manifest marks `restated`, is quoted every episode they
     stand. An agent that does not remember reading something is not told it has
     read it. `account["shown_before"]`
-    is what the agent was last shown, by section and digest; the second value is
+    is what the agent was last shown, by section and sha256; the second value is
     the same record for this episode, which close_episode stores.
     """
     channel_instances = instances(agent, account)
@@ -3047,41 +3047,41 @@ def read_modes(path: Path) -> dict[str, str]:
 
 
 def tree_sha256(root: Path, exclude: frozenset = frozenset()) -> dict[str, str]:
-    """Digest of each thing in a directory the agent writes, by the path it stands at.
+    """The sha256 of each thing in a directory the agent writes, by its path.
 
-    One digest a path, not one for the tree: it is judged on whether
+    One sha256 a path, not one for the tree: it is judged on whether
     anything is new, which a removal does not make it. Empties omitted, and so
     is what belongs to a nested file channel.
     """
-    digests = {}
+    by_path = {}
     for p in sorted(root.rglob("*")) if root.exists() else ():
         inner = p.relative_to(root).as_posix()
         if p.is_file() and inner not in exclude:
             data = p.read_bytes()
             if data:
-                digests[inner] = hashlib.sha256(data).hexdigest()
-    return digests
+                by_path[inner] = hashlib.sha256(data).hexdigest()
+    return by_path
 
 
 def slot_sha256(box: Path, slots: Iterable[str]) -> dict[str, str]:
-    """Digest of each message in an outbox, by the label it is addressed to.
+    """The sha256 of each message in an outbox, by the label it is addressed to.
 
-    One digest a slot. Only a reachable peer's slot holding a regular file is a
+    One sha256 a slot. Only a reachable peer's slot holding a regular file is a
     message. Empties omitted.
     """
-    digests = {}
+    by_label = {}
     for label in slots:
         p = box / label
         if not p.is_file():
             continue
         data = p.read_bytes()
         if data:
-            digests[label] = hashlib.sha256(data).hexdigest()
-    return digests
+            by_label[label] = hashlib.sha256(data).hexdigest()
+    return by_label
 
 
 def file_sha256(p: Path) -> str:
-    """Digest of one declared file, or "" where there is none.
+    """The sha256 of one declared file, or "" where there is none.
 
     Absent and empty read alike: neither declares anything. Compared against the
     same file at episode start, since the obligation is a declaration of the episode's own.
@@ -3092,12 +3092,12 @@ def file_sha256(p: Path) -> str:
     return hashlib.sha256(data).hexdigest() if data else ""
 
 
-def before_digests(
+def before_sha256(
     instances: list[Instance], reach: dict[str, str], labels: dict[str, str]
 ) -> dict[str, Any]:
     """What every obligated channel the agent writes held at episode start, by name.
 
-    A directory by path, a mailbox by slot, a parsed file as one digest. Channels
+    A directory by path, a mailbox by slot, a parsed file as one sha256. Channels
     whose obligation is a change compare their final state against this record.
     """
     slots = [labels[seat] for seat in reach]
@@ -4036,7 +4036,7 @@ class Bound:
 
         Prompt surface, and the experimenter's: a description reaches the model in
         the request exactly as the system prompt does, so it is theirs to write and
-        it is recorded whole and by digest in the tool table. An experiment that
+        it is recorded whole and by sha256 in the tool table. An experiment that
         writes none is given the harness's own account of the action, which is
         computed from the channel and cannot say what the channel does not.
         docs/manifest.md section 4.8.
@@ -5332,8 +5332,8 @@ def resolve_directory(
     else:
         before = ep.before.get(ch.name, {})
         posted = any(
-            before.get(path) != digest
-            for path, digest in tree_sha256(inst.host, inst.exclude).items()
+            before.get(path) != sha256
+            for path, sha256 in tree_sha256(inst.host, inst.exclude).items()
         )
     rec = {"posted": posted, "penalty": 0}
     if posted or not settles:
@@ -5512,7 +5512,7 @@ def provenance(
     and tunables are whatever this episode had. `starter_files` is the agent's
     own pinned pair and `system` its pinned prompt, and the tunables stand in where
     a caller has no account. `experiment` is what the driver stamped: the schedule
-    and the manifest's digest.
+    and the manifest's sha256.
     """
     s = SETTINGS
     starter_name, starter_below = (
@@ -5527,7 +5527,7 @@ def provenance(
     return {
         "started_at": utc_now(),
         "harness_sha256": HARNESS_SHA256,
-        # Invariant 2: what the harness said to this agent, whole and by digest.
+        # Invariant 2: what the harness said to this agent, whole and by sha256.
         "system": system,
         "system_sha256": system_sha256(system),
         "image": s.image,
@@ -5550,7 +5550,7 @@ def provenance(
         "grace_episodes": s.grace_episodes,
         # Whether an agent ends holding the sign flip, or has it forgiven.
         "floor_at_zero": s.floor_at_zero,
-        # Invariant 9: the starter files by name and digest, so drift() reports the
+        # Invariant 9: the starter files by name and sha256, so drift() reports the
         # episode the environment changed at.
         "starter_files": starter_name,
         "starter_files_sha256": files_sha256(starter_name) if starter_name else "",
@@ -5561,13 +5561,13 @@ def provenance(
         "peers": dict(seating.seen),
         "labels": dict(seating.labels),
         "presentation_order": list(seating.presentation),
-        # The channel table in force, whole and by digest, and the harness files'
+        # The channel table in force, whole and by sha256, and the harness files'
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
         "harness_files": dict(s.harness_files),
         # Invariant 9 for what the agent can do: the tools offered beside bash,
-        # whole and by digest, so two agents offered different actions are
+        # whole and by sha256, so two agents offered different actions are
         # different arms. What each one says of itself the harness generates from
         # this table and the channel table, so nothing else has to be recorded for
         # the wording to be reproducible.
@@ -5576,7 +5576,7 @@ def provenance(
         # Whether the shell was among them, which decides what the episode opened
         # on as well as what it could do.
         "shell_tool": s.shell_tool,
-        # Each experimenter channel's files by digest.
+        # Each experimenter channel's files by sha256.
         "source_sha256": {
             c.name: files_sha256(c.source) for c in table if c.writer == "experimenter"
         },
@@ -5775,7 +5775,7 @@ class Episode:
     """One episode's environment, built and ready to run.
 
     Everything build_episode read or made: the account and what the episode was
-    shown, the digests the obligations are measured against, the container with
+    shown, what its obligated channels held by sha256, the container with
     the environment planted, and the shell. run_episode adds what came back;
     settle_episode and close_episode commit it. A driver holds one per agent for
     the length of a round.
@@ -5882,7 +5882,7 @@ def build_episode(agent: str) -> Episode:
     # Before the board, the outbox and the declaration go in, so what comes back
     # can be compared against them. Before the starter files too, so what was
     # planted is not read as something this episode wrote.
-    before = before_digests(channel_instances, reach, seating.labels)
+    before = before_sha256(channel_instances, reach, seating.labels)
     if "starter_files" not in account:
         # An account without pinned starter terms takes the tunables.
         account["starter_files"], account["starter_files_below"] = (
@@ -6140,7 +6140,7 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
             "forgiven": forgiven,
             "received": ep.credited,
             "channels": settled["channels"],
-            # What was planted at each receipt path, by digest: how
+            # What was planted at each receipt path, by sha256: how
             # the next build tells a receipt from the agent's file.
             "receipts": receipts_planted(ep.shown),
         }
@@ -6349,8 +6349,8 @@ def start(
     for name, text, expected in PINNED:
         if system_sha256(text) != expected:
             reject(
-                f"{name} drifted from its pinned digest; if the change was meant, run "
-                f"`py -3 harness.py --print-system` and paste the digest into {name}_SHA256."
+                f"{name} drifted from its pinned sha256; if the change was meant, run "
+                f"`py -3 harness.py --print-system` and paste the sha256 into {name}_SHA256."
             )
     s, cfg = read_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")
@@ -6654,7 +6654,7 @@ def restore_files(
 
 
 def show_prompt(who: str, text: str) -> None:
-    """One entry of the --print-system audit: whose prompt, its bytes and its digest."""
+    """One entry of the --print-system audit: whose prompt, its bytes and its sha256."""
     same = "  (the shipped SYSTEM)" if text == SYSTEM else ""
     print(f"{who}: {text!r}")
     print(f"{len(text)} bytes  sha256={system_sha256(text)}{same}")
@@ -6669,11 +6669,11 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
     """
     drifted = []
     for name, text, expected in PINNED:
-        digest = system_sha256(text)
-        drifted += [name] if digest != expected else []
+        sha256 = system_sha256(text)
+        drifted += [name] if sha256 != expected else []
         print(f"{name}: {text!r}")
         print(
-            f"{len(text)} bytes  sha256={digest}  {'ok' if digest == expected else 'DRIFTED'}"
+            f"{len(text)} bytes  sha256={sha256}  {'ok' if sha256 == expected else 'DRIFTED'}"
         )
 
     s, cfg = read_config(SETTINGS, config)
@@ -6837,7 +6837,7 @@ def print_context(
 def show_tools(
     declared: list[dict] | None, validated: list[Tool] | None = None
 ) -> None:
-    """The declared tool table's digest and descriptions, which are prompt surface too.
+    """The declared tool table's sha256 and descriptions, which are prompt surface too.
 
     A description reaches the model in the request the way the system prompt does,
     so --print-system audits both. A tool that declares none is named as taking the
@@ -6848,8 +6848,8 @@ def show_tools(
         print("tools: none declared (no bash)")
         return
     print()
-    digest = f", sha256={tools_sha256(validated)}" if validated is not None else ""
-    print(f"tools: {len(declared)} declared{digest}")
+    sha256 = f", sha256={tools_sha256(validated)}" if validated is not None else ""
+    print(f"tools: {len(declared)} declared{sha256}")
     for raw in declared:
         if raw["kind"] == "bash":
             print("  bash (built-in shell)")
@@ -6860,7 +6860,7 @@ def show_tools(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Verifies the shipped digests and the endpoint, then runs the episodes."""
+    """CLI. Checks the shipped sha256 pins and the endpoint, then runs the episodes."""
     global WATCH
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -6906,7 +6906,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--print-files",
         metavar="NAME",
-        help="print the listing and digest of a directory under files/; starts no episode",
+        help="print the listing and sha256 of a directory under files/; starts no episode",
     )
     ap.add_argument(
         "--fork-from",
@@ -6971,7 +6971,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"{a.manifest} seats {ids}, and not {a.agent!r}")
     # Which file set the process parameters is the one thing about them the trace
     # cannot record: an agent reading no config and one reading a config of every
-    # default are the same episode. Everything else is the manifest's, and its digest
+    # default are the same episode. Everything else is the manifest's, and its sha256
     # is in every trace.
     router = start(
         a.config,

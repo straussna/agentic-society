@@ -574,7 +574,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
     """The words are prompt surface and declarable; the input schema never is.
 
     A description reaches the model in the request the way a system prompt does,
-    so it is the experiment's to write and is recorded whole and by digest. The
+    so it is the experiment's to write and is recorded whole and by sha256. The
     input schema is the contract a call is held to - a manifest that could write
     it could describe fields the harness ignores - so naming one is rejected.
     """
@@ -615,7 +615,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         assert (
             harness.tools_sha256([harness.Tool("send", "write_slot", "mail")])
             != prov["tools_sha256"]
-        ), "and by digest, so two wordings are two arms"
+        ), "and by sha256, so two wordings are two arms"
 
     # Declared none: the harness's own account of the channel, which cannot say
     # what the channel does not.
@@ -812,7 +812,7 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
 
 
 def check_the_tools_offered_reach_provenance():
-    """The tool table is stamped whole and by digest, and a change starts a new arm.
+    """The tool table is stamped whole and by sha256, and a change starts a new arm.
 
     Invariant 9: two agents offered different actions are not comparable, so the
     difference has to be on the trace and not only in the manifest.
@@ -1415,7 +1415,7 @@ def check_running_one_seat_carries_the_whole_experiment_it_names():
 
     The manifest decides the environment and the actions together. A run that read
     it for one and not the other would bill an arm nobody declared, under the
-    digest of the arm they did - the one difference a trace could not show.
+    sha256 of the arm they did - the one difference a trace could not show.
     """
 
     class Reached(Exception):

@@ -80,7 +80,7 @@ def check_starter_files_land_when_the_balance_falls():
         "the starter files are in the listing the agent opens on"
     )
     assert after["provenance"]["starter_files"] == "s"
-    assert after["provenance"]["starter_files_sha256"], "the digest goes in provenance"
+    assert after["provenance"]["starter_files_sha256"], "the sha256 goes in provenance"
     assert after["provenance"]["starter_files_below"] == 499_000
 
 
@@ -295,7 +295,7 @@ def check_starter_files_config_is_validated():
                 harness.SETTINGS.starter_files,
                 harness.SETTINGS.starter_files_below,
             ) == ("ok", 400_000)
-        # The digest covers paths as well as bytes, so a rename is a different set of starter files.
+        # The sha256 covers paths as well as bytes, so a rename is a different set of starter files.
         was = harness.files_sha256("ok")
         (root / "files" / "ok" / "m1").rename(root / "files" / "ok" / "m3")
         assert harness.files_sha256("ok") != was, (

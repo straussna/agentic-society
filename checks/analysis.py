@@ -131,7 +131,7 @@ def check_the_report_names_what_the_traces_hold():
         agents = analyze.load("t")
         text = analyze.report(agents)
         spoken = analyze.transcript(agents)
-        digest = harness.files_sha256("s")
+        sha256 = harness.files_sha256("s")
         with quiet() as buf:
             assert analyze.main(["--agent", "t"]) == 0
         written = {p.name for p in (harness.records_dir("t") / "analysis").iterdir()}
@@ -146,7 +146,7 @@ def check_the_report_names_what_the_traces_hold():
         ("refused", "1 turns in 1 of 2 episodes"),
         ("  carried on after", "1 of 1 - episodes [1]"),
         ("  by category", {"cyber": 1}),
-        ("starter_files", f"s ({digest[:12]}), configured to land below 500000"),
+        ("starter_files", f"s ({sha256[:12]}), configured to land below 500000"),
         ("starter_files first seen", 1),
         ("first named a starter", 1),
         ("episodes that met mail", "1 of 2"),

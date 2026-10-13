@@ -631,7 +631,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
 
     The system_prompt in force is what the harness says and SYSTEM is what it ships.
     A declaration moves the first and never the second, so start() still rejects a
-    shipped string that has drifted from its digest while one is in force. An
+    shipped string that has drifted from its sha256 while one is in force. An
     experiment that declares "" is told nothing at all, and has that recorded like
     any other prompt.
     """

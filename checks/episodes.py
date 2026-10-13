@@ -141,8 +141,8 @@ def check_print_system_and_print_files_audit_without_starting():
         assert harness.SETTINGS is before, (
             "an audit leaves the settings as it found them"
         )
-        for name, _, digest in harness.PINNED:
-            assert name in buf.getvalue() and digest in buf.getvalue(), (
+        for name, _, sha256 in harness.PINNED:
+            assert name in buf.getvalue() and sha256 in buf.getvalue(), (
                 name,
                 buf.getvalue(),
             )
@@ -757,7 +757,7 @@ def check_run_once_is_build_then_run_then_commit():
     )
 
 
-def check_the_harness_digest_is_read_once():
+def check_the_harness_sha256_is_read_once():
     """provenance() reports the code that is running, not the file on disk.
 
     The process has already imported this module, so a later edit to harness.py
@@ -770,7 +770,7 @@ def check_the_harness_digest_is_read_once():
     assert (
         harness.HARNESS_SHA256
         == hashlib.sha256(Path(harness.__file__).read_bytes()).hexdigest()
-    ), "and it is this file's digest"
+    ), "and it is this file's sha256"
     assert "read_bytes" not in inspect.getsource(harness.provenance), (
         "provenance must not re-read the harness from disk"
     )
@@ -805,8 +805,8 @@ def check_the_refusal_notice_is_pinned():
     It is the second thing the harness says, so it is held to what invariant 2 holds the
     first to: no cause, no instruction, and nothing addressed to the agent.
     """
-    digest = hashlib.sha256(harness.REFUSAL_NOTICE.encode()).hexdigest()
-    assert digest == harness.REFUSAL_NOTICE_SHA256, digest
+    sha256 = hashlib.sha256(harness.REFUSAL_NOTICE.encode()).hexdigest()
+    assert sha256 == harness.REFUSAL_NOTICE_SHA256, sha256
     assert (
         "REFUSAL_NOTICE",
         harness.REFUSAL_NOTICE,

@@ -833,8 +833,8 @@ def check_an_unpushed_public_channel_stays_out_of_the_digest():
     assert by["2/post"]["channel"] == "blackboard" and by["2/post"]["role"] == "peer"
 
 
-def check_an_experimenter_channels_digest_reaches_provenance():
-    """Each experimenter channel's files are digested into provenance, and a
+def check_an_experimenter_channels_sha256_reaches_provenance():
+    """Each experimenter channel's files reach provenance by sha256, and a
     change between episodes is rejected."""
     with temp_root() as root:
         plant(root, "brief", BRIEF="read me\n")
@@ -857,7 +857,7 @@ def check_an_experimenter_channels_digest_reaches_provenance():
             None,
             "check",
         )
-        digests = {
+        source_sha256 = {
             "brief": harness.files_sha256("brief"),
             "rules": harness.files_sha256("rules"),
         }
@@ -870,7 +870,9 @@ def check_an_experimenter_channels_digest_reaches_provenance():
             "not one experiment",
             because="an experimenter channel changed under the agent and the episode ran",
         )
-    assert t["provenance"]["source_sha256"] == digests, t["provenance"]["source_sha256"]
+    assert t["provenance"]["source_sha256"] == source_sha256, t["provenance"][
+        "source_sha256"
+    ]
     assert t["turns"][0]["tools"][0]["result"] == "read me\nplay fair\n"
     by = files_by_path(t)
     assert (

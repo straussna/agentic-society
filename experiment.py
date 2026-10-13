@@ -118,7 +118,7 @@ class Manifest(TypedDict):
     defaults for every seat, applied by start(). `agents` holds one [[agent]] table
     per seat, in seat order, and `labels` maps each seat to what its agent is called.
     `channels`, `harness_files` and `tools` are the tables as declared, None where
-    the manifest declares none. `sha256` is the digest of the file's bytes.
+    the manifest declares none. `sha256` is the sha256 of the file's bytes.
     """
 
     schedule: str
@@ -1736,7 +1736,7 @@ def play_round(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Verifies the shipped digests and the endpoint, then runs the rounds."""
+    """CLI. Checks the shipped sha256 pins and the endpoint, then runs the rounds."""
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

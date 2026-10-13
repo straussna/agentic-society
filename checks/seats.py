@@ -256,7 +256,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
     with temp_root() as root:
         shared(root, "brief", BRIEF="read me first\n")
         t = episode_once(run("echo mine > state/NOTES.md"), say())
-        digest = harness.files_sha256("brief")
+        sha256 = harness.files_sha256("brief")
         with quiet():
             assert harness.fork("t", 1, "f") == 0
         forked_shared = (
@@ -272,7 +272,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
         "shared/BRIEF"
     ]
     assert by["shared/BRIEF"]["text"] == "read me first\n"
-    assert t["provenance"]["source_sha256"] == {"shared": digest}, t["provenance"]
+    assert t["provenance"]["source_sha256"] == {"shared": sha256}, t["provenance"]
     assert [f["path"] for f in analyze.agent_files_of(t)] == ["state/NOTES.md"]
     assert not forked_shared and forked_notes == "mine\n", (
         "a fork rebuilds what the agent wrote and not the experimenter's tree"

@@ -141,8 +141,8 @@ scoped to its own pid and cannot match `mtr-<agent>-<index>`. Remove those by ha
 
 # Editing harness.py
 
-`harness.py` hashes itself at import and records the digest in every trace, and
-`check_the_harness_digest_is_read_once` compares that against the file on disk.
+`harness.py` hashes itself at import and records the sha256 in every trace, and
+`check_the_harness_sha256_is_read_once` compares that against the file on disk.
 `harness.py` must not be edited while a suite run or an experiment is in flight.
 
 ## Formatting sources

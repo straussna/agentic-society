@@ -222,7 +222,7 @@ def cost(
 
 
 def trace_evidence(agent: str, episode: int, path: Path) -> dict[str, Any] | None:
-    """An agent's episode and the digest of its trace at `path`; None when that does
+    """An agent's episode and the sha256 of its trace at `path`; None when that does
     not read."""
     try:
         data = path.read_bytes()
@@ -247,7 +247,7 @@ def outcome(
     reveal: dict[str, list[str]],
 ) -> dict[str, Any]:
     """Write outcome.json: who won or survived, the elimination order, the balances, and
-    the digest of each agent's last trace, which `trace_path` locates.
+    the sha256 of each agent's last trace, which `trace_path` locates.
 
     The survivors are `remaining`, the agents still in the competition whether or not
     the run that ended had them at its table; the winners are the survivors where
