@@ -150,7 +150,7 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
         assert f"=== {heading} ===" in observation, (heading, observation)
     for path in ("state/", "out/", "in/", "=== n1 ===", "=== n2 ===", "=== g ==="):
         assert path not in observation, (path, observation)
-    request = next(item for item in seen if item["kind"] == "session")
+    request = next(item for item in seen if item["call"] == "session")
     descriptions = "\n".join(tool["description"] for tool in request["tools"])
     assert "out/transfer" not in descriptions and " n1" not in descriptions, (
         descriptions
@@ -289,7 +289,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
                     seen=seen,
                 ),
             )
-        spec = next(x for x in seen if x["kind"] == "session")["tools"][1]
+        spec = next(x for x in seen if x["call"] == "session")["tools"][1]
         assert spec["input_schema"]["properties"]["to"]["enum"] == ["2"]
         amount_help = spec["input_schema"]["properties"]["amount"]["description"]
         assert "at least 1" in amount_help and "Zero and negative" in amount_help
@@ -400,7 +400,7 @@ def check_declared_bash_and_channel_tools_are_offered_together():
         seated(root, "t", t={}, o={})
         with quiet():
             harness.run_once("t", fake(run("ls"), say(), seen=seen))
-    for params in (x for x in seen if x["kind"] == "session"):
+    for params in (x for x in seen if x["call"] == "session"):
         assert [t["name"] for t in params["tools"]] == ["bash", "post"]
     rejected(
         lambda: harness.validate_tools(
@@ -605,7 +605,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        spec = next(x for x in seen if x["kind"] == "session")["tools"][0]
+        spec = next(x for x in seen if x["call"] == "session")["tools"][0]
         assert spec["description"] == said, spec["description"]
         assert "channel" not in spec["description"], "the harness adds nothing to them"
         # The schema is still the harness's, whatever the words say.
@@ -854,14 +854,14 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        offered = next(x for x in seen if x["kind"] == "session")["tools"]
+        offered = next(x for x in seen if x["call"] == "session")["tools"]
         assert [t["name"] for t in offered] == ["post", "look"], offered
 
         seated(root, "t", t={}, o={})
         seen = []
         with quiet():
             harness.run_once("t", fake(say(), seen=seen))
-        offered = next(x for x in seen if x["kind"] == "session")["tools"]
+        offered = next(x for x in seen if x["call"] == "session")["tools"]
         assert [t["name"] for t in offered] == ["send", "post", "look"], (
             "the mailbox is planted once there is a peer to reach"
         )
@@ -870,10 +870,10 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
         )
 
 
-def check_a_tool_never_offers_a_seat_out_of_play():
+def check_a_tool_never_offers_an_exhausted_seat():
     """An exhausted seat is not a message target, so it is not offered.
 
-    The mailbox settles only the reachable slots: a write to a seat out of play is
+    The mailbox settles only the reachable slots: a write to an exhausted seat is
     neither addressed nor broken, so the share is taken all the same. A tool that
     offered the slot would report the write and leave the episode charged for
     having said nothing - the false success the result wording exists to avoid.
@@ -993,7 +993,7 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
         seen = []
         with quiet():
             harness.run_once("t", fake(use("vote", to="2"), say(), seen=seen))
-        offered = next(item["tools"] for item in seen if item.get("kind") == "session")
+        offered = next(item["tools"] for item in seen if item.get("call") == "session")
         assert [tool["name"] for tool in offered] == ["remember", "vote"]
         assert (harness.mirror("t", "ballot") / "vote").read_text(
             encoding="utf-8"
@@ -1032,7 +1032,7 @@ def check_a_ballots_episode_runs_no_command_it_did_not_offer():
                     run("echo ran > state/ran"), use("vote", to="2"), say(), seen=seen
                 ),
             )
-        offered = next(item["tools"] for item in seen if item.get("kind") == "session")
+        offered = next(item["tools"] for item in seen if item.get("call") == "session")
         ran = (harness.mirror("t", "notes") / "ran").exists()
 
     assert [tool["name"] for tool in offered] == ["remember", "vote"], offered
@@ -1094,7 +1094,7 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
                 with quiet():
                     harness.run_once("t", fake(say(), seen=seen))
                 sent.append(
-                    next(item["tools"] for item in seen if item["kind"] == "session")
+                    next(item["tools"] for item in seen if item["call"] == "session")
                 )
 
     audited = []
@@ -1310,7 +1310,7 @@ def check_the_shell_can_be_withheld_and_the_tools_still_act():
                     seen=seen,
                 ),
             )
-        sent = next(item["tools"] for item in seen if item.get("kind") == "session")
+        sent = next(item["tools"] for item in seen if item.get("call") == "session")
         assert [t["name"] for t in sent] == ["send", "post", "look"], sent
         assert harness.SHELL_SPEC.name not in [tool["name"] for tool in sent], (
             "the shell was withheld"

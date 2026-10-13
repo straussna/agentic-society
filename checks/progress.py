@@ -588,7 +588,7 @@ def check_a_branch_carries_the_elections_its_round_had_held_and_no_later_one():
     round before a later election, no seat carries that one or what it eliminated.
 
     Seat 3 is voted out at round 2's election. Seat 2 abstains at round 4's, whose record
-    takes the place of round 2's in the accounts of the seats still in.
+    takes the place of round 2's in the accounts of the seats in play.
     """
     ballot = {
         "name": "ballot",

@@ -272,7 +272,7 @@ def check_episodes_reconcile():
         for s in episodes:
             started, ended = series[s["series_from"]], series[s["series_to"]]
             assert started - ended == s["spent"], (
-                f"episode {s['index']}: {started} - {ended} != {s['spent']}"
+                f"episode {s['episode']}: {started} - {ended} != {s['spent']}"
             )
             assert started == s["balance_at_start"], (s["balance_at_start"], started)
         assert [s["series_from"] for s in episodes[1:]] == [
@@ -675,7 +675,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     with temp_root(system_prompt=""):
         t = episode_once(say(), seen=seen)
         pinned_text = ground_truth()["system_prompt"]
-    assert next(x for x in seen if x["kind"] == "session")["system"] == ""
+    assert next(x for x in seen if x["call"] == "session")["system"] == ""
     assert pinned_text == "", "the account pins what the agent was told, empty or not"
     assert t["provenance"]["system"] == "", t["provenance"]["system"]
     assert (
@@ -686,7 +686,7 @@ def check_the_shipped_prompt_is_pinned_against_a_declaration():
     said, spoken = "You are one of several.", []
     with temp_root(system_prompt=said):
         d = episode_once(say(), seen=spoken)
-    session = next(x for x in spoken if x["kind"] == "session")
+    session = next(x for x in spoken if x["call"] == "session")
     assert session["system"] == said, session.get("system")
     assert d["provenance"]["system"] == said, d["provenance"]["system"]
     assert d["system_sha256"] == harness.system_sha256(said) != harness.SYSTEM_SHA256

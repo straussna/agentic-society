@@ -16,7 +16,7 @@ StopReason = Literal["end_turn", "tool_use", "max_tokens", "refusal", "other"]
 # How a provider failure is classified; retryable_api is the one a retry can cure.
 FailureCategory = Literal["authentication", "retryable_api", "permanent_api", "adapter"]
 
-# Exception classes, by name, of a request that got no answer: a dropped connection
+# Exception classes, by name, of a model call that got no answer: a dropped connection
 # or a timeout. They carry no status code. A name anywhere in an exception's MRO
 # counts, so the SDKs' subclasses of these and the standard library's do too.
 RETRYABLE = {"APIConnectionError", "APITimeoutError", "ConnectionError", "TimeoutError"}
@@ -209,7 +209,7 @@ def classify_error(
 
     401 and 403, or a class named for authentication or a denied permission, are
     authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
-    is permanent. With no status, a class named in RETRYABLE is a request that got
+    is permanent. With no status, a class named in RETRYABLE is a model call that got
     no answer, and is retried; anything else is the adapter's. A rejected key - 401,
     or a class named for authentication - says where `key_variable` goes, when one
     is given. A denied permission does not: the key was accepted, and is not

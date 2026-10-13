@@ -108,7 +108,7 @@ class FakeError(Exception):
 
 
 class Err(providers.ProviderError):
-    """A failed request with `status`, classified the way an adapter classifies one."""
+    """A failed model call with `status`, classified as an adapter classifies one."""
 
     def __init__(self, status):
         super().__init__(
@@ -163,7 +163,7 @@ class FakeSession:
         if self.seen is not None:
             self.seen.append(
                 {
-                    "kind": "send",
+                    "call": "send",
                     "provider": self.provider,
                     "model": self.requested_model,
                     "input": content,
@@ -254,7 +254,7 @@ class FakeRouter:
         if self.seen is not None:
             self.seen.append(
                 {
-                    "kind": "session",
+                    "call": "session",
                     "provider": provider,
                     "model": model,
                     "system": system,

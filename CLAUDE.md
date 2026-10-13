@@ -114,7 +114,7 @@ exceed the core count; the default is sized for this machine.
 
 One `Ctrl+C` ends the agent cleanly. It does not raise: it sets a flag that the
 turn loop reads where it checks whether the balance is exhausted, so the episode ends
-the way an exhausted budget ends it — the turn in flight finishes, its spend is settled,
+the way an exhausted balance ends it — the turn in flight finishes, its spend is settled,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
@@ -137,7 +137,7 @@ episode: the container leaks and the spend never reaches `account.json`. A first
 the episode wherever it lands.
 
 Nothing in the repo reaps a container left by a hard kill — `check.py`'s sweep is
-scoped to its own pid and cannot match `mtr-<agent>-<index>`. Remove those by hand.
+scoped to its own pid and cannot match `mtr-<agent>-<episode>`. Remove those by hand.
 
 # Editing harness.py
 

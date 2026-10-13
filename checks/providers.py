@@ -635,7 +635,7 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
 
 
 def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
-    """A request that got no answer is retried like a 429, whichever adapter sent it.
+    """A model call that got no answer is retried like a 429, whichever adapter sent it.
 
     The SDKs raise APIConnectionError and APITimeoutError with no status code. Read
     by status alone they are the adapter's fault, and one dropped connection ends a

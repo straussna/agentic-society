@@ -1611,10 +1611,10 @@ def over(
     saying so, or None where it is not: "all_eliminated" when none is in play, and
     "one_remains" when one is and the manifest stops there."""
     if not agents_in_play:
-        print(f"every agent is out after {rounds} rounds")
+        print(f"no agent is in play after {rounds} rounds")
         return "all_eliminated"
     if stop_when_one_remains and len(agents_in_play) == 1:
-        print(f"{agents_in_play[0]} is the only agent left; the competition ends")
+        print(f"{agents_in_play[0]} is the only agent in play; the experiment ends")
         return "one_remains"
     return None
 
@@ -1659,7 +1659,7 @@ def concluded(
         ):
             print(
                 f"the final vote tied between {' and '.join(agents_in_play)}; "
-                "both survive and the competition ends"
+                "both survive and the experiment ends"
             )
             return "final_tie"
     return None

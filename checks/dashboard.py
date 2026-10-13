@@ -1013,8 +1013,8 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
         # Both seats forked at episode 2: the accounts list the two they inherited,
         # and the traces are the branch's own.
         for agent in ("g01", "g02"):
-            for index in (1, 2):
-                harness.trace_path(agent, index).unlink()
+            for episode in (1, 2):
+                harness.trace_path(agent, episode).unlink()
         offering_the_human_tools(("g01", "g02"))
         store = InteractionStore(harness.interactions_root())
         answered(
@@ -1089,12 +1089,14 @@ def check_the_view_reads_the_round_the_harness_announces():
             with quiet():
                 harness.run_once(agent, fake(say()))
         told = {
-            (agent, n): int(
+            (agent, episode): int(
                 re.search(
-                    r"^round: (\d+)$", trace_on_disk(agent, n)["observation"], re.M
+                    r"^round: (\d+)$",
+                    trace_on_disk(agent, episode)["observation"],
+                    re.M,
                 ).group(1)
             )
-            for agent, n in (("g01", 1), ("g01", 2), ("g02", 1))
+            for agent, episode in (("g01", 1), ("g01", 2), ("g02", 1))
         }
         c = view.experiment_of("g01")
         rows = view.experiment_episodes(c)
@@ -1186,7 +1188,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
     )
     for agent in ("g02", "g03"):
         assert open_seats[agent]["pending"] and not open_seats[agent]["acted"], (
-            f"{agent} has not been reached in the open round and has not sat it out"
+            f"{agent} has not been reached in the open round and has not been unseated"
         )
     # A balance of zero is not what decides it: g02 is still to come on the same
     # empty account that g03 has passed on.
@@ -1209,8 +1211,8 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
             agents=("g01", "g02"),
         )
         for agent in ("g01", "g02"):
-            for index in (1, 2):
-                harness.trace_path(agent, index).unlink()
+            for episode in (1, 2):
+                harness.trace_path(agent, episode).unlink()
         rows = view.experiment_episodes(c)
         forked_round = view.round_now(c, rows)
         forked = view.seat_row("2", "g02", rows, forked_round, view.table_round(c))

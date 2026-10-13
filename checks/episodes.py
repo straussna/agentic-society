@@ -1,7 +1,7 @@
 """How an episode starts, stops, and is recorded.
 
-The loop over episodes, the signals, the stop reasons, the request every turn
-sends, refusals, the raw log, provenance, and the CLI paths that start nothing."""
+The loop over episodes, the signals, the stop reasons, the model call every turn
+makes, refusals, the raw log, provenance, and the CLI paths that start nothing."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def check_episodes_are_a_ceiling_not_a_floor():
 
 def check_a_turn_that_leaves_exactly_nothing_is_the_last():
     """The floor is zero, and a balance at it has nothing left to spend: the turn that
-    brings it there exactly ends the episode, and the next request is never sent."""
+    brings it there exactly ends the episode, and the next model call is never sent."""
     with temp_root(budget=turn_cost()):
         t = episode_once(run("echo one"), run("echo two"), say())
 
@@ -214,8 +214,9 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
 
     A trace that fails to land leaves the account as it stood, naming no episode it
     has no record of, and leaves nothing cut short where a reader looks for traces.
-    The next episode takes the index, and its responses are appended to that index's
-    raw log after the lost attempt's, which stay there as the one record of them.
+    The next episode takes the episode number, and its responses are appended to that
+    episode's raw log after the lost attempt's, which stay there as the one record of
+    them.
     """
     with temp_root():
         real = harness.replace_file
@@ -245,11 +246,11 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
             .splitlines()
         ]
     assert t["episode"] == 1, (
-        "the next episode takes the index the lost one never claimed"
+        "the next episode takes the episode number the lost one never claimed"
     )
     turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
     assert turns == [1, 2, 1], (
-        f"the raw log holds both attempts at the index, lost first: {turns}"
+        f"the raw log holds both attempts at the episode, lost first: {turns}"
     )
 
 
@@ -310,8 +311,9 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
 def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
     """A commit that stops between writing the trace and saving the account leaves a trace
     the account does not list. Every reader of the traces stops at the episodes the account
-    lists: the analysis and the page read no episode there, and the page shows its index
-    as one not yet committed, as the next episode at that index will overwrite it.
+    lists: the analysis and the page read no episode there, and the page shows its
+    episode number as one not yet committed, as the next episode with that number will
+    overwrite it.
     """
     with temp_root():
         episode_once(say())
@@ -670,7 +672,7 @@ def check_provenance_is_recorded():
 
 def check_watch_is_quiet_and_display_only():
     """--watch echoes the account and the agent's words, never commands or output;
-    the request bytes and the trace are identical."""
+    what each model call sends and the trace are identical."""
     quiet_seen, loud_seen = [], []
     with temp_root():
         with quiet():
@@ -753,8 +755,8 @@ def check_run_once_is_build_then_run_then_commit():
         seated(root, other=neighbour)
         with quiet() as two:
             ep = harness.build_episode("t")
-            assert ep.container is not None and ep.shell is not None, (
-                "built means an environment is up"
+            assert ep.sandbox is not None and ep.shell is not None, (
+                "built means a sandbox is up"
             )
             out = harness.run_episode(ep, fake(*script))
             assert ep.saved, "run_episode mirrors the environment back"
@@ -871,7 +873,7 @@ def check_a_refusal_notice_reaches_the_agent():
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse("cat n1"), say(), seen=seen)
     # A refusal carrying a call leaves a tool_use the next send must answer.
-    sent = [x["input"] for x in seen if x["kind"] == "send"][-1]
+    sent = [x["input"] for x in seen if x["call"] == "send"][-1]
     blocks = [b for b in sent if b.content == harness.REFUSAL_NOTICE]
     assert len(blocks) == 1 and blocks[0].is_error is True, blocks
 
@@ -879,7 +881,7 @@ def check_a_refusal_notice_reaches_the_agent():
     with temp_root(REFUSAL_TURNS=2):
         episode_once(refuse(), say(), seen=seen)
     # A refusal with no content has no call to answer, and no words to replay.
-    sent = [x["input"] for x in seen if x["kind"] == "send"][-1]
+    sent = [x["input"] for x in seen if x["call"] == "send"][-1]
     assert sent == harness.REFUSAL_NOTICE, sent
 
 
@@ -936,7 +938,7 @@ def check_refusals_end_the_episode_at_the_cap():
 
     assert t["stop"] == "refusal", t["stop"]
     assert t["refused_turns"] == 3, t["refused_turns"]
-    sends = [x for x in seen if x["kind"] == "send"]
+    sends = [x for x in seen if x["call"] == "send"]
     assert len(sends) == 3, f"asked {len(sends)} times past the cap"
 
 
@@ -989,7 +991,7 @@ def check_a_stuck_agent_stops_itself():
 
 
 def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_commits():
-    """What is not the API failing is harness_error, and the spend before it commits.
+    """What is not the API failing is harness_error, and the spend before it is settled.
 
     An adapter that cannot read what the API sent and an exception from anywhere
     else are both on this side of the line. Neither is retried, the error names its

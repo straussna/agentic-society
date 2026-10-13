@@ -605,9 +605,9 @@ def episodes_taken(ids: list[str]) -> dict[str, int]:
     return {agent: len(ground_truth(agent)["episodes"]) for agent in ids}
 
 
-def trace_on_disk(agent: str, index: int) -> dict:
+def trace_on_disk(agent: str, episode: int) -> dict:
     """One episode's trace, read back from where close_episode wrote it."""
-    return json.loads(harness.trace_path(agent, index).read_text(encoding="utf-8"))
+    return json.loads(harness.trace_path(agent, episode).read_text(encoding="utf-8"))
 
 
 def files_by_path(t: dict) -> dict[str, dict]:

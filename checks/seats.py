@@ -902,8 +902,8 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
     )
 
 
-def check_a_seat_out_of_play_is_not_a_message():
-    """out/<i> for a seat out of play is neither a message nor a break.
+def check_an_exhausted_seat_is_not_a_message():
+    """out/<i> for an exhausted seat is neither a message nor a break.
 
     It stands as a name that is no seat of this experiment does: no episode will
     start to read it, and a directory left at it is not a crowded seat either.

@@ -202,7 +202,7 @@ RETIRED = {
 }
 
 # Hard ceiling on max_tokens. The harness does not stream, and a non-streaming
-# request much above this hits the SDK's HTTP timeout.
+# model call much above this hits the SDK's HTTP timeout.
 MAX_TOKENS_CEILING = 16_000
 
 # What config.toml may set the two safety stops to. A stop is true of every run and
@@ -288,10 +288,11 @@ def check_keys(
         reject(
             f"{where}unknown key {unknown[0]!r}; expected {expected or sorted(allowed)}"
         )
-    for key, kind in types:
-        if key in raw and type(raw[key]) is not kind:
+    for key, expected_type in types:
+        if key in raw and type(raw[key]) is not expected_type:
             reject(
-                f"{where}{key} must be {kind.__name__}, got {type(raw[key]).__name__}"
+                f"{where}{key} must be {expected_type.__name__}, "
+                f"got {type(raw[key]).__name__}"
             )
 
 
@@ -597,7 +598,8 @@ def channels() -> list[Channel]:
 
 
 def channels_sha256(table: Iterable[Channel]) -> str:
-    """Digest of a channel table: every field of every channel, in declaration order."""
+    """The sha256 of a channel table: every field of every channel, in declaration
+    order."""
     body = json.dumps(
         [c.as_table() for c in table], sort_keys=True, separators=(",", ":")
     )
@@ -1196,7 +1198,7 @@ def tools() -> list[Tool]:
 
 
 def tools_sha256(table: Iterable[Tool]) -> str:
-    """Digest of a tool table: every field of every tool, in declaration order."""
+    """The sha256 of a tool table: every field of every tool, in declaration order."""
     body = json.dumps(
         [t.as_table() for t in table], sort_keys=True, separators=(",", ":")
     )
@@ -1482,9 +1484,10 @@ WATCH_AGENT: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 
 # Set by SIGINT and SIGTERM once catch_signals has run. The turn loop reads it
-# where it reads the account floor, so an interrupt ends the episode the way the
-# floor does: after a whole turn, with the trace written and the spend
-# committed. Nothing raises on the first signal; a second is the default again.
+# just before it checks whether the balance is exhausted, so an interrupt ends the
+# episode the way an exhausted balance does: after a whole turn, with the spend
+# settled and the trace written. Nothing raises on the first signal; a second is
+# the default again.
 # A flag and not a field of SETTINGS: the signal handler interrupt sets it, and so
 # does a check's fake router on a round's episode thread, and neither may replace
 # the settings.
@@ -2056,12 +2059,13 @@ def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
 
 
 def reachable(seating: Seating) -> dict[str, str]:
-    """The seats an episode can still reach: every seat but its own that is in play.
+    """The seats an episode can still reach: every seat but its own whose account
+    admits an episode.
 
-    A seat out of play is neither a transfer target nor a message target, so an
-    outbox slot naming one is neither a message nor a break. Read once at episode
-    start, from the peers' accounts on disk; a peer not yet created has spent
-    nothing.
+    A seat whose account admits none is neither a transfer target nor a message
+    target, so an outbox slot naming one is neither a message nor a break. Read once
+    at episode start, from the peers' accounts on disk; a peer not yet created has
+    spent nothing.
     """
     peers_in_play = {}
     for seat in seating.peers:
@@ -2140,7 +2144,7 @@ def files_listing(name: str) -> list[tuple[str, bytes]]:
 
 
 def files_sha256(name: str) -> str:
-    """Digest of a starter source: paths and bytes, both.
+    """The sha256 of a starter source: paths and bytes, both.
 
     Recorded, not pinned: every episode's provenance says which one it got.
     """
@@ -2572,10 +2576,11 @@ def receipt_text(account: Account, ch: Channel) -> str:
 
 
 # One quoted item of the digest is a header line naming it, then its content.
-# An unchanged or withdrawn group is a kind header followed by one display name per line.
+# An unchanged or withdrawn group is a header naming the group, followed by one display
+# name per line.
 SECTION = re.compile(r"^=== (?P<path>.+) ===$", re.M)
 
-NAMED = re.compile(r"^=== (?P<kind>unchanged|withdrawn)(?:: (?P<paths>.*))? ===$")
+NAMED = re.compile(r"^=== (?P<group>unchanged|withdrawn)(?:: (?P<paths>.*))? ===$")
 
 
 def section(name: str, body: str) -> str:
@@ -2583,9 +2588,9 @@ def section(name: str, body: str) -> str:
     return f"=== {name} ===\n{body if body.endswith(chr(10)) else body + chr(10)}"
 
 
-def named(kind: str, paths: list[str]) -> str:
+def named(group: str, paths: list[str]) -> str:
     """A digest group naming items it did not quote: unchanged or withdrawn."""
-    return f"=== {kind} ===\n" + "".join(f"- {path}\n" for path in paths)
+    return f"=== {group} ===\n" + "".join(f"- {path}\n" for path in paths)
 
 
 def said_to(instances: list[Instance]) -> dict[str, str]:
@@ -4029,7 +4034,7 @@ class Bound:
         return ", ".join(i.path + ("" if i.is_file else "/") for i in self.instances)
 
     def spec(self) -> ToolSpec:
-        """The tool as the request carries it.
+        """The tool as the model call carries it.
 
         `strict` guarantees the arguments validate against the schema, so a call
         that names a peer outside the enumeration or leaves out a body costs no
@@ -4042,7 +4047,7 @@ class Bound:
         """What the agent is told this tool does.
 
         Prompt surface, and the experimenter's: a description reaches the model in
-        the request exactly as the system prompt does, so it is theirs to write and
+        the model call exactly as the system prompt does, so it is theirs to write and
         it is recorded whole and by sha256 in the tool table. An experiment that
         writes none is given the harness's own account of the action, which is
         computed from the channel and cannot say what the channel does not.
@@ -4665,7 +4670,7 @@ def bind_tools(
 
 
 def episode_specs(bound: Sequence[Bound]) -> tuple[ToolSpec, ...]:
-    """The tools one episode's request carries: the shell, then every bound tool.
+    """The tools one episode's model calls carry: the shell, then every bound tool.
 
     The shell where it is declared and no ballot is offered, since a ballot's
     episode withholds it with every tool but the ballot and private memory. What
@@ -4886,7 +4891,7 @@ def run_tools(
     restarted for real and the result says nothing. A declared tool acts through
     the same shell and answers with what happened to the environment, and adds
     nothing to `commands`: those are the commands the agent wrote. A call naming
-    anything the request did not carry - the shell on a ballot's episode as much as
+    anything the episode did not offer - the shell on a ballot's episode as much as
     a name never declared - is answered as no tool and does nothing. Results are
     stored unclipped in the record, which is the text the agent received.
     """
@@ -4913,7 +4918,7 @@ def run_tools(
                 {"tool": name, "command": cmd, "input": None, "result": text}
             )
         else:
-            # Nothing the request offered, so nothing to do but say so.
+            # Nothing the episode offered, so nothing to do but say so.
             text = f"there is no tool named {name!r}. Nothing was done."
             turn["tools"].append(
                 {"tool": name, "command": None, "input": args, "result": text}
@@ -5817,7 +5822,7 @@ class Episode:
     records: Path
     before: dict[str, Any]  # what each obligated channel held at episode start
     started: float = 0.0
-    container: Sandbox | None = None  # None until build_episode has started one
+    sandbox: Sandbox | None = None  # None until build_episode has started one
     shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
@@ -5831,18 +5836,18 @@ class Episode:
     def built(self) -> tuple[Sandbox, Shell]:
         """The sandbox and its shell. Every Episode build_episode returns has both;
         asked of one without them, this raises."""
-        if self.container is None or self.shell is None:
+        if self.sandbox is None or self.shell is None:
             raise RuntimeError(
-                f"{self.agent} episode {self.episode} has no environment built"
+                f"{self.agent} episode {self.episode} has no sandbox built"
             )
-        return self.container, self.shell
+        return self.sandbox, self.shell
 
     def abandon(self) -> None:
-        """Close an environment no episode will run in. Nothing is mirrored back."""
+        """Close a sandbox no episode will run in. Nothing is mirrored back."""
         if self.shell is not None:
             self.shell.close()
-        if self.container is not None:
-            self.container.close()
+        if self.sandbox is not None:
+            self.sandbox.close()
 
 
 def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
@@ -5979,9 +5984,9 @@ def build_episode(agent: str) -> Episode:
     )
     planted = False
     try:
-        # Inside the try, so there is no window in which a container exists and
+        # Inside the try, so there is no window in which a sandbox exists and
         # nothing is bound to reap it.
-        sandbox = ep.container = SANDBOX.start(
+        sandbox = ep.sandbox = SANDBOX.start(
             f"{CONTAINER_PREFIX}{agent}-{episode:04d}"
         )
         sandbox.plant_trees(channel_instances, shown)
@@ -5990,14 +5995,14 @@ def build_episode(agent: str) -> Episode:
         clear_episode_actions(shell, channel_instances)
         assert_writable(shell, channel_instances)
     except BaseException:
-        # No episode ran. An environment that was planted is mirrored back all the
-        # same, and whatever was started is reaped.
+        # No episode ran. A sandbox that was planted is mirrored back all the same,
+        # and whatever was started is reaped.
         if ep.shell is not None:
             ep.shell.close()
-        if ep.container is not None:
+        if ep.sandbox is not None:
             if planted:
-                ep.container.mirror_trees(channel_instances)
-            ep.container.close()
+                ep.sandbox.mirror_trees(channel_instances)
+            ep.sandbox.close()
         raise
     return ep
 
@@ -6018,7 +6023,7 @@ def assert_writable(shell: Shell, instances: list[Instance]) -> None:
 
 
 def run_episode(ep: Episode, router: ProviderRouter) -> dict:
-    """Run the episode in a built environment, then mirror the environment back and reap it.
+    """Run the episode in its built sandbox, then mirror its trees back and reap it.
 
     The one step that spends. Whatever run_turns returns - a whole episode, or
     one that ended on an API error it swallowed - the sandbox's trees are
@@ -6234,7 +6239,7 @@ def trace_of(
         "system_sha256": ep.prov["system_sha256"],
         "provenance": ep.prov,
         "provenance_drift": ep.drifted,
-        # The tools the episode's request carried, by name, the shell among them
+        # The tools the episode's model calls carried, by name, the shell among them
         # where it was: what an election reads to tell a seat offered no ballot.
         "offered": [spec.name for spec in episode_specs(ep.bound)],
         "missing_tools": ep.missing,  # reached for; the image does not have it
@@ -6733,7 +6738,7 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
 def print_context(
     config: Path | None, manifest: Path, selected: str | None = None
 ) -> int:
-    """Render fresh agents' complete first discussion and voting request context.
+    """Render the complete context of fresh agents' first discussion and vote episodes.
 
     Uses a temporary root, so starter files and synthetic accounts can be composed by
     the same functions that build an episode without touching records, environments,
@@ -6867,7 +6872,7 @@ def show_tools(
 ) -> None:
     """The declared tool table's sha256 and descriptions, which are prompt surface too.
 
-    A description reaches the model in the request the way the system prompt does,
+    A description reaches the model in the model call the way the system prompt does,
     so --print-system audits both. A tool that declares none is named as taking the
     harness's own account of it, which is computed per agent from the channel and
     seating and so is not a constant to print here.
