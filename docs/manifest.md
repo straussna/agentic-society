@@ -87,7 +87,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | Term | Definition |
 |---|---|
 | **Balance** | An agent's micro-dollars, kept as a history: one entry per billed turn and one per movement outside a turn. The last entry is what the agent holds now |
-| **Spend** | The micro-dollars an episode's turns consume: the provider's itemized **charges**, one per token class, each priced at the model's **rate** for that class |
+| **Spend** | The micro-dollars an episode's turns consume: the provider's itemized **charges**, one per token class, each computed from the model's **rate** for that class |
 | **Delivery** | Whether an episode opens on quoted channel content. `push`: it does. `pull`: nothing is quoted, and the agent reads what it chooses in turns billed like any other |
 | **Pushed** | A channel property: whether its files are quoted to the agent at episode start or left for it to read |
 | **Silence penalty** | A channel property: the share of the balance taken from an episode that added nothing new to the channel |
