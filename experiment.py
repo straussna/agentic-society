@@ -17,12 +17,12 @@ import sys
 import threading
 import tomllib
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, NoReturn, TypedDict, TypeVar
+from typing import Any, Callable, Iterable, Mapping, TypedDict, TypeVar
 
 import harness
 import product
 import providers
-from harness import check_keys
+from harness import check_keys, rejecter
 from providers import ProviderRouter
 
 T = TypeVar("T")
@@ -191,7 +191,8 @@ def shorthand(ids: list[str], schedule: str = "sequential") -> Manifest:
 
 
 def check_ids(ids: list[str], where: str) -> None:
-    """Refuse an experiment with no agents, a repeated id, or an id that is a bare number.
+    """Reject an experiment with no agents, a repeated id, or an id that is a bare
+    number.
 
     One seat is an experiment: harness.py runs a single agent under the manifest that
     declares its situation, and a seat with no peers reaches nobody.
@@ -206,31 +207,23 @@ def check_ids(ids: list[str], where: str) -> None:
         )
 
 
-def refuser(path: Path) -> harness.Refuse:
-    """How this manifest refuses: every message led by the file it came from."""
-
-    def refuse(why: str) -> NoReturn:
-        raise SystemExit(f"{path}: {why}")
-
-    return refuse
-
-
 def check_agent(path: Path, entry: dict) -> None:
-    """Refuse an [[agent]] table with an unknown key, a wrong type, or terms that do not go together."""
-    refuse = refuser(path)
-    check_keys(refuse, "", entry, AGENT_KEYS, AGENT_TYPES)
+    """Reject an [[agent]] table with an unknown key, a wrong type, or terms that do
+    not go together."""
+    reject = rejecter(path)
+    check_keys(reject, "", entry, AGENT_KEYS, AGENT_TYPES)
     agent = entry.get("id")
     if not isinstance(agent, str) or not agent:
-        refuse("every agent needs an id")
+        reject("every agent needs an id")
     label = entry.get("label")
     if label is not None and (not LABEL.match(label) or label in (".", "..")):
-        refuse(f"{agent}: label {label!r} must be letters, digits, '.', '_' or '-'")
+        reject(f"{agent}: label {label!r} must be letters, digits, '.', '_' or '-'")
     if entry.get("seats", 1) < 1:
-        refuse(f"{agent}: seats must be positive, got {entry['seats']}")
+        reject(f"{agent}: seats must be positive, got {entry['seats']}")
     if "memory_from" in entry:
         memory_from = entry["memory_from"]
         check_keys(
-            refuse,
+            reject,
             f"{agent}: memory_from: ",
             memory_from,
             MEMORY_FROM_KEYS,
@@ -239,9 +232,9 @@ def check_agent(path: Path, entry: dict) -> None:
         source = memory_from.get("agent")
         episode = memory_from.get("episode")
         if not source:
-            refuse(f"{agent}: memory_from: agent must name an existing agent")
+            reject(f"{agent}: memory_from: agent must name an existing agent")
         if not isinstance(episode, int) or isinstance(episode, bool) or episode < 1:
-            refuse(
+            reject(
                 f"{agent}: memory_from: episode must be a positive integer, got {episode!r}"
             )
     harness.validate_terms(
@@ -280,7 +273,7 @@ def manifest_path(named: str) -> Path:
     A name with a suffix or a directory in it is a path and is used as written, so a
     manifest anywhere on disk stays reachable. A bare name is looked for in
     experiments/ and then experiments/examples/, and when it is in neither the
-    experiments/ candidate is returned for load_manifest to refuse by name.
+    experiments/ candidate is returned for load_manifest to reject by name.
     """
     given = Path(named)
     if given.suffix or len(given.parts) > 1:
@@ -299,7 +292,7 @@ def load_manifest(path: Path) -> Manifest:
     holds for both.
 
     Every manifest declares a system_prompt, at the top level or on each agent. The
-    empty string is a declaration and says nothing; an omitted key is refused, so
+    empty string is a declaration and says nothing; an omitted key is rejected, so
     what an agent is told is always something the experiment wrote down.
     """
     if not path.exists():
@@ -313,7 +306,7 @@ def load_manifest(path: Path) -> Manifest:
     allowed = EXPERIMENT_KEYS | {t.lower() for t in harness.TREATMENT}
 
     check_keys(
-        refuser(path),
+        rejecter(path),
         "",
         top,
         allowed,
@@ -341,7 +334,7 @@ def load_manifest(path: Path) -> Manifest:
     if not isinstance(cost, dict):
         raise SystemExit(f"{path}: cost must be a table")
     check_keys(
-        refuser(path),
+        rejecter(path),
         "cost: ",
         cost,
         COST_KEYS,
@@ -370,7 +363,7 @@ def load_manifest(path: Path) -> Manifest:
     reveal = top.get("reveal", {})
     if not isinstance(reveal, dict):
         raise SystemExit(f"{path}: reveal must be a table")
-    check_keys(refuser(path), "reveal: ", reveal, REVEAL_KEYS)
+    check_keys(rejecter(path), "reveal: ", reveal, REVEAL_KEYS)
     for phase, fields in reveal.items():
         if not isinstance(fields, list) or not all(
             isinstance(field, str) for field in fields
@@ -442,15 +435,15 @@ def load_manifest(path: Path) -> Manifest:
     )
     if tables is not None or harness_files is not None or tool_tables is not None:
         # A tool is held against the table this manifest declares and not against
-        # the one in force, so it is refused here for the reason start() would
-        # refuse it later.
+        # the one in force, so it is rejected here for the reason start() would
+        # reject it later.
         chans = harness.validate_channels(
             tables, harness_files, str(path), tuple(labels.values())
         )[0]
         if tool_tables is not None:
             harness.validate_tools(tool_tables, chans, str(path))
 
-    # Last, so a manifest with a structural fault is refused for that fault first.
+    # Last, so a manifest with a structural fault is rejected for that fault first.
     if "system_prompt" not in top and not all(
         "system_prompt" in e for e in definitions
     ):

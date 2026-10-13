@@ -111,7 +111,7 @@ REFUSAL_NOTICE_SHA256 = (
 )
 
 # Every string the harness ships, as (name, text, pinned digest). One list, so
-# --print-system audits exactly what start() refuses to run on. The pin holds the
+# --print-system audits exactly what start() rejects a run on. The pin holds the
 # shipped default to its digest; a declared prompt is held by provenance instead.
 PINNED = (
     ("SYSTEM", SYSTEM, SYSTEM_SHA256),
@@ -158,11 +158,11 @@ def system_of(account: Account | None = None) -> str:
 # reads what it chooses at what reading costs.
 DELIVERIES = ("push", "pull")
 
-# config.toml's, and refused in a manifest: the machine, the API and the safety
+# config.toml's, and rejected in a manifest: the machine, the API and the safety
 # stops, true of every run whatever the experiment is.
 PROCESS = {"IMAGE", "MAX_TOKENS", "MAX_TURNS", "COMMAND_TIMEOUT", "TOOL_RESULT_LIMIT"}
 
-# An experiment's, and refused in config.toml: everything an agent's situation is
+# An experiment's, and rejected in config.toml: everything an agent's situation is
 # made of, alongside the [[channel]] tables and [harness_files] that go with it.
 TREATMENT = {
     "SYSTEM_PROMPT",
@@ -184,8 +184,8 @@ TUNABLES = PROCESS | TREATMENT
 NOT_CONFIG = "an experiment's to declare; config.toml holds what is true of every run"
 NOT_MANIFEST = "config.toml's, and true of every run whatever the experiment declares"
 
-# Keys refused by name in config.toml and a manifest, each mapped to where that
-# setting is declared, so the refusal names the place. docs/manifest.md lists them.
+# Keys rejected by name in config.toml and a manifest, each mapped to where that
+# setting is declared, so the rejection names the place. docs/manifest.md lists them.
 RETIRED = {
     "fallbacks": "nothing: every turn requests the provider and model pinned to its seat",
     "shell_tool": 'a [[tool]] with name = "bash" and kind = "bash"; omit it to withhold bash',
@@ -245,7 +245,7 @@ def read_config(
 def load_config(path: Path | None = None) -> Path | None:
     """Overlay config.toml onto the settings in force. Returns the file used, or None.
 
-    read_config, installed, so a refused file installs nothing. Nothing reads the file
+    read_config, installed, so a rejected file installs nothing. Nothing reads the file
     at import, so an import keeps the defaults.
     """
     global SETTINGS
@@ -253,13 +253,22 @@ def load_config(path: Path | None = None) -> Path | None:
     return f
 
 
-# How a validator refuses: it ends the run with SystemExit and never returns, so
-# every rule after a refusal may take the one before it as holding.
-Refuse = Callable[[str], NoReturn]
+# How a validator rejects: it ends the run with SystemExit and never returns, so
+# every rule after a rejection may take the one before it as holding.
+Reject = Callable[[str], NoReturn]
+
+
+def rejecter(source: str | Path) -> Reject:
+    """How a file's validator rejects: every message led by the file it came from."""
+
+    def reject(why: str) -> NoReturn:
+        raise SystemExit(f"{source}: {why}")
+
+    return reject
 
 
 def check_keys(
-    refuse: Refuse,
+    reject: Reject,
     where: str,
     raw: dict,
     allowed: Iterable[str],
@@ -268,26 +277,26 @@ def check_keys(
     expected: str = "",
     elsewhere: dict[str, str] | None = None,
 ) -> None:
-    """Refuse an unknown key or a wrong type, naming the table and the key.
+    """Reject an unknown key or a wrong type, naming the table and the key.
 
     The one place config.toml, a manifest, an [[agent]] table and a [[channel]]
-    table are held to their keys, so every refusal reads alike. `where` leads
+    table are held to their keys, so every rejection reads alike. `where` leads
     each message, `types` fixes the type of the keys that have one, `retired`
-    names where each refused key's setting is declared, `elsewhere` names the file
+    names where each rejected key's setting is declared, `elsewhere` names the file
     a real key belongs in, and `expected` replaces the list of allowed keys.
     """
     for key in raw:
         if retired and key in retired:
-            refuse(f"{where}unknown key {key!r}; it is now {retired[key]}")
+            reject(f"{where}unknown key {key!r}; it is now {retired[key]}")
         if elsewhere and key in elsewhere:
-            refuse(f"{where}{key} is {elsewhere[key]}")
+            reject(f"{where}{key} is {elsewhere[key]}")
     if unknown := sorted(set(raw) - set(allowed)):
-        refuse(
+        reject(
             f"{where}unknown key {unknown[0]!r}; expected {expected or sorted(allowed)}"
         )
     for key, kind in types:
         if key in raw and type(raw[key]) is not kind:
-            refuse(
+            reject(
                 f"{where}{key} must be {kind.__name__}, got {type(raw[key]).__name__}"
             )
 
@@ -301,8 +310,8 @@ def overlay(
 ) -> Settings:
     """The settings config keys make of `base`, validated as a whole.
 
-    `source` names where the values came from in every refusal. `allowed` is the half
-    of TUNABLES this file owns, and a key belonging to the other half is refused
+    `source` names where the values came from in every rejection. `allowed` is the half
+    of TUNABLES this file owns, and a key belonging to the other half is rejected
     saying so, so no setting can be given in two places. A manifest's experiment-level
     defaults come through here after config.toml, so both are held to the same types
     and ranges. The safety stops are held to their ranges where `values` gives them,
@@ -310,14 +319,10 @@ def overlay(
     starter files are found under the root in force, so `base` holds that root (see
     Settings).
     """
-    f = source
+    reject = rejecter(source)
     allowed = set(allowed)
-
-    def refuse(why: str) -> NoReturn:
-        raise SystemExit(f"{f}: {why}")
-
     check_keys(
-        refuse,
+        reject,
         "",
         values,
         [t.lower() for t in allowed],
@@ -337,13 +342,13 @@ def overlay(
         ):
             value = float(value)
         if type(value) is not type(default):
-            refuse(
+            reject(
                 f"{key} must be {type(default).__name__}, got {type(value).__name__}"
             )
         changes[key] = value
     s = dataclasses.replace(base, **changes)
     validate_terms(
-        f,
+        source,
         provider=None,
         model=None,
         budget=s.budget,
@@ -351,14 +356,14 @@ def overlay(
         starter_files_below=s.starter_files_below,
     )
     if not 0 < s.context_fraction <= 1:
-        refuse(f"context_fraction must be in (0, 1], got {s.context_fraction}")
+        reject(f"context_fraction must be in (0, 1], got {s.context_fraction}")
     if min(s.max_tokens, s.max_turns, s.command_timeout) <= 0:
-        refuse("max_tokens, max_turns, and command_timeout must all be positive")
+        reject("max_tokens, max_turns, and command_timeout must all be positive")
     if (
         "max_turns" in values
         and not MAX_TURNS_FLOOR <= s.max_turns <= MAX_TURNS_CEILING
     ):
-        refuse(
+        reject(
             f"max_turns must be from {MAX_TURNS_FLOOR} to {MAX_TURNS_CEILING}, got "
             f"{s.max_turns}; it is a safety stop, true of every run: lower, it can end an "
             f"episode the agent had not finished, and higher, it no longer stops a runaway"
@@ -367,36 +372,36 @@ def overlay(
         "command_timeout" in values
         and not COMMAND_TIMEOUT_FLOOR <= s.command_timeout <= COMMAND_TIMEOUT_CEILING
     ):
-        refuse(
+        reject(
             f"command_timeout must be from {COMMAND_TIMEOUT_FLOOR} to "
             f"{COMMAND_TIMEOUT_CEILING} seconds, got {s.command_timeout}; it is a safety "
             f"stop, true of every run: lower, it can kill a command that would have "
             f"finished, and higher, it no longer stops a hung one"
         )
     if s.grace_episodes < 0:
-        refuse(f"grace_episodes must be zero or positive, got {s.grace_episodes}")
+        reject(f"grace_episodes must be zero or positive, got {s.grace_episodes}")
     if s.delivery not in DELIVERIES:
-        refuse(f"delivery must be one of {list(DELIVERIES)}, got {s.delivery!r}")
+        reject(f"delivery must be one of {list(DELIVERIES)}, got {s.delivery!r}")
     if not TOOL_RESULT_FLOOR <= s.tool_result_limit:
-        refuse(
+        reject(
             f"tool_result_limit must be at least {TOOL_RESULT_FLOOR}, got "
             f"{s.tool_result_limit}; below that a clipped read keeps no usable head"
         )
     if not DIGEST_FILE_FLOOR <= s.digest_file_limit:
-        refuse(
+        reject(
             f"digest_file_limit must be at least {DIGEST_FILE_FLOOR}, got "
             f"{s.digest_file_limit}; below that a clipped message says less than the "
             f"marker saying it was clipped"
         )
     if s.observation_limit < s.tool_result_limit:
-        refuse(
+        reject(
             f"observation_limit must be at least tool_result_limit "
             f"({s.tool_result_limit}), got {s.observation_limit}; the initial observation "
             f"carries the whole experiment's record and is never smaller than what "
             f"one call may return"
         )
     if s.max_tokens > MAX_TOKENS_CEILING:
-        refuse(
+        reject(
             f"max_tokens must be at most {MAX_TOKENS_CEILING}; the harness does "
             f"not stream, and larger values hit the SDK's HTTP timeout mid-episode"
         )
@@ -411,7 +416,7 @@ def apply_config(
 ) -> None:
     """Overlay config keys onto the settings in force: overlay, installed.
 
-    A refused key installs nothing, the keys before it included.
+    A rejected key installs nothing, the keys before it included.
     """
     global SETTINGS
     SETTINGS = overlay(SETTINGS, values, source, allowed, elsewhere)
@@ -427,7 +432,7 @@ def validate_terms(
     starter_files_below: int | None,
     who: str = "",
 ) -> None:
-    """Refuse pinned settings that cannot stand, naming the file and the key.
+    """Reject pinned settings that cannot stand, naming the file and the key.
 
     The one set of rules for config.toml, a manifest's defaults and a manifest's
     per-agent terms. None is a term the caller did not set.
@@ -717,7 +722,8 @@ def validate_channels(
     *,
     base: Settings | None = None,
 ) -> tuple[list[Channel], dict[str, str]]:
-    """Read a channel table and harness file names, or refuse them naming the file and key.
+    """Read a channel table and harness file names, or reject them naming the file
+    and key.
 
     `tables` None keeps the table `base` holds; `harness_files` None keeps the names
     it holds, and a table given overlays them key by key. `base` is the settings in
@@ -725,17 +731,14 @@ def validate_channels(
     against every harness file, with `labels` standing in for {label}. Pure: nothing
     is set.
     """
-
-    def refuse(why: str) -> NoReturn:
-        raise SystemExit(f"{source}: {why}")
-
+    reject = rejecter(source)
     base = SETTINGS if base is None else base
     hf = dict(base.harness_files)
     if harness_files is not None:
         if not isinstance(harness_files, dict):
-            refuse("[harness_files] is a table")
+            reject("[harness_files] is a table")
         check_keys(
-            refuse,
+            reject,
             "harness_files: ",
             harness_files,
             HARNESS_FILE_KEYS,
@@ -744,27 +747,28 @@ def validate_channels(
         hf.update(harness_files)
         for key in HARNESS_FILE_KEYS:
             if hf.get(key) and not NAME.match(hf[key]):
-                refuse(f'harness_files: {key} must be one path segment, or "" for none')
+                reject(f'harness_files: {key} must be one path segment, or "" for none')
 
     if tables is None:
         table = list(base.channels)
     else:
         if not isinstance(tables, list) or not all(isinstance(x, dict) for x in tables):
-            refuse("channels are [[channel]] tables")
+            reject("channels are [[channel]] tables")
         table = []
         for raw in tables:
-            table.append(parse_channel(raw, table, refuse))
+            table.append(parse_channel(raw, table, reject))
         parsed = [c for c in table if c.schema]
         if len(parsed) > 1:
-            refuse(
+            reject(
                 f"one schema channel per experiment today; {parsed[0].name!r} and {parsed[1].name!r} both declare one"
             )
-    claim_paths(table, hf, tuple(labels), refuse)
+    claim_paths(table, hf, tuple(labels), reject)
     return table, hf
 
 
 def path_fault(path: Any) -> str | None:
-    """Why nothing may stand at this path, as the tail of a refusal, or None where it may.
+    """Why nothing may stand at this path, as the tail of a rejection, or None where
+    it may.
 
     The one rule a declared path and a path a tool call names are both held to,
     so a tool cannot reach anywhere a channel could not.
@@ -786,32 +790,32 @@ def path_fault(path: Any) -> str | None:
 
 
 def check_path(
-    refuse: Refuse, name: str, key: str, path: Any, placeholder: bool
+    reject: Reject, name: str, key: str, path: Any, placeholder: bool
 ) -> None:
-    """Refuse a path no channel can stand at, naming the channel and the key.
+    """Reject a path no channel can stand at, naming the channel and the key.
 
     `placeholder` is whether {label} belongs in it, which only a directory every
     agent reads has.
     """
     if fault := path_fault(path):
-        refuse(f"channel {name}: {key} {fault}")
+        reject(f"channel {name}: {key} {fault}")
     if "{label}" in path and not placeholder:
-        refuse(
+        reject(
             f"channel {name}: {{label}} has no meaning in {key} here; only a directory "
             f"every agent writes has one instance per agent"
         )
     if placeholder and "{label}" not in path:
-        refuse(
+        reject(
             f"channel {name}: a directory every agent writes has one instance per agent, "
             f"so its path must name {{label}}"
         )
 
 
-def validate_agent_view(channel: Channel, refuse: Refuse) -> None:
+def validate_agent_view(channel: Channel, reject: Reject) -> None:
     """Require a view from AGENT_VIEWS, and one that describes the channel shape it names."""
     view = channel.agent_view
     if view not in AGENT_VIEWS:
-        refuse(
+        reject(
             f"channel {channel.name}: agent_view must be one of {list(AGENT_VIEWS)}, got {view!r}"
         )
     valid = (
@@ -838,17 +842,17 @@ def validate_agent_view(channel: Channel, refuse: Refuse) -> None:
         )
     )
     if not valid:
-        refuse(
+        reject(
             f"channel {channel.name}: agent_view {view!r} does not describe its "
             f"{channel.writer}/{channel.readers}/{channel.shape} channel"
         )
 
 
-def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
+def experimenter_channel(name: str, raw: dict, reject: Reject) -> Channel:
     """A channel the experimenter writes and every agent reads: a source and a path.
 
     It chooses no shape and nothing is owed to it, so the fields that go with those
-    are refused by name. `restated` stands: an experimenter channel is a constant, and
+    are rejected by name. `restated` stands: an experimenter channel is a constant, and
     standing text in front of the agent every episode is what one is for.
     """
     if extra := sorted(
@@ -863,19 +867,19 @@ def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
             *SCHEMAS["transfer"],
         }
     ):
-        refuse(
+        reject(
             f"channel {name}: an experimenter channel takes source, path, pushed and restated, not {extra[0]}"
         )
     src = raw.get("source")
     if not isinstance(src, str) or not src or not files_dir(src).is_dir():
-        refuse(
+        reject(
             f"channel {name}: source {src!r} is not a directory under {SETTINGS.root / 'files'}"
         )
-    check_path(refuse, name, "path", raw.get("path"), False)
+    check_path(reject, name, "path", raw.get("path"), False)
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     if restated and not pushed:
-        refuse(
+        reject(
             f"channel {name}: restated asks for the digest to quote this channel every "
             f"episode, and pushed is false, so the digest carries none of it"
         )
@@ -890,28 +894,28 @@ def experimenter_channel(name: str, raw: dict, refuse: Refuse) -> Channel:
         source=src,
         agent_view=raw.get("agent_view", "paths"),
     )
-    validate_agent_view(channel, refuse)
+    validate_agent_view(channel, reject)
     return channel
 
 
 def mailbox_paths(
-    name: str, raw: dict, readers: Readers, shape: Shape, refuse: Refuse
+    name: str, raw: dict, readers: Readers, shape: Shape, reject: Reject
 ) -> dict:
     """A mailbox's two sides: the writer's outbox and each reader's inbox."""
     if readers != "addressee":
-        refuse(f"channel {name}: a mailbox is read by its addressee")
+        reject(f"channel {name}: a mailbox is read by its addressee")
     if "path" in raw or not raw.get("outbox") or not raw.get("inbox"):
-        refuse(f"channel {name}: a mailbox takes outbox and inbox, not path")
+        reject(f"channel {name}: a mailbox takes outbox and inbox, not path")
     outbox, inbox = raw["outbox"], raw["inbox"]
-    check_path(refuse, name, "outbox", outbox, False)
-    check_path(refuse, name, "inbox", inbox, False)
+    check_path(reject, name, "outbox", outbox, False)
+    check_path(reject, name, "inbox", inbox, False)
     if outbox == inbox:
-        refuse(f"channel {name}: outbox and inbox must differ")
+        reject(f"channel {name}: outbox and inbox must differ")
     return {"outbox": outbox, "inbox": inbox}
 
 
 def one_path(
-    name: str, raw: dict, readers: Readers, shape: Shape, refuse: Refuse
+    name: str, raw: dict, readers: Readers, shape: Shape, reject: Reject
 ) -> dict:
     """A directory's or a file's single path.
 
@@ -919,57 +923,57 @@ def one_path(
     {label} and every other path may not.
     """
     if "outbox" in raw or "inbox" in raw:
-        refuse(f"channel {name}: outbox and inbox belong to a mailbox")
+        reject(f"channel {name}: outbox and inbox belong to a mailbox")
     if readers == "addressee":
-        refuse(
+        reject(
             f'channel {name}: an addressee reads a mailbox; give it shape = "mailbox"'
         )
     path = raw.get("path")
-    check_path(refuse, name, "path", path, shape == "directory" and readers == "all")
+    check_path(reject, name, "path", path, shape == "directory" and readers == "all")
     return {"path": path}
 
 
 # One entry a shape: where that shape declares its paths and what they must be. The
 # keys are Shape's, in its order: a mailbox declares its two sides and every other
 # shape its one path.
-SHAPE_PATHS: dict[Shape, Callable[[str, dict, Readers, Shape, Refuse], dict]] = {
+SHAPE_PATHS: dict[Shape, Callable[[str, dict, Readers, Shape, Reject], dict]] = {
     shape: mailbox_paths if shape == "mailbox" else one_path
     for shape in get_args(Shape)
 }
 
 
-def transfer_terms(name: str, raw: dict, penalty: int, refuse: Refuse) -> dict:
+def transfer_terms(name: str, raw: dict, penalty: int, reject: Reject) -> dict:
     """The transfer schema's own fields: who funds a transfer, what comes back to the
     giver, where every transfer is recorded, and where the parse result is written."""
     funded_by = raw.get("funded_by", "harness")
     if funded_by not in TRANSFER_FUNDERS:
-        refuse(
+        reject(
             f"channel {name}: funded_by must be one of {list(TRANSFER_FUNDERS)}, got {funded_by!r}"
         )
     rebate = raw.get("rebate_percent", 100)
     if not 0 <= rebate <= 100:
-        refuse(
+        reject(
             f"channel {name}: rebate_percent must be between 0 and 100, got {rebate}; "
             f"above 100 one agent mints budget out of a transfer it gets back in full"
         )
     if funded_by == "giver" and rebate != 0:
-        refuse(
+        reject(
             f'channel {name}: rebate_percent must be 0 under funded_by "giver", got '
             f"{rebate}; a transfer is the giver's own budget moving, and a rebate on "
             f"top of it would mint"
         )
     if funded_by == "none" and penalty:
-        refuse(
+        reject(
             f"channel {name}: silence_penalty_percent must be 0 under funded_by "
             f'"none", got {penalty}; no share is taken for not making a transfer '
             f"nobody can make"
         )
     ledger_name = raw.get("ledger", "")
     if ledger_name and not NAME.match(ledger_name):
-        refuse(f'channel {name}: ledger must be one path segment, or "" for none')
+        reject(f'channel {name}: ledger must be one path segment, or "" for none')
     receipt = raw.get("receipt", "")
     if receipt:
-        check_path(refuse, name, "receipt", receipt, False)
+        check_path(reject, name, "receipt", receipt, False)
     return {
         "funded_by": funded_by,
         "rebate_percent": rebate,
@@ -978,8 +982,9 @@ def transfer_terms(name: str, raw: dict, penalty: int, refuse: Refuse) -> dict:
     }
 
 
-def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
-    """One [[channel]] table as a Channel, or a refusal naming the channel and the key.
+def parse_channel(raw: dict, table: list[Channel], reject: Reject) -> Channel:
+    """One [[channel]] table as a Channel, or a rejection naming the channel and the
+    key.
 
     `table` is what has been parsed before it, for the duplicate-name rule. What
     belongs to one shape is that shape's entry in SHAPE_PATHS and what belongs to
@@ -987,73 +992,73 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
     """
     name = raw.get("name")
     if not isinstance(name, str) or not name:
-        refuse("every channel needs a name")
+        reject("every channel needs a name")
     if not NAME.match(name) or name.endswith(SIDECARS):
-        refuse(
+        reject(
             f"channel name {name!r} must be one path segment and not end in .modes, .incoming or .previous"
         )
     if any(c.name == name for c in table):
-        refuse(f"channel {name!r} is declared twice")
-    check_keys(refuse, f"channel {name}: ", raw, CHANNEL_KEYS, CHANNEL_TYPES)
+        reject(f"channel {name!r} is declared twice")
+    check_keys(reject, f"channel {name}: ", raw, CHANNEL_KEYS, CHANNEL_TYPES)
     writer = raw.get("writer")
     if writer not in WRITERS:
-        refuse(
+        reject(
             f"channel {name}: writer must be one of {list(WRITERS)}, got {writer!r}; "
             f"the harness's own files are the [harness_files] table"
         )
     readers = raw.get("readers", "all" if writer == "experimenter" else None)
     if (writer, readers) not in PAIRS:
-        refuse(
+        reject(
             f"channel {name}: writer {writer!r} read by {readers!r} is not a channel the "
             f"harness has; see docs/manifest.md section 4.1"
         )
     if writer == "experimenter":
-        return experimenter_channel(name, raw, refuse)
+        return experimenter_channel(name, raw, reject)
 
     shape = raw.get("shape", "directory")
     if shape not in SHAPE_PATHS:
-        refuse(
+        reject(
             f"channel {name}: shape must be one of {list(SHAPE_PATHS)}, got {shape!r}"
         )
-    paths = SHAPE_PATHS[shape](name, raw, readers, shape, refuse)
+    paths = SHAPE_PATHS[shape](name, raw, readers, shape, reject)
     schema = raw.get("schema", "")
     if readers == "harness":
         if shape != "file" or not schema:
-            refuse(
+            reject(
                 f"channel {name}: a channel the harness reads is one file with a schema from {sorted(SCHEMAS)}"
             )
         if schema not in SCHEMAS:
-            refuse(
+            reject(
                 f"channel {name}: schema must be one of {sorted(SCHEMAS)}, got {schema!r}"
             )
     else:
         if schema and not (
             schema == "transfer" and readers == "addressee" and shape == "mailbox"
         ):
-            refuse(
+            reject(
                 f"channel {name}: a schema is either one file read by the harness or "
                 f"a transfer mailbox read by its addressee"
             )
         for key in SCHEMAS["transfer"]:
             if not schema and key in raw:
-                refuse(
+                reject(
                     f"channel {name}: {key} is a field of the transfer schema, and this channel has none"
                 )
     pushed = raw.get("pushed", True)
     restated = raw.get("restated", False)
     if restated and not pushed:
-        refuse(
+        reject(
             f"channel {name}: restated asks for the digest to quote this channel every "
             f"episode, and pushed is false, so the digest carries none of it"
         )
     measured = raw.get("measured", False)
     penalty = raw.get("silence_penalty_percent", 0)
     if not 0 <= penalty <= 100:
-        refuse(
+        reject(
             f"channel {name}: silence_penalty_percent must be between 0 and 100, got {penalty}"
         )
     if readers == "self" and penalty:
-        refuse(f"channel {name}: nothing is owed to a channel nobody else reads")
+        reject(f"channel {name}: nothing is owed to a channel nobody else reads")
     channel = Channel(
         name,
         writer,
@@ -1066,34 +1071,34 @@ def parse_channel(raw: dict, table: list[Channel], refuse: Refuse) -> Channel:
         silence_penalty_percent=penalty,
         schema=schema,
         agent_view=raw.get("agent_view", "paths"),
-        **(transfer_terms(name, raw, penalty, refuse) if schema else {}),
+        **(transfer_terms(name, raw, penalty, reject) if schema else {}),
     )
-    validate_agent_view(channel, refuse)
+    validate_agent_view(channel, reject)
     return channel
 
 
 def claim_paths(
-    table: list[Channel], hf: dict[str, str], labels: tuple[str, ...], refuse: Refuse
+    table: list[Channel], hf: dict[str, str], labels: tuple[str, ...], reject: Reject
 ) -> None:
-    """Refuse a table in which two concrete paths coincide, a file channel has no
+    """Reject a table in which two concrete paths coincide, a file channel has no
     directory to sit in, or a channel takes a harness file's name.
 
     Every path is expanded over every label, so a label that lands on a channel's
-    path is refused here too.
+    path is rejected here too.
     """
     holders = [c.path for c in table if c.is_private_store] + [
         c.outbox for c in table if c.shape == "mailbox"
     ]
     for c in table:
         if c.shape == "file" and not any(c.path.startswith(h + "/") for h in holders):
-            refuse(
+            reject(
                 f"channel {c.name}: {c.path} is not inside a directory the agent writes, so nothing could hold it"
             )
     claimed: dict[str, str] = {}
 
     def claim(path: str, what: str) -> None:
         if path in claimed:
-            refuse(f"{what}: path {path!r} is also {claimed[path]}")
+            reject(f"{what}: path {path!r} is also {claimed[path]}")
         claimed[path] = what
 
     for c in table:
@@ -1210,32 +1215,32 @@ def tools_from(records: list[dict] | None) -> list[Tool]:
 
 
 def parse_tool(
-    raw: dict, table: list[Tool], chans: list[Channel], refuse: Refuse
+    raw: dict, table: list[Tool], chans: list[Channel], reject: Reject
 ) -> Tool:
-    """One [[tool]] table as a Tool, or a refusal naming the tool and the key.
+    """One [[tool]] table as a Tool, or a rejection naming the tool and the key.
 
     `table` is what has been parsed before it, for the duplicate-name rule, and
     `chans` the channel table the tool has to point into.
     """
     name = raw.get("name")
     if not isinstance(name, str) or not name:
-        refuse("every tool needs a name")
+        reject("every tool needs a name")
     if not TOOL_NAME.match(name):
-        refuse(
+        reject(
             f"tool name {name!r} must be at most 64 letters, digits, '_' and '-', which is the grammar the API takes"
         )
     if any(t.name == name for t in table):
-        refuse(f"tool {name!r} is declared twice")
+        reject(f"tool {name!r} is declared twice")
     if held := sorted(set(raw) & {"input_schema", "schema", "properties", "required"}):
-        refuse(
+        reject(
             f"tool {name}: {held[0]} is the harness's, not a manifest's; the input "
             f"schema is the contract a call is held to, and is built from the kind "
             f"and the channel. The description is the words this tool is given"
         )
-    check_keys(refuse, f"tool {name}: ", raw, TOOL_KEYS, TOOL_TYPES)
+    check_keys(reject, f"tool {name}: ", raw, TOOL_KEYS, TOOL_TYPES)
     kind = raw.get("kind")
     if kind not in TOOL_KINDS:
-        refuse(f"tool {name}: kind must be one of {sorted(TOOL_KINDS)}, got {kind!r}")
+        reject(f"tool {name}: kind must be one of {sorted(TOOL_KINDS)}, got {kind!r}")
     if kind == "bash":
         if (
             name != "bash"
@@ -1243,29 +1248,29 @@ def parse_tool(
             or raw.get("description")
             or "every" in raw
         ):
-            refuse("bash requires name = 'bash' and no channel, description or every")
+            reject("bash requires name = 'bash' and no channel, description or every")
         return Tool("bash", "bash")
     if name == "bash":
-        refuse("tool bash requires kind = 'bash'")
+        reject("tool bash requires kind = 'bash'")
     where = raw.get("channel")
     ch = next((c for c in chans if c.name == where), None)
     if ch is None:
-        refuse(
+        reject(
             f"tool {name}: channel {where!r} is not in the channel table {[c.name for c in chans]}"
         )
     spec = TOOL_KINDS[kind]
     if not spec.fits(ch):
-        refuse(
+        reject(
             f"tool {name}: kind {kind!r} takes {spec.takes}, and channel {ch.name!r} is not one"
         )
     every = raw.get("every", 0)
     if spec.ballot:
         if every < 1:
-            refuse(
+            reject(
                 f"tool {name}: kind {kind!r} requires every to be a positive integer, got {every!r}"
             )
     elif "every" in raw:
-        refuse(
+        reject(
             f"tool {name}: every belongs to kind "
             + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot)
         )
@@ -1275,23 +1280,21 @@ def parse_tool(
 def validate_tools(
     tables: list[dict] | None, chans: list[Channel], source: str
 ) -> list[Tool]:
-    """Read a tool table against a channel table, or refuse it naming the file and the key.
+    """Read a tool table against a channel table, or reject it naming the file and
+    the key.
 
     An omitted table means no tools. Pure: nothing is set.
     """
-
-    def refuse(why: str) -> NoReturn:
-        raise SystemExit(f"{source}: {why}")
-
+    reject = rejecter(source)
     if tables is None:
         tables = []
     elif not isinstance(tables, list) or not all(isinstance(x, dict) for x in tables):
-        refuse("tools are [[tool]] tables")
+        reject("tools are [[tool]] tables")
     out: list[Tool] = []
     for raw in tables:
-        out.append(parse_tool(raw, out, chans, refuse))
+        out.append(parse_tool(raw, out, chans, reject))
     if len([tool for tool in out if TOOL_KINDS[tool.kind].ballot]) > 1:
-        refuse("an experiment declares at most one vote tool")
+        reject("an experiment declares at most one vote tool")
     return out
 
 
@@ -1301,7 +1304,7 @@ def with_tools(
     """`base` with a tool table validated against `chans` into it. Pure.
 
     Bash is offered where the table declares it. A table that declares nothing, or
-    withholds bash where `base` pushes no digest for an episode to open on, is refused.
+    withholds bash where `base` pushes no digest for an episode to open on, is rejected.
     """
     s = dataclasses.replace(base, tools=tuple(validate_tools(tables, chans, source)))
     if not s.shell_tool:
@@ -1817,7 +1820,8 @@ CREATION_TERMS = {
 
 
 def term_shown(key: str, value: Any) -> str:
-    """A pinned setting as a refusal names it: a prompt by digest, everything else whole."""
+    """A pinned setting as a rejection names it: a prompt by digest, everything else
+    whole."""
     return f"sha256={system_sha256(value)}" if key == "system_prompt" else repr(value)
 
 
@@ -1963,7 +1967,7 @@ def spent_out(account: Mapping[str, Any]) -> bool:
     """Whether the balance has reached zero or less, which is the end of the agent.
 
     A state an agent enters once and does not leave: admits() starts no further
-    episode on it, and move_transfer refuses it as a target. Read between episodes.
+    episode on it, and move_transfer rejects it as a target. Read between episodes.
     """
     return account["remaining"] <= 0
 
@@ -1988,7 +1992,7 @@ def why_out(account: Mapping[str, Any]) -> str | None:
     """Why the agent can take no further episode, or None where it can take one.
 
     Every reason is final: an eliminated agent cannot return, a stalled agent is
-    refused whatever its balance, and an agent at zero or less is not a transfer
+    not admitted whatever its balance, and an agent at zero or less is not a transfer
     target, so no peer can fund it back to the table.
     """
     if eliminated := account.get("eliminated"):
@@ -2150,7 +2154,7 @@ def plant_starter_files(
 
     `store` is the store's host mirror and `store_path` its path in the environment.
     Returns the record, or None; the trigger is the balance, not an episode number.
-    Refuses on a digest that no longer matches, or a path the agent has written.
+    Rejects a digest that no longer matches, or a path the agent has written.
     """
     name, below = starter_terms(account)
     planted = account.get("starter_files_landed")
@@ -2200,7 +2204,8 @@ def starter_paths(account: Mapping[str, Any]) -> set[str]:
 def guard_sources(
     agent: str, account: Account, index: int, instances: list[Instance]
 ) -> None:
-    """Refuse an experimenter channel whose files changed since the agent first saw them.
+    """Reject an experimenter channel whose files changed since the agent first saw
+    them.
 
     Recorded in the account the first time, like starter files: an experiment
     whose brief changed mid-flight is two experiments.
@@ -2979,7 +2984,7 @@ def observation(
     A listing is what an agent holding the shell reads to know what there is to
     reach. Where the shell is withheld there is nothing to reach it with, so an
     episode opens on the digest alone: the content of the channels rather than
-    their layout. with_tools refuses that arrangement without a digest, so this
+    their layout. with_tools rejects that arrangement without a digest, so this
     never returns nothing.
     """
     s = SETTINGS
@@ -4150,7 +4155,7 @@ class ToolKind:
     """One kind on the tool menu: the channel it takes, what it says, its input schema,
     what a call does, the file it keeps and where it is offered.
 
-    `takes` is the channel the kind acts on as a refusal names it, and `fits` the
+    `takes` is the channel the kind acts on as a rejection names it, and `fits` the
     test a declared channel is held to. `describe` is what a tool of this kind says
     of itself where the experiment writes no words, `schema` the input a call is
     held to, and `act` what a call does and says it did; each is handed the Bound,
@@ -4949,7 +4954,7 @@ def refusal_reply(calls: Sequence[ToolCall]) -> tuple[ToolResult, ...] | str:
     """What a refused turn is answered with in place of the results it would have had.
 
     The tool_result form is required wherever the turn carried calls: the API
-    refuses a reply that leaves a tool_use unanswered.
+    rejects a reply that leaves a tool_use unanswered.
     """
     if not calls:
         return REFUSAL_NOTICE
@@ -5914,7 +5919,7 @@ def build_episode(agent: str) -> Episode:
     # What the tool table comes to in this environment, which is not the table
     # itself: a tool whose channel this seating did not plant is not offered.
     # with_tools holds the declared table against shell_tool; this holds what is
-    # left of it, so an agent with nothing to act with is refused here rather than
+    # left of it, so an agent with nothing to act with is rejected here rather than
     # asked for a turn it has no way to answer.
     bound = bind_tools(
         list(s.tools),
@@ -5974,7 +5979,7 @@ def build_episode(agent: str) -> Episode:
 
 
 def assert_writable(shell: Shell, instances: list[Instance]) -> None:
-    """Refuse an environment in which any tree the agent writes is not writable.
+    """Reject an environment in which any tree the agent writes is not writable.
 
     Asked of the shell, relative to its own working directory, where the agent's
     commands land. STARTUP_TIMEOUT bounds it: this is the harness asking whether
@@ -6327,18 +6332,18 @@ def start(
 ) -> ProviderRouter:
     """Read configuration and preflight every provider/model used by a seat.
 
-    The settings are built whole and installed last, once every refusal has had its
-    chance, so a start that refuses leaves the settings in force as it found them.
+    The settings are built whole and installed last, once every rejection has had its
+    chance, so a start that rejects leaves the settings in force as it found them.
     """
     global SETTINGS
 
-    def refuse(why: str) -> NoReturn:
+    def reject(why: str) -> NoReturn:
         print(why, file=sys.stderr)
         raise SystemExit(2)
 
     for name, text, expected in PINNED:
         if system_sha256(text) != expected:
-            refuse(
+            reject(
                 f"{name} drifted from its pinned digest; if the change was meant, run "
                 f"`py -3 harness.py --print-system` and paste the digest into {name}_SHA256."
             )
@@ -6354,14 +6359,14 @@ def start(
     s = with_tools(s, tool_tables, list(s.channels), "manifest")
     requirements = tuple(requirements)
     if not requirements:
-        refuse("every seated agent needs an explicit provider and model")
+        reject("every seated agent needs an explicit provider and model")
     for line in providers.lapsed_prices(requirements):
-        refuse(line)
+        reject(line)
     try:
         router = providers.DirectProviderRouter(requirements)
         router.preflight()
     except ProviderError as error:
-        refuse(f"{error.provider} preflight failed: {error}")
+        reject(f"{error.provider} preflight failed: {error}")
     SETTINGS = s
     return router
 
@@ -6445,7 +6450,7 @@ def fork(parent: str, index: int, new: str, series: list[int] | None = None) -> 
     contained, and the provenance holds the channel table the files sat in. A branch
     hands the `series` its seat stood on as the episode's round ended: series_after,
     and what reached the parent after the episode and within the round.
-    Refuses wherever it cannot reproduce the recorded environment exactly.
+    Rejects a fork wherever it cannot reproduce the recorded environment exactly.
     """
     trace_file = trace_path(parent, index)
     if not account_path(parent).exists():
@@ -6919,7 +6924,7 @@ def main(argv: list[str] | None = None) -> int:
             ap.error("--print-context requires --manifest")
         return print_context(a.config, a.manifest, a.agent)
     # Audits invariant 9 without starting anything, so it runs on a drifted prompt
-    # too; start() is what refuses before an episode costs money.
+    # too; start() is what rejects a run before an episode costs money.
     if a.print_files:
         if not files_dir(a.print_files).is_dir():
             print(
