@@ -5134,7 +5134,7 @@ def open_episode(
     return out, out["observation"]
 
 
-def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
+def replant_live_balance(shell: Shell, label: str, account: Account, out: dict) -> None:
     """Rewrite the agent's own balance after a turn, and record how the write went.
 
     What this write replaces is what the last one left: the balance history without
@@ -5259,7 +5259,7 @@ def run_turns(
             # arrives before this turn's commands run; otherwise at the next episode.
             out["balances"].append(turn["balance"])
             if s.live_balance and s.harness_files["balance"]:
-                republish(shell, label, account, out)
+                replant_live_balance(shell, label, account, out)
 
             watch(
                 f"\n--- turn {turn_number}   spent {centi // 100:,}/{opening_balance:,}"
