@@ -3093,7 +3093,7 @@ def check_a_manifest_table_replaces_the_whole_set():
             root,
             'schedule = "sequential"\nsystem_prompt = ""\n'
             '[[channel]]\nname = "memory"\nwriter = "self"\n'
-            'readers = "self"\npath = "state"\n' + agents,
+            'readers = "self"\npath = "memory"\n' + agents,
         )
         m = experiment.load_manifest(p)
         table, hf = harness.validate_channels(

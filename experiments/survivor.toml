@@ -38,7 +38,7 @@ name = "memory"
 writer = "self"
 readers = "self"
 shape = "directory"
-path = "state"
+path = "memory"
 agent_view = "memory"
 restated = true
 
