@@ -2454,7 +2454,7 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
 
 
 def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs():
-    """Under a simultaneous schedule every container is up and loaded before the first API call."""
+    """Under a simultaneous schedule every container is up and planted before the first API call."""
     with recording() as events, temp_root(SANDBOX=RecordingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
 
@@ -2469,9 +2469,9 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
         took = episodes_taken(ids)
     first = next(i for i, (what, _) in enumerate(events) if what == "create")
     before = [what for what, _ in events[:first]]
-    assert before.count("start") == before.count("load") == 3 and set(before) == {
+    assert before.count("start") == before.count("plant") == 3 and set(before) == {
         "start",
-        "load",
+        "plant",
     }, f"every environment is built before any episode runs: {events}"
     assert [agent_of(n) for what, n in events if what == "start"] == ids, (
         "in seat order"

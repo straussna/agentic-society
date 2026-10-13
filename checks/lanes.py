@@ -163,7 +163,9 @@ class HostSandbox:
     def start(cls, name: str) -> "HostSandbox":
         return cls(name)
 
-    def load(self, instances: list[harness.Instance], files: dict[str, str]) -> None:
+    def plant_trees(
+        self, instances: list[harness.Instance], files: dict[str, str]
+    ) -> None:
         for inst in instances:
             if inst.nested:
                 continue  # rides in with the tree above it
@@ -186,12 +188,12 @@ class HostSandbox:
     def shell(self) -> HostShell:
         return HostShell(self)
 
-    def save(self, instances: list[harness.Instance]) -> bool:
+    def mirror_trees(self, instances: list[harness.Instance]) -> bool:
         kept = True
         for inst in instances:
             if inst.writable and not inst.nested and not inst.is_file:
                 kept = (
-                    harness.save_state(
+                    harness.mirror_trees(
                         inst.host, self._fetcher(self.work / inst.path), lambda: None
                     )
                     and kept
@@ -231,9 +233,11 @@ class RecordingSandbox(HostSandbox):
         cls.note("start", name)
         return cls(name)
 
-    def load(self, instances: list[harness.Instance], files: dict[str, str]) -> None:
-        super().load(instances, files)
-        self.note("load", self.name)
+    def plant_trees(
+        self, instances: list[harness.Instance], files: dict[str, str]
+    ) -> None:
+        super().plant_trees(instances, files)
+        self.note("plant", self.name)
 
     def close(self) -> None:
         self.note("close", self.name)

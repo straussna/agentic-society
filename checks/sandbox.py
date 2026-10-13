@@ -708,7 +708,7 @@ def check_a_container_failure_stops_the_episode_cleanly():
 def check_a_failed_mirror_keeps_the_last_record():
     """A mirror that fails leaves the previous episode's files where they were.
 
-    save_state swaps a staged copy in whole, and the container holds the only
+    mirror_trees swaps a staged copy in whole, and the container holds the only
     other copy of what the agent wrote.
     """
     with docker_root():
@@ -720,7 +720,8 @@ def check_a_failed_mirror_keeps_the_last_record():
         with quiet():
             instances = harness.environment("t", harness.load_account("t"))
         assert (
-            harness.Container("mtr-no-such-container-9f3c1d").save(instances) is False
+            harness.Container("mtr-no-such-container-9f3c1d").mirror_trees(instances)
+            is False
         ), "a mirror of a container that is not there must fail, not raise"
         after = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
         assert after == before, f"a failed mirror lost the record: {sorted(after)}"
@@ -730,7 +731,7 @@ def check_a_failed_mirror_keeps_the_last_record():
         assert not state.with_name("state.previous").exists()
 
 
-def check_save_state_keeps_the_previous_tree_when_the_swap_fails():
+def check_mirror_trees_keeps_the_previous_tree_when_the_swap_fails():
     """A swap that fails after the staging copy is filled leaves the mirror as it was.
 
     The mirror is moved aside, the staged tree is renamed over it, and a rename
@@ -753,7 +754,7 @@ def check_save_state_keeps_the_previous_tree_when_the_swap_fails():
             real(src, dest)
 
         harness.replace_file = refusing_the_swap
-        assert harness.save_state(mirror, fetch, lambda: "644 keep.txt\n") is False
+        assert harness.mirror_trees(mirror, fetch, lambda: "644 keep.txt\n") is False
         assert {p.name for p in mirror.iterdir()} == {"keep.txt"}, sorted(
             mirror.iterdir()
         )
@@ -773,8 +774,8 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
     """A swap whose rollback fails too leaves the tree in its .previous sidecar, and no
     empty mirror is made in its place.
 
-    The same save tries the rollback once more; where that fails as well, the next
-    build, or the next save of that tree, puts it back before anything else. A False
+    The same mirror tries the rollback once more; where that fails as well, the next
+    build, or the next mirror of that tree, puts it back before anything else. A False
     still loses nothing the mirror held.
     """
     with rooted(HostSandbox):
@@ -807,7 +808,7 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
             return replace
 
         harness.replace_file = refusing_the_swap_and_rollbacks(1)
-        assert harness.save_state(mirror, fetch, lambda: None) is False
+        assert harness.mirror_trees(mirror, fetch, lambda: None) is False
         harness.replace_file = real
         assert mirror.is_dir() and sorted(p.name for p in mirror.iterdir()) == [
             "keep.txt"
@@ -816,9 +817,9 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
         )
         assert not previous.exists(), "and the tree is not left aside as well"
 
-        for route in ("build", "save"):
+        for route in ("build", "mirror"):
             harness.replace_file = refusing_the_swap_and_rollbacks(2)
-            assert harness.save_state(mirror, fetch, lambda: None) is False
+            assert harness.mirror_trees(mirror, fetch, lambda: None) is False
             assert not mirror.exists(), (
                 f"an empty mirror was made over the tree put aside ({route})"
             )
@@ -830,7 +831,7 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
                 harness.ensure_mirrors(instances)
             else:
                 assert (
-                    harness.save_state(mirror, lambda dest: False, lambda: None)
+                    harness.mirror_trees(mirror, lambda dest: False, lambda: None)
                     is False
                 )
             assert sorted(p.name for p in mirror.iterdir()) == ["keep.txt"], (

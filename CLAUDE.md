@@ -25,7 +25,7 @@ Available verification commands:
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --no-docker
 # Full verification suite
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py"
-# harness.py's episode path: the container, the shell, load_state/save_state, run_once
+# harness.py's episode path: the container, the shell, plant_trees/mirror_trees, run_once
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --real
 # Print every check name
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --list

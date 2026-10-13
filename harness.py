@@ -17,8 +17,9 @@ Sections, in the order an episode meets them:
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, environment, digest_for, render_harness_files
   9. What the agent's channels held before_digests
- 10. The sandbox and the shell      Sandbox, Container, Shell, load_state, save_state,
-                                    clip, Bound, TOOL_KINDS, bind_tools, episode_specs
+ 10. The sandbox and the shell      Sandbox, Container, Shell, plant_trees,
+                                    mirror_trees, clip, Bound, TOOL_KINDS, bind_tools,
+                                    episode_specs
  11. The API                        call, log_raw, watch
  12. The turn loop                  run_turns
  13. Settlement                     move_transfer, resolve_transfer, resolve_directory,
@@ -3226,7 +3227,7 @@ def publish_balance_live(
     return "ok" if r.stdout.decode("utf-8", "replace") == expected else "tampered"
 
 
-def load_state(
+def plant_trees(
     container: str, instances: list[Instance], files: dict[str, str]
 ) -> None:
     """Build the environment one episode opens on from its instances.
@@ -3320,7 +3321,7 @@ def load_state(
     plant_harness_files(container, files)
 
 
-def save_state(
+def mirror_trees(
     mirror: Path, fetch: Callable[[Path], bool], modes: Callable[[], str | None]
 ) -> bool:
     """Mirror one of an episode's writable trees back to the host. Never raises.
@@ -3395,7 +3396,7 @@ class EnvironmentBuildError(RuntimeError):
 
 
 # The failures that mean an environment could not be built, none of them billed:
-# docker refusing a command, the host refusing a file, or a loaded environment
+# docker refusing a command, the host refusing a file, or a planted environment
 # the agent could not write to.
 BUILD_FAILURES = (subprocess.CalledProcessError, OSError, EnvironmentBuildError)
 
@@ -3409,17 +3410,17 @@ class Sandbox(Protocol):
     @classmethod
     def start(cls, name: str) -> Sandbox: ...
 
-    def load(self, instances: list[Instance], files: dict[str, str]) -> None: ...
+    def plant_trees(self, instances: list[Instance], files: dict[str, str]) -> None: ...
 
     def shell(self) -> Shell: ...
 
-    def save(self, instances: list[Instance]) -> bool: ...
+    def mirror_trees(self, instances: list[Instance]) -> bool: ...
 
     def close(self) -> None: ...
 
 
 class Container:
-    """The sandbox an episode runs in: started, loaded, mirrored back, reaped.
+    """The sandbox an episode runs in: started, planted, mirrored back, reaped.
 
     build_episode starts one and run_episode closes it; these five methods are
     everything they ask, which Sandbox states. An episode elsewhere puts its own
@@ -3434,7 +3435,7 @@ class Container:
         """Create the container and return it. Raises if it will not start.
 
         A stale container of the same name is reaped first. Nothing is mounted:
-        the container sees only what load() copies in, on its own filesystem,
+        the container sees only what plant_trees() copies in, on its own filesystem,
         with real modes and ownership. --network none is invariant 4.
         """
         reap(name)
@@ -3460,13 +3461,13 @@ class Container:
         )
         return cls(name)
 
-    def load(self, instances: list[Instance], files: dict[str, str]) -> None:
-        load_state(self.name, instances, files)
+    def plant_trees(self, instances: list[Instance], files: dict[str, str]) -> None:
+        plant_trees(self.name, instances, files)
 
     def shell(self) -> Shell:
         return Shell(self.name)
 
-    def save(self, instances: list[Instance]) -> bool:
+    def mirror_trees(self, instances: list[Instance]) -> bool:
         """Mirror every tree the agent writes back. True only where all of them came back.
 
         Decided by the same environment() description that decided what was writable
@@ -3478,7 +3479,8 @@ class Container:
             if inst.writable and not inst.nested and not inst.is_file:
                 src = f"/work/{inst.path}"
                 kept = (
-                    save_state(inst.host, self._fetcher(src), self._modes(src)) and kept
+                    mirror_trees(inst.host, self._fetcher(src), self._modes(src))
+                    and kept
                 )
         return kept
 
@@ -5761,7 +5763,7 @@ class Episode:
 
     Everything build_episode read or made: the account and what the episode was
     shown, the digests the obligations are measured against, the container with
-    the environment loaded, and the shell. run_episode adds what came back;
+    the environment planted, and the shell. run_episode adds what came back;
     settle_episode and close_episode commit it. A driver holds one per agent for
     the length of a round.
     """
@@ -5878,7 +5880,7 @@ def build_episode(agent: str) -> Episode:
     last = account["episodes"][-1] if account["episodes"] else {}
     scrub_receipts(instances, last.get("receipts") or {})
     guard_sources(agent, account, index, instances)
-    # Invariant 1: before load_state, so the starter files are in the container's
+    # Invariant 1: before plant_trees, so the starter files are in the container's
     # private store by the time the listing names it.
     store = private_store(s.channels)
     if store is None and starter_terms(account)[0]:
@@ -5945,24 +5947,24 @@ def build_episode(agent: str) -> Episode:
         before=before,
         started=time.time(),
     )
-    loaded = False
+    planted = False
     try:
         # Inside the try, so there is no window in which a container exists and
         # nothing is bound to reap it.
         sandbox = ep.container = SANDBOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
-        sandbox.load(instances, shown)
-        loaded = True
+        sandbox.plant_trees(instances, shown)
+        planted = True
         shell = ep.shell = sandbox.shell()
         clear_episode_actions(shell, instances)
         assert_writable(shell, instances)
     except BaseException:
-        # No episode ran. An environment that was loaded is mirrored back all the
+        # No episode ran. An environment that was planted is mirrored back all the
         # same, and whatever was started is reaped.
         if ep.shell is not None:
             ep.shell.close()
         if ep.container is not None:
-            if loaded:
-                ep.container.save(instances)
+            if planted:
+                ep.container.mirror_trees(instances)
             ep.container.close()
         raise
     return ep
@@ -6012,7 +6014,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
         shell.close()
         # Before the reap: the container holds the only copy of whatever the
         # agent wrote.
-        ep.saved = sandbox.save(ep.instances)
+        ep.saved = sandbox.mirror_trees(ep.instances)
         sandbox.close()
     return out
 

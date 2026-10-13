@@ -1703,7 +1703,7 @@ def election_of(exp: dict, round: int) -> dict | None:
 def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | None:
     """One tree of every seat's environment, a column each.
 
-    save_state runs when an episode ends, so each column is current as of that
+    mirror_trees runs when an episode ends, so each column is current as of that
     agent's last committed episode and two columns can be stamped differently. A
     ballot channel also carries whether the round shown is a vote round, the last of
     its vote cycle, and the election that follows it, whose tally is the one the
