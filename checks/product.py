@@ -1051,11 +1051,11 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                 if threading.current_thread().name == "g02" and n == 1:
                     held_back.append(g01_ended.wait(10))
 
-            live = set(ids)
+            seated_ids = set(ids)
             with quiet():
                 experiment.sequential_round(
                     ids,
-                    live,
+                    seated_ids,
                     0,
                     fake(run("echo '2 250' > out/transfer"), say()),
                     progress=progress,
@@ -1064,7 +1064,7 @@ def check_a_round_writes_each_phase_as_it_reaches_it():
                 seen.clear()
                 experiment.simultaneous_round(
                     ids,
-                    live,
+                    seated_ids,
                     1,
                     per_agent(default=(say(),), on_send=after_g01),
                     progress=progress,
@@ -1223,10 +1223,10 @@ def check_a_run_records_each_phase_its_rounds_reach_and_no_round_it_did_not_play
 
     driven = experiment.sequential_round
 
-    def stops_as_round_two_starts(agents, live, rnd, *rest):
+    def stops_as_round_two_starts(agents, seated_ids, rnd, *rest):
         if rnd == 1:
             raise KeyboardInterrupt
-        return driven(agents, live, rnd, *rest)
+        return driven(agents, seated_ids, rnd, *rest)
 
     experiment.sequential_round = stops_as_round_two_starts
     try:
@@ -1305,11 +1305,11 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
         case = (a_round.__name__, at, failure.__name__)
         with temp_root() as root:
             ids = seated(root, "g01", g02={})
-            live = set(ids)
+            seated_ids = set(ids)
             raised: BaseException | None = None
             try:
                 with quiet():
-                    a_round(ids, live, 0, router(), progress=failing)
+                    a_round(ids, seated_ids, 0, router(), progress=failing)
             except (ValueError, KeyboardInterrupt) as e:
                 raised = e
             taken = episodes_taken(ids)
@@ -1324,4 +1324,6 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
             f"every billed episode is traced: {case} {traced}"
         )
         assert first["stop"] == "api_error" and first["spent"] > 0, (case, first)
-        assert live == {"g02"}, f"g01 left the table before the raise: {case} {live}"
+        assert seated_ids == {"g02"}, (
+            f"g01 was unseated before the raise: {case} {seated_ids}"
+        )

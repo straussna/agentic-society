@@ -382,9 +382,12 @@ def check_mixed_provider_simultaneous_round():
         harness = __import__("harness")
         harness.load_account("claude", provider="anthropic", model="claude-sonnet-5")
         harness.load_account("gpt", provider="openai", model="gpt-5.6-terra")
-        live = {"claude", "gpt"}
+        seated_ids = {"claude", "gpt"}
         ran = experiment.simultaneous_round(
-            ["claude", "gpt"], live, 0, per_agent(claude=(say("a"),), gpt=(say("o"),))
+            ["claude", "gpt"],
+            seated_ids,
+            0,
+            per_agent(claude=(say("a"),), gpt=(say("o"),)),
         )
         traces = [
             json.loads(harness.trace_path(agent, 1).read_text(encoding="utf-8"))

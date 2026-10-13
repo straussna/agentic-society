@@ -14,13 +14,13 @@ from checks.lanes import (
     HostSandbox,
     digest_name,
     docker_root,
-    instances_of,
     episode_once,
+    exhaust,
     files_by_path,
     ground_truth,
+    instances_of,
     lay_out,
     plant,
-    put_out,
     quiet,
     rooted,
     seated,
@@ -901,15 +901,15 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
     )
 
 
-def check_a_seat_that_is_out_is_not_a_message():
-    """out/<i> for a seat that is out is neither a message nor a break.
+def check_a_seat_out_of_play_is_not_a_message():
+    """out/<i> for a seat out of play is neither a message nor a break.
 
     It stands as a name that is no seat of this experiment does: no episode will
     start to read it, and a directory left at it is not a crowded seat either.
     """
     with temp_root(channels=tables(mail=HALF)) as root:
         seated(root, "t", other={}, third={})
-        put_out("other")  # seat 2
+        exhaust("other")  # seat 2
         with quiet():
             said = harness.run_once("t", fake(run("echo hi > out/2"), say()))
         why = harness.outbox_why(said["channels"]["mail"], harness.channel("mail"))
@@ -921,14 +921,14 @@ def check_a_seat_that_is_out_is_not_a_message():
 
     with temp_root(channels=tables(mail=HALF)) as root:
         seated(root, "t", other={}, third={})
-        put_out("other")
+        exhaust("other")
         with quiet():
             both = harness.run_once(
                 "t", fake(run("mkdir out/2", "echo hi > out/3"), say())
             )
     assert both["channels"]["mail"]["addressed"] == ["3"], both["channels"]["mail"]
     assert both["channels"]["mail"]["broken"] == [], (
-        "a seat that is out cannot be crowded"
+        "a seat out of play cannot be crowded"
     )
     assert both["channels"]["mail"]["penalty"] == 0, both["channels"]["mail"]
 

@@ -32,7 +32,7 @@ T = TypeVar("T")
 # An agent id must be something else.
 BARE_NUMBER = re.compile(r"^\d+$")
 
-# Goes at building an environment before the agent drops out. An environment is
+# Goes at building an environment before the agent is unseated. An environment is
 # built from containers and copies of other agents' trees, so a failure can be
 # the daemon and not the agent. None of it is billed, so another go spends only time.
 ATTEMPTS = 2
@@ -976,8 +976,9 @@ def preparers(
     return lambda agent: preparer(agent, seats, stamp, labels)
 
 
-def attempted(agent: str, live: set[str], build: Callable[[], T]) -> T | None:
-    """Call `build` up to ATTEMPTS times against environment failures, or drop the agent.
+def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
+    """Call `build` up to ATTEMPTS times against environment failures, or unseat the
+    agent.
 
     Building an environment precedes the first API call, so nothing here is
     billed. The container name is the agent and episode index, so the next
@@ -997,26 +998,25 @@ def attempted(agent: str, live: set[str], build: Callable[[], T]) -> T | None:
                     f"{agent}: dropping out, it has no environment to run in",
                     file=sys.stderr,
                 )
-                live.discard(agent)
+                seated.discard(agent)
                 return None
     return None
 
 
-def drop_out(agent: str, live: set[str]) -> None:
-    """Take an agent whose account admits no episode off the table, saying why."""
-    print(
-        f"{agent:<6} drops out: {harness.why_not_in_play(harness.load_account(agent)) or 'no episode could start on it'}"
-    )
-    live.discard(agent)
+def unseat(agent: str, seated: set[str]) -> None:
+    """Unseat an agent whose account is out of play, saying why."""
+    why = harness.why_not_in_play(harness.load_account(agent))
+    print(f"{agent:<6} drops out: {why or 'no episode could start on it'}")
+    seated.discard(agent)
 
 
-def drop_those_out(agents: list[str], live: set[str]) -> None:
-    """Take off the table, in seat order, every agent at it whose account admits no
-    further episode. Every reason why_not_in_play gives is final, so the table this
-    leaves is the same whether it is asked as one round ends or as the next begins."""
+def unseat_those_out_of_play(agents: list[str], seated: set[str]) -> None:
+    """Unseat, in seat order, every seated agent whose account is out of play. Every
+    reason why_not_in_play gives is final, so the seats this leaves are the same
+    whether it is asked as one round ends or as the next begins."""
     for agent in agents:
-        if agent in live and harness.why_not_in_play(harness.load_account(agent)):
-            drop_out(agent, live)
+        if agent in seated and harness.why_not_in_play(harness.load_account(agent)):
+            unseat(agent, seated)
 
 
 def table_round(accounts: Iterable[Mapping[str, Any]]) -> int:
@@ -1034,16 +1034,16 @@ def behind(account: harness.Account, played: int) -> bool:
     return len(account["episodes"]) < played - 1
 
 
-def remaining(agents: list[str]) -> list[str]:
-    """The agents still in the competition, in seat order: every one whose account admits
-    an episode and that is not behind the table's round, at this run's table or not.
+def in_play(agents: list[str]) -> list[str]:
+    """The agents in play, in seat order: every one whose account is in play and that
+    is not behind the current round, seated in this run or not.
 
-    An agent that left the table for the rest of a run - a fault of its own, or an
-    environment that would not build - keeps its balance and its place in the
-    competition while it is at most a round behind, since a run that seats it again has
-    it finish that round first. One further behind sits out every round of every run, so
-    it is in the competition no longer: it counts toward no stop, survives nothing and
-    stands in no election. Every stop is judged the same whichever run judges it.
+    An agent unseated for the rest of a run - a fault of its own, or an environment
+    that would not build - keeps its balance and stays in play while it is at most a
+    round behind, since a run that seats it again has it finish that round first. One
+    further behind is unseated in every round of every run, so it is in play no
+    longer: it counts toward no stop, survives nothing and stands in no election.
+    Every stop is judged the same whichever run judges it.
     """
     accounts = {agent: harness.load_account(agent) for agent in agents}
     played = table_round(accounts.values())
@@ -1055,30 +1055,36 @@ def remaining(agents: list[str]) -> list[str]:
     ]
 
 
-def drops(stop: str) -> bool:
-    """Whether an episode that ended on `stop` takes its agent off the table for the
-    rest of the run: a fault of the agent's, where the experimenter's stop is not."""
+def unseated_by(stop: str) -> bool:
+    """Whether an episode that ended on `stop` unseats its agent for the rest of the
+    run: a fault of the agent's, where the experimenter's stop is not.
+
+    harness.STOPS_THE_AGENT includes the experimenter's stop, `interrupted`, and this
+    leaves STOPS_THE_EXPERIMENT out: an interrupted episode keeps its agent's seat for
+    --resume, and elector() keeps its agent an elector of the round, so
+    Election.interrupted can name it.
+    """
     return stop in harness.STOPS_THE_AGENT and stop not in harness.STOPS_THE_EXPERIMENT
 
 
-def take_seats(agents: list[str], live: set[str]) -> None:
-    """Take off the table, before the first round of a run, every agent that can act in
-    none of its rounds.
+def take_seats(agents: list[str], seated: set[str]) -> None:
+    """Unseat, before the first round of a run, every agent that can act in none of
+    its rounds.
 
-    An agent whose account admits no episode drops out. One behind the table's round
-    sits out every round, and is in the competition no longer. One that missed only the
-    last round stays, and finishes that round first.
+    An agent whose account is out of play is unseated. One behind the current round is
+    unseated in every round, and is in play no longer. One that missed only the last
+    round stays seated, and finishes that round first.
     """
-    drop_those_out(agents, live)
+    unseat_those_out_of_play(agents, seated)
     accounts = {agent: harness.load_account(agent) for agent in agents}
     played = table_round(accounts.values())
     for agent in agents:
-        if agent in live and behind(accounts[agent], played):
+        if agent in seated and behind(accounts[agent], played):
             print(
                 f"{agent:<6} sits out: it took {len(accounts[agent]['episodes'])} episodes "
                 f"and the table has played {played} rounds"
             )
-            live.discard(agent)
+            seated.discard(agent)
 
 
 def unrecorded(phase: str, round_number: int, detail: dict[str, Any] | None) -> None:
@@ -1097,7 +1103,7 @@ def tell(
 
     A raise there would leave billed spend uncommitted, so a write that fails, or a
     second Ctrl+C that lands in it, is kept in `held`, for the round to raise once its
-    episodes are committed and its agents that dropped out have left the table.
+    episodes are committed and its agents that cannot go on are unseated.
     """
     try:
         progress(phase, round_number, detail)
@@ -1107,14 +1113,14 @@ def tell(
 
 def sequential_round(
     agents: list[str],
-    live: set[str],
+    seated: set[str],
     rnd: int,
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
     progress: Progress = unrecorded,
 ) -> bool:
-    """One episode for each agent still in the experiment, in seat order.
+    """One episode for each seated agent, in seat order.
 
     Each agent's phases go to `progress` as it reaches them: the round waits on its
     episode, resolves its actions, and settles it. Returns whether any of them took
@@ -1129,7 +1135,7 @@ def sequential_round(
             # answers it, and no environment is built for an agent that will not
             # run.
             raise KeyboardInterrupt
-        if agent not in live:
+        if agent not in seated:
             continue
         player = providers.is_interactive(
             harness.account_on_disk(agent).get("provider")
@@ -1139,11 +1145,11 @@ def sequential_round(
             rnd + 1,
             {"agents": [agent]},
         )
-        ep = attempted(agent, live, lambda: harness.ready(agent, prepare(agent)))
-        if agent not in live:
+        ep = attempted(agent, seated, lambda: harness.ready(agent, prepare(agent)))
+        if agent not in seated:
             continue
         if ep is None:
-            drop_out(agent, live)
+            unseat(agent, seated)
             continue
         out = harness.run_episode(ep, router)
         held: list[BaseException] = []
@@ -1152,12 +1158,12 @@ def sequential_round(
         tell(progress, held, "settling_round", rnd + 1, {"agents": [agent]})
         trace = harness.close_episode(ep, out, settled)
         acted = True
-        if drops(trace["stop"]):
+        if unseated_by(trace["stop"]):
             print(
                 f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
                 file=sys.stderr,
             )
-            live.discard(agent)
+            seated.discard(agent)
         if held:
             raise held[0]
         if trace["stop"] in harness.STOPS_THE_EXPERIMENT:
@@ -1169,12 +1175,12 @@ def sequential_round(
 
 def build_all(
     agents: list[str],
-    live: set[str],
+    seated: set[str],
     prepare: Callable[[str], Callable[[harness.Account], None]],
 ) -> dict[str, harness.Episode]:
-    """Every live agent's environment, built in seat order before any episode runs.
+    """Every seated agent's environment, built in seat order before any episode runs.
 
-    An agent whose environment fails ATTEMPTS times drops out; the rest are built.
+    An agent whose environment fails ATTEMPTS times is unseated; the rest are built.
     Anything that ends the builds early, an interrupt included, abandons every
     environment built so far, since none has billed.
     """
@@ -1183,12 +1189,12 @@ def build_all(
         for agent in agents:
             if harness.INTERRUPTING:
                 raise KeyboardInterrupt
-            if agent not in live:
+            if agent not in seated:
                 continue
-            ep = attempted(agent, live, lambda: harness.ready(agent, prepare(agent)))
+            ep = attempted(agent, seated, lambda: harness.ready(agent, prepare(agent)))
             if ep is None:
-                if agent in live:
-                    drop_out(agent, live)
+                if agent in seated:
+                    unseat(agent, seated)
                 continue
             built[agent] = ep
     except BaseException:
@@ -1223,21 +1229,21 @@ def committed(ep: harness.Episode) -> bool:
 
 def simultaneous_round(
     agents: list[str],
-    live: set[str],
+    seated: set[str],
     rnd: int,
     router: ProviderRouter,
     stamp: dict[str, Any] | None = None,
     labels: dict[str, str] | None = None,
     progress: Progress = unrecorded,
 ) -> bool:
-    """One episode for each agent still in the experiment, all at once.
+    """One episode for each seated agent, all at once.
 
     Every environment is built first, so no episode reads this round's writes. The
     episodes run in threads. Then each settles in seat order, holding what its
     transfers owe, and each closes in seat order. A credit to an agent whose episode
     is in this round lands in its account in hand just before it closes: after its
-    own turns and before its floor, so an agent is out on the round's net and never
-    lifted back by a transfer that had already arrived. Each phase goes to
+    own turns and before its floor, so an agent is exhausted on the round's net and
+    never lifted back by a transfer that had already arrived. Each phase goes to
     `progress` as the round reaches it, and so does each autonomous episode as it
     ends. Returns whether any agent took an episode.
 
@@ -1251,7 +1257,7 @@ def simultaneous_round(
     commit failed, as a credit between two of its episodes. An episode is committed
     where its account on disk lists it, whatever its close raised after the save.
     """
-    built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
+    built = build_all(agents, seated, preparers(agents, stamp, labels, "simultaneous"))
     if harness.INTERRUPTING:
         for ep in built.values():
             ep.abandon()
@@ -1376,12 +1382,12 @@ def simultaneous_round(
         raise next(iter(errors.values()))
 
     for agent, trace in traces.items():
-        if drops(trace["stop"]):
+        if unseated_by(trace["stop"]):
             print(
                 f"{agent}: dropping out, episode {trace['episode']} ended {trace['stop']}",
                 file=sys.stderr,
             )
-            live.discard(agent)
+            seated.discard(agent)
     if held:
         raise held[0]
     if any(trace["stop"] in harness.STOPS_THE_EXPERIMENT for trace in traces.values()):
@@ -1393,9 +1399,10 @@ def simultaneous_round(
 
 def elector(account: harness.Account, round_number: int) -> bool:
     """Whether an agent votes in the election that follows `round_number`: it took that
-    round's episode and did not drop out in it, so it was at the table as the round ended."""
+    round's episode and was not unseated by its stop, so it was seated as the round
+    ended."""
     episodes = account["episodes"]
-    return len(episodes) == round_number and not drops(episodes[-1]["stop"])
+    return len(episodes) == round_number and not unseated_by(episodes[-1]["stop"])
 
 
 def elections_of(account: harness.Account) -> list[harness.Election]:
@@ -1433,24 +1440,24 @@ def offered_ballot(agent: str, round_number: int, vote: dict) -> bool:
 
 
 def resolve_vote(
-    agents: list[str], live: set[str], labels: dict[str, str], vote: dict | None
+    agents: list[str], seated: set[str], labels: dict[str, str], vote: dict | None
 ) -> int | None:
-    """Hold the election of the table's round, where it is a voting round, and remove
-    every eliminated agent. The round's number where its election stands, held now or by
-    an earlier run, or None where the table's round has none or an agent at the table
-    has still to finish it.
+    """Hold the election of the current round, where it is a voting round, and unseat
+    every eliminated agent. The round where its election stands, held now or by an
+    earlier run, or None where the current round has none or a seated agent has still
+    to finish it.
 
     The vote tool's cadence defines the cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
     tool call. The result contains aggregate totals, never voter-to-target mappings.
 
-    The candidates are every agent still in the competition, and a ballot counts toward
-    whichever of them it names. The electors are the agents that played the round, read
-    from the accounts and not from the table, so an election the last run ended before
-    is held by the agents that played it whether or not any of them is still at the
-    table. An elector that was offered a ballot and cast none abstained; one with no peer
-    left to name was offered none. One whose episode the experimenter's stop ended before
-    it cast the ballot it was offered did not abstain either: the stop is not the agent's
+    The candidates are every agent in play, and a ballot counts toward whichever of
+    them it names. The electors are the agents that played the round, read from the
+    accounts and not from the seated set, so an election the last run ended before is
+    held by the agents that played it whether or not any of them is still seated. An
+    elector that was offered a ballot and cast none abstained; one with no peer left
+    to name was offered none. One whose episode the experimenter's stop ended before it
+    cast the ballot it was offered did not abstain either: the stop is not the agent's
     doing, and while such an elector stands in the election nobody is eliminated by the
     vote, since where the stop landed would otherwise decide who. The highest total,
     above zero and held by one candidate alone, is voted out.
@@ -1468,7 +1475,7 @@ def resolve_vote(
     round_number = table_round(accounts.values())
     if not round_number or round_number % vote["every"]:
         return None
-    finished = all(len(accounts[agent]["episodes"]) == round_number for agent in live)
+    finished = all(len(accounts[agent]["episodes"]) == round_number for agent in seated)
     label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
     held = next(
         (
@@ -1485,7 +1492,7 @@ def resolve_vote(
         electorate = [
             agent for agent in agents if elector(accounts[agent], round_number)
         ]
-        candidates = remaining(agents)
+        candidates = in_play(agents)
     else:
         named = held.get("electors", held["tally"])
         electorate = [agent for agent in agents if label_by_agent[agent] in named]
@@ -1584,7 +1591,7 @@ def resolve_vote(
             }
         harness.save_account(agent, account)
         if agent in eliminated:
-            live.discard(agent)
+            seated.discard(agent)
             print(f"{agent}: eliminated after round {round_number}: {reason}")
     for path in cast:
         path.unlink(missing_ok=True)
@@ -1593,15 +1600,17 @@ def resolve_vote(
     return round_number if finished else None
 
 
-def over(left: list[str], rounds: int, stop_when_one_remains: bool) -> str | None:
-    """Why the competition is over after `rounds` rounds with the agents `left` still in
-    it, saying so, or None where it is not: "all_eliminated" when none is left, and
+def over(
+    agents_in_play: list[str], rounds: int, stop_when_one_remains: bool
+) -> str | None:
+    """Why the experiment is over after `rounds` rounds with `agents_in_play` in play,
+    saying so, or None where it is not: "all_eliminated" when none is in play, and
     "one_remains" when one is and the manifest stops there."""
-    if not left:
+    if not agents_in_play:
         print(f"every agent is out after {rounds} rounds")
         return "all_eliminated"
-    if stop_when_one_remains and len(left) == 1:
-        print(f"{left[0]} is the only agent left; the competition ends")
+    if stop_when_one_remains and len(agents_in_play) == 1:
+        print(f"{agents_in_play[0]} is the only agent left; the competition ends")
         return "one_remains"
     return None
 
@@ -1609,7 +1618,7 @@ def over(left: list[str], rounds: int, stop_when_one_remains: bool) -> str | Non
 def concluded(
     election: int | None,
     agents: list[str],
-    live: set[str],
+    seated: set[str],
     labels: dict[str, str],
     stop_when_one_remains: bool,
     stop_when_two_remain_after_tie: bool,
@@ -1617,26 +1626,25 @@ def concluded(
     """Why the election that stands after round `election` ends the rounds, or None
     where they go on or there was no election.
 
-    Judged on the agents still in the competition, at this run's table or not: over()'s
-    reasons, and "final_tie" when the manifest stops at a tied vote and exactly two
-    remain, both of whom were electors in it. A tie the experimenter's stop kept a
-    ballot from ends nothing, since the ballot it kept out could have broken it. An
-    agent the round left spent out, or otherwise with no further episode, does not
-    remain, and one that left the table for the rest of this run does while it is at
-    most a round behind, so an election is judged the same whether the rounds go on in
-    this run or in one that resumes it.
+    Judged on the agents in play, seated in this run or not: over()'s reasons, and
+    "final_tie" when the manifest stops at a tied vote and exactly two are in play,
+    both of whom were electors in it. A tie the experimenter's stop kept a ballot from
+    ends nothing, since the ballot it kept out could have broken it. An agent the
+    round left exhausted, or otherwise out of play, does not remain, and one unseated
+    for the rest of this run does while it is at most a round behind, so an election
+    is judged the same whether the rounds go on in this run or in one that resumes it.
     """
     if election is None:
         return None
-    drop_those_out(agents, live)
-    left = remaining(agents)
-    if ended := over(left, election, stop_when_one_remains):
+    unseat_those_out_of_play(agents, seated)
+    agents_in_play = in_play(agents)
+    if ended := over(agents_in_play, election, stop_when_one_remains):
         return ended
-    if stop_when_two_remain_after_tie and len(left) == 2:
+    if stop_when_two_remain_after_tie and len(agents_in_play) == 2:
         label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
         results = {
             agent: harness.load_account(agent).get("last_election") or {}
-            for agent in left
+            for agent in agents_in_play
         }
         if all(
             result.get("round") == election
@@ -1646,25 +1654,29 @@ def concluded(
             for agent, result in results.items()
         ):
             print(
-                f"the final vote tied between {' and '.join(left)}; both survive and the competition ends"
+                f"the final vote tied between {' and '.join(agents_in_play)}; "
+                "both survive and the competition ends"
             )
             return "final_tie"
     return None
 
 
 def before_round(
-    agents: list[str], live: set[str], rounds: int, stop_when_one_remains: bool
+    agents: list[str], seated: set[str], rounds: int, stop_when_one_remains: bool
 ) -> str | None:
     """Why the rounds end before the next begins, after `rounds` rounds, or None where it
-    is played: over()'s reasons, judged on the agents still in the competition, and
-    "none_can_act" when some are and not one of them can act in this run. Every agent at
-    the table whose account admits no episode leaves it first, saying why."""
-    drop_those_out(agents, live)
-    left = remaining(agents)
-    if ended := over(left, rounds, stop_when_one_remains):
+    is played: over()'s reasons, judged on the agents in play, and "none_can_act" when
+    some are and not one of them is seated in this run. Every seated agent whose account
+    is out of play is unseated first, saying why."""
+    unseat_those_out_of_play(agents, seated)
+    agents_in_play = in_play(agents)
+    if ended := over(agents_in_play, rounds, stop_when_one_remains):
         return ended
-    if not live:
-        print(f"{' '.join(left)} can take no episode in this run; the rounds end here")
+    if not seated:
+        print(
+            f"{' '.join(agents_in_play)} can take no episode in this run; "
+            "the rounds end here"
+        )
         return "none_can_act"
     return None
 
@@ -1672,7 +1684,7 @@ def before_round(
 def play_round(
     a_round: Round,
     agents: list[str],
-    live: set[str],
+    seated: set[str],
     rnd: int,
     router: ProviderRouter,
     stamp: dict[str, Any],
@@ -1683,53 +1695,53 @@ def play_round(
     progress: Progress = unrecorded,
     finishing: set[str] | None = None,
 ) -> str | None:
-    """One round: drop the agents that cannot act, name the round, run it, resolve its
+    """One round: unseat the agents that cannot act, name the round, run it, resolve its
     election, and say why the rounds end, or None while they go on. What ends them
     before a round begins is before_round's, which main() asks first, so every round
     this is handed is played.
 
     `finishing` names the agents that missed a round an earlier run left unfinished:
     only they act in it, in seat order or together as the schedule has it, and the
-    agents that played it wait, and are back at the table for its election where that
+    agents that played it wait, and are seated again for its election where that
     is still to be held. main() judges no stop before such a round but the cost
     ceiling, which no round starts past. Once it has been played, a voting round's
     election stands and its stops are judged at once; after any other round they are
     judged before the next, as for any round.
 
-    The reason is the outcome's termination_reason, judged on the agents still in the
-    competition: concluded()'s where the round's election ends the competition, and,
-    where the round emptied the table, "none_can_act" when some are still in and
-    "all_eliminated" when none is.
+    The reason is the outcome's termination_reason, judged on the agents in play:
+    concluded()'s where the round's election ends the experiment, and, where the round
+    left no agent seated, "none_can_act" when some are in play and "all_eliminated" when
+    none is.
     """
     # Asked before the round, so the header names who will act. Between here and
     # an agent's own turn its balance can only move up, a peer's transfer being
     # the only thing that reaches it, so this is the answer its episode would give.
-    drop_those_out(agents, live)
+    unseat_those_out_of_play(agents, seated)
     # The seat order decides who acts on this round's information and who on last
     # round's, so it is on screen beside the round number. Under a simultaneous
     # round nobody acts on this round's.
     acting = [
         agent
         for agent in agents
-        if agent in live and (finishing is None or agent in finishing)
+        if agent in seated and (finishing is None or agent in finishing)
     ]
     print(f"--- round {rnd + 1} ({' '.join(acting)}) ---")
 
-    waiting = live - set(acting)
-    live -= waiting
+    waiting = seated - set(acting)
+    seated -= waiting
     try:
-        acted = a_round(agents, live, rnd, router, stamp, labels, progress)
+        acted = a_round(agents, seated, rnd, router, stamp, labels, progress)
     finally:
-        live |= waiting
-    if not acted and not live:
-        # Every agent at the table either takes an episode or leaves it, so a round
-        # nobody took one in has emptied the table.
+        seated |= waiting
+    if not acted and not seated:
+        # Every seated agent either takes an episode or is unseated, so a round
+        # nobody took one in has left no agent seated.
         print(f"no agent could take an episode in round {rnd + 1}; the rounds end here")
-        return "none_can_act" if remaining(agents) else "all_eliminated"
+        return "none_can_act" if in_play(agents) else "all_eliminated"
     return concluded(
-        resolve_vote(agents, live, labels, vote),
+        resolve_vote(agents, seated, labels, vote),
         agents,
-        live,
+        seated,
         labels,
         stop_when_one_remains,
         stop_when_two_remain_after_tie,
@@ -1847,7 +1859,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     harness.catch_signals()
     agents = [e["id"] for e in manifest["agents"]]
-    live = set(agents)
+    seated = set(agents)
     stamp = stamp_of(manifest)
     experiment_id = manifest["experiment_id"]
     vote = next(
@@ -1879,7 +1891,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, {manifest['schedule']})"
     )
-    take_seats(agents, live)
+    take_seats(agents, seated)
     progress = functools.partial(product.progress, harness.SETTINGS.root, experiment_id)
     reason = "round_limit"
     code = 0
@@ -1888,11 +1900,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # A voting round every agent finished before the last run stopped keeps its
         # election, and one already held is not held again; an election that ended the
-        # competition ends the rounds before any begins.
+        # experiment ends the rounds before any begins.
         ended = concluded(
-            resolve_vote(agents, live, manifest["labels"], vote),
+            resolve_vote(agents, seated, manifest["labels"], vote),
             agents,
-            live,
+            seated,
             manifest["labels"],
             manifest["stop_when_one_remains"],
             manifest["stop_when_two_remain_after_tie"],
@@ -1900,13 +1912,13 @@ def main(argv: list[str] | None = None) -> int:
         for _ in range(a.rounds if ended is None else 0):
             accounts = {agent: harness.load_account(agent) for agent in agents}
             played = table_round(accounts.values())
-            # A round an agent at the table missed is finished before the next begins,
+            # A round a seated agent missed is finished before the next begins,
             # so every agent is told the round the others are in, and no round is one
             # an agent has already played past.
             finishing = [
                 agent
                 for agent in agents
-                if agent in live and len(accounts[agent]["episodes"]) < played
+                if agent in seated and len(accounts[agent]["episodes"]) < played
             ]
             round_number = played if finishing else played + 1
             cost = product.cost(
@@ -1917,7 +1929,7 @@ def main(argv: list[str] | None = None) -> int:
             # carry the cost that ends the rounds, and a round being finished is played.
             if not cost["ceiling_reached"] and not finishing:
                 ended = before_round(
-                    agents, live, played, manifest["stop_when_one_remains"]
+                    agents, seated, played, manifest["stop_when_one_remains"]
                 )
                 if ended is not None:
                     break
@@ -1938,7 +1950,7 @@ def main(argv: list[str] | None = None) -> int:
             ended = play_round(
                 a_round,
                 agents,
-                live,
+                seated,
                 round_number - 1,
                 router,
                 stamp,
@@ -1952,27 +1964,27 @@ def main(argv: list[str] | None = None) -> int:
             progress(
                 "round_completed",
                 round_number,
-                {"active": [agent for agent in agents if agent in live]},
+                {"active": [agent for agent in agents if agent in seated]},
             )
             if ended is not None:
                 break
         if ended is not None:
             reason = ended
     except KeyboardInterrupt:
-        # Every agent still at the table keeps its account, its traces and its seat,
-        # so the experiment can be started again from where it stopped. What ends is
-        # the rounds; a voting round every agent at the table finished keeps its
-        # election, and an election that ends the competition is what they end on.
+        # Every seated agent keeps its account, its traces and its seat, so the
+        # experiment can be started again from where it stopped. What ends is the
+        # rounds; a voting round every seated agent finished keeps its election, and an
+        # election that ends the experiment is what they end on.
         ended = concluded(
-            resolve_vote(agents, live, manifest["labels"], vote),
+            resolve_vote(agents, seated, manifest["labels"], vote),
             agents,
-            live,
+            seated,
             manifest["labels"],
             manifest["stop_when_one_remains"],
             manifest["stop_when_two_remain_after_tie"],
         )
         print(
-            f"interrupted; the rounds end here with {len(live)} agents at the table",
+            f"interrupted; the rounds end here with {len(seated)} agents at the table",
             file=sys.stderr,
         )
         reason, code = ended or "interrupted", 130
@@ -1988,7 +2000,7 @@ def main(argv: list[str] | None = None) -> int:
         experiment_id,
         agents,
         manifest["labels"],
-        set(remaining(agents)),
+        set(in_play(agents)),
         reason,
         harness.load_account,
         harness.trace_path,

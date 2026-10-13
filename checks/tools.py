@@ -15,11 +15,11 @@ from checks.fake import fake, run, say, use
 from checks.lanes import (
     channel_toml,
     episode_once,
+    exhaust,
     files_by_path,
     ground_truth,
     manifest_file,
     offers,
-    put_out,
     quiet,
     rejected,
     seated,
@@ -272,7 +272,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         tools=[BASH, transfer],
     ) as root:
         seated(root, "t", t={}, o={}, d={})
-        put_out("d")
+        exhaust("d")
         seen = []
         with quiet():
             harness.run_once(
@@ -870,10 +870,10 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
         )
 
 
-def check_a_tool_never_offers_a_seat_that_is_out():
-    """A seat with nothing left to spend is not a message target, so it is not offered.
+def check_a_tool_never_offers_a_seat_out_of_play():
+    """An exhausted seat is not a message target, so it is not offered.
 
-    The mailbox settles only the reachable slots: a write to a seat that is out is
+    The mailbox settles only the reachable slots: a write to a seat out of play is
     neither addressed nor broken, so the share is taken all the same. A tool that
     offered the slot would report the write and leave the episode charged for
     having said nothing - the false success the result wording exists to avoid.
@@ -882,7 +882,7 @@ def check_a_tool_never_offers_a_seat_that_is_out():
         channels=tables(mail={"silence_penalty_percent": 50}), tools=[SEND]
     ) as root:
         seated(root, "t", t={}, o={}, d={})
-        put_out("d")
+        exhaust("d")
         with quiet():
             harness.run_once("t", fake(use("send", to="3", body="hello\n"), say()))
         t = trace_on_disk("t", 1)
@@ -894,7 +894,7 @@ def check_a_tool_never_offers_a_seat_that_is_out():
         assert "out/3" not in {f["path"] for f in t["files"]}, "and nothing was written"
 
     # The enum the agent is offered is the reachable set, and a mailbox whose every
-    # peer is out is not offered at all.
+    # peer is out of play is not offered at all.
     with temp_root(tools=[SEND]) as root:
         seated(root, "t", t={}, o={}, d={})
         with quiet():

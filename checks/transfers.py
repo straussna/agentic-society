@@ -12,10 +12,10 @@ from checks.lanes import (
     HostSandbox,
     docker_root,
     episode_once,
+    exhaust,
     ground_truth,
     lay_out,
     ledger_name,
-    put_out,
     quiet,
     rejected,
     rooted,
@@ -489,20 +489,20 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
         ]
         assert stays["remaining"] == 0 and not stays.get("received"), stays["remaining"]
         assert not harness.in_play(stays), "and it still cannot act"
-        # Its only peer is out, so there was nobody it could have given to and
+        # Its only peer is exhausted, so there was nobody it could have given to and
         # the share for an episode that made no transfer does not fall on it.
         assert t["transfer"]["penalty"] == 0, t["transfer"]
 
 
-def check_a_transfer_to_a_seat_that_is_out_costs_the_share():
-    """A line naming a seat that is out gives nothing and is charged for giving nothing.
+def check_a_transfer_to_a_seat_out_of_play_costs_the_share():
+    """A line naming a seat out of play gives nothing and is charged for giving nothing.
 
     No account moves and nothing reaches g, so the share falls as it would on an
-    episode that declared nothing. The same line to a live seat costs nothing.
+    episode that declared nothing. The same line to a seat in play costs nothing.
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, "t", other={}, third={})
-        put_out("other")  # seat 2
+        exhaust("other")  # seat 2
         with quiet():
             t = harness.run_once("t", fake(run("echo '2 1' > out/transfer"), say()))
         gone, giver = ground_truth("other"), ground_truth("t")
@@ -520,7 +520,7 @@ def check_a_transfer_to_a_seat_that_is_out_costs_the_share():
 
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, "t", other={}, third={})
-        put_out("other")
+        exhaust("other")
         with quiet():
             t = harness.run_once("t", fake(run("echo '3 1' > out/transfer"), say()))
     assert t["transfer"]["amount"] == 1 and t["transfer"]["error"] is None, t[

@@ -757,11 +757,12 @@ def turn_cost() -> int:
     ) // 100
 
 
-def put_out(agent: str) -> None:
-    """Leave an agent flat on zero, where an episode that spent past its budget leaves it.
+def exhaust(agent: str) -> None:
+    """Leave an agent exhausted, flat on zero, where an episode that spent past its
+    budget leaves it.
 
     Written into the account and not spent down to, so a check about what
-    happens to a seat that is out does not also depend on how it got there.
+    happens to an exhausted seat does not also depend on how it got there.
     """
     account = harness.load_account(agent)
     account["remaining"] = 0

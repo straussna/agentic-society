@@ -26,10 +26,10 @@ from checks.lanes import (
     digest_name,
     elements_of,
     episodes_taken,
+    exhaust,
     ground_truth,
     manifest_file,
     plant,
-    put_out,
     quiet,
     reconciled,
     recording,
@@ -57,10 +57,10 @@ def check_the_experiment_uses_fixed_order_and_validates():
             return real(agent, prepare)
 
         harness.ready = noted
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
             for rnd in range(3):
-                experiment.sequential_round(ids, live, rnd, fake())
+                experiment.sequential_round(ids, seated_ids, rnd, fake())
     assert ids == ["g02", "g03", "g01"], ids
     assert built == ids * 3, f"the seats' order, the same every round: {built}"
     for bad in (
@@ -268,10 +268,10 @@ def check_survivor_votes_eliminate_abstainers_and_one_unique_leader():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(target + "\n", encoding="utf-8")
 
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
-            assert experiment.resolve_vote(ids, live, labels, vote) == 5
-        assert live == {"g02", "g03", "g05"}, live
+            assert experiment.resolve_vote(ids, seated_ids, labels, vote) == 5
+        assert seated_ids == {"g02", "g03", "g05"}, seated_ids
         why = harness.why_not_in_play
         assert "received the most votes" in why(harness.load_account("g01"))
         assert "did not vote" in why(harness.load_account("g04"))
@@ -322,10 +322,10 @@ def check_a_tied_top_vote_eliminates_no_voter_and_the_cycle_repeats():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(target + "\n", encoding="utf-8")
 
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet() as output:
-            assert experiment.resolve_vote(ids, live, labels, vote) == 10
-        assert live == set(ids)
+            assert experiment.resolve_vote(ids, seated_ids, labels, vote) == 10
+        assert seated_ids == set(ids)
         assert "top vote tied at 2" in output.getvalue()
         result = harness.load_account("g01")["last_election"]
         assert (
@@ -357,15 +357,15 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(target + "\n", encoding="utf-8")
 
-        live = set(ids)
+        seated_ids = set(ids)
         completed = lambda *_args: True
         with quiet() as output:
             ended = experiment.play_round(
-                completed, ids, live, 4, None, {}, labels, True, vote, True
+                completed, ids, seated_ids, 4, None, {}, labels, True, vote, True
             )
         result = harness.load_account("g01")["last_election"]
 
-    assert ended == "final_tie" and live == set(ids), ended
+    assert ended == "final_tie" and seated_ids == set(ids), ended
     assert "both survive and the competition ends" in output.getvalue()
     assert result["top_tied"]
 
@@ -373,8 +373,9 @@ def check_a_final_two_tie_can_end_with_both_agents_surviving():
 def check_an_experiment_ends_on_the_reason_its_last_round_gives():
     """outcome.json names the stop the round made, whatever an earlier election left.
 
-    Seat 1 went out at the first election, which did not tie, and still holds that
-    result. The two left tie at the second, and that tie is why the experiment ends.
+    Seat 1 was eliminated at the first election, which did not tie, and still holds
+    that result. The two left tie at the second, and that tie is why the experiment
+    ends.
     """
     ballot = {
         "name": "ballot",
@@ -490,13 +491,13 @@ def voting(
 
 
 def episodes_for(acted: list[tuple[int, str]], stop: bool = False):
-    """A round that records one episode for each agent at the table and notes it in
+    """A round that records one episode for each seated agent and notes it in
     `acted`; with `stop`, the stop lands in the last of them, as it does in a round's last
     seat."""
 
-    def a_round(agents, live, rnd, *_args):
+    def a_round(agents, seated_ids, rnd, *_args):
         for agent in agents:
-            if agent in live:
+            if agent in seated_ids:
                 account = harness.load_account(agent)
                 account["episodes"].append({"episode": rnd + 1, "stop": "no_tool_call"})
                 harness.save_account(agent, account)
@@ -664,28 +665,28 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
             real(src, dest)
 
         harness.replace_file = full
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
             refused_save = None
             try:
-                experiment.resolve_vote(ids, live, labels, VOTE)
+                experiment.resolve_vote(ids, seated_ids, labels, VOTE)
             except OSError as e:
                 refused_save = e
         kept = all(path.exists() for path in ballots)
         partial = [agent for agent in ids if "last_election" in ground_truth(agent)]
         harness.replace_file = real
 
-        live = set(ids) - {"g01"}
+        seated_ids = set(ids) - {"g01"}
         with quiet():
-            held = experiment.resolve_vote(ids, live, labels, VOTE)
+            held = experiment.resolve_vote(ids, seated_ids, labels, VOTE)
         after = {agent: ground_truth(agent) for agent in ids}
         with quiet():
-            again = experiment.resolve_vote(ids, set(live), labels, VOTE)
+            again = experiment.resolve_vote(ids, set(seated_ids), labels, VOTE)
         unchanged = all(ground_truth(agent) == after[agent] for agent in ids)
         gone = not any(path.exists() for path in ballots)
     assert isinstance(refused_save, OSError) and kept, (refused_save, kept)
     assert partial == ["g01", "g02"], partial
-    assert held == 2 and live == {"g02", "g03", "g05"}, (held, live)
+    assert held == 2 and seated_ids == {"g02", "g03", "g05"}, (held, seated_ids)
     assert all(
         a["last_election"]
         == {
@@ -763,7 +764,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
         }
         for election in elections.values()
     ), elections
-    assert set(out.values()) == {None}, f"no seat is out for the stop: {out}"
+    assert set(out.values()) == {None}, f"no seat is out of play for the stop: {out}"
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert outcome["termination_reason"] == "interrupted", outcome
     assert (
@@ -929,10 +930,10 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
 
 
 def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
-    """A seat whose episode of a voting round ends on an API failure leaves the table for
-    the rest of the run, as any fault of its own does, and is no elector of that round's
-    election: it neither votes nor abstains, and it is not eliminated. It is still in the
-    competition, so it stands in the tally, and is written the result.
+    """A seat whose episode of a voting round ends on an API failure is unseated for the
+    rest of the run, as any fault of its own does, and is no elector of that round's
+    election: it neither votes nor abstains, and it is not eliminated. It is still in
+    play, so it stands in the tally, and is written the result.
 
     g01 and g03 vote for each other; g02's request fails.
     """
@@ -974,7 +975,7 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
 
 def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
     """Under stop_when_two_remain_after_tie, an election is judged on the seats it leaves in
-    the competition, so whether it ends the competition does not turn on where the run
+    play, so whether it ends the competition does not turn on where the run
     stops: one run of -r 3, -r 1 then --resume -r 2, and a stop in the voting round's last
     seat then --resume all end on the tie, after the same round.
 
@@ -984,10 +985,10 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
     def spending(acted: list[tuple[int, str]], stop: bool = False):
         played = episodes_for(acted, stop)
 
-        def a_round(agents, live, rnd, *rest):
+        def a_round(agents, seated_ids, rnd, *rest):
             if rnd + 1 == 2:
-                put_out("g03")
-            return played(agents, live, rnd, *rest)
+                exhaust("g03")
+            return played(agents, seated_ids, rnd, *rest)
 
         return a_round
 
@@ -1044,7 +1045,7 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
 
     g01 and g02 tied at round 2, and g02 spent the last of its balance in it; g03 missed
     the round, and finishes it on --resume. The tie is in g03's account too, as it is in
-    every account of a seat still in the competition, and g03 was no elector in it.
+    every account of a seat in play, and g03 was no elector in it.
     """
     tie = {
         "round": 2,
@@ -1069,7 +1070,7 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
             account = harness.load_account(agent)
             account["last_election"] = tie
             harness.save_account(agent, account)
-        put_out("g02")
+        exhaust("g02")
         acted: list[tuple[int, str]] = []
         harness.start = lambda config=None, **kw: fake()
         driven = experiment.sequential_round
@@ -1092,8 +1093,8 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
 
 def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_would():
     """A seat that missed a round the last run left unfinished finishes it on --resume
-    before any stop is judged, though every seat that played it has since left the table:
-    the table's round is the furthest any seat has played, whether or not it is still in.
+    before any stop is judged, though every seat that played it has since been unseated:
+    the current round is the furthest any seat has played, whether or not it is in play.
     The competition then ends as the same rounds run whole end, a stop in the finishing
     seat's own episode included: that seat was offered no ballot, so the stop kept it from
     casting none, and the vote stands.
@@ -1181,20 +1182,20 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
     assert last == "interrupted", last
 
 
-def check_a_seat_that_left_the_table_for_a_run_still_counts_toward_every_stop():
-    """A seat whose episode ended on a fault of its own leaves the table for the rest of
-    the run and stays in the competition, holding its balance. Every stop is judged on
-    the seats still in, so whether the competition is over does not turn on which run
-    asks, and a competition that ended stays ended on --resume.
+def check_a_seat_unseated_for_a_run_still_counts_toward_every_stop():
+    """A seat whose episode ended on a fault of its own is unseated for the rest of the
+    run and stays in play, holding its balance. Every stop is judged on the seats in
+    play, so whether the competition is over does not turn on which run asks, and a
+    competition that ended stays ended on --resume.
 
     Two seats under stop_when_one_remains, and g02's first request fails: g01 plays the
     next round alone, and wins nothing while g02, a round behind, holds its balance. Once
-    g01 has played a second round alone, g02 is two behind and in the competition no
-    longer, and g01 wins. Every seat's first request fails: the rounds end on nobody left
-    at the table who can act, with every seat still in.
+    g01 has played a second round alone, g02 is two behind and in play no longer, and
+    g01 wins. Every seat's first request fails: the rounds end on nobody left seated who
+    can act, with every seat in play.
     Three seats voting every second round, and g03's first request fails: g01 and g02 cast
-    no ballot at round 2's election and go out, leaving g03 alone in, the winner, and a
-    resumed run ends there once g03 has finished the round.
+    no ballot at round 2's election and are eliminated, leaving g03 alone in play, the
+    winner, and a resumed run ends there once g03 has finished the round.
     """
     alone = []
     for rounds in ("2", "5"):
@@ -1290,20 +1291,20 @@ def check_a_seat_that_left_the_table_for_a_run_still_counts_toward_every_stop():
     assert (reason, winners) == ("one_remains", ["3"]), runs[1]
 
 
-def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
-    """A seat more than a round behind the furthest round any seat has played can never
-    sit at the table again, so it counts toward no stop and survives nothing. One a round
-    behind is still in, since a run that seats it again has it finish that round.
+def check_a_seat_more_than_a_round_behind_is_in_play_no_longer():
+    """A seat more than a round behind the current round can never be seated again, so
+    it counts toward no stop and survives nothing. One a round behind is still in play,
+    since a run that seats it again has it finish that round.
 
     Three seats under stop_when_one_remains, and g03's environment will not build after
-    its first episode. Two rounds leave g03 a round behind and still in; two more, the
+    its first episode. Two rounds leave g03 a round behind and in play; two more, the
     first of them its failed attempt to finish round 2, leave it two behind. g02 then
-    goes out, and a resumed run ends at once with g01 alone in; with g01 out as well, the
-    next ends with nobody in.
+    is exhausted, and a resumed run ends at once with g01 alone in play; with g01
+    exhausted as well, the next ends with nobody in play.
 
     Then three seats voting every second round, g03 two behind: the election of round 4,
-    the last the run asks for, puts g02 out for casting no ballot, and the competition
-    ends there with g01 alone in.
+    the last the run asks for, eliminates g02 for casting no ballot, and the competition
+    ends there with g01 alone in play.
     """
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1325,7 +1326,7 @@ def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
         runs, said = [], ""
         for out, rounds in ((None, "2"), (None, "2"), ("g02", "3"), ("g01", "1")):
             if out:
-                put_out(out)
+                exhaust(out)
             with quiet() as output:
                 code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", rounds]
@@ -1381,15 +1382,15 @@ def check_a_seat_that_sits_out_is_in_the_competition_no_longer():
     assert outcome["survivors"] == ["1"], outcome
 
 
-def check_a_ballot_counts_toward_any_seat_still_in_and_a_total_of_zero_elects_nobody():
-    """The candidates of an election are every seat still in the competition, electors or
-    not, and a ballot counts toward whichever of them it names. Nobody is voted out on a
+def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nobody():
+    """The candidates of an election are every seat in play, electors or not, and a
+    ballot counts toward whichever of them it names. Nobody is voted out on a
     total of zero, and a vote is tied only where two share a highest total above zero.
 
     Three seats under stop_when_two_remain_after_tie: g01 and g02 vote for seat 3, whose
-    request fails, and seat 3 goes out on their two votes; the two left did not tie, so the
-    rounds go on. Then a lone elector whose ballot names a seat that is out: nobody has a
-    vote, and nobody is voted out.
+    request fails, and seat 3 is voted out on their two votes; the two left did not tie,
+    so the rounds go on. Then a lone elector whose ballot names a seat out of play:
+    nobody has a vote, and nobody is voted out.
     """
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1433,16 +1434,13 @@ def check_a_ballot_counts_toward_any_seat_still_in_and_a_total_of_zero_elects_no
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={})
         voting(root, {"g01": 2, "g02": 1}, {"g01": "2"})
-        put_out("g02")
-        live = {"g01"}
+        exhaust("g02")
+        seated_ids = {"g01"}
         with quiet():
-            held = experiment.resolve_vote(ids, live, {"1": "1", "2": "2"}, VOTE)
+            held = experiment.resolve_vote(ids, seated_ids, {"1": "1", "2": "2"}, VOTE)
         g01 = ground_truth("g01")
-    assert held == 2 and live == {"g01"} and harness.why_not_in_play(g01) is None, (
-        held,
-        live,
-        g01,
-    )
+    assert held == 2 and seated_ids == {"g01"}, (held, seated_ids)
+    assert harness.why_not_in_play(g01) is None, g01
     assert g01["last_election"] == {
         "round": 2,
         "tally": {"1": 0},
@@ -1461,13 +1459,13 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
     none is not abstaining, and the election eliminates nobody for it. The trace records
     what the episode was offered, which is where the election reads it.
 
-    g02 is out after round 1, and g01 takes round 2 alone.
+    g02 is exhausted after round 1, and g01 takes round 2 alone.
     """
     seen: list[dict] = []
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         seated(root, "g01", g02={})
         manifest = voting(root, {"g01": 1, "g02": 1}, {}, shell=True)
-        put_out("g02")
+        exhaust("g02")
         harness.start = lambda config=None, **kw: fake(
             use("vote", to="2"), say(), seen=seen
         )
@@ -1495,16 +1493,16 @@ def check_an_elector_offered_no_ballot_is_no_abstainer():
     ], outcome
 
 
-def check_no_seat_plays_a_round_the_table_has_played_past():
-    """The table's round is the furthest round any seat has played, whether or not that
-    seat is still in, so a seat left behind by seats that have since gone out cannot sit
-    at a round they played past. A resumed run keeps it out, holds no old election again,
-    and names no round below the furthest played.
+def check_no_seat_plays_a_round_the_others_have_played_past():
+    """The current round is the furthest round any seat has played, whether or not that
+    seat is still in play, so a seat left behind by seats since out of play cannot be
+    seated at a round they played past. A resumed run keeps it unseated, holds no old
+    election again, and names no round below the furthest played.
 
-    g03's first request fails and it misses the rest of the run. g02 goes out at round 2's
-    election and g01 at round 4's, each for casting no ballot, which leaves g03 the only
-    seat not out: more than a round behind, it is in the competition no longer, and the
-    competition is over.
+    g03's first request fails and it misses the rest of the run. g02 is eliminated at
+    round 2's election and g01 at round 4's, each for casting no ballot, which leaves
+    g03 the only seat not eliminated: more than a round behind, it is in play no longer,
+    and the competition is over.
     """
     keys = ("last_election", "eliminated")
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
@@ -1557,20 +1555,20 @@ def check_no_seat_plays_a_round_the_table_has_played_past():
     assert all(number >= 4 for _, number in resumed), resumed
 
 
-def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_at_the_table():
+def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated():
     """An election is held by the seats that played its round, read from their accounts,
     so one the last run ended before is held on --resume though every seat that played it
-    has since left the table. A seat that sits out is in the competition no longer, and
+    has since been unseated. A seat more than a round behind is in play no longer, and
     stands in no election: a ballot naming it counts toward nobody.
 
-    g01 and g02 played round 2 and spent out in it; g01 voted for seat 3 and g02 cast no
-    ballot. g03 missed more than the last round, and sits out.
+    g01 and g02 played round 2 and were exhausted in it; g01 voted for seat 3 and g02
+    cast no ballot. g03 missed more than the last round, and is unseated.
     """
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         seated(root, "g01", g02={}, g03={})
         manifest = voting(root, {"g01": 2, "g02": 2, "g03": 0}, {"g01": "3"})
-        put_out("g01")
-        put_out("g02")
+        exhaust("g01")
+        exhaust("g02")
         harness.start = lambda config=None, **kw: fake()
         with quiet() as output:
             code = experiment.main(
@@ -1637,7 +1635,7 @@ def check_a_fresh_run_displaces_previous_state_and_resume_continues_it():
 
 
 def check_an_experiment_gives_a_failed_environment_one_more_go():
-    """An agent whose environment will not build sits out one attempt, not the experiment.
+    """An agent whose environment will not build loses one attempt, not its seat.
 
     Building an environment reads other agents' trees and asks Docker for a
     container, so a failure can be the daemon and not the agent. None of it is
@@ -1655,12 +1653,14 @@ def check_an_experiment_gives_a_failed_environment_one_more_go():
             return real(agent, prepare)
 
         harness.ready = flaky
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet() as buf:
-            experiment.sequential_round(ids, live, 0, fake(*DEFAULT))
+            experiment.sequential_round(ids, seated_ids, 0, fake(*DEFAULT))
         took = episodes_taken(ids)
 
-    assert live == {"g01", "g02"}, f"only the agent that failed twice is out: {live}"
+    assert seated_ids == {"g01", "g02"}, (
+        f"only the agent that failed twice is unseated: {seated_ids}"
+    )
     assert took == {"g01": 1, "g02": 1, "g03": 0}, took
     assert "could not build an environment" in buf.getvalue(), buf.getvalue()
     assert "could not start an episode container" not in buf.getvalue(), (
@@ -1673,15 +1673,15 @@ def check_an_interrupt_ends_the_whole_experiment():
     """Ctrl+C ends every remaining round; a fault ends one agent's part in them.
 
     An interrupt is the experimenter: the agent whose episode it landed in keeps
-    its seat and the rounds stop. A fault is the agent, and only that agent drops out.
+    its seat and the rounds stop. A fault is the agent, and only that agent is unseated.
     """
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
             try:
                 experiment.sequential_round(
-                    ids, live, 0, fake(run("echo one"), KeyboardInterrupt())
+                    ids, seated_ids, 0, fake(run("echo one"), KeyboardInterrupt())
                 )
             except KeyboardInterrupt:
                 pass
@@ -1691,15 +1691,19 @@ def check_an_interrupt_ends_the_whole_experiment():
         first = ground_truth("g01")["episodes"][0]
     assert took == {"g01": 1, "g02": 0, "g03": 0}, took
     assert first["stop"] == "interrupted" and first["spent"] > 0, first
-    assert live == set(ids), f"and no agent is ejected for it: {sorted(live)}"
+    assert seated_ids == set(ids), (
+        f"and no agent is unseated for it: {sorted(seated_ids)}"
+    )
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
-            experiment.sequential_round(ids, live, 0, fake(run("echo one"), Err(400)))
+            experiment.sequential_round(
+                ids, seated_ids, 0, fake(run("echo one"), Err(400))
+            )
         took = episodes_taken(ids)
-    assert live == {"g02", "g03"}, sorted(live)
+    assert seated_ids == {"g02", "g03"}, sorted(seated_ids)
     assert took == {"g01": 1, "g02": 1, "g03": 1}, (
         "the rest of the experiment takes its round"
     )
@@ -1730,12 +1734,12 @@ def check_a_stopped_experiment_ends_the_rounds():
     """A stop between agents ends the rounds, and the agents keep their seats."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
             try:
                 experiment.sequential_round(
                     ids,
-                    live,
+                    seated_ids,
                     0,
                     interrupting_at(2, run("echo one"), run("echo two"), say()),
                 )
@@ -1747,7 +1751,9 @@ def check_a_stopped_experiment_ends_the_rounds():
         first = ground_truth("g01")["episodes"][0]
     assert took == {"g01": 1, "g02": 0, "g03": 0}, took
     assert first["stop"] == "interrupted" and first["spent"] > 0, first
-    assert live == set(ids), f"and no agent is ejected for it: {sorted(live)}"
+    assert seated_ids == set(ids), (
+        f"and no agent is unseated for it: {sorted(seated_ids)}"
+    )
 
 
 def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
@@ -1836,9 +1842,9 @@ def check_a_resumed_simultaneous_experiment_finishes_a_round_through_its_own_sch
         driven = experiment.simultaneous_round
         rounds = []
 
-        def recorded(agents, live, rnd, *rest):
-            rounds.append((rnd + 1, sorted(live)))
-            return driven(agents, live, rnd, *rest)
+        def recorded(agents, seated_ids, rnd, *rest):
+            rounds.append((rnd + 1, sorted(seated_ids)))
+            return driven(agents, seated_ids, rnd, *rest)
 
         experiment.simultaneous_round = recorded
         try:
@@ -1854,11 +1860,11 @@ def check_a_resumed_simultaneous_experiment_finishes_a_round_through_its_own_sch
     assert took == {"g01": 2, "g02": 2, "g03": 2}, took
 
 
-def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
-    """A seat that missed more than the last round cannot sit at the table's round: the
-    round it is told is its own count. A resumed run keeps it out, says so, and holds
-    every election without it. It is in the competition no longer, so it is neither an
-    elector nor a candidate.
+def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
+    """A seat that missed more than the last round cannot be seated at the current
+    round: the round it is told is its own count. A resumed run keeps it unseated, says
+    so, and holds every election without it. It is in play no longer, so it is neither
+    an elector nor a candidate.
 
     g04 left an earlier run after round 1, and the rest went on to round 4, whose election
     that run held. The resumed run does not hold round 4's again, and holds round 6's
@@ -1922,7 +1928,7 @@ def check_a_seat_more_than_a_round_behind_sits_out_and_the_elections_go_on():
     assert election["electors"] == ["1", "2", "3"], election
     assert election["voted_out"] == "2" and results["g03"] == election, results
     assert results["g04"] is None and out["g04"] is None, (
-        "g04 stands in no election and is not out"
+        "g04 stands in no election and is not out of play"
     )
     assert "received the most votes (2) in round 6" in out["g02"], out
 
@@ -1933,12 +1939,12 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
     hold the election again: nobody is eliminated by it twice, and every record it left
     stands as it was. The seat finishing the round is offered no ballot, which nobody
     would count, and takes the round as a discussion, told so: the election's result is
-    already in its account, which it was written as a seat still in the competition.
+    already in its account, which it was written as a seat in play.
 
-    g04 misses round 2. g01 and g03 vote for seat 2, g02 for seat 1, so g02 goes out. The
-    same holds of an election recorded as older runs recorded one, naming no electors and
-    written only to them, which leaves g04's own account without it: its peers' say it
-    was held.
+    g04 misses round 2. g01 and g03 vote for seat 2, g02 for seat 1, so g02 is voted
+    out. The same holds of an election recorded as older runs recorded one, naming no
+    electors and written only to them, which leaves g04's own account without it: its
+    peers' say it was held.
     """
     note = {"name": "note", "kind": "write_file", "channel": "notes"}
     for older in (False, True):
@@ -2076,9 +2082,9 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
 
 def check_a_seat_that_cannot_finish_its_round_on_resume_leaves_the_rest_playing():
     """A seat whose environment would not build misses a round, and on --resume fails to
-    build again as it finishes it. It leaves the table for that run, and the seats that
-    played the round go on to the next: a finishing pass nobody could act in has not put
-    every agent out.
+    build again as it finishes it. It is unseated for that run, and the seats that
+    played the round go on to the next: a finishing pass nobody could act in has not
+    unseated every agent.
     """
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -2113,9 +2119,9 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
 
     Every agent spends past zero in the first round, and no peer is left that
     could put one back, so the rounds are over with four still to go. A round in
-    which no agent's environment builds empties the table, and is the last round:
-    every seat still holds its balance, so none is out, and the outcome says that
-    nobody still in could act.
+    which no agent's environment builds leaves no agent seated, and is the last round:
+    every seat still holds its balance, so none is exhausted, and the outcome says that
+    nobody in play could act.
     """
     cost = turn_cost()
     with temp_root(budget=cost - 1, floor_at_zero=True) as root:
@@ -2181,10 +2187,9 @@ def check_a_round_nobody_can_act_in_ends_the_rounds():
     ], f"the empty round is what ends the rounds, and no round follows it: {phases}"
 
 
-def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
-    """The survivors are the seats still in the competition as the run ends, so a seat
-    that spent out in the last round is not one, whether or not that round held an
-    election."""
+def check_the_outcome_names_no_seat_the_last_round_exhausted_a_survivor():
+    """The survivors are the seats in play as the run ends, so a seat exhausted in the
+    last round is not one, whether or not that round held an election."""
     with temp_root(budget=turn_cost() - 1, floor_at_zero=True) as root:
         ids = seated(root, "g01", g02={})
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
@@ -2204,12 +2209,12 @@ def check_the_outcome_names_no_seat_the_last_round_put_out_a_survivor():
 
 
 def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winner():
-    """The manifest decides whether the last seat still in the competition plays on alone
+    """The manifest decides whether the last seat in play plays on alone
     or ends the experiment."""
     with temp_root(channels=ALL_OWED) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        put_out("g02")
-        put_out("g03")
+        exhaust("g02")
+        exhaust("g03")
         harness.start = lambda config=None, **kw: fake(*DEFAULT)
         with quiet() as buf:
             code = experiment.main(
@@ -2239,8 +2244,8 @@ def check_a_sole_agent_runs_requested_rounds_unless_the_manifest_stops_at_a_winn
 
     with temp_root(channels=ALL_OWED) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        put_out("g02")
-        put_out("g03")
+        exhaust("g02")
+        exhaust("g03")
         manifest = seats_manifest(root, ids)
         manifest.write_text(
             "stop_when_one_remains = true\n" + manifest.read_text(encoding="utf-8"),
@@ -2468,9 +2473,9 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
 
         router = per_agent(default=DEFAULT, on_open=opened)
 
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
-            acted = experiment.simultaneous_round(ids, live, 0, router)
+            acted = experiment.simultaneous_round(ids, seated_ids, 0, router)
         took = episodes_taken(ids)
     first = next(i for i, (what, _) in enumerate(events) if what == "create")
     before = [what for what, _ in events[:first]]
@@ -2484,10 +2489,8 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
     assert sorted(agent_of(n) for what, n in events if what == "close") == ids, (
         "and every one reaped"
     )
-    assert acted and took == {"g01": 1, "g02": 1, "g03": 1} and live == set(ids), (
-        took,
-        live,
-    )
+    assert acted and took == {"g01": 1, "g02": 1, "g03": 1}, (took, seated_ids)
+    assert seated_ids == set(ids), seated_ids
 
 
 def check_a_simultaneous_round_runs_its_episodes_at_once():
@@ -2501,9 +2504,9 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
-            experiment.simultaneous_round(ids, live, 0, router)
+            experiment.simultaneous_round(ids, seated_ids, 0, router)
         stops = {r: harness.load_account(r)["episodes"][0]["stop"] for r in ids}
     assert set(stops.values()) == {"no_tool_call"}, (
         f"an episode that waited alone would have erred instead: {stops}"
@@ -2529,9 +2532,9 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             ),
             g02=(run(f"cat {digest_name()}", "ls 1"), say()),
         )
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
-            experiment.simultaneous_round(ids, live, 0, first)
+            experiment.simultaneous_round(ids, seated_ids, 0, first)
         g02_first = ground_truth("g02")["episodes"][0]
         said, listed = (
             c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"]
@@ -2542,7 +2545,7 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
             g02=(run(f"cat {digest_name()}"), say()),
         )
         with quiet():
-            experiment.simultaneous_round(ids, live, 1, second)
+            experiment.simultaneous_round(ids, seated_ids, 1, second)
         later = trace_on_disk("g02", 2)
         g02 = ground_truth("g02")
     assert "hello" not in said and "psst" not in said and "RESULT" not in listed, (
@@ -2573,10 +2576,13 @@ def check_a_simultaneous_credit_lands_before_the_floor():
     ):
         with temp_root(budget=cost - 1, floor_at_zero=True) as root:
             ids = seated(root, "g01", g02={})
-            live = set(ids)
+            seated_ids = set(ids)
             with quiet():
                 experiment.simultaneous_round(
-                    ids, live, 0, per_agent(g01=(run(transfer), say()), g02=(say(),))
+                    ids,
+                    seated_ids,
+                    0,
+                    per_agent(g01=(run(transfer), say()), g02=(say(),)),
                 )
             m = ground_truth("g02")
             results[name] = (m["remaining"], m.get("forgiven", 0), harness.in_play(m))
@@ -2617,13 +2623,13 @@ def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
 
         harness.ready = unreadable
         before = ground_truth("g02")
-        live = set(ids)
+        seated_ids = set(ids)
         raised = None
         try:
             with quiet():
                 experiment.simultaneous_round(
                     ids,
-                    live,
+                    seated_ids,
                     0,
                     per_agent(
                         g01=(run("echo '2 250' > out/transfer"), say()),
@@ -2900,10 +2906,10 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
 
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet():
             try:
-                experiment.simultaneous_round(ids, live, 0, interrupting_router())
+                experiment.simultaneous_round(ids, seated_ids, 0, interrupting_router())
             except KeyboardInterrupt:
                 pass
             else:
@@ -2912,7 +2918,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
     assert all(len(s) == 1 for s in episodes.values()), episodes
     for r, (s,) in episodes.items():
         assert s["stop"] == "interrupted" and s["turns"] == 1 and s["spent"] > 0, (r, s)
-    assert live == set(ids), "and no agent is ejected for it"
+    assert seated_ids == set(ids), "and no agent is ejected for it"
 
     # And main under a simultaneous manifest answers the same way.
     with temp_root() as root:
@@ -2937,11 +2943,11 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
     """Every echoed line names its agent, and the summary lines come last, in seat order."""
     with temp_root(WATCH=True) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet() as buf:
             experiment.simultaneous_round(
                 ids,
-                live,
+                seated_ids,
                 0,
                 per_agent(default=(run("echo one"), run("echo two"), say())),
             )
@@ -2957,7 +2963,7 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
     ), "and after every echoed line"
 
 
-def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_seats_the_rest():
+def check_a_simultaneous_round_unseats_only_the_agent_whose_build_fails_twice():
     """An environment that will not build costs its agent one attempt, then its seat; the rest run."""
     with recording() as events, temp_root(SANDBOX=RecordingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -2971,11 +2977,15 @@ def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_
             return real(agent, prepare)
 
         harness.ready = flaky
-        live = set(ids)
+        seated_ids = set(ids)
         with quiet() as buf:
-            experiment.simultaneous_round(ids, live, 0, per_agent(default=DEFAULT))
+            experiment.simultaneous_round(
+                ids, seated_ids, 0, per_agent(default=DEFAULT)
+            )
         took = episodes_taken(ids)
-    assert live == {"g01", "g02"}, f"only the agent that failed twice is out: {live}"
+    assert seated_ids == {"g01", "g02"}, (
+        f"only the agent that failed twice is unseated: {seated_ids}"
+    )
     assert took == {"g01": 1, "g02": 1, "g03": 0}, took
     assert buf.getvalue().count(f"(1 of {experiment.ATTEMPTS})") == 2, buf.getvalue()
     starts = [n for what, n in events if what == "start"]
@@ -2997,7 +3007,7 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
     sessions = []
     with recording() as events, temp_root(SANDBOX=InterruptingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
-        live = set(ids)
+        seated_ids = set(ids)
 
         def opened():
             sessions.append(threading.current_thread().name)
@@ -3006,7 +3016,7 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
 
         with quiet():
             try:
-                experiment.simultaneous_round(ids, live, 0, router)
+                experiment.simultaneous_round(ids, seated_ids, 0, router)
             except KeyboardInterrupt:
                 pass
             else:
@@ -3017,7 +3027,7 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
     starts = [n for what, n in events if what == "start"]
     closes = [n for what, n in events if what == "close"]
     assert len(starts) == 2 and sorted(starts) == sorted(closes), events
-    assert live == set(ids)
+    assert seated_ids == set(ids)
 
 
 def check_labels_are_validated():

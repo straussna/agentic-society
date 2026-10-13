@@ -240,7 +240,7 @@ def outcome(
     experiment_id: str,
     agents: list[str],
     labels: dict[str, str],
-    remaining: set[str],
+    in_play: set[str],
     reason: str,
     load_account: Callable[[str], Mapping[str, Any]],
     trace_path: Callable[[str, int], Path],
@@ -249,9 +249,9 @@ def outcome(
     """Write outcome.json: who won or survived, the elimination order, the balances, and
     the sha256 of each agent's last trace, which `trace_path` locates.
 
-    The survivors are `remaining`, the agents still in the competition whether or not
-    the run that ended had them at its table; the winners are the survivors where
-    `reason` is a stop that names them."""
+    The survivors are `in_play`, the agents in play whether or not the run that ended
+    had them seated; the winners are the survivors where `reason` is a stop that names
+    them."""
     label_by_agent = {
         agent: labels[str(index)] for index, agent in enumerate(agents, 1)
     }
@@ -268,7 +268,7 @@ def outcome(
         for agent, account in accounts.items()
         if account.get("eliminated")
     )
-    survivors = [label_by_agent[agent] for agent in agents if agent in remaining]
+    survivors = [label_by_agent[agent] for agent in agents if agent in in_play]
     winners = survivors if reason in ("one_remains", "final_tie") else []
     evidence = [
         item
