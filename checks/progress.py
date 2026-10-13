@@ -1189,7 +1189,7 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
 
     Two seats play two sequential rounds to the round limit. Then g02 spends the last of
     its balance in round 1, and under stop_when_one_remains the rounds end before round
-    2. Last, the stop lands as round 2 starts, before any seat has played it.
+    2. Last, the interrupt lands as round 2 starts, before any seat has played it.
     """
 
     def events(root: Path) -> list[tuple]:

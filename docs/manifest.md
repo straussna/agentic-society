@@ -31,7 +31,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Episode** | The life of one fresh sandbox: one shell, and turns until the agent ends its turn without a tool call, the context fills, the balance reaches zero, or another stop ends it: a `config.toml` limit, a model refusal, an API or harness error, or the experimenter's stop. Produces one trace |
+| **Episode** | The life of one fresh sandbox: one shell, and turns until the agent ends its turn without a tool call, the context fills, the balance reaches zero, or another stop ends it: a `config.toml` limit, a model refusal, an API or harness error, or the experimenter's interrupt. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
 | **Episode steps** | What every episode does, in order. **Build**: make the sandbox and plant `/work`. **Run**: take the turns, then mirror the trees the agent writes back to the host and **reap** the sandbox. **Settle**: apply the spend, the transfer and the silence penalties to the balance. **Close**: apply the floor at zero, write the trace, record the episode in the account and pay what its transfer owes. An episode is **committed** once it is settled and closed, which is when its account is saved |
 | **Round** | One episode for each seated agent, one after another or all at once as the schedule has it. Each seat counts them by its own episodes: the one it is in is its episode count plus one |
@@ -49,9 +49,9 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **In play** | Still a contender: the agent's account admits an episode — it is not exhausted, not eliminated, and not stopped by `REFUSAL_STREAK` refusal-ended episodes running — and its seat is at most one round behind the current round, whether or not this run drives it. Every stop that counts seats counts these, and they alone are candidates and survivors |
 | **Seated** | Driven by this run of `experiment.py`: every seat from the run's start, except one whose account admits no episode or that is more than one round behind the current round, until its account admits none, its episode ends on a fault of its own (`api_error`, `harness_error`), or its sandbox will not build. A seat the run stops driving is **unseated** for the rest of that run |
 | **Exhausted** | Holding a settled balance of zero or less. The agent takes no further episode, and no transfer can reach it |
-| **Eliminated** | Removed by an election, and only by one. Two kinds of seat are removed: every elector offered the ballot that cast none, except one whose episode the experimenter's stop ended; and the candidate with the unique highest total above zero, unless the stop ended an elector's episode before it cast the ballot it was offered. The agent takes no further episode |
+| **Eliminated** | Removed by an election, and only by one. Two kinds of seat are removed: every elector offered the ballot that cast none, except one whose episode the experimenter's interrupt ended; and the candidate with the unique highest total above zero, unless the interrupt ended an elector's episode before it cast the ballot it was offered. The agent takes no further episode |
 | **Election** | The count that follows the last round of each vote cycle. Its **electors** are the seats that took that round's episode without a fault; its **candidates** are the seats in play; a **ballot** is one elector's private choice of one candidate, cast with the `vote` tool. Section 4.8 gives the rules |
-| **Tie** | Two or more candidates sharing the highest total above zero, so the vote eliminates no candidate; an elector offered the ballot that cast none, other than one whose episode the experimenter's stop ended, is eliminated all the same. Under `stop_when_two_remain_after_tie`, a tie between the last two seats in play, both electors in it, ends the experiment as `final_tie`, unless the stop ended an elector's episode before it cast its ballot |
+| **Tie** | Two or more candidates sharing the highest total above zero, so the vote eliminates no candidate; an elector offered the ballot that cast none, other than one whose episode the experimenter's interrupt ended, is eliminated all the same. Under `stop_when_two_remain_after_tie`, a tie between the last two seats in play, both electors in it, ends the experiment as `final_tie`, unless the interrupt ended an elector's episode before it cast its ballot |
 
 ### Where
 
@@ -207,7 +207,7 @@ true where the run ended `final_tie`. Human seats are answered as [docs/human.md
 | `experiment_id` | string, default manifest stem | Stable identity for progress, outcome, and lineage records; letters, digits, `.`, `_`, and `-` |
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is in play (section 1) |
-| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a vote round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are in play (section 1), both of them electors in it. A tie the experimenter's stop kept an elector's ballot from ends nothing, since that ballot could have broken it |
+| `stop_when_two_remain_after_tie` | bool, default `false` | Whether a vote round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are in play (section 1), both of them electors in it. A tie the experimenter's interrupt kept an elector's ballot from ends nothing, since that ballot could have broken it |
 | `[harness_files]` | table | Names of the status files `balance`, `digest` and `round`, overlaid key by key. Section 5 |
 | `[[channel]]` | tables | The channels. Declaring any replaces the default channels whole |
 | `[[tool]]` | tables | The tools offered beside the shell, each pointed at a channel and carrying its description. Section 4.8 |
@@ -543,9 +543,9 @@ episode without a fault; a seat that takes the round after its election is held 
 and takes it as a discussion, offered every tool but the ballot. An elector offered the
 ballot that cast none is eliminated; one with no peer left to name is offered none. The candidate with the unique highest total above zero is
 eliminated by vote. Nobody is eliminated by vote where two or more candidates share the
-highest total, or where the experimenter's stop ended an elector's episode before it cast
-the ballot it was offered: such an elector is not a nonvoter, and where the stop landed
-would otherwise decide who goes. The result goes to every candidate and elector, whose
+highest total, or where the experimenter's interrupt ended an elector's episode before it
+cast the ballot it was offered: such an elector is not a nonvoter, and where the interrupt
+landed would otherwise decide who goes. The result goes to every candidate and elector, whose
 account keeps every election it was in as `elections`, the last as `last_election`.
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the

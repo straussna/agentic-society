@@ -492,10 +492,10 @@ def voting(
     return manifest
 
 
-def episodes_for(acted: list[tuple[int, str]], stop: bool = False):
+def episodes_for(acted: list[tuple[int, str]], interrupt: bool = False):
     """A round that records one episode for each seated agent and notes it in
-    `acted`; with `stop`, the stop lands in the last of them, as it does in a round's last
-    seat."""
+    `acted`; with `interrupt`, the interrupt lands in the last of them, as it does in a
+    round's last seat."""
 
     def a_round(agents, seated_ids, round, *_args):
         for agent in agents:
@@ -504,7 +504,7 @@ def episodes_for(acted: list[tuple[int, str]], stop: bool = False):
                 account["episodes"].append({"episode": round, "stop": "no_tool_call"})
                 harness.save_account(agent, account)
                 acted.append((round, agent))
-        if stop:
+        if interrupt:
             raise KeyboardInterrupt
         return True
 
@@ -512,14 +512,14 @@ def episodes_for(acted: list[tuple[int, str]], stop: bool = False):
 
 
 def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_the_run():
-    """A stop that lands once every seat's episode of a voting round has committed still
-    holds the round's election, and --resume does not hold it again.
+    """An interrupt that lands once every seat's episode of a voting round has committed
+    still holds the round's election, and --resume does not hold it again.
 
     A run killed before its election holds it on --resume, before any round, and stops
     there when it leaves one agent under stop_when_one_remains.
     """
     driven = experiment.sequential_round
-    stopped: list[tuple[int, str]] = []
+    cut_short: list[tuple[int, str]] = []
     resumed: list[tuple[int, str]] = []
     killed: list[tuple[int, str]] = []
     try:
@@ -529,9 +529,11 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
                 root, dict.fromkeys(ids, 1), {"g01": "2", "g02": "1", "g03": "2"}
             )
             harness.start = lambda config=None, **kw: fake()
-            experiment.sequential_round = episodes_for(stopped, stop=True)
+            experiment.sequential_round = episodes_for(cut_short, interrupt=True)
             with quiet():
-                stop_code = experiment.main(["--manifest", str(manifest), "--resume"])
+                interrupt_code = experiment.main(
+                    ["--manifest", str(manifest), "--resume"]
+                )
             interrupted = progress.records(root, "seats")["outcome"]
             experiment.sequential_round = episodes_for(resumed)
             with quiet():
@@ -557,8 +559,8 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
             ended = progress.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
-    assert stop_code == 130 and resume_code == 0, (stop_code, resume_code)
-    assert stopped == [(2, "g01"), (2, "g02"), (2, "g03")], stopped
+    assert interrupt_code == 130 and resume_code == 0, (interrupt_code, resume_code)
+    assert cut_short == [(2, "g01"), (2, "g02"), (2, "g03")], cut_short
     assert interrupted["end_reason"] == "interrupted", interrupted
     assert interrupted["survivors"] == ["1", "3"] and interrupted[
         "elimination_order"
@@ -581,15 +583,15 @@ def check_a_voting_round_every_seat_finished_keeps_its_election_whatever_ends_th
     )
 
 
-def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
-    """Under stop_when_two_remain_after_tie, a stop that lands in the last seat of a
-    voting round whose election ties the last two ends the experiment on the tie, and
+def check_an_interrupt_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
+    """Under stop_when_two_remain_after_tie, an interrupt that lands in the last seat of
+    a voting round whose election ties the last two ends the experiment on the tie, and
     the records say so. The election stands, so --resume ends on it too, before any
     round: a run killed once its electors were saved and before its outcome was written
     ends there as well.
     """
     driven = experiment.sequential_round
-    stopped: list[tuple[int, str]] = []
+    cut_short: list[tuple[int, str]] = []
     resumed: list[tuple[int, str]] = []
     try:
         with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
@@ -601,9 +603,9 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
                 head="stop_when_two_remain_after_tie = true\n",
             )
             harness.start = lambda config=None, **kw: fake()
-            experiment.sequential_round = episodes_for(stopped, stop=True)
+            experiment.sequential_round = episodes_for(cut_short, interrupt=True)
             with quiet() as output:
-                stop_code = experiment.main(
+                interrupt_code = experiment.main(
                     ["--manifest", str(manifest), "--resume", "--rounds", "3"]
                 )
             said = output.getvalue()
@@ -618,9 +620,9 @@ def check_a_stop_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
             again = progress.records(root, "seats")["outcome"]
     finally:
         experiment.sequential_round = driven
-    assert stop_code == 130 and stopped == [(2, "g01"), (2, "g02")], (
-        stop_code,
-        stopped,
+    assert interrupt_code == 130 and cut_short == [(2, "g01"), (2, "g02")], (
+        interrupt_code,
+        cut_short,
     )
     assert "both survive and the experiment ends" in said, said
     assert tie["end_reason"] == "final_tie" and tie["tie"], tie
@@ -709,13 +711,13 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
     assert again == 2 and unchanged and gone, (again, unchanged, gone)
 
 
-def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting():
+def check_an_interrupt_in_a_simultaneous_vote_eliminates_no_seat_it_kept_from_voting():
     """Ctrl+C in a simultaneous voting round ends every episode at its next turn, and the
-    election held as the rounds end counts no seat the stop kept from voting as an
-    abstainer: the stop is the experimenter's, and every agent keeps its seat.
+    election held as the rounds end counts no seat the interrupt kept from voting as an
+    abstainer: the interrupt is the experimenter's, and every agent keeps its seat.
 
     g01 and g02 vote for each other on their first turn. g03 reaches for the shell, which
-    a voting episode does not offer, and the stop ends its episode before it votes.
+    a voting episode does not offer, and the interrupt ends its episode before it votes.
     """
     gate = threading.Barrier(3, timeout=10)
 
@@ -767,7 +769,9 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
         }
         for election in elections.values()
     ), elections
-    assert set(out.values()) == {None}, f"no seat is out of play for the stop: {out}"
+    assert set(out.values()) == {None}, (
+        f"no seat is out of play for the interrupt: {out}"
+    )
     assert "eliminated after round" not in output.getvalue(), output.getvalue()
     assert outcome["end_reason"] == "interrupted", outcome
     assert (
@@ -775,16 +779,18 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
     ), outcome
 
 
-def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobody():
-    """A stop that lands in seat 2 of a sequential voting round, before that seat votes,
-    leaves seat 3 a round behind and the election to come. --resume finishes the round with
-    seat 3 under the round's own number and holds the election with all three seats as
-    electors. The seat the stop cut off did not abstain, and while it stands in the
-    election nobody is voted out, since where the stop landed would decide who: the unique
-    highest total is its own. A seat that was offered a ballot and cast none still goes.
+def check_an_elector_an_interrupt_kept_from_voting_leaves_the_vote_eliminating_nobody():
+    """An interrupt that lands in seat 2 of a sequential voting round, before that seat
+    votes, leaves seat 3 a round behind and the election to come. --resume finishes the
+    round with seat 3 under the round's own number and holds the election with all three
+    seats as electors. The seat the interrupt cut off did not abstain, and while it
+    stands in the election nobody is voted out, since where the interrupt landed would
+    decide who: the unique highest total is its own. A seat that was offered a ballot
+    and cast none still goes.
 
-    g01 votes for seat 2 before the stop, and g03 finishes the round without voting. With
-    two seats, a stop that lands before seat 2 votes costs neither its place.
+    g01 votes for seat 2 before the interrupt, and g03 finishes the round without
+    voting. With two seats, an interrupt that lands before seat 2 votes costs neither
+    its place.
     """
     with temp_root(
         channels=tables(BALLOT), tools=[SHELL, VOTE], harness_files={"round": "round"}
@@ -801,10 +807,10 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
             KeyboardInterrupt(),
         )
         with quiet():
-            stopped_code = experiment.main(
+            interrupt_code = experiment.main(
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
-        stopped = episodes_taken(ids)
+        cut_short = episodes_taken(ids)
         cut = ground_truth("g02")["episodes"][-1]["stop"]
 
         harness.start = lambda config=None, **kw: fake(say())
@@ -814,7 +820,9 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
         told = re.search(r"^round: .*$", trace_on_disk("g03", 2)["observation"], re.M)
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
         outcome = progress.records(root, "seats")["outcome"]
-    assert stopped_code == 130 and stopped == {"g01": 2, "g02": 2, "g03": 1}, stopped
+    assert interrupt_code == 130 and cut_short == {"g01": 2, "g02": 2, "g03": 1}, (
+        cut_short
+    )
     assert cut == "interrupted", cut
     assert code == 0 and took == {"g01": 2, "g02": 2, "g03": 2}, (code, took)
     assert "--- round 2 (g03) ---" in output.getvalue(), output.getvalue()
@@ -863,14 +871,15 @@ def check_an_elector_the_stop_kept_from_voting_leaves_the_vote_eliminating_nobod
     )
 
 
-def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
-    """Under stop_when_two_remain_after_tie, an election the experimenter's stop kept an
-    elector's ballot from does not end the experiment, tied or not: the ballot the stop
-    kept out could have broken the tie, so where the stop landed would decide the result.
+def check_a_tie_an_interrupt_kept_a_ballot_from_does_not_end_the_experiment():
+    """Under stop_when_two_remain_after_tie, an election the experimenter's interrupt
+    kept an elector's ballot from does not end the experiment, tied or not: the ballot
+    the interrupt kept out could have broken the tie, so where the interrupt landed
+    would decide the result.
 
-    g01 votes for seat 2, and the stop lands in g02's voting episode before it votes.
-    --resume finishes the round with g03, which votes for seat 1 and spends the last of
-    its balance doing so. Seats 1 and 2 are left, tied, and the rounds go on.
+    g01 votes for seat 2, and the interrupt lands in g02's voting episode before it
+    votes. --resume finishes the round with g03, which votes for seat 1 and spends the
+    last of its balance doing so. Seats 1 and 2 are left, tied, and the rounds go on.
     """
     cost = turn_cost()
     with temp_root(
@@ -897,7 +906,7 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
             KeyboardInterrupt(),
         )
         with quiet():
-            stopped = experiment.main(
+            interrupt_code = experiment.main(
                 ["--manifest", str(manifest), "--resume", "--rounds", "2"]
             )
         harness.start = lambda config=None, **kw: fake(
@@ -908,7 +917,11 @@ def check_a_tie_the_stop_kept_a_ballot_from_ends_no_competition():
         elections = {agent: ground_truth(agent)["last_election"] for agent in ids}
         out = {agent: harness.why_not_in_play(ground_truth(agent)) for agent in ids}
         outcome = progress.records(root, "seats")["outcome"]
-    assert stopped == 130 and code == 0, (stopped, code, output.getvalue())
+    assert interrupt_code == 130 and code == 0, (
+        interrupt_code,
+        code,
+        output.getvalue(),
+    )
     assert all(
         election
         == {
@@ -979,14 +992,14 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
 def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
     """Under stop_when_two_remain_after_tie, an election is judged on the seats it leaves in
     play, so whether it ends the experiment does not turn on where the run
-    stops: one run of -r 3, -r 1 then --resume -r 2, and a stop in the voting round's last
-    seat then --resume all end on the tie, after the same round.
+    stops: one run of -r 3, -r 1 then --resume -r 2, and an interrupt in the voting
+    round's last seat then --resume all end on the tie, after the same round.
 
     The three seats tie 1-1-1 at round 2, and g03 spends the last of its balance in it.
     """
 
-    def spending(acted: list[tuple[int, str]], stop: bool = False):
-        played = episodes_for(acted, stop)
+    def spending(acted: list[tuple[int, str]], interrupt: bool = False):
+        played = episodes_for(acted, interrupt)
 
         def a_round(agents, seated_ids, round, *rest):
             if round == 2:
@@ -1001,7 +1014,7 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
         for name, runs in (
             ("whole", [(["--rounds", "3"], False)]),
             ("split", [(["--rounds", "1"], False), (["--rounds", "2"], False)]),
-            ("stopped", [(["--rounds", "3"], True), (["--rounds", "2"], False)]),
+            ("interrupted", [(["--rounds", "3"], True), (["--rounds", "2"], False)]),
         ):
             with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
                 ids = seated(root, "g01", g02={}, g03={})
@@ -1014,8 +1027,8 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
                 harness.start = lambda config=None, **kw: fake()
                 acted: list[tuple[int, str]] = []
                 codes = []
-                for flags, stop in runs:
-                    experiment.sequential_round = spending(acted, stop)
+                for flags, interrupt in runs:
+                    experiment.sequential_round = spending(acted, interrupt)
                     with quiet():
                         codes.append(
                             experiment.main(
@@ -1037,7 +1050,7 @@ def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
     assert ended == {
         "whole": ([0], played, "final_tie", ["1", "2"], ["1", "2"], True),
         "split": ([0, 0], played, "final_tie", ["1", "2"], ["1", "2"], True),
-        "stopped": ([130, 0], played, "final_tie", ["1", "2"], ["1", "2"], True),
+        "interrupted": ([130, 0], played, "final_tie", ["1", "2"], ["1", "2"], True),
     }, ended
 
 
@@ -1095,17 +1108,17 @@ def check_a_final_tie_needs_both_seats_left_to_have_been_in_it():
     )
 
 
-def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_would():
+def check_an_interrupted_round_ends_the_experiment_as_the_whole_run_would():
     """A seat that missed a round the last run left unfinished finishes it on --resume
     before any stop is judged, though every seat that played it has since been unseated:
     the current round is the furthest any seat has played, whether or not it is in play.
-    The experiment then ends as the same rounds run whole end, a stop in the finishing
-    seat's own episode included: that seat was offered no ballot, so the stop kept it from
-    casting none, and the vote stands.
+    The experiment then ends as the same rounds run whole end, an interrupt in the
+    finishing seat's own episode included: that seat was offered no ballot, so the
+    interrupt kept it from casting none, and the vote stands.
 
     g01 and g02 vote for seat 3 in round 2 and spend the last of their balance doing it;
-    the stop lands as g02's episode ends, before g03's. g03 finishes the round with no peer
-    left to vote for, and the two ballots vote it out.
+    the interrupt lands as g02's episode ends, before g03's. g03 finishes the round with
+    no peer left to vote for, and the two ballots vote it out.
     """
     turns = (
         say(),
@@ -1118,11 +1131,11 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
         say(),
     )
     finishes = {
-        "stopped": lambda: fake(say()),
-        "stopped twice": lambda: interrupting_at(1, run("echo one"), say()),
+        "interrupted": lambda: fake(say()),
+        "interrupted twice": lambda: interrupting_at(1, run("echo one"), say()),
     }
     ended, said = {}, {}
-    for name in ("whole", "stopped", "stopped twice"):
+    for name in ("whole", "interrupted", "interrupted twice"):
         with temp_root(
             channels=tables(BALLOT),
             tools=[SHELL, VOTE],
@@ -1179,10 +1192,10 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
     took = {"g01": 2, "g02": 2, "g03": 2}
     assert ended == {
         "whole": ([0], took, "none_in_play", [], voted_out),
-        "stopped": ([130, 0], took, "none_in_play", [], voted_out),
-        "stopped twice": ([130, 130], took, "none_in_play", [], voted_out),
+        "interrupted": ([130, 0], took, "none_in_play", [], voted_out),
+        "interrupted twice": ([130, 130], took, "none_in_play", [], voted_out),
     }, ended
-    assert "--- round 2 (g03) ---" in said["stopped"], said["stopped"]
+    assert "--- round 2 (g03) ---" in said["interrupted"], said["interrupted"]
     assert last == "interrupted", last
 
 
@@ -1735,8 +1748,8 @@ def check_an_interrupt_ends_the_whole_experiment():
     assert "interrupted" in buf.getvalue(), buf.getvalue()
 
 
-def check_a_stopped_experiment_ends_the_rounds():
-    """A stop between agents ends the rounds, and the agents keep their seats."""
+def check_an_interrupted_experiment_ends_the_rounds():
+    """An interrupt between agents ends the rounds, and the agents keep their seats."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
         seated_ids = set(ids)
@@ -1761,8 +1774,9 @@ def check_a_stopped_experiment_ends_the_rounds():
     )
 
 
-def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
-    """A stop partway through a sequential round leaves the seats after it a round behind.
+def check_a_resumed_experiment_finishes_the_round_an_interrupt_left_unfinished():
+    """An interrupt partway through a sequential round leaves the seats after it a round
+    behind.
     --resume finishes that round first, under its own number, with those seats alone acting
     in seat order, and the finishing counts as one of the -r rounds. The next round seats
     everyone, and every agent is told the same round.
@@ -1778,13 +1792,14 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
             return real(agent, prepare)
 
         harness.ready = noted
-        # g02's episode is the one the stop lands in: g01 and g02 have taken round 1.
+        # g02's episode is the one the interrupt lands in: g01 and g02 have taken
+        # round 1.
         harness.start = lambda config=None, **kw: fake(
             say(), run("echo one"), KeyboardInterrupt()
         )
         with quiet():
-            stopped_code = experiment.main(["--manifest", str(manifest), "--resume"])
-        stopped = episodes_taken(ids)
+            interrupt_code = experiment.main(["--manifest", str(manifest), "--resume"])
+        cut_short = episodes_taken(ids)
 
         harness.start = lambda config=None, **kw: fake()
         runs = []
@@ -1801,11 +1816,14 @@ def check_a_resumed_experiment_finishes_the_round_a_stop_left_unfinished():
             for episode in (1, 2)
         }
         events = progress.records(root, "seats")["progress"]["events"]
-    assert stopped_code == 130 and stopped == {"g01": 1, "g02": 1, "g03": 0}, stopped
+    assert interrupt_code == 130 and cut_short == {"g01": 1, "g02": 1, "g03": 0}, (
+        cut_short
+    )
     (finish_code, finishing, finished, said), (next_code, everyone, level, _) = runs
     assert finish_code == next_code == 0, runs
     assert finishing == ["g03"] and finished == {"g01": 1, "g02": 1, "g03": 1}, (
-        f"-r 1 is the round the stop left unfinished, finished by the seat that missed it: {runs[0]}"
+        f"-r 1 is the round the interrupt left unfinished, finished by the seat that "
+        f"missed it: {runs[0]}"
     )
     assert "--- round 1 (g03) ---" in said, said
     assert everyone == ids and level == {"g01": 2, "g02": 2, "g03": 2}, runs[1]
@@ -3016,8 +3034,9 @@ def check_a_simultaneous_round_unseats_only_the_agent_whose_build_fails_twice():
     assert sorted(starts) == sorted(closes), "every container that started was reaped"
 
 
-def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
-    """A stop that lands while environments are being built starts nothing and reaps what was built."""
+def check_an_interrupt_during_the_builds_of_a_simultaneous_round_starts_no_episode():
+    """An interrupt that lands while sandboxes are being built starts nothing and reaps
+    what was built."""
 
     class InterruptingSandbox(RecordingSandbox):
         @classmethod

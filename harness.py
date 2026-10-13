@@ -1699,7 +1699,7 @@ class Election(TypedDict):
 
     tally: each candidate's votes. electors: who played the round it follows.
     abstainers: electors offered a ballot who cast none. interrupted: electors the
-    experimenter's stop ended before they cast one. voted_out: the one the vote took
+    experimenter's interrupt ended before they cast one. voted_out: the one the vote took
     out, "" for none. top_votes, tied: the highest total, and whether more than
     one candidate held it. candidates_left: the candidates it left in.
     """

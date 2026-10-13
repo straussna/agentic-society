@@ -1071,8 +1071,8 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     assert t["files"] == [], "and nothing the harness wrote is in a mirrored tree"
 
 
-def check_a_stopped_episode_still_mirrors_and_reaps():
-    """A stop leaves no container behind and loses nothing the agent wrote."""
+def check_an_interrupted_episode_still_mirrors_and_reaps():
+    """An interrupt leaves no container behind and loses nothing the agent wrote."""
     with docker_root():
         with quiet():
             t = harness.run_once(
@@ -1084,7 +1084,7 @@ def check_a_stopped_episode_still_mirrors_and_reaps():
         assert t["stop"] == "interrupted" and t["state_saved"], t
         kept = harness.mirror("t", "memory") / "keep.txt"
         assert kept.is_file() and kept.read_text(encoding="utf-8").strip() == "kept", (
-            "the teardown after a stop still mirrors the agent's tree back"
+            "the teardown after an interrupt still mirrors the agent's tree back"
         )
     left = leaked_containers()
     assert not left, f"containers leaked: {left}"

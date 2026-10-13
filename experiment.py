@@ -1076,11 +1076,11 @@ def in_play(agents: list[str]) -> list[str]:
 
 def unseated_by(stop: str) -> bool:
     """Whether an episode that ended on `stop` unseats its agent for the rest of the
-    run: a fault of the agent's, where the experimenter's stop is not.
+    run: a fault of the agent's, where the experimenter's interrupt is not.
 
-    harness.STOPS_THE_AGENT includes the experimenter's stop, `interrupted`, and this
-    leaves STOPS_THE_EXPERIMENT out: an interrupted episode keeps its agent's seat for
-    --resume, and elector() keeps its agent an elector of the round, so
+    harness.STOPS_THE_AGENT includes the experimenter's interrupt, `interrupted`, and
+    this leaves STOPS_THE_EXPERIMENT out: an interrupted episode keeps its agent's seat
+    for --resume, and elector() keeps its agent an elector of the round, so
     Election.interrupted can name it.
     """
     return stop in harness.STOPS_THE_AGENT and stop not in harness.STOPS_THE_EXPERIMENT
@@ -1465,7 +1465,7 @@ def resolve_vote(
     earlier run, or None where the current round has none or a seated agent has still
     to finish it.
 
-    The vote tool's cadence defines the cycle. A ballot is the tool's private,
+    The vote tool's cadence defines the vote cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
     tool call. The result contains aggregate totals, never voter-to-target mappings.
 
@@ -1474,11 +1474,11 @@ def resolve_vote(
     accounts and not from the seated set, so an election the last run ended before is
     held by the agents that played it whether or not any of them is still seated. An
     elector that was offered a ballot and cast none abstained; one with no peer left
-    to name was offered none. One whose episode the experimenter's stop ended before it
-    cast the ballot it was offered did not abstain either: the stop is not the agent's
-    doing, and while such an elector stands in the election nobody is eliminated by the
-    vote, since where the stop landed would otherwise decide who. The highest total,
-    above zero and held by one candidate alone, is voted out.
+    to name was offered none. One whose episode the experimenter's interrupt ended
+    before it cast the ballot it was offered did not abstain either: the interrupt is
+    not the agent's doing, and while such an elector stands in the election nobody is
+    eliminated by the vote, since where the interrupt landed would otherwise decide who.
+    The highest total, above zero and held by one candidate alone, is voted out.
 
     An election is held once. Once any account records it, its candidates and electors
     are the ones it names, so a seat that took the round's episode after it was held has
@@ -1545,13 +1545,13 @@ def resolve_vote(
         for agent in electorate
         if agent not in ballots and offered_ballot(agent, round, vote)
     ]
-    stopped = [
+    interrupted = [
         agent
         for agent in silent
         if accounts[agent]["episodes"][round - 1]["stop"]
         in harness.STOPS_THE_EXPERIMENT
     ]
-    abstainers = {agent for agent in silent if agent not in stopped}
+    abstainers = {agent for agent in silent if agent not in interrupted}
     top = max(tally.values(), default=0)
     leaders = {agent for agent, total in tally.items() if top and total == top}
     if len(leaders) > 1:
@@ -1559,13 +1559,15 @@ def resolve_vote(
             f"election after round {round}: top vote tied at {top}; "
             "no agent is eliminated by the vote"
         )
-    elif leaders and stopped:
+    elif leaders and interrupted:
         print(
-            f"election after round {round}: the stop ended the episode of "
-            f"{', '.join(stopped)} before a ballot was cast; "
+            f"election after round {round}: the interrupt ended the episode of "
+            f"{', '.join(interrupted)} before a ballot was cast; "
             "no agent is eliminated by the vote"
         )
-    voted_out = leaders - abstainers if len(leaders) == 1 and not stopped else set()
+    voted_out = (
+        leaders - abstainers if len(leaders) == 1 and not interrupted else set()
+    )
     eliminated = abstainers | voted_out
     result: harness.Election = {
         "round": round,
@@ -1574,7 +1576,7 @@ def resolve_vote(
         "abstainers": [
             label_by_agent[agent] for agent in electorate if agent in abstainers
         ],
-        "interrupted": [label_by_agent[agent] for agent in stopped],
+        "interrupted": [label_by_agent[agent] for agent in interrupted],
         "voted_out": next(
             (label_by_agent[agent] for agent in candidates if agent in voted_out), ""
         ),
@@ -1648,8 +1650,8 @@ def concluded(
 
     Judged on the agents in play, seated in this run or not: over()'s reasons, and
     "final_tie" when the manifest stops at a tied vote and exactly two are in play,
-    both of whom were electors in it. A tie the experimenter's stop kept a ballot from
-    ends nothing, since the ballot it kept out could have broken it. An agent the
+    both of whom were electors in it. A tie the experimenter's interrupt kept a ballot
+    from ends nothing, since the ballot it kept out could have broken it. An agent the
     round left exhausted, or otherwise out of play, does not remain, and one unseated
     for the rest of this run does while it is at most a round behind, so an election
     is judged the same whether the rounds go on in this run or in one that resumes it.

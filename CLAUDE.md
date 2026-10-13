@@ -101,7 +101,7 @@ flood against a deadline) and anything setting `command_timeout`. Every check th
 holds one thread on another for up to 10 seconds, on a barrier or an event, also
 fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
-`a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_voting`,
+`an_interrupt_in_a_simultaneous_vote_eliminates_no_seat_it_kept_from_voting`,
 `a_round_writes_each_stage_as_it_reaches_it`,
 `two_clients_racing_one_request_leave_one_winner_and_one_conflict`,
 `one_submission_sent_twice_at_once_returns_the_winner_to_both`,
@@ -118,9 +118,9 @@ the way an exhausted balance ends it — the turn in flight finishes, its spend 
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
-the round the stop landed in before the next begins, as
+the round the interrupt landed in before the next begins, as
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
-command without `--resume` moves what the stopped run left under `archive/` and starts
+command without `--resume` moves what the interrupted run left under `archive/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
 
@@ -130,7 +130,7 @@ puts the default back before it returns, so the second press raises
 `KeyboardInterrupt`, and where it lands decides what survives. Inside a turn,
 `harness.run_turns` catches it and ends the episode as `interrupted`: the files are
 mirrored back, the trace is written and the container is reaped, the same commit
-the first press makes. A press that lands while an environment is being built or
+the first press makes. A press that lands while a sandbox is being built or
 torn down, or during a simultaneous round's wait on its threads, abandons the
 episode: the container leaks and the spend never reaches `account.json`. A first
 `SIGTERM` behaves like the first press; a second is the default kill and abandons

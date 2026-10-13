@@ -347,8 +347,8 @@ def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
     )
 
 
-def check_a_stop_ends_the_episode_at_the_turn_boundary():
-    """A stop lands between turns: the turn in flight is whole and is billed.
+def check_an_interrupt_ends_the_episode_at_the_turn_boundary():
+    """An interrupt lands between turns: the turn in flight is whole and is billed.
 
     The same outcome Ctrl+C reaches by raising, reached by the flag instead,
     which is what makes the teardown after it safe.
@@ -375,8 +375,8 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
         )
 
 
-def check_a_stop_between_episodes_builds_no_environment():
-    """A stop that lands between episodes starts no container at all."""
+def check_an_interrupt_between_episodes_builds_no_sandbox():
+    """An interrupt that lands between episodes starts no sandbox at all."""
     with rooted(NoSandbox, INTERRUPTING=True):
         harness.load_account("t")  # the agent exists; what does not is an episode
         seen = []
