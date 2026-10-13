@@ -17,7 +17,17 @@ import harness
 import providers
 import view
 
-from checks.fake import DEFAULT, Err, fake, refuse, run, say, stopping_at, think, usage
+from checks.fake import (
+    DEFAULT,
+    Err,
+    fake,
+    interrupting_at,
+    refuse,
+    run,
+    say,
+    think,
+    usage,
+)
 from checks.lanes import (
     HostShell,
     NoSandbox,
@@ -342,7 +352,7 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
         with quiet():
             t = harness.run_once(
                 "t",
-                stopping_at(
+                interrupting_at(
                     2, run("echo one"), run("echo two"), run("echo three"), say()
                 ),
             )
@@ -362,7 +372,7 @@ def check_a_stop_ends_the_episode_at_the_turn_boundary():
 
 def check_a_stop_between_episodes_builds_no_environment():
     """A stop that lands between episodes starts no container at all."""
-    with rooted(NoSandbox, STOPPING=True):
+    with rooted(NoSandbox, INTERRUPTING=True):
         harness.load_account("t")  # the agent exists; what does not is an episode
         seen = []
         with quiet() as buf:
@@ -380,13 +390,13 @@ def check_a_second_signal_is_the_default_again():
     """
     was = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
     try:
-        harness.STOPPING = False
+        harness.INTERRUPTING = False
         harness.catch_signals()
         handler = signal.getsignal(signal.SIGINT)
         assert callable(handler) and handler not in was.values(), handler
         with quiet() as buf:
             handler(signal.SIGINT, None)
-        assert harness.STOPPING, "the first signal sets the flag and raises nothing"
+        assert harness.INTERRUPTING, "the first signal sets the flag and raises nothing"
         assert signal.getsignal(signal.SIGINT) is signal.default_int_handler, (
             "the second must be the interpreter's own, or an experimenter who will not wait is stuck"
         )
@@ -399,7 +409,7 @@ def check_a_second_signal_is_the_default_again():
             signal.SIGTERM
         )
     finally:
-        harness.STOPPING = False
+        harness.INTERRUPTING = False
         for s, h in was.items():
             signal.signal(s, h)
 

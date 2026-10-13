@@ -1123,10 +1123,11 @@ def sequential_round(
     prepare = preparers(agents, stamp, labels)
     acted = False
     for agent in agents:
-        if harness.STOPPING:
-            # A stop that landed while no episode was in flight ends the rounds the
-            # way one that landed inside an episode does: main() answers it, and
-            # no environment is built for an agent that will not run.
+        if harness.INTERRUPTING:
+            # An interrupt that landed while no episode was in flight ends the
+            # rounds the way one that landed inside an episode does: main()
+            # answers it, and no environment is built for an agent that will not
+            # run.
             raise KeyboardInterrupt
         if agent not in live:
             continue
@@ -1174,13 +1175,13 @@ def build_all(
     """Every live agent's environment, built in seat order before any episode runs.
 
     An agent whose environment fails ATTEMPTS times drops out; the rest are built.
-    Anything that ends the builds early, a stop included, abandons every
+    Anything that ends the builds early, an interrupt included, abandons every
     environment built so far, since none has billed.
     """
     built: dict[str, harness.Episode] = {}
     try:
         for agent in agents:
-            if harness.STOPPING:
+            if harness.INTERRUPTING:
                 raise KeyboardInterrupt
             if agent not in live:
                 continue
@@ -1251,7 +1252,7 @@ def simultaneous_round(
     where its account on disk lists it, whatever its close raised after the save.
     """
     built = build_all(agents, live, preparers(agents, stamp, labels, "simultaneous"))
-    if harness.STOPPING:
+    if harness.INTERRUPTING:
         for ep in built.values():
             ep.abandon()
         raise KeyboardInterrupt

@@ -288,12 +288,12 @@ def per_agent(default=(), on_send=None, on_open=None, **scripts):
     )
 
 
-def stopping_at(at: int, *turns):
-    def stop(n):
+def interrupting_at(at: int, *turns):
+    def interrupt(n):
         if n == at:
-            harness.STOPPING = True
+            harness.INTERRUPTING = True
 
-    return FakeRouter(turns, on_send=stop)
+    return FakeRouter(turns, on_send=interrupt)
 
 
 DEFAULT = (run("cat n1"), run("echo hi > state/note.txt", "ls state"), say())

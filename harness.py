@@ -1482,10 +1482,10 @@ WATCH_AGENT: contextvars.ContextVar[str] = contextvars.ContextVar(
 # where it reads the account floor, so an interrupt ends the episode the way the
 # floor does: after a whole turn, with the trace written and the spend
 # committed. Nothing raises on the first signal; a second is the default again.
-# A flag and not a field of SETTINGS: the signal handler sets it, and so does a
-# check's fake router on a round's episode thread, and neither may replace the
-# settings.
-STOPPING = False
+# A flag and not a field of SETTINGS: the signal handler interrupt sets it, and so
+# does a check's fake router on a round's episode thread, and neither may replace
+# the settings.
+INTERRUPTING = False
 
 # Child processes get a process group of their own, so a console Ctrl+C reaches
 # this process and not the docker client or the shell it is waiting on.
@@ -5008,15 +5008,17 @@ def run_turns(
     refused = 0  # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
     out, next_input = open_episode(shell, index, provider, model, remaining)
-    info = SessionInfo(agent, label, index, interactions_root(), lambda: STOPPING)
+    info = SessionInfo(
+        agent, label, index, interactions_root(), lambda: INTERRUPTING
+    )
     session = router.open_session(provider, model, system, specs, s.max_tokens, info)
 
     try:
         for turn in range(1, s.max_turns + 1):
-            # The stop is read before the floor: when the experimenter asked for the
-            # agent to stop, that is what ended the episode, and it is the reason
-            # that ends the rest of the experiment too.
-            if STOPPING:
+            # The interrupt is read before the floor: when the experimenter
+            # interrupted the agent, that is what ended the episode, and it is the
+            # reason that ends the rest of the experiment too.
+            if INTERRUPTING:
                 out["stop"] = "interrupted"
                 break
             # admits() starts no episode at or below zero, so every episode begins
@@ -6375,23 +6377,23 @@ def start(
 
 
 def catch_signals() -> None:
-    """Route SIGINT and SIGTERM into STOPPING, once. See STOPPING.
+    """Route SIGINT and SIGTERM into INTERRUPTING, once. See INTERRUPTING.
 
-    The first signal asks; the second is the ordinary hard stop, the handler
+    The first signal interrupts; the second is the ordinary hard stop, the handler
     having put the default back. Called from a CLI, not at import.
     """
 
-    def stop(signum: int, frame: Any) -> None:
-        global STOPPING
+    def interrupt(signum: int, frame: Any) -> None:
+        global INTERRUPTING
         signal.signal(
             signum,
             signal.default_int_handler if signum == signal.SIGINT else signal.SIG_DFL,
         )
-        STOPPING = True
+        INTERRUPTING = True
         print("\nstopping after this turn; again to abandon it", file=sys.stderr)
 
-    signal.signal(signal.SIGINT, stop)
-    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, interrupt)
+    signal.signal(signal.SIGTERM, interrupt)
 
 
 def run_episodes(
@@ -6407,9 +6409,9 @@ def run_episodes(
     """
     ran = 0
     for _ in range(count):
-        if STOPPING:
-            # Before the container, so a stop that lands between episodes builds
-            # no environment at all.
+        if INTERRUPTING:
+            # Before the container, so an interrupt that lands between episodes
+            # builds no environment at all.
             print(f"stopping after {ran} of {count} episodes", file=sys.stderr)
             break
         try:

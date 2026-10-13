@@ -15,7 +15,7 @@ import experiment
 import harness
 import product
 
-from checks.fake import DEFAULT, Err, fake, per_agent, run, say, stopping_at, use
+from checks.fake import DEFAULT, Err, fake, interrupting_at, per_agent, run, say, use
 from checks.lanes import (
     ALL_OWED,
     HostSandbox,
@@ -717,7 +717,7 @@ def check_a_stop_in_a_simultaneous_voting_round_eliminates_no_seat_it_kept_from_
     def sent(turn):
         if turn == 1:
             gate.wait()
-            harness.STOPPING = True
+            harness.INTERRUPTING = True
 
     with temp_root(channels=tables(BALLOT), tools=[SHELL, VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1112,7 +1112,7 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
     )
     finishes = {
         "stopped": lambda: fake(say()),
-        "stopped twice": lambda: stopping_at(1, run("echo one"), say()),
+        "stopped twice": lambda: interrupting_at(1, run("echo one"), say()),
     }
     ended, said = {}, {}
     for name in ("whole", "stopped", "stopped twice"):
@@ -1133,13 +1133,13 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
             router = fake(*turns)
             sent: list[int] = []
 
-            def stop_as_g02_ends(turn):
+            def interrupt_as_g02_ends(turn):
                 sent.append(turn)
                 if len(sent) == 7:
-                    harness.STOPPING = True
+                    harness.INTERRUPTING = True
 
             if name in finishes:
-                router.on_send = stop_as_g02_ends
+                router.on_send = interrupt_as_g02_ends
             harness.start = lambda config=None, **kw: router
             codes = []
             with quiet() as output:
@@ -1149,7 +1149,7 @@ def check_a_round_a_stop_left_unfinished_ends_the_competition_as_the_whole_run_w
                     )
                 )
                 if name in finishes:
-                    harness.STOPPING = False
+                    harness.INTERRUPTING = False
                     harness.start = lambda config=None, **kw: finishes[name]()
                     codes.append(
                         experiment.main(
@@ -1736,7 +1736,7 @@ def check_a_stopped_experiment_ends_the_rounds():
                     ids,
                     live,
                     0,
-                    stopping_at(2, run("echo one"), run("echo two"), say()),
+                    interrupting_at(2, run("echo one"), run("echo two"), say()),
                 )
             except KeyboardInterrupt:
                 pass
@@ -2882,13 +2882,13 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
 def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight():
     """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are committed."""
 
-    def stopping_router():
+    def interrupting_router():
         gate = threading.Barrier(3, timeout=10)
 
         def sent(turn):
             if turn == 1:
                 gate.wait()
-                harness.STOPPING = True
+                harness.INTERRUPTING = True
 
         return per_agent(
             default=(run("echo one"), run("echo two"), say()), on_send=sent
@@ -2899,7 +2899,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
         live = set(ids)
         with quiet():
             try:
-                experiment.simultaneous_round(ids, live, 0, stopping_router())
+                experiment.simultaneous_round(ids, live, 0, interrupting_router())
             except KeyboardInterrupt:
                 pass
             else:
@@ -2918,7 +2918,7 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
             'schedule = "simultaneous"\nsystem_prompt = ""\n'
             + "".join(f'[[agent]]\nid = "{r}"\n' for r in ids),
         )
-        harness.start = lambda config=None, **kw: stopping_router()
+        harness.start = lambda config=None, **kw: interrupting_router()
         with quiet() as buf:
             code = experiment.main(["--manifest", str(p), "--rounds", "5", "--resume"])
         took = episodes_taken(ids)
@@ -2982,16 +2982,16 @@ def check_a_simultaneous_round_drops_an_agent_whose_environment_fails_twice_and_
 def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
     """A stop that lands while environments are being built starts nothing and reaps what was built."""
 
-    class StoppingSandbox(RecordingSandbox):
+    class InterruptingSandbox(RecordingSandbox):
         @classmethod
         def start(cls, name):
             sandbox = super().start(name)
             if sum(1 for what, _ in cls.events if what == "start") == 2:
-                harness.STOPPING = True
+                harness.INTERRUPTING = True
             return sandbox
 
     sessions = []
-    with recording() as events, temp_root(SANDBOX=StoppingSandbox) as root:
+    with recording() as events, temp_root(SANDBOX=InterruptingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
         live = set(ids)
 

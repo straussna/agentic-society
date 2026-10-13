@@ -419,7 +419,7 @@ SEAMS = {
     "REFUSAL_TURNS",
     # Set per check and put back by pinned(), so no check carries into the
     # next in the same worker.
-    "STOPPING",
+    "INTERRUPTING",
     "catch_signals",
 }
 

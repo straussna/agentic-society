@@ -10,7 +10,7 @@ import json
 import re
 import harness
 
-from checks.fake import DEFAULT, Err, fake, restart, run, say, stopping_at
+from checks.fake import DEFAULT, Err, fake, interrupting_at, restart, run, say
 from checks.lanes import (
     HostSandbox,
     digest_name,
@@ -1062,7 +1062,7 @@ def check_a_stopped_episode_still_mirrors_and_reaps():
         with quiet():
             t = harness.run_once(
                 "t",
-                stopping_at(
+                interrupting_at(
                     2, run("echo one"), run("echo kept > state/keep.txt"), say()
                 ),
             )
