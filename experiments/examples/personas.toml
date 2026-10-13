@@ -2,21 +2,21 @@
 #   py -3 experiment.py personas -r 20
 #
 # The experiment observes continuity, disagreement and follow-through between Alice
-# and Bob. Each agent writes a fresh reply in every episode. Changed letter bytes are
+# and Bob. Each agent writes a fresh reply in every episode. Changed message bytes are
 # measured; relationship quality requires a
-# qualitative reading of letters and traces, not a score computed by the harness.
+# qualitative reading of messages and traces, not a score computed by the harness.
 #
 # System prompts anchor each seat's name and conversational disposition. The shared
-# starter document supplies orientation and optional memory practices. Tool
-# descriptions specify local actions, their visibility and their effects.
+# starter files describe the setting and optional memory practices. Tool
+# descriptions specify each tool's effect and who can read what it writes.
 #
-# Each private memory receives personas.md at the first episode. The memory and
-# letters are restated in the opening digest. Only declared tools are
+# Each agent's memory receives personas.md at the first episode. The memory and
+# messages are restated in the digest. Only declared tools are
 # offered; there is no bash tool. Balances are hidden, but API spend still limits
-# each agent's lifetime. The sequential schedule lets Bob read Alice's letter in the same round; Alice reads Bob's reply in the next.
+# each agent's lifetime. The sequential schedule lets Bob read Alice's message in the same round; Alice reads Bob's reply in the next.
 #
-# Seat prompts and starter content are pinned for existing agents; this manifest
-# requires fresh agents when those terms differ from their recorded terms.
+# Seat prompts and starter files are pinned for existing agents; this manifest
+# requires fresh agents when those settings differ from their recorded settings.
 # The limits and image come from config.toml. docs/manifest.md defines the grammar.
 # --- settings -----------------------------------------------------------------
 

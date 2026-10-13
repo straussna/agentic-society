@@ -1,10 +1,10 @@
-# An open-ended sandbox for one agent:
+# An open-ended experiment for one agent:
 #   py -3 experiment.py sandbox -r 20
 #
-# No system instructions, starter document, persona, objective or silence penalties.
-# Bash uses its built-in API contract. The agent has private persistent storage
-# without an obligation to use it. There are no social channels.
-# Model calls consume the finite budget; container permissions and execution
+# No system instructions, starter files, persona, objective or silence penalties.
+# Bash uses its built-in API contract. The agent has a memory, and no silence
+# penalty attaches to leaving it unused. There are no social channels.
+# Model calls spend the finite budget; sandbox permissions and execution
 # limits bound the environment. There is no transfer channel.
 #
 # experiments/README.md describes the settings; docs/manifest.md is the grammar.

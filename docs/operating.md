@@ -1,7 +1,7 @@
 # Operating the harness
 
 The full file layout, every command in detail, the tunable parameters, and what
-to check before an episode that bills.
+to check before an episode that spends.
 
 [<- back to the README](../README.md)
 
@@ -12,24 +12,24 @@ to check before an episode that bills.
 ```
 harness.py               run one episode; creates the agent on first use
 experiment.py            run several agents together, in seat order or all at once
-product.py               durable experiment progress, cost, lineage, and outcome records
-human.py                 attach a terminal to an interactive seat's pending request
+product.py               the progress log and the spend, lineage and outcome records
+human.py                 attach a terminal to a human seat's pending request
 interaction/             the interaction store, its request contracts, and the terminal client
-providers/               the provider adapters and their model and rate catalogs
-check.py                 run the verification suite against a fake API; nothing billed
+providers/               the providers and their model and rate catalogs
+check.py                 run the verification suite against a fake API; nothing spent
 checks/<topic>.py        the suite itself, one module per topic; fixtures in checks/lanes.py
 analyze.py               read the traces into a CSV, a report, a transcript, and charts
-view.py, view.html       watch the agents; interactive actions enter the provider store only
-config.toml              the tunable parameters, with what each one costs you
+view.py, view.html       the dashboard; a human seat's submissions enter the interaction store only
+config.toml              the tunable parameters, with the spend each one implies
 Dockerfile               the sandbox: debian + bash, non-root, no network
 requirements.txt         anthropic, openai, and matplotlib for analyze.py's charts
-files/<name>/            material an agent may be given, or a whole experiment shares; committed
-experiments/<name>.toml  an experiment: its schedule, its channels, its defaults, and each agent's own terms
-experiments/<name>.md    a brief a manifest plants as starter files
+files/<name>/            starter files one agent is given, or an experimenter channel's source; committed
+experiments/<name>.toml  an experiment: its schedule, its channels, its defaults, and each agent's own settings
+experiments/<name>.md    starter files a manifest plants
 experiments/examples/    the shipped examples, the shape to copy
 experiments/README.md    the index: every shipped experiment and the arm it pairs with
 docs/                    the manifest grammar, the design, operation, experiments, starter files,
-                         and interactive seats
+                         and human seats
 README.md                the overview
 CLAUDE.md, AGENTS.md     the agent guide; AGENTS.md is a byte-for-byte copy of CLAUDE.md
 LICENSE                  the licence
@@ -37,16 +37,17 @@ LICENSE                  the licence
 .editorconfig            file formatting
 .gitattributes           Git line endings
 .gitignore               what stays out of the repository
-experiment_records/<experiment-id>/  progress.jsonl (every phase reached) and progress.json
+experiment_records/<experiment-id>/  progress.jsonl (every stage reached) and progress.json
                                      (the latest), outcome.json, and branch lineage
 
 environments/<agent>/<channel>/       one mirror per channel the agent writes, named by the
                                       channel (notes/, blackboard/, mail/ under the default
-                                      table), copied in and out each episode
+                                      channels), copied in and out each episode
 environments/<agent>/<channel>.modes  the file modes of each, which the host cannot store
-records/<agent>/account.json          ground truth: the terms an agent was created on (budget,
-                                      provider, model, starter files and their threshold), inherited-memory
-                                      source and digests where declared, balance, series, episodes,
+records/<agent>/account.json          ground truth: the pinned settings (system prompt, budget,
+                                      provider, model, starter files and starter threshold),
+                                      inherited-memory source and sha256s where declared,
+                                      balance, balance history, episodes,
                                       starter-file delivery, elimination, and every election it was
                                       in (`elections`, the last as `last_election`)
 records/<agent>/traces/*.json         one per episode: transcript, usage, commands, and the
@@ -56,9 +57,9 @@ records/<agent>/raw/*.jsonl           one per episode: every API response verbat
                                       routing questions the trace's derived fields cannot settle
 records/<agent>/analysis/             written by analyze.py for one agent
 records/analysis/                     written by analyze.py for every agent at once
-displaced/<timestamp>/                complete records and environment mirrors preserved when
-                                      matching agent ids start a fresh run
-interactions/                         pending/completed local human-provider coordination
+displaced/<timestamp>/                complete records and mirrors preserved when matching
+                                      agent ids start a fresh run
+interactions/                         the interaction store: pending and completed requests
 ```
 
 Each trace stores what the agent's files *held* that episode, not just their names.
@@ -72,7 +73,7 @@ name the manifest declared, its `writer` and `readers`, and its `role`: `own`, `
 `experimenter`. The trace opens with `trace_version`, 4 for this shape.
 
 `environments/`, `records/`, `displaced/`, `interactions/`, and `experiment_records/` are
-gitignored. Deeper detail lives in each file's docstrings. Interactive-seat operation is
+gitignored. Deeper detail lives in each file's docstrings. Human-seat operation is
 in [human.md](human.md).
 
 ## Commands
@@ -84,30 +85,30 @@ run the same commands with its `python`.
 | | |
 |---|---|
 | `docker build -t metered-agent:latest .` | Build the sandbox. Once, before the first episode. |
-| `py -3 harness.py --agent live01 --manifest experiments/<name>.toml` | One fresh episode for one seat of an experiment. If `live01` already has records or environment mirrors, they are moved together under `displaced/<timestamp>/` and a warning names the location. The manifest declares the environment and the agent's terms and must seat `live01`; `config.toml` supplies the process parameters. Refuses to start with no manifest, if either string the harness ships has drifted from its digest, or if the selected provider's custom base-URL variable is set. |
-| `py -3 harness.py --agent live01 --manifest ... --resume` | Continue `live01` from its existing account and mirrors. The recorded provider, model, prompt, budget, and starter-file terms must match; incompatible records are refused rather than moved. |
-| `py -3 harness.py --agent live01 --manifest ... --episodes 20` | Up to twenty, back to back, stopping at whichever comes first: the count, the budget, or an episode that ended interrupted or in error. The count is a ceiling; the account decides the rest. |
+| `py -3 harness.py --agent live01 --manifest experiments/<name>.toml` | One fresh episode for one seat of an experiment. If `live01` already has records or mirrors, they are moved together under `displaced/<timestamp>/` and a warning names the location. The manifest declares the channels and the agent's settings and must seat `live01`; `config.toml` supplies the process parameters. Rejects the run before it starts with no manifest, if either string the harness ships has drifted from its sha256, or if the selected provider's custom base-URL variable is set. |
+| `py -3 harness.py --agent live01 --manifest ... --resume` | Continue `live01` from its existing account and mirrors. The recorded provider, model, prompt, budget, and starter-file settings must match; incompatible records are rejected rather than moved. |
+| `py -3 harness.py --agent live01 --manifest ... --episodes 20` | Up to twenty, back to back, stopping at whichever comes first: the count, exhaustion, or an episode that ended interrupted or in error. The count is a ceiling; the account decides the rest. |
 | `py -3 harness.py --agent live01 --manifest ... --watch` | The same, echoing the episode as it happens: a header naming the episode number, then the agent's words, and spend and context after every turn. Commands and their output are not echoed; `analyze.py` renders those into `transcript.txt`. Display only — it never reaches the agent, and the trace is unchanged. Every echoed line is led by its agent, so a simultaneous experiment's episodes keep apart on screen; leave it off for agents in separate processes, where the output interleaves. |
-| `py -3 harness.py --print-system` | Print the exact bytes and digest of both things the harness ships — the prompt and the refusal notice — and then, having read the config, the prompt actually in force; nonzero if either shipped string drifted. `--manifest PATH` adds the prompt that manifest declares, the one each seat is told, every declared tool description, and the tool-table digest. It does not render dynamic starter material, observations, generated descriptions, schemas or eligible-peer lists; traces record the observation and the provenance needed to reproduce the tool surface. Audits the static part of invariant 2 without starting an episode. |
-| `py -3 harness.py --print-context --manifest experiments/survivor.toml` | Compose each fresh agent's complete system prompt, opening digest and bound tool schemas for its first discussion and voting episodes. Add `--agent survivor02` to print one seat. Uses temporary accounts and environments, starts no container or provider, bills nothing and leaves no records. For a shell experiment it prints the opening command and rendered digest; the container-dependent directory listing is available only in a real trace. |
-| `py -3 harness.py --print-files mechanics-rules` | Print the starter files' manifest and digest; starts no episode. Audits invariant 9 the way `--print-system` audits invariant 2. |
-| `py -3 harness.py --agent b01s --fork-from b01 --at 6` | Rebuild `b01` as it stood at the end of episode 6 into a new agent, and stop. Bills nothing. A fork and its parent share a history and diverge only in what happens next, so planting starter files in the copy gives a matched pair instead of two rolls of the dice. Refuses to overwrite an existing agent, or to fork an episode it cannot reproduce exactly — a binary file, one truncated past 100,000 bytes, or an episode whose state never mirrored back. |
-| `py -3 experiment.py <name> -r 20` | Start a fresh experiment of up to twenty rounds; a round is one episode for each agent. Existing records and environment mirrors for its agent ids are preserved together under `displaced/<timestamp>/`, with a warning naming the location. A bare name is looked for under `experiments/` and then `experiments/examples/`; anything with a suffix or a directory in it is the path it is, and `-m/--manifest` and `-r/--rounds` are the long forms. With `stop_when_one_remains = true` the rounds end as soon as exactly one seat is still in the competition; otherwise they continue to the round count, until every seat is out, or until no seat still in can take an episode in this run. A seat whose episode ended on a fault of its own, or whose environment would not build, leaves the table for the rest of the run and stays in the competition with its balance, so every stop, and the outcome's survivors, count it, until it is more than one round behind the furthest round any seat has played: from then on it sits out for good and is in the competition no longer. Ctrl+C commits and traces the episode it lands in and ends every remaining round, every agent keeping its seat. A voting round every seat at the table had finished still holds its election, and where that election ends the competition the outcome names what ended it rather than the stop. A seat whose voting episode the stop ended before it cast the ballot it was offered has not abstained. While it stands in the election nobody is eliminated by the vote, and under `stop_when_two_remain_after_tie` a tie does not end the competition, since where the stop landed would otherwise decide the result; a seat that was offered a ballot and cast none is eliminated all the same. The same command with `--resume` continues from there. Seating, messages, transfers, drop-outs and the silence penalties are in [experiments.md](experiments.md). |
+| `py -3 harness.py --print-system` | Print the exact bytes and sha256 of both things the harness ships — the prompt and the refusal notice — and then, having read the config, the prompt actually in force; nonzero if either shipped string drifted. `--manifest PATH` adds the prompt that manifest declares, the one each seat is told, every declared tool description, and the tool table's sha256. It does not render starter files, observations, generated descriptions, input schemas or reachable-peer lists; traces record the observation and the provenance needed to reproduce the tools offered. Audits the static part of invariant 2 without starting an episode. |
+| `py -3 harness.py --print-context --manifest experiments/survivor.toml` | Compose each fresh agent's complete system prompt, opening digest and bound tool schemas for its first discussion and vote episodes. Add `--agent survivor02` to print one seat. Uses temporary accounts and mirrors, starts no sandbox or provider, spends nothing and leaves no records. For a shell experiment it prints the opening command and rendered digest; the sandbox-dependent directory listing is available only in a real trace. |
+| `py -3 harness.py --print-files mechanics-rules` | Print the starter files' listing and sha256; starts no episode. Audits invariant 9 the way `--print-system` audits invariant 2. |
+| `py -3 harness.py --agent b01s --fork-from b01 --at 6` | Rebuild `b01` as it stood at the end of episode 6 into a new agent, and stop. Spends nothing. A fork and its parent share a history and diverge only in what happens next, so planting starter files in the copy gives a matched pair instead of two rolls of the dice. Rejects overwriting an existing agent, or forking an episode it cannot reproduce exactly — a binary file, one truncated past 100,000 bytes, or an episode whose state never mirrored back. |
+| `py -3 experiment.py <name> -r 20` | Start a fresh experiment of up to twenty rounds; a round is one episode for each seated agent. Existing records and mirrors for its agent ids are preserved together under `displaced/<timestamp>/`, with a warning naming the location. A bare name is looked for under `experiments/` and then `experiments/examples/`; anything with a suffix or a directory in it is the path it is, and `-m/--manifest` and `-r/--rounds` are the long forms. With `stop_when_one_remains = true` the rounds end as soon as exactly one seat is in play; otherwise they continue to the round count, until no seat is in play, or until no seat in play is seated in this run. A seat whose episode ended on a fault of its own, or whose sandbox would not build, is unseated for the rest of the run and stays in play with its balance, so every stop, and the outcome's survivors, count it, until it is more than one round behind the current round: from then on it is unseated for good and in play no longer. Ctrl+C commits the episode it lands in and ends every remaining round, every agent staying in play. A vote round that every seated agent had finished still holds its election, and where that election ends the experiment the outcome names what ended it rather than the stop. A seat whose vote episode the stop ended before it cast the ballot offered to it has not abstained. While it stands in the election nobody is eliminated by the vote, and under `stop_when_two_remain_after_tie` a tie does not end the experiment, since where the stop landed would otherwise decide the result; a seat offered a ballot that cast none is eliminated all the same. The same command with `--resume` continues from there. Seating, messages, transfers, unseating and the silence penalties are in [experiments.md](experiments.md). |
 | `py -3 experiment.py <name> -r 20 --provider openai --model gpt-5.6-luna` | Seat every agent on that provider and model; the two flags go together. Under `--resume` both must match the existing accounts. `-c/--config PATH` reads another process config in place of `config.toml`. |
-| `py -3 experiment.py <name> -r 20 --resume` | Continue the existing experiment. Every seated account must be compatible with the manifest and command-line provider/model override; incompatible records are refused and left in place. A round the last run left unfinished — a stop partway through a sequential round, or a seat whose environment would not build — is finished first: only the seats that missed it act, in seat order or together as the schedule has it, under that round's number, and it is one of the `-r` rounds. No stop but the `[cost]` ceiling, which no round starts past, is judged before that round is finished. A voting round every seat finished keeps its election: one the last run ended before is held first, by the seats that played the round, whether or not any of them is still at the table; one already held is never held again; and a seat that finishes a round after its election was held has no vote in it, and takes the round as a discussion, offered no ballot. An election that ended the competition ends the resumed run too, before any round, unless a seat that missed its round is back to finish it: the stop is judged again once it has, with that seat at the table. The table's round is the furthest round any seat has played, whether or not that seat is still in, and a seat more than one round behind it sits out every round, since the round a seat is told it is in is its own episode count plus one and the rounds it missed are over; its account and traces stay as they are, and it is in the competition no longer: it counts toward no stop, survives nothing and stands in no election. Where no seat still in can take an episode, the run ends `none_can_act`. |
-| `py -3 experiment.py --branch-from experiments/<name>.toml --at-round 6 --branch-id replay-human --takeover-seat 2` | Create a new experiment manifest and one forked agent per source seat at the completed boundary. The chosen new seat uses `human/interactive`; source accounts and traces are only read. `experiment_records/replay-human/lineage.json` holds the source manifest and trace hashes. `--output PATH` names the generated manifest. Nothing is billed and the branch is not started; run the generated manifest with `--resume` so those forked accounts continue rather than being preserved and replaced by a fresh experiment. Each fork stands where its seat stood as the round ended: its balance, transfers, credits, penalties and forgiveness are those of the forked episode and of what reached the seat after it within the round, a transfer from a seat that played the round later or a credit taken back, and of nothing a later round moved. The ledger says what the round's transfers had paid each seat by then, and the branch is refused where a seat's series does not hold that much. Each fork carries the elimination its seat's account held at that round, and every election its seat was in up to that round, the last as its last election. Every account keeps each election it was in, so a branch carries an election a later one has since replaced as every seat's last, and never holds again an election its round had held. A branch that fails partway moves the agents it had forked, and the record it had begun, under `displaced/<timestamp>/` and leaves no manifest or lineage, so the same command can be run again. |
-| `py -3 human.py --agent <agent-id>` | Attach a terminal to that interactive seat's pending provider request. Draft declared calls with JSON, submit them together, explicitly finish the turn, or detach without ending it. See [human.md](human.md). |
-| `py -3 experiment.py sandbox -r 20` | The shipped example; `experiments/examples/sandbox.toml` is the shape to copy. `schedule` is `sequential` (the default: one episode at a time in fixed seat order) or `simultaneous` (every environment built before any episode runs, the episodes run at once, and the results settled in seat order, so nobody reads this round's writes and a transfer made in one round is on the ledger at the next; Ctrl+C ends every episode in flight at its next turn and commits all of them). Any experiment setting at the top level is the default for every seat; `[[channel]]` tables replace the environment whole, `[[tool]]` tables declare every action the agent has — the shell only where one has `kind = "bash"`, and without it the episode opens on the digest alone and not on a listing — and `[harness_files]` renames the harness's own files, all by the grammar in [docs/manifest.md](manifest.md). Every manifest declares `system_prompt`, at the top level or on every seat, and `""` is the declaration that says nothing; a manifest that declares it nowhere is refused. Each `[[agent]]` names an `id` and may set `label`, `seats`, `system_prompt`, `provider`, `model`, `budget`, `starter_files`, `starter_files_below`, `memory_from` and `quality_tier`; `seats = N` expands one such definition into `N` otherwise-identical agents with numbered ids and labels. Anything else it leaves out comes from the defaults. The six pinned settings — `system_prompt`, `provider`, `model`, `budget`, `starter_files` and `starter_files_below` — are pinned in each agent's `account.json` when it is created, so a manifest that says otherwise for an existing agent is refused, and every episode records the schedule, the channel table, the tool table, the labels and the manifest's digest in its provenance. |
-| `py -3 check.py` | The whole suite against a fake API, several checks at a time. Nothing billed, no key needed. Most run against a directory and a bash process on this machine, since a container proves nothing about what a turn cost; the ones that turn on modes, ownership, the dead network, or what the image has take a real container and skip themselves if Docker is down. Add names to run only those (`check.py refusal starter`), `--no-docker` to skip the container ones, `-j` to change how many run at once, and `--real` to put every check in a container — which is what says the two lanes still agree, and what to run after changing `harness.py`'s episode path. |
+| `py -3 experiment.py <name> -r 20 --resume` | Continue the existing experiment. Every account the manifest seats must be compatible with the manifest and command-line provider/model override; incompatible records are rejected and left in place. A round the last run left unfinished — a stop partway through a sequential round, or a seat whose sandbox would not build — is finished first: only the seats that missed it act, in seat order or together as the schedule has it, under that round's number, and it is one of the `-r` rounds. No stop but the cost ceiling, which no round starts past, is judged before that round is finished. A vote round every seat finished keeps its election: one the last run ended before is held first, by the seats that played the round, whether or not any of them is still seated; one already held is never held again; and a seat that finishes a round after its election is held has no vote in it, and takes the round as a discussion, offered no ballot. An election that ended the experiment ends the resumed run too, before any round, unless a seat that missed its round is back to finish it: the stop is judged again once it has, with that seat seated. The current round is the furthest round any seat has played, whether or not that seat is still in play, and a seat more than one round behind it is unseated in every round, since a seat's own round is its episode count plus one and the rounds it missed are over; its account and traces stay as they are, and it is in play no longer: it counts toward no stop, survives nothing and stands in no election. Where no seat in play is seated, the run ends `none_can_act`. |
+| `py -3 experiment.py --branch-from experiments/<name>.toml --at-round 6 --branch-id replay-human --takeover-seat 2` | Create a new experiment manifest and one new agent per source seat at the completed boundary. The chosen new seat uses `human/interactive`; source accounts and traces are only read. `experiment_records/replay-human/lineage.json` holds the source manifest and trace hashes. `--output PATH` names the generated manifest. Nothing is spent and the branch is not started; run the generated manifest with `--resume` so those new accounts continue rather than being preserved and replaced by a fresh experiment. Each new agent stands where its seat stood as the round ended: its balance, transfers, credits, silence penalties and floor adjustments are those of its seat's episode of that round and of what reached the seat after it within the round, a transfer from a seat that played the round later or a credit taken back, and of nothing a later round moved. The ledger says what the round's transfers had paid each seat by then, and the branch is rejected where a seat's balance history does not hold that much. Each new agent carries the elimination its seat's account held at that round, and every election its seat took part in up to that round, the last as its last election. Every account keeps each election it takes part in, so a branch carries an election a later one has since replaced as every seat's last, and never holds again an election its round had held. A branch that fails partway moves the agents it had made, and the record it had begun, under `displaced/<timestamp>/` and leaves no manifest or lineage, so the same command can be run again. |
+| `py -3 human.py --agent <agent-id>` | Attach a terminal to that human seat's pending request. Draft declared calls with JSON, submit them together, explicitly finish the turn, or detach without ending it. See [human.md](human.md). |
+| `py -3 experiment.py sandbox -r 20` | The shipped example; `experiments/examples/sandbox.toml` is the shape to copy. `schedule` is `sequential` (the default: one episode at a time in fixed seat order) or `simultaneous` (every sandbox built before any episode runs, the episodes run at once, and the results settled in seat order, so nobody reads this round's writes and a transfer made in one round is on the ledger at the next; Ctrl+C ends every episode in flight at its next turn and commits all of them). Any experiment setting at the top level is the default for every seat; `[[channel]]` tables replace the default channels whole, `[[tool]]` tables declare every tool the agent has — the shell only where one has `kind = "bash"`, and without it the episode opens on the digest alone and not on a listing — and `[harness_files]` renames the status files, all by the grammar in [docs/manifest.md](manifest.md). Every manifest declares `system_prompt`, at the top level or on every seat, and `""` is the declaration that says nothing; a manifest that declares it nowhere is rejected. Each `[[agent]]` names an `id` and may set `label`, `seats`, `system_prompt`, `provider`, `model`, `budget`, `starter_files`, `starter_files_below`, `memory_from` and `quality_tier`; `seats = N` expands one such definition into `N` otherwise-identical agents with numbered ids and labels. Anything else it leaves out comes from the defaults. The six pinned settings — `system_prompt`, `provider`, `model`, `budget`, `starter_files` and `starter_files_below` — are pinned in each agent's `account.json` when it is created, so a manifest that says otherwise for an existing agent is rejected, and every episode records the schedule, the channel table, the tool table, the labels and the manifest's sha256 in its provenance. |
+| `py -3 check.py` | The whole suite against a fake API, several checks at a time. Nothing spent, no key needed. Most run against a directory and a bash process on this machine, since a container proves nothing about what a turn spent; the ones that turn on modes, ownership, the dead network, or what the image has take a real container and skip themselves if Docker is down. Add names to run only those (`check.py refusal starter`), `--no-docker` to skip the container ones, `-j` to change how many run at once, and `--real` to put every check in a container — which is what says the two lanes still agree, and what to run after changing `harness.py`'s episode path. |
 | `py -3 check.py --list` | Print the check names and stop. |
 | `py -3 check.py --sweep-all` | Also remove containers other suite runs left, dead ones included; a plain run removes only its own. |
-| `py -3 view.py` | A page on `127.0.0.1:8765` with a corner toggle between two presentations. Observer view shows one experiment: a log of what its agents have addressed to each other through the mailbox channel, one tab per directory channel with every seat side by side, and one agent's transcript at a time, picked by round, beneath each seat's balance, spend, live or pending-human state, match progress or outcome, and the transfer ledger `g`. It refreshes as episodes go: an episode in flight is read from its raw log and priced by the same arithmetic the account uses, what lands only with the trace is marked pending rather than guessed, and an episode whose process died shows as unfinished with its age. Human view is described in [human.md](human.md). `--experiment` opens on one experiment by its experiment_id, `--agent` on the experiment holding that agent; `--port 0` picks a free port. |
+| `py -3 view.py` | A page on `127.0.0.1:8765` with a corner toggle between two presentations. Observer view shows one experiment: a log of what its agents have addressed to each other through the mailbox channel, one tab per directory channel with every seat side by side, and one agent's trace at a time, picked by round, beneath each seat's balance, spend, live or pending-human state, the experiment's progress or outcome, and the transfer ledger `g`. It refreshes as episodes go: an episode in flight is read from its raw log and metered by the same arithmetic the account uses, what lands only with the trace is marked pending rather than guessed, and an episode whose process died shows as unfinished with its age. Human view is described in [human.md](human.md). `--experiment` opens on one experiment by its experiment_id, `--agent` on the experiment holding that agent; `--port 0` picks a free port. |
 | `py -3 view.py --no-browser` | Serve without opening a browser. |
-| `py -3 analyze.py --agent live01` | Traces → `episodes.csv`, `report.txt`, `transcript.txt` (what it said, ran, and changed in `state/`, as a per-episode diff), and `charts/`: the balance series with the episodes shaded under it, cost per turn against the baseline rising beneath it, spend and turns per episode, tokens per episode, and the bytes the agent keeps in `state/` against what its episodes cost. Omit `--agent` to load every agent and compare. Charts need matplotlib; without it the other three are written anyway. |
+| `py -3 analyze.py --agent live01` | Traces → `episodes.csv`, `report.txt`, `transcript.txt` (what it said, ran, and changed in `state/`, as a per-episode diff), and `charts/`: the balance series with the episodes shaded under it, spend per turn with the baseline, the cheapest turn of each episode, rising beneath it, spend and turns per episode, tokens per episode, and the bytes the agent keeps in `state/` against what its episodes spend. Omit `--agent` to load every agent and compare. Charts need matplotlib; without it the other three are written anyway. |
 | `py -3 analyze.py --agent live01 --identity state/IDENTITY.md` | Diff one captured file episode over episode, as the trace names it. |
 
 **Parallel agents.** One agent is one roll of the dice: whatever episode 1 writes is received
-doctrine for every later instance in that agent. `--agent` namespaces everything. Agents
+doctrine for every later episode of that agent. `--agent` namespaces everything. Agents
 that should read each other belong in one experiment under `schedule = "simultaneous"`, which
 runs their episodes at once in one process; the recipe below is for agents that should
 not. The manifest must seat every id in the list. PowerShell, to match the `py -3` above;
@@ -127,23 +128,23 @@ whatever the experiment is. A manifest holds everything an agent's situation is 
 `system_prompt`, `budget`, `provider`, `model`, `starter_files` and `starter_files_below`,
 `context_fraction`, `delivery`, `digest_file_limit`, `observation_limit`, `live_balance`,
 `grace_episodes` and `floor_at_zero`, alongside the `[harness_files]` table and the
-`[[channel]]` tables that declare the environment, each channel carrying its own
+`[[channel]]` tables that declare the channels, each channel carrying its own
 `silence_penalty_percent` and the transfer channel its `funded_by` and `rebate_percent`,
-and the `[[tool]]` tables that declare every action an agent has, the shell included
+and the `[[tool]]` tables that declare every tool an agent has, the shell included
 ([docs/manifest.md](manifest.md)).
 
-The two sets are disjoint and each file refuses the other's keys by name, so no setting
+The two sets are disjoint and each file rejects the other's keys by name, so no setting
 is given in two places and no run's terms depend on which file was read last. Unknown
 keys, wrong types, values outside their range, and pairings that do not go together
 (starter files without a threshold, giver-funded transfers with a rebate, no transfers
-with a transfer penalty, a key that became a channel field) are refused at startup, as
+with a transfer penalty, a retired key that a channel field replaces) are rejected at startup, as
 is a `--config` path that does not exist, so a typo cannot quietly produce an agent you
 believe was configured differently. Every agent prints which file it read.
 
 `system_prompt`, `budget`, `provider`, `model`, `starter_files` and `starter_files_below` are read at
 agent creation and recorded in `account.json`; editing them later does not rewrite an
 agent in flight, and a manifest may set them per agent. An account missing any of them
-is refused; start a fresh agent id.
+is rejected; start a fresh agent id.
 
 ## Before the first live agent
 
@@ -153,9 +154,9 @@ is refused; start a fresh agent id.
   account, or console line contains it, and `docker run` passes no `--env`, so the
   container holds only what the image ships with and the agent never sees it.
   There is no config key for it and there cannot be — `config.toml` is committed,
-  and `read_config` refuses any key outside `PROCESS`. `start()` retrieves only the
+  and `read_config` rejects any key outside `PROCESS`. `start()` retrieves only the
   seated models before returning the provider router. An authentication or access error
-  exits 2 before the first container and before anything is billed.
+  exits 2 before the first sandbox and before anything is spent.
 
   ```powershell
   $env:ANTHROPIC_API_KEY = "sk-ant-..."     # this shell only
@@ -166,19 +167,19 @@ is refused; start a fresh agent id.
 
   Per-shell, not persisted at user scope, so the key lives in one process
   for the length of one experiment instead of in the registry indefinitely.
-- Unset `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL`. Each named adapter refuses to
+- Unset `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL`. Each named provider rejects a
   start while its custom base URL is set, whatever it holds — the canonical
   `https://api.anthropic.com` included — so "this agent did not go through some other
   endpoint" is checkable instead of a matter of reading the string carefully.
-- Check the rates in the provider catalogs against current pricing before an experiment you intend
-  to publish. `claude-sonnet-5` is entered at $3/$15. A model specification can carry a
-  price-expiry date, after which the provider router refuses to start that seated model;
-  a rate without one is checked by hand. Each episode's trace records the rates it
-  applied, so a rate change between episodes is visible in `provenance_drift`, and the
-  episodes either side of it are not one record.
-- `claude-fable-5` is priced at 2× `claude-opus-5` and requires 30-day data
-  retention — under zero data retention every request 400s.
-- Safety classifiers can decline a request outright on `claude-fable-5`,
+- Check the rates in the provider catalogs against the providers' published rates before
+  an experiment you intend to publish. `claude-sonnet-5` is entered at $3/$15. A model
+  specification can carry a rate-expiry date, after which the provider router rejects a
+  start with that seated model; a rate without one is checked by hand. Each episode's
+  trace records the rates it applied, so a rate change between episodes is visible in
+  `provenance_drift`, and the episodes either side of it are separate arms.
+- `claude-fable-5` has rates 2× those of `claude-opus-5` and requires 30-day data
+  retention — under zero data retention every model call returns 400.
+- Safety classifiers can decline a model call outright on `claude-fable-5`,
   `claude-opus-5`, and `claude-sonnet-5`. The harness records that as a refused
   turn and not as an episode with nothing to do, runs none of its commands, and
   ends the episode — see [Refusals](design.md#refusals).
