@@ -21,7 +21,7 @@ from checks.lanes import (
 
 
 def source_trace(agent: str, episode: int, body: str) -> None:
-    """Record one complete private memory at an episode boundary."""
+    """Record one complete memory at an episode boundary."""
     data = body.encode("utf-8")
     trace = {
         "trace_version": harness.TRACE_VERSION,

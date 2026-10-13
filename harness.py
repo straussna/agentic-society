@@ -2988,7 +2988,7 @@ def digest_for(
     receipt where one is `carried`, then every other harness file in `files`.
     A section this agent was shown last episode and that has not moved since is
     named as unchanged. A section that has gone is named as withdrawn unless it
-    is an expiring public post or schema-free mailbox message. Every schema channel item,
+    is an expiring board post or schema-free mailbox message. Every schema channel item,
     and every channel a manifest marks `restated`, is quoted every episode they
     stand. An agent that does not remember reading something is not told it has
     read it. `account["shown_before"]`

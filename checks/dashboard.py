@@ -753,7 +753,7 @@ def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
 
 
 def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
-    """Committed traces retain public posts each round and ballots only on vote rounds."""
+    """Committed traces keep board posts each round and ballots only on vote rounds."""
 
     def files(seat, round):
         return [

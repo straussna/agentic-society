@@ -378,7 +378,7 @@ channel sits inside a directory the agent writes and comes and goes with it.
 `pushed = true` means the channel's files are quoted in the digest at episode start
 under push delivery, each clipped at `digest_file_limit`, new content in full and
 unchanged content by name. Unchanged and withdrawn names appear one per line beneath a
-labelled group, so semantic names containing spaces remain distinct. Expired public posts
+labelled group, so semantic names containing spaces remain distinct. Expired board posts
 and schema-free mailbox messages disappear silently. Every channel defaults to `true`, a
 memory included. Under pull delivery nothing is quoted whatever this says.
 

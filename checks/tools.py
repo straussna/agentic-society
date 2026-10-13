@@ -1168,7 +1168,7 @@ def check_the_audit_opens_on_the_memory_an_agent_inherits():
 
 
 def check_building_an_episode_clears_what_one_episode_submits():
-    """Messages, transfers, a post and a ballot are one episode's; private memory is not.
+    """Messages, transfers, a post and a ballot are one episode's; memory is not.
 
     A mailbox's slots are cleared whether the mailbox carries messages or
     currency, a transfer file is cleared whole, and a tool's own file is cleared
@@ -1237,7 +1237,7 @@ def check_building_an_episode_clears_what_one_episode_submits():
     memory = harness.TOOL_KINDS["write_memory"].file
     assert not any(
         path.endswith(memory) for paths in cleared.values() for path in paths
-    ), "private memory carries into the next episode"
+    ), "memory carries into the next episode"
 
 
 def check_a_tool_that_writes_is_built_with_the_instance_it_writes():

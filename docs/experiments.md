@@ -203,7 +203,7 @@ ledger showing two agents different sequences would be worth less than no ledger
 alliance struck in the mailbox is invisible, and the instant it is acted on the money is on
 the record — including to the agent it was struck against.
 
-**A board can carry a silence penalty.** The public post currently visible is cleared from
+**A board can carry a silence penalty.** The board post currently visible is cleared from
 the agent's writable board before its episode begins. Where the board declares a
 `silence_penalty_percent`, as the competition's does, the agent must publish a nonempty
 post in every episode; publishing the same text again counts because it is a new round's

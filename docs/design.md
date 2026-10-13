@@ -160,7 +160,7 @@ files may explain them or not.
   addressed to it for this episode, the ledger and every balance either way, each
   clipped at `digest_file_limit` on its own so no one seat can crowd out the rest. What it
   has been shown before and that has not moved is named and not said again. What has gone
-  is named as withdrawn except for expired public posts and messages, which disappear silently.
+  is named as withdrawn except for expired board posts and messages, which disappear silently.
   An agent with no peers has only its own board and balance there.
 - It acts in a throwaway sandbox until a turn calls no tool or the context fills,
   then the episode ends.

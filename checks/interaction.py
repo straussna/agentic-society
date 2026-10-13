@@ -39,7 +39,7 @@ from checks.lanes import episode_once, temp_root
 TOOLS = (
     ToolSpec(
         "remember",
-        "Keep private memory",
+        "Keep memory",
         {
             "type": "object",
             "properties": {"body": {"type": "string"}},

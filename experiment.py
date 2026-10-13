@@ -607,7 +607,7 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
     harness.save_account(agent, account)
     total = sum(item.get("bytes", 0) for item in inherited)
     print(
-        f"{agent}: inherited {total} bytes of private memory from {source} episode {episode}"
+        f"{agent}: inherited {total} bytes of memory from {source} episode {episode}"
     )
 
 
