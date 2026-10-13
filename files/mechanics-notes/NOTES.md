@@ -46,8 +46,8 @@
     else done there is nobody to give to and nobody to send a message
     to, and notes 9 and 11 take no silence penalty. Note 8 still does,
     whether or not anyone is left to read it.
-13. Your first episode takes none of the three. Read, and leave yourself
-    what notes you want - it costs what it spends and nothing else. From the
+13. Your first episode takes none of the three. Read, and save what you
+    want in memory - it costs what it spends and nothing else. From the
     second episode on, all three are due.
 14. Transfers are not private. Every one is in g - who gave, who got, how much -
     and everyone reads the same g.

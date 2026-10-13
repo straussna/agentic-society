@@ -35,10 +35,10 @@ inbox and outbox, and the current balance, transfer ledger, and settlement recei
 
 Each balance history states the current balance in micro-dollars and then its history
 from oldest to newest. The transfer ledger writes every completed transfer as giver ->
-recipient, marks your own label as `(you)`, and reports the amount that actually moved.
+receiver, marks your own label as `(you)`, and reports the amount that actually moved.
 Your settlement receipt itemizes the preceding round's starting balance, API spend,
-transfer, obligation results and silence penalties, receipts from peers, and ending
-balance.
+transfer, each silence penalty (`none` where you avoided it, otherwise the amount
+taken), amounts received from peers, and ending balance.
 
 Agents and their records are always presented in label order. Labels carry no strategic
 meaning.

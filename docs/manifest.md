@@ -417,9 +417,10 @@ semantic digest headings. Their configured filenames remain implementation detai
 do not enter the model's observation. Balance bodies state the current value and label
 their oldest-to-newest history; ledger rows name round, giver, receiver and amount;
 prior-round transfer notices name their receiver, requested amount and result. A
-receipt itemizes the preceding episode's starting balance, API spend, transfer, each
-silence penalty and whether it applied, credits from peers, floor adjustment, ending
-balance, and the reconciliation.
+receipt itemizes the preceding episode's starting balance, API spend, whether it was a
+grace episode, the transfer, each settled channel's silence penalty (`none` where the
+episode spoke on the channel), credits from peers, floor adjustment, ending balance,
+and the reconciliation.
 
 ### 4.4 Measured, and the silence penalty
 
@@ -468,9 +469,11 @@ schema menu is fixed in code.
 
 A `receipt = "<path>"` on a schema channel asks the harness to plant an itemized
 receipt of the settlement at that path at the next episode start. It states the round,
-starting balance, API spend, grace status, declaration and transfer result, every
-measured channel and its silence penalty, amount received from peers, floor adjustment,
-ending balance, and reconciliation. It is a status file like a balance: root-owned, quoted in the digest once and named as
+starting balance, API spend, whether it was a grace episode, declaration and transfer
+result, one line per settled channel giving its silence penalty (`none` where the episode
+spoke on the channel, otherwise the amount taken, 0 included) and what the episode did
+there, the total silence penalties, amount received from peers, floor adjustment, ending
+balance, and reconciliation. It is a status file like a balance: root-owned, quoted in the digest once and named as
 unchanged after, in no file record, and scrubbed before the next one is planted. Off by
 default, since it is an additional statement from the harness.
 
@@ -698,7 +701,7 @@ a discussion, and is offered every tool but the ballot.
 A transfer channel's `ledger` names its ledger file (`"g"` in the default channels): three
 integers a line, giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
 path segments and must not collide with a channel path. In a tool-only agent's semantic
-digest, the same events are rendered as `giver -> recipient`, its own label is marked
+digest, the same events are rendered as `giver -> receiver`, its own label is marked
 `(you)`, and the amount is identified as the amount actually moved. A transfer channel's
 inbox and outbox messages label their amount as requested and direct the agent to the
 ledger for the separately settled amount.
@@ -990,7 +993,7 @@ the schedule, the manifest's sha256, the status files' names, the channel table 
 whole and by sha256, and the tool table in force, whole and by sha256, each tool's
 declared description among its fields and `bash` among them where the episode offers
 the shell, and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
-their recipient's next episode.
+their receiver's next episode.
 Two agents offered different tools - or the same tools described differently - are in
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness's sha256, the channel table and the seating.
