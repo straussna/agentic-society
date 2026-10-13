@@ -14,7 +14,7 @@ from checks.lanes import (
     HostSandbox,
     digest_name,
     docker_root,
-    environment_of,
+    instances_of,
     episode_once,
     files_by_path,
     ground_truth,
@@ -59,7 +59,7 @@ def check_a_private_store_never_leaves_its_agent():
             g01={"secret.md": "mine alone\n", "group/msg": "hello 2\n"},
             g02={"secret.md": "theirs alone\n", "group/msg": "hello 1\n"},
         )
-        instances = environment_of("g01", ids)
+        instances = instances_of("g01", ids)
         snap = harness.snapshot(instances, [9])
         peer = next(
             i.host for i in instances if i.role == "peer" and i.name == "blackboard"
@@ -98,7 +98,7 @@ def check_a_blackboard_is_the_agents_and_a_peers_is_not_scored():
             g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
             g02={"group/out": "the budget is 90 and ./n1 holds it\n"},
         )
-        snap = harness.snapshot(environment_of("g01", ids), [100, 90])
+        snap = harness.snapshot(instances_of("g01", ids), [100, 90])
 
     by = files_by_path(snap)
     assert set(by) == {"state/NOTES.md", "1/out", "2/out"}, sorted(by)
@@ -134,7 +134,7 @@ def check_starter_files_and_a_peer_are_told_apart():
         )
         seats = experiment.seats_of(ids)
         snap = harness.snapshot(
-            environment_of("g01", ids),
+            instances_of("g01", ids),
             [9],
             harness.starter_paths({"starter_files_landed": {"paths": ["m1"]}}),
         )
@@ -334,7 +334,7 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
         )
         ids = ["g01", "g02", "g03"]
         seen = {
-            p: files_by_path(harness.snapshot(environment_of(p, ids), [9])) for p in ids
+            p: files_by_path(harness.snapshot(instances_of(p, ids), [9])) for p in ids
         }
 
     assert "in/1" in seen["g03"], sorted(seen["g03"])
@@ -891,7 +891,7 @@ def check_anything_on_a_peers_blackboard_is_not_the_agents_bytes():
         (harness.mirror("other", "blackboard") / "added").write_text(
             "put here somehow\n"
         )
-        snap = harness.snapshot(environment_of("t", ids), [9])
+        snap = harness.snapshot(instances_of("t", ids), [9])
 
     by = files_by_path(snap)
     assert by["2/added"]["ours"] and not by["2/added"]["starter"], by["2/added"]

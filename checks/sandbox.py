@@ -718,7 +718,7 @@ def check_a_failed_mirror_keeps_the_last_record():
         assert "keep.txt" in before, before
 
         with quiet():
-            instances = harness.environment("t", harness.load_account("t"))
+            instances = harness.instances("t", harness.load_account("t"))
         assert (
             harness.Container("mtr-no-such-container-9f3c1d").mirror_trees(instances)
             is False
@@ -781,7 +781,7 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
     with rooted(HostSandbox):
         with quiet():
             account = harness.load_account("t")
-        instances = harness.environment("t", account)
+        instances = harness.instances("t", account)
         mirror = harness.mirror("t", "notes")
         previous = mirror.with_name("notes.previous")
         (mirror / "keep.txt").write_text("kept\n", encoding="utf-8")

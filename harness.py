@@ -15,7 +15,8 @@ Sections, in the order an episode meets them:
   5. Process constants              HARNESS_SHA256, limits, stop sets, regexes
   6. Accounts                       Account, load_account, Seating, adjust, penalise
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
-  8. The environment                Instance, environment, digest_for, render_harness_files
+  8. The environment                Instance, instances, digest_for,
+                                    render_harness_files
   9. What the agent's channels held before_digests
  10. The sandbox and the shell      Sandbox, Container, Shell, plant_trees,
                                     mirror_trees, clip, Bound, TOOL_KINDS, bind_tools,
@@ -2269,7 +2270,7 @@ class Instance:
         return posixpath.dirname(full) if self.is_file else full
 
 
-def environment(
+def instances(
     agent: str, account: Mapping[str, Any], table: list[Channel] | None = None
 ) -> list[Instance]:
     """Every instance of every channel in one agent's environment, in declaration order.
@@ -2829,7 +2830,7 @@ def digest_for(
     """The digest: what has been said to this agent, and the digests of what it quotes.
 
     The round announcement comes first where one is declared. It is followed by
-    one section per file of every pushed instance in environment() order, the
+    one section per file of every pushed instance in instances() order, the
     receipt where one is `carried`, then every other harness file in `files`.
     A section this agent was shown last episode and that has not moved since is
     named as unchanged. A section that has gone is named as withdrawn unless it
@@ -2840,12 +2841,14 @@ def digest_for(
     is what the agent was last shown, by section and digest; the second value is
     the same record for this episode, which close_episode stores.
     """
-    instances = environment(agent, account)
-    said = said_to(instances)
+    channel_instances = instances(agent, account)
+    said = said_to(channel_instances)
     # A section is one file; an instance is a file or the directory above one, so
     # a restated directory is matched by what it holds and not by its own name.
     roots = [
-        inst.path for inst in instances if inst.channel.schema or inst.channel.restated
+        inst.path
+        for inst in channel_instances
+        if inst.channel.schema or inst.channel.restated
     ]
 
     def requoted(name: str) -> bool:
@@ -2865,15 +2868,15 @@ def digest_for(
             section(harness_digest_name(round_name, agent, account), files[round_name])
         )
     parsed = schema_channel(channels())
-    experimenter_paths = experimenter_digest_paths(account, instances)
+    experimenter_paths = experimenter_digest_paths(account, channel_instances)
 
     def shown_name(name: str) -> str:
         if parsed and name == parsed.receipt:
             return harness_digest_name(name, agent, account)
-        return digest_name(name, instances, experimenter_paths)
+        return digest_name(name, channel_instances, experimenter_paths)
 
     def expires_silently(name: str) -> bool:
-        inst = owning_instance(name, instances)
+        inst = owning_instance(name, channel_instances)
         return bool(
             inst
             and (
@@ -2889,7 +2892,7 @@ def digest_for(
     for name, body in said.items():
         display = shown_name(name)
         if requoted(name) or shown.get(name) != shown_now[name]:
-            out.append(section(display, digest_body(name, body, instances)))
+            out.append(section(display, digest_body(name, body, channel_instances)))
         else:
             unchanged.append(display)
     withdrawn = [
@@ -3232,7 +3235,7 @@ def plant_trees(
 ) -> None:
     """Build the environment one episode opens on from its instances.
 
-    Built from what environment() returns, so container and trace agree. What the
+    Built from what instances() returns, so container and trace agree. What the
     agent writes is the agent's; everything else is root's and read-only.
     """
 
@@ -3470,7 +3473,7 @@ class Container:
     def mirror_trees(self, instances: list[Instance]) -> bool:
         """Mirror every tree the agent writes back. True only where all of them came back.
 
-        Decided by the same environment() description that decided what was writable
+        Decided by the same instances() description that decided what was writable
         going in. A nested file comes back with its tree. Each is attempted whatever
         the ones before it returned.
         """
@@ -5863,13 +5866,13 @@ def build_episode(agent: str) -> Episode:
     index = len(account["episodes"]) + 1
     seating = seating_of(agent, account)
     reach = reachable(seating)
-    instances = environment(agent, account)
+    channel_instances = instances(agent, account)
     # First, so a tree a failed swap left aside is back before anything reads it.
-    ensure_mirrors(instances)
+    ensure_mirrors(channel_instances)
     # Before the board, the outbox and the declaration go in, so what comes back
     # can be compared against them. Before the starter files too, so what was
     # planted is not read as something this episode wrote.
-    before = before_digests(instances, reach, seating.labels)
+    before = before_digests(channel_instances, reach, seating.labels)
     if "starter_files" not in account:
         # An account without pinned starter terms takes the tunables.
         account["starter_files"], account["starter_files_below"] = (
@@ -5878,8 +5881,8 @@ def build_episode(agent: str) -> Episode:
         )
         save_account(agent, account)
     last = account["episodes"][-1] if account["episodes"] else {}
-    scrub_receipts(instances, last.get("receipts") or {})
-    guard_sources(agent, account, index, instances)
+    scrub_receipts(channel_instances, last.get("receipts") or {})
+    guard_sources(agent, account, index, channel_instances)
     # Invariant 1: before plant_trees, so the starter files are in the container's
     # private store by the time the listing names it.
     store = private_store(s.channels)
@@ -5916,7 +5919,7 @@ def build_episode(agent: str) -> Episode:
     bound = bind_tools(
         list(s.tools),
         list(s.channels),
-        instances,
+        channel_instances,
         [seating.labels[seat] for seat in reach],
         index,
         election_held(agent, account, index),
@@ -5935,7 +5938,7 @@ def build_episode(agent: str) -> Episode:
         series_before=list(account["series"]),
         seating=seating,
         reach=reach,
-        instances=instances,
+        instances=channel_instances,
         bound=bound,
         shown=shown,
         shown_now=shown_now,
@@ -5952,11 +5955,11 @@ def build_episode(agent: str) -> Episode:
         # Inside the try, so there is no window in which a container exists and
         # nothing is bound to reap it.
         sandbox = ep.container = SANDBOX.start(f"{CONTAINER_PREFIX}{agent}-{index:04d}")
-        sandbox.plant_trees(instances, shown)
+        sandbox.plant_trees(channel_instances, shown)
         planted = True
         shell = ep.shell = sandbox.shell()
-        clear_episode_actions(shell, instances)
-        assert_writable(shell, instances)
+        clear_episode_actions(shell, channel_instances)
+        assert_writable(shell, channel_instances)
     except BaseException:
         # No episode ran. An environment that was planted is mirrored back all the
         # same, and whatever was started is reaped.
@@ -5964,7 +5967,7 @@ def build_episode(agent: str) -> Episode:
             ep.shell.close()
         if ep.container is not None:
             if planted:
-                ep.container.mirror_trees(instances)
+                ep.container.mirror_trees(channel_instances)
             ep.container.close()
         raise
     return ep
@@ -6765,8 +6768,8 @@ def print_context(
             if selected is not None and entry["id"] != selected:
                 continue
             account = load_account(entry["id"])
-            instances = environment(entry["id"], account)
-            ensure_mirrors(instances)
+            channel_instances = instances(entry["id"], account)
+            ensure_mirrors(channel_instances)
             store = private_store(s.channels)
             if store is None and starter_terms(account)[0]:
                 raise SystemExit(
@@ -6793,7 +6796,7 @@ def print_context(
                 view["episodes"] = [
                     {"episode": n, "stop": "end_turn"} for n in range(1, episode)
                 ]
-                instances = environment(entry["id"], view)
+                channel_instances = instances(entry["id"], view)
                 rendered, _ = render_harness_files(entry["id"], view)
                 opening = rendered.get(s.harness_files["digest"], "")
                 reach = [
@@ -6801,7 +6804,7 @@ def print_context(
                     for seat in seating_of(entry["id"], view).peers
                 ]
                 bound = bind_tools(
-                    list(s.tools), list(s.channels), instances, reach, episode
+                    list(s.tools), list(s.channels), channel_instances, reach, episode
                 )
                 specs = episode_specs(bound)
 

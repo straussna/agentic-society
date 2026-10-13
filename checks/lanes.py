@@ -709,15 +709,15 @@ def lay_out(**agents: dict[str, str]) -> list[str]:
     return list(agents)
 
 
-def environment_of(agent: str, ids: list[str]) -> list[harness.Instance]:
-    """One agent's environment, built the way the harness builds it.
+def instances_of(agent: str, ids: list[str]) -> list[harness.Instance]:
+    """One agent's channel instances, built the way the harness builds them.
 
-    Through harness.environment and not beside it: a check that assembled the
+    Through harness.instances and not beside it: a check that assembled the
     instances itself would agree with a copy of the layout and not with the layout.
     """
     seats = experiment.seats_of(ids)
     seat = next(i for i, r in seats.items() if r == agent)
-    return harness.environment(agent, {"seat": seat, "peers": {"seen": seats}})
+    return harness.instances(agent, {"seat": seat, "peers": {"seen": seats}})
 
 
 def seated(

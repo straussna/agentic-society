@@ -365,7 +365,7 @@ def message_paths(t: dict) -> set[str] | None:
 def digest_name(agent: str, t: dict, path: str) -> str:
     """An internal path as the episode's channel presents it to that agent."""
     account = account_of(agent)
-    instances = harness.environment(agent, account, harness.table_of(t))
+    instances = harness.instances(agent, account, harness.table_of(t))
     return harness.digest_name(
         path, instances, harness.experimenter_digest_paths(account, instances)
     )
@@ -1177,7 +1177,7 @@ def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
         inst = next(
             (
                 i
-                for i in harness.environment(agent, account, experiment_table(room.exp))
+                for i in harness.instances(agent, account, experiment_table(room.exp))
                 if i.writable and i.channel.name == room.schema.name
             ),
             None,

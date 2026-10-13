@@ -361,7 +361,7 @@ def check_a_declared_table_reshapes_the_environment():
             say(),
         )
         account = ground_truth()
-        env = [(i.path, i.name, i.role) for i in harness.environment("t", account)]
+        env = [(i.path, i.name, i.role) for i in harness.instances("t", account)]
         kept = (harness.mirror("t", "journal") / "IDENTITY.md").read_text(
             encoding="utf-8"
         )
@@ -443,7 +443,7 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
             say(),
         )
         account = ground_truth()
-        env = [(i.path, i.name, i.role) for i in harness.environment("t", account)]
+        env = [(i.path, i.name, i.role) for i in harness.instances("t", account)]
         rows = harness.ledger("t", account)
     assert env == [
         ("state", "notes", "own"),
@@ -485,7 +485,7 @@ def check_a_second_blackboard_channel_is_its_own_obligation():
         account = ground_truth()
         env = [
             (i.path, i.role)
-            for i in harness.environment("t", account)
+            for i in harness.instances("t", account)
             if i.name == "gallery"
         ]
     assert env == [("art-1", "own"), ("art-2", "peer")], env

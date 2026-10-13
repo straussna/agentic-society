@@ -80,7 +80,7 @@ def check_semantic_summaries_and_failures_expose_no_storage_details():
             for item in harness.bind_tools(
                 harness.tools(),
                 harness.channels(),
-                harness.environment("t", account),
+                harness.instances("t", account),
                 ["2"],
             )
         }
@@ -318,7 +318,7 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
             harness.bind_tools(
                 harness.tools(),
                 harness.channels(),
-                harness.environment("t", account),
+                harness.instances("t", account),
                 [],
             )
             == []
@@ -626,7 +626,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         bound = harness.bind_tools(
             harness.tools(),
             harness.channels(),
-            harness.environment("t", account),
+            harness.instances("t", account),
             ["2"],
         )
         said = {b.tool.name: b.spec().as_dict() for b in bound}
@@ -783,7 +783,7 @@ def check_an_action_naming_no_path_answers_in_its_own_words():
             for item in harness.bind_tools(
                 harness.tools(),
                 harness.channels(),
-                harness.environment("t", ground_truth("t")),
+                harness.instances("t", ground_truth("t")),
                 ["2"],
             )
         }
@@ -896,7 +896,7 @@ def check_a_tool_never_offers_a_seat_that_is_out():
         seated(root, "t", t={}, o={}, d={})
         with quiet():
             account = harness.load_account("t")
-        instances = harness.environment("t", account)
+        instances = harness.instances("t", account)
         both = harness.bind_tools(
             harness.tools(), harness.channels(), instances, ["2", "3"]
         )
@@ -917,7 +917,7 @@ def check_every_provider_receives_a_strict_compatible_tool():
         for b in harness.bind_tools(
             harness.tools(),
             harness.channels(),
-            harness.environment("t", account),
+            harness.instances("t", account),
             ["2"],
         ):
             spec = b.spec()
@@ -965,7 +965,7 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
     ) as root:
         seated(root, "t", o={})
         account = harness.load_account("t")
-        instances = harness.environment("t", account)
+        instances = harness.instances("t", account)
         assert [
             tool.tool.kind
             for tool in harness.bind_tools(
@@ -1203,7 +1203,7 @@ def check_building_an_episode_clears_what_one_episode_submits():
             seated(root, "t", t={}, o={}, d={})
             shell = Recorder()
             harness.clear_episode_actions(
-                shell, harness.environment("t", ground_truth("t"))
+                shell, harness.instances("t", ground_truth("t"))
             )
             assert len(shell.commands) == 1, shell.commands
             cleared[arm] = shlex.split(shell.commands[0])[3:-3]
@@ -1239,7 +1239,7 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
     """
     with temp_root(tools=[POST, LOOK]) as root:
         seated(root, "t", t={}, o={})
-        instances = harness.environment("t", ground_truth("t"))
+        instances = harness.instances("t", ground_truth("t"))
         post, look = harness.bind_tools(
             harness.tools(), harness.channels(), instances, ["2"]
         )
