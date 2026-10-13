@@ -567,7 +567,10 @@ def check_a_manifest_declares_tools_and_config_toml_may_not():
 
         cfg = root / "config.toml"
         cfg.write_text(tool_toml(SEND), encoding="utf-8", newline="\n")
-        rejected(lambda: harness.load_config(cfg), "tool is an experiment's")
+        rejected(
+            lambda: harness.load_config(harness.SETTINGS, cfg),
+            "tool is an experiment's",
+        )
 
 
 def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
@@ -1083,16 +1086,16 @@ def check_the_audit_prints_the_tools_each_episode_is_sent():
         assert "clipped at 1500 characters" in printed, printed
 
         # An experiment's episodes run under its config.toml, which start() installs.
-        harness.load_config()
-        seated(root, "t", t={}, o={})
-        sent = []
-        for _ in range(2):
-            seen = []
-            with quiet():
-                harness.run_once("t", fake(say(), seen=seen))
-            sent.append(
-                next(item["tools"] for item in seen if item["kind"] == "session")
-            )
+        with harness.using(harness.load_config(harness.SETTINGS)[0]):
+            seated(root, "t", t={}, o={})
+            sent = []
+            for _ in range(2):
+                seen = []
+                with quiet():
+                    harness.run_once("t", fake(say(), seen=seen))
+                sent.append(
+                    next(item["tools"] for item in seen if item["kind"] == "session")
+                )
 
     audited = []
     for episode in (1, 2):

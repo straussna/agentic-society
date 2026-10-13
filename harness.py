@@ -10,7 +10,7 @@ Sections, in the order an episode meets them:
   1. What the harness says          SYSTEM, REFUSAL_NOTICE, SHIPPED_TEXT, SHELL_SPEC,
                                     system_of
   2. Providers                      providers package catalogs and adapters
-  3. Tunables                       PROCESS, TREATMENT, read_config, rejecter, overlay
+  3. Tunables                       PROCESS, TREATMENT, load_config, rejecter, overlay
   4. The channel and tool tables    Channel, DEFAULT_CHANNELS, validate_channels,
                                     Tool, validate_tools, Settings, SETTINGS
   5. Process constants              HARNESS_SHA256, limits, stop sets, regexes
@@ -220,14 +220,15 @@ TOOL_RESULT_FLOOR = 1_000
 DIGEST_FILE_FLOOR = 200
 
 
-def read_config(
+def load_config(
     base: Settings, path: Path | None = None
 ) -> tuple[Settings, Path | None]:
     """The settings config.toml makes of `base`, and the file used, or None.
 
     The file is `path`, or config.toml under `base`'s root. Unknown keys, wrong types,
     out-of-range values, and a missing `path` all exit with a message. Pure: nothing
-    is installed.
+    is installed, and start() installs what it builds on the result. Nothing reads
+    the file at import, so an import keeps the defaults.
     """
     if path is not None and not path.exists():
         raise SystemExit(f"{path}: no such config file")
@@ -241,17 +242,6 @@ def read_config(
                 f"{f}: {table} is {NOT_CONFIG}. Declare it in a manifest under {base.root / 'experiments'}"
             )
     return overlay(base, top, str(f), PROCESS, NOT_CONFIG), f
-
-
-def load_config(path: Path | None = None) -> Path | None:
-    """Overlay config.toml onto the settings in force. Returns the file used, or None.
-
-    read_config, installed, so a rejected file installs nothing. Nothing reads the file
-    at import, so an import keeps the defaults.
-    """
-    global SETTINGS
-    SETTINGS, f = read_config(SETTINGS, path)
-    return f
 
 
 # How a validator rejects: it ends the run with SystemExit and never returns, so
@@ -1344,7 +1334,7 @@ class Settings:
     manifest key and the field holding it are spelled alike.
 
     No builder moves root, and each is handed settings whose root is the one in force:
-    read_config finds config.toml under the root it is handed, while overlay and
+    load_config finds config.toml under the root it is handed, while overlay and
     with_channels find starter files and an experimenter channel's source under the
     root in force, through files_dir. Composing under another root builds first and
     moves root after, as print_context does.
@@ -6357,7 +6347,7 @@ def start(
                 f"`py -3 harness.py --print-system` and paste the sha256 into "
                 f"{name}_SHA256."
             )
-    s, cfg = read_config(SETTINGS, config)
+    s, cfg = load_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")
     if overrides:
         s = overlay(s, overrides, "manifest", TREATMENT, NOT_MANIFEST)
@@ -6680,7 +6670,7 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
         verdict = "ok" if sha256 == expected else "DRIFTED"
         print(f"{len(text)} bytes  sha256={sha256}  {verdict}")
 
-    s, cfg = read_config(SETTINGS, config)
+    s, cfg = load_config(SETTINGS, config)
     print()
     print(f"config: {cfg or 'built-in defaults'}")
     show_prompt("in force", s.system_prompt)
@@ -6726,7 +6716,7 @@ def print_context(
     if selected is not None and selected not in {entry["id"] for entry in agents}:
         raise SystemExit(f"{manifest}: no agent {selected!r}")
 
-    s, cfg = read_config(SETTINGS, config)
+    s, cfg = load_config(SETTINGS, config)
     if m["overrides"]:
         s = overlay(s, m["overrides"], str(manifest), TREATMENT, NOT_MANIFEST)
     s = with_channels(

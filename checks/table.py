@@ -275,7 +275,7 @@ def check_retired_keys_are_rejected():
                 encoding="utf-8",
             )
             rejected(
-                lambda: harness.load_config(f),
+                lambda: harness.load_config(harness.SETTINGS, f),
                 key,
                 "it is now",
                 because=f"config accepted the retired key {key}",
@@ -296,8 +296,7 @@ def check_retired_keys_are_rejected():
 
 def check_the_default_table_is_todays_environment():
     """config.toml declares the code's default table and moves only the four numbers on it."""
-    with pinned():
-        harness.load_config()
+    with harness.using(harness.load_config(harness.SETTINGS)[0]):
         declared = harness.channels()
         assert [c.name for c in declared] == [c.name for c in harness.DEFAULT_CHANNELS]
         for got, code in zip(declared, harness.DEFAULT_CHANNELS):

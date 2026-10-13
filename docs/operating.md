@@ -154,7 +154,7 @@ is rejected; start a fresh agent id.
   account, or console line contains it, and `docker run` passes no `--env`, so the
   container holds only what the image ships with and the agent never sees it.
   There is no config key for it and there cannot be — `config.toml` is committed,
-  and `read_config` rejects any key outside `PROCESS`. `start()` retrieves only the
+  and `load_config` rejects any key outside `PROCESS`. `start()` retrieves only the
   seated models before returning the provider router. An authentication or access error
   exits 2 before the first sandbox and before anything is spent.
 

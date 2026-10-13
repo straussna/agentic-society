@@ -287,7 +287,7 @@ def load_manifest(path: Path) -> Manifest:
     """Read an experiment manifest: the schedule, the experiment's defaults, and each agent's terms.
 
     Returns a Manifest. Unknown keys, wrong types, and terms that do not go together
-    exit with a message naming the file, the way read_config does. The overrides' own
+    exit with a message naming the file, the way load_config does. The overrides' own
     types and ranges are checked when start() applies them, so one set of rules
     holds for both.
 

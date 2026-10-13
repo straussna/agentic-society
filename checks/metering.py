@@ -106,18 +106,18 @@ def check_config_is_validated():
     """
     with pinned():
         try:
-            harness.load_config()  # the real file, if present
+            s, _ = harness.load_config(harness.SETTINGS)  # the real file, if present
         except SystemExit as e:  # reported as a failure
             raise AssertionError(f"config.toml is invalid: {e}") from None
         assert (
             providers.model_spec("anthropic", "claude-sonnet-5").context_window
             == 1_000_000
         )
-        assert 0 < harness.SETTINGS.context_fraction <= 1
-        assert harness.SETTINGS.max_tokens <= harness.MAX_TOKENS_CEILING
-        assert type(harness.SETTINGS.live_balance) is bool
-        assert harness.SETTINGS.digest_file_limit >= harness.DIGEST_FILE_FLOOR
-        assert harness.SETTINGS.observation_limit >= harness.SETTINGS.tool_result_limit
+        assert 0 < s.context_fraction <= 1
+        assert s.max_tokens <= harness.MAX_TOKENS_CEILING
+        assert type(s.live_balance) is bool
+        assert s.digest_file_limit >= harness.DIGEST_FILE_FLOOR
+        assert s.observation_limit >= s.tool_result_limit
 
     def declared(**values):
         """One experiment setting, applied the way a manifest's defaults are."""
@@ -149,14 +149,16 @@ def check_config_is_validated():
             f.write_text(bad, encoding="utf-8")
             with pinned():
                 rejected(
-                    lambda: harness.load_config(f),
+                    lambda: harness.load_config(harness.SETTINGS, f),
                     because=f"accepted bad config: {bad}",
                 )
 
         # A named file that is not there is rejected, not quietly skipped.
         with pinned():
             rejected(
-                lambda: harness.load_config(Path(tmp) / "confg.toml"),
+                lambda: harness.load_config(
+                    harness.SETTINGS, Path(tmp) / "confg.toml"
+                ),
                 "no such config",
                 because="a missing --config path was ignored",
             )
@@ -165,11 +167,11 @@ def check_config_is_validated():
             "max_turns = 300" + chr(10) + "command_timeout = 30", encoding="utf-8"
         )
         with pinned():
-            assert harness.load_config(f) == f, "the file used is reported back"
-            assert (
-                harness.SETTINGS.max_turns == 300
-                and harness.SETTINGS.command_timeout == 30
-            ), "a good value must actually apply"
+            s, used = harness.load_config(harness.SETTINGS, f)
+            assert used == f, "the file used is reported back"
+            assert s.max_turns == 300 and s.command_timeout == 30, (
+                "a good value must actually apply"
+            )
 
     # An experiment owns the rest, and its values are held to the same ranges.
     for bad in (
@@ -497,7 +499,7 @@ def check_the_safety_stops_are_held_to_their_ranges():
                 f.write_text(f"{key} = {bad}\n", encoding="utf-8")
                 with pinned():
                     rejected(
-                        lambda: harness.load_config(f),
+                        lambda: harness.load_config(harness.SETTINGS, f),
                         str(f),
                         key,
                         str(floor),
@@ -507,8 +509,8 @@ def check_the_safety_stops_are_held_to_their_ranges():
             for good in (floor, ceiling):
                 f.write_text(f"{key} = {good}\n", encoding="utf-8")
                 with pinned():
-                    harness.load_config(f)
-                    assert getattr(harness.SETTINGS, key) == good, (
+                    s, _ = harness.load_config(harness.SETTINGS, f)
+                    assert getattr(s, key) == good, (
                         f"{key} = {good} is in range and must apply"
                     )
 
@@ -535,14 +537,14 @@ def check_tool_result_limit_is_tunable_and_bounded():
             f.write_text(bad, encoding="utf-8")
             with pinned():
                 rejected(
-                    lambda: harness.load_config(f),
+                    lambda: harness.load_config(harness.SETTINGS, f),
                     "tool_result_limit",
                     because=f"accepted bad tool_result_limit: {bad!r}",
                 )
         f.write_text("tool_result_limit = 2000\n", encoding="utf-8")
         with pinned():
-            harness.load_config(f)
-            assert harness.SETTINGS.tool_result_limit == 2000
+            s, _ = harness.load_config(harness.SETTINGS, f)
+            assert s.tool_result_limit == 2000
 
     with temp_root(tool_result_limit=2_000):
         t = episode_once(run("yes ABCDEFGHIJ | head -2000"), say())
