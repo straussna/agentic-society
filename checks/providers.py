@@ -603,7 +603,8 @@ def check_records_of_another_version_are_rejected_by_the_version_they_hold():
                 harness.drift("new", 2, {})
             except SystemExit as error:
                 said = str(error)
-                assert named in said and "fresh agent id" in said, said
+                assert f"at episode 1, {named}" in said, said
+                assert "fresh agent id" in said, said
                 assert "None" not in said, said
             else:
                 raise AssertionError(f"read {named} as the previous episode")

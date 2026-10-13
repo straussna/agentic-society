@@ -5766,7 +5766,8 @@ def drift(
     previous = json.loads(f.read_text(encoding="utf-8"))
     if why := stale(previous, "trace"):
         raise SystemExit(
-            f"agent {owner} has {why} at episode {episode - 1}; start a fresh agent id"
+            f"agent {owner} has, at episode {episode - 1}, {why}; "
+            "start a fresh agent id"
         )
     was = previous.get("provenance") or {}
     if owner != agent and "seating" in was:

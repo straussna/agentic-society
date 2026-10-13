@@ -63,9 +63,9 @@
     "exclude": [
       "records",
       "experiment_records",
-      "environments",
-      "displaced",
-      "interactions",
+      "mirrors",
+      "archive",
+      "interaction_store",
       "Audits",
       ".agent-audit",
       ".claude",
@@ -152,10 +152,10 @@
     "forbiddenRoots": [
       "records/",
       "experiment_records/",
-      "interactions/",
-      "displaced/",
-      "environments/"
+      "interaction_store/",
+      "archive/",
+      "mirrors/"
     ],
-    "clause": "records/, experiment_records/, interactions/, displaced/ and environments/ hold episode traces, ground truth, agent outputs and human-provider sessions; never open, list or quote anything under them."
+    "clause": "records/, experiment_records/, interaction_store/, archive/ and mirrors/ hold episode traces, ground truth, agent outputs and human-provider sessions; never open, list or quote anything under them."
   }
 }

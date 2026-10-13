@@ -671,7 +671,8 @@ def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str)
 
 class Totals(TypedDict):
     """An account's running totals, under its keys: what transfers sent, received,
-    rebated and debited, what the floor forgave, and what each channel's penalty took."""
+    rebated and debited, what the floor put back, and what each channel's penalty
+    took."""
 
     sent: int
     received: int

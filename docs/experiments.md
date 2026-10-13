@@ -266,9 +266,9 @@ reachable peers. There is nothing to mark — the balance is the whole of the st
 exhaustion is a state an agent enters once and does not leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of
 the experiment learns from the agent that got there first: a flat zero, or the size of the
 overshoot, which is a balance having crossed zero where a decay law cannot. What an
-episode's close forgave is in the account and in that episode's trace; what the floor
-forgave once a credit the receiver closed on is taken back is in the account and its
-series alone.
+episode's close put back (`floored`) is in the account and in that episode's trace;
+what the floor put back once a credit the receiver closed on is taken back is in the
+account and its balance history alone.
 
 **Which makes the win condition reachable, and what the experiment ends on.** It asks that
 every other agent end at zero or less with the agent's own `n` positive, and under
