@@ -263,7 +263,7 @@ def check_the_view_serves_its_api():
                 == "hi\n"
             )
             log = got(base, "/api/experiment/t/messages")[1]
-            assert (log["events"], log["tip"], log["seats"], log["committed"]) == (
+            assert (log["events"], log["tip"], log["seat_count"], log["committed"]) == (
                 [],
                 [],
                 1,
@@ -395,8 +395,8 @@ def check_the_observational_view_routes_never_write():
         c = view.experiment_of("t")
         view.header(c)
         view.messages(c)
-        for kind in ("blackboard", "notes"):
-            view.tree_view(c, kind)
+        for channel in ("blackboard", "notes"):
+            view.tree_view(c, channel)
         view.file_view(c, "t", "notes", "note.txt")
         view.agent_view("t", c)
         view.episode_view("t", 1)
@@ -468,17 +468,17 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
         "survivor03": {},
     }
     with temp_root():
-        groups, claimed = view.anchored_groups(
+        anchored, claimed = view.anchored_experiments(
             accounts, {"stamp": (manifest, Path("grouped-fixture.toml"))}
         )
 
-    assert len(groups) == 1 and groups[0]["experiment_id"] == "grouped-fixture", groups
-    assert groups[0]["agent_by_seat"] == {
+    assert [exp["experiment_id"] for exp in anchored] == ["grouped-fixture"], anchored
+    assert anchored[0]["agent_by_seat"] == {
         "1": "survivor01",
         "2": "survivor02",
         "3": "survivor03",
     }
-    assert groups[0]["tools"][0]["every"] == 5
+    assert anchored[0]["tools"][0]["every"] == 5
     assert claimed == set(accounts)
 
 
@@ -559,8 +559,8 @@ def check_a_record_holding_no_object_reads_as_no_record():
 def check_a_grouping_read_without_an_account_is_read_again_next_poll():
     """A poll that cannot read an account - save_account's rename caught mid-poll -
     groups without that seat, and that grouping is kept for no later poll: the next
-    one reads the account again and the seat is a member, though nothing on disk has
-    moved since."""
+    one reads the account again and the agent is among the experiment's seats, though
+    nothing on disk has moved since."""
     with rooted(HostBox):
         fake_experiment([("g01", "00:01"), ("g02", "00:02")], agents=("g01", "g02"))
         before = [exp["seats"] for exp in view.experiments()]
@@ -799,14 +799,28 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         account["last_election"] = {"round": 2, "tally": {"1": 1, "2": 0}}
         path.write_text(json.dumps(account), encoding="utf-8")
         held = view.header(c)["phase"]
-        tallied = view.tree_view(c, "notes", 2)["election"]
-        tallied_live = view.tree_view(c, "notes")["election"]
+        # A poll that cannot read the first seat's account still finds the election
+        # another seat's account records.
+        real = view.read_json
+        unread = harness.account_path("g01")
+        view.read_json = lambda path: None if path == unread else real(path)
+        try:
+            held_unread = view.header(c)["phase"]
+        finally:
+            view.read_json = real
+        tallied = view.tree_view(c, "notes", 2)
+        tallied_live = view.tree_view(c, "notes")
         with serving() as base:
             served = got(base, "/api/experiment/g/tree/blackboard?round=1")[1]
             served_file = got(
                 base,
                 "/api/experiment/g/file?agent=g02&channel=blackboard&path=post.md&round=1",
             )[1]
+        # g01 in flight on round 3, which is a discussion round: no election follows it.
+        raw = harness.raw_path("g01", 3)
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_text("", encoding="utf-8")
+        discussing = view.tree_view(c, "notes")
 
     assert live["history"] == {
         "kind": "round",
@@ -832,9 +846,16 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     }
     assert not_a_vote_round is None, "a ballot exists only at its declared cadence"
     assert (voting, held) == ("vote", "vote complete"), (voting, held)
+    assert held_unread == "vote complete", held_unread
     assert ballot["election"] is None, "no election was on record yet"
     assert board["election"] is None and live["election"] is None, (board, live)
-    assert tallied == tallied_live == account["last_election"], (tallied, tallied_live)
+    assert tallied["vote_round"] and tallied_live["vote_round"], (tallied, tallied_live)
+    stored = account["last_election"]
+    assert tallied["election"] == tallied_live["election"] == stored, (
+        tallied,
+        tallied_live,
+    )
+    assert not discussing["vote_round"] and discussing["election"] is None, discussing
 
 
 # What a human seat is offered in the human history checks: a post and a message.
@@ -934,17 +955,17 @@ def check_the_human_history_adds_each_accepted_human_call_once():
     # A post is in a round and an episode, under those names, as a message is.
     assert [
         (e["round"], e["episode"], e["text"], e.get("accepted", False))
-        for e in history["public"]
+        for e in history["board"]
     ] == [
         (1, 1, "hello all\n", False),
         (2, 2, "second post", True),
-    ], history["public"]
-    assert not [e for e in history["public"] if "agent_episode" in e], history["public"]
-    private = [
+    ], history["board"]
+    assert not [e for e in history["board"] if "agent_episode" in e], history["board"]
+    mailbox = [
         (e["text"], e["to_label"], e["to_agent"], e["from_seat"], e.get("accepted"))
-        for e in history["private"]
+        for e in history["mailbox"]
     ]
-    assert private == [("psst", "2", "g02", "1", True)], history["private"]
+    assert mailbox == [("psst", "2", "g02", "1", True)], history["mailbox"]
     assert status == 200, "a submission that does not read took the seat's history down"
     assert served == json.loads(json.dumps(history)), (
         "the route serves what human_history says"
@@ -1015,18 +1036,18 @@ def check_the_human_history_matches_a_forked_seats_calls_on_its_own_episode():
 
     assert [
         (e["round"], e["episode"], e["text"], e.get("accepted", False))
-        for e in history["public"]
+        for e in history["board"]
     ] == [
         (3, 3, "hello all\n", False),
         (4, 4, "next round", True),
-    ], history["public"]
+    ], history["board"]
     assert [
         (e["round"], e["episode"], e["text"], e.get("accepted", False))
-        for e in history["private"]
+        for e in history["mailbox"]
     ] == [
         (3, 3, "psst", False),
         (4, 4, "later", True),
-    ], history["private"]
+    ], history["mailbox"]
 
 
 def check_the_view_shows_every_balance_from_its_own_account():
@@ -1128,8 +1149,9 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
             c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
             current_round = view.round_now(c, rows)
+            committed_round = view.table_round(c)
             return current_round, {
-                agent: view.seat_row(seat, agent, rows, current_round)
+                agent: view.seat_row(seat, agent, rows, current_round, committed_round)
                 for seat, agent in view.places_of(c)
             }
 
@@ -1191,13 +1213,38 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
                 harness.trace_path(agent, index).unlink()
         rows = view.experiment_episodes(c)
         forked_round = view.round_now(c, rows)
-        forked = view.seat_row("2", "g02", rows, forked_round)
+        forked = view.seat_row("2", "g02", rows, forked_round, view.table_round(c))
     assert forked_round == 3 and forked["round"] == 2, (forked_round, forked)
     assert forked["pending"] and not forked["behind"], forked
     # Behind is the seat the run seats in no further round, and an empty balance is
     # exhausted whether or not the seat is still to come.
     assert past_seats["g03"]["behind"] and not past_seats["g02"]["behind"], past_seats
     assert all(s["exhausted"] for s in [*open_seats.values(), *past_seats.values()])
+    # Exhausted, the seat is not also unseated: the three states are apart.
+    assert not past_seats["g03"]["unseated"], past_seats["g03"]
+
+    # Behind is judged against the table's round, the episodes committed, as
+    # experiment.behind judges it: g01 in flight on round 4 leaves g02, which missed
+    # only round 3, a seat the run seats again.
+    with rooted(HostBox):
+        c = fake_experiment(
+            [
+                ("g01", "00:01"),
+                ("g02", "00:02"),
+                ("g01", "00:03"),
+                ("g02", "00:04"),
+                ("g01", "00:05"),
+            ],
+            agents=("g01", "g02"),
+        )
+        raw = harness.raw_path("g01", 4)
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_text("", encoding="utf-8")
+        rows = view.experiment_episodes(c)
+        ahead_round, committed_round = view.round_now(c, rows), view.table_round(c)
+        missed = view.seat_row("2", "g02", rows, ahead_round, committed_round)
+    assert (ahead_round, committed_round) == (4, 3), (ahead_round, committed_round)
+    assert not missed["behind"] and not missed["unseated"], missed
 
 
 def check_the_view_reads_a_message_out_of_two_outboxes():

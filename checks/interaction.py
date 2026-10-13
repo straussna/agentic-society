@@ -942,7 +942,8 @@ def posted(base: str, path: str, body: bytes, headers: dict[str, str]) -> int:
 
 
 def check_view_interaction_route_answers_each_refusal_with_its_own_status():
-    """The page reads the status to tell a human whether to fix the turn, refresh or retry."""
+    """The page reads the status to tell a human whether to fix the turn, refresh or
+    retry."""
     with temp_root() as root:
         episode_once()
         store = InteractionStore(root / "interactions")

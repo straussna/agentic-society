@@ -420,7 +420,7 @@ def row(t: dict, prev: dict | None = None, identity: str | None = None) -> dict:
     """Flatten one trace into a CSV row, one column group at a time.
 
     `identity` is the path of a file to diff and `prev` the last episode before
-    this one that held it; both may be left out, and the identity column is blank.
+    this one that held it; both may be left out, and the persona_delta column is blank.
     """
     return {
         **episode_cols(t),

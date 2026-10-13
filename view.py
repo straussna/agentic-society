@@ -578,7 +578,7 @@ def seat_of_label(exp: dict, label: str | None) -> str | None:
     return next((s for s, l in exp["labels"].items() if l == label), None)
 
 
-def anchored_groups(
+def anchored_experiments(
     accounts: Mapping[str, Mapping[str, Any]],
     catalog: dict[str, tuple[experiment.Manifest, Path]] | None = None,
 ) -> tuple[list[dict], set[str]]:
@@ -683,9 +683,9 @@ def read_experiments() -> tuple[list[dict], bool]:
 
     Agents sharing a seating are one experiment, keyed by the experiment_id their
     accounts are stamped with, or by derived_experiment_id where they carry none. One
-    whose mapping does not seat it is grouped by its id's letters and marked unseated.
-    Each account is read once: what an experiment shows of its seats comes from that
-    read.
+    whose mapping does not seat it is grouped by its id's letters and marked as having
+    no seating. Each account is read once: what an experiment shows of its seats comes
+    from that read.
     """
     listed = agent_names()
     accounts = {
@@ -693,17 +693,17 @@ def read_experiments() -> tuple[list[dict], bool]:
         for agent in listed
         if (account := read_json(harness.account_path(agent))) is not None
     }
-    anchored, claimed = anchored_groups(accounts)
-    groups: dict[tuple, dict] = {}
+    anchored, claimed = anchored_experiments(accounts)
+    by_seating: dict[tuple, dict] = {}
     for agent, account in accounts.items():
         if agent in claimed:
             continue
         key = seating_key(agent, account)
         seen = harness.seating_of(agent, account).seen
-        ident = key or ("unseated", derived_experiment_id(agent, account))
-        exp: dict[str, Any] | None = groups.get(ident)
+        ident = key or ("no seating", derived_experiment_id(agent, account))
+        exp: dict[str, Any] | None = by_seating.get(ident)
         if exp is None:
-            exp = groups[ident] = {
+            exp = by_seating[ident] = {
                 "experiment_id": (account.get("experiment") or {}).get("experiment_id")
                 or derived_experiment_id(agent, account),
                 "seated": key is not None,
@@ -714,7 +714,7 @@ def read_experiments() -> tuple[list[dict], bool]:
         exp["seats"].append(agent)
 
     out = sorted(
-        [*anchored, *groups.values()],
+        [*anchored, *by_seating.values()],
         key=lambda exp: (not exp["seated"], exp["experiment_id"]),
     )
     # Two experiments can arrive at one id: a seated experiment and a leftover agent
@@ -841,15 +841,23 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     return out
 
 
-def round_now(exp: dict, rows: list[dict]) -> int:
-    """The round the experiment is in: the furthest any seat has reached, by the
-    episodes its account lists or the one it has in flight.
+def table_round(exp: dict) -> int:
+    """The table's round, as experiment.table_round counts it: the furthest round any
+    seat has committed, by the episodes its account lists.
 
     The account and not the traces, since a forked seat lists the episodes it
     inherited and holds no trace of them.
     """
-    reached = [round_of(committed(agent)) for _, agent in places_of(exp)]
-    return max([r["round"] for r in rows + live_rows(exp, rows)] + reached or [0])
+    return max(
+        (round_of(committed(agent)) for _, agent in places_of(exp)), default=0
+    )
+
+
+def round_now(exp: dict, rows: list[dict]) -> int:
+    """The round the experiment is in: the table's round, or the round of an episode
+    in flight past it."""
+    in_flight = [r["round"] for r in rows + live_rows(exp, rows)]
+    return max([*in_flight, table_round(exp)])
 
 
 # --- what every seat is holding ---------------------------------------------
@@ -916,9 +924,16 @@ def unmet(t: dict | None) -> list[dict]:
 
 
 def seat_row(
-    seat: str | None, agent: str, rows: list[dict], current_round: int
+    seat: str | None,
+    agent: str,
+    rows: list[dict],
+    current_round: int,
+    committed_round: int,
 ) -> dict:
-    """One seat's tile: what it holds, what it is doing, and what it has moved."""
+    """One seat's tile: what it holds, what it is doing, and what it has moved.
+
+    `current_round` is round_now's and `committed_round` is table_round's.
+    """
     account = account_of(agent)
     ts = traces_of(agent, account)
     last = ts[-1] if ts else None
@@ -936,16 +951,24 @@ def seat_row(
     mine = [r for r in rows if r["agent"] == agent]
     # The round of its last committed episode, by its account: a forked seat holds
     # no trace of the episodes it inherited.
-    played = round_of(committed(agent, account))
+    last_round = round_of(committed(agent, account))
     out_reason = harness.why_out(account) if account else None
+    eliminated = account.get("eliminated")
+    exhausted = bool(account) and harness.spent_out(account)
+    stopped_by_run = bool(last and last["stop"] in harness.STOPS_THE_AGENT)
+    # More than a round behind the table's round, as experiment.behind judges it. Only
+    # a seated experiment runs by rounds.
+    behind = (
+        seat is not None and running is None and last_round < committed_round - 1
+    )
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
     # simply not been reached.
     pending = (
         running is None
-        and not account.get("eliminated")
+        and not eliminated
         and latest.get("stop") not in harness.STOPS_THE_AGENT
-        and played == current_round - 1
+        and last_round == current_round - 1
     )
     return {
         "seat": seat,
@@ -967,8 +990,9 @@ def seat_row(
         "live_turns": len(going["turns"]),
         "live_balance": going["balance"],
         "committed": len(episodes),
-        "round": played,
-        "acted": bool(played) and played == current_round or running is not None,
+        "round": last_round,
+        "acted": (bool(last_round) and last_round == current_round)
+        or running is not None,
         "pending": pending,
         "preparing": bool(
             account
@@ -979,11 +1003,14 @@ def seat_row(
         # The three ways a seat leaves the experiment, apart: eliminated by a vote,
         # exhausted with its balance gone, and unseated by the run, which starts no
         # further episode on it after a stop in STOPS_THE_AGENT, after why_out's
-        # other reason, or once it is more than a round behind.
+        # other reason, or once it is more than a round behind. At most one is true.
         "out_reason": out_reason,
-        "eliminated": account.get("eliminated"),
-        "exhausted": bool(account) and harness.spent_out(account),
-        "behind": running is None and played < current_round - 1,
+        "eliminated": eliminated,
+        "exhausted": exhausted,
+        "unseated": not eliminated
+        and not exhausted
+        and (out_reason is not None or stopped_by_run or behind),
+        "behind": behind,
         "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
         # in flight. A transfer, a share taken and a floor all move the balance
@@ -995,7 +1022,7 @@ def seat_row(
         )
         + going["spent"],
         "stop": last["stop"] if last else None,
-        "unseated": bool(last and last["stop"] in harness.STOPS_THE_AGENT),
+        "stopped_by_run": stopped_by_run,
         # What the last committed episode owed and left undone, one entry a
         # channel, each in the words the console line uses.
         "unmet": unmet(last),
@@ -1031,8 +1058,10 @@ def header(exp: dict) -> dict:
     table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment") or {}
+    committed_round = table_round(exp)
     seat_tiles = [
-        seat_row(seat, agent, rows, current_round) for seat, agent in places_of(exp)
+        seat_row(seat, agent, rows, current_round, committed_round)
+        for seat, agent in places_of(exp)
     ]
     vote = next(
         (tool for tool in exp.get("tools", []) if tool.get("kind") == "vote"), None
@@ -1043,17 +1072,22 @@ def header(exp: dict) -> dict:
         if isinstance(election.get("round"), int):
             elections[election["round"]] = election
     every = vote.get("every") if vote else None
-    # The harness's rule for the round it announces: the last round of each vote cycle
-    # votes, unless the election that follows it is held already, as this seat's
-    # account or any other seat's records it.
+    # The harness's rule for the round it announces, harness.election_held's: the last
+    # round of each vote cycle votes, unless any seat's account records the election
+    # that follows it held already. Applied to the accounts the seat tiles read, so a
+    # poll that cannot read one still serves.
     position = (current_round - 1) % every + 1 if every and current_round else 0
     if position != every:
         phase = "discussion"
-    elif harness.election_held(first, account, current_round):
+    elif any(r >= current_round for r in elections):
         phase = "vote complete"
     else:
         phase = "vote"
-    records = product.records(harness.SETTINGS.root, exp["experiment_id"])
+    # The records sit under the experiment_id the accounts are stamped with, which a
+    # second experiment arriving at a taken id is not keyed by.
+    records = product.records(
+        harness.SETTINGS.root, stamp.get("experiment_id") or exp["experiment_id"]
+    )
     cost = product.cost(
         exp["seats"], account_of, stamp.get("cost") or {}, providers.is_interactive
     )
@@ -1361,7 +1395,7 @@ def messages(exp: dict, since: int = 0) -> dict:
     return {
         "experiment_id": exp["experiment_id"],
         "posts": exp["posts"],
-        "seats": len(places_of(exp)),
+        "seat_count": len(places_of(exp)),
         "committed": len(events),
         "events": events[since:],
         "tip": tips,
@@ -1385,7 +1419,7 @@ def human_history(exp: dict, agent: str) -> dict:
     post_channel = next(
         (ch for ch in table if post_tool and ch.name == post_tool.get("channel")), None
     )
-    public = []
+    board = []
     if post_channel:
         for row in rows:
             if not row["trace"].get("state_saved"):
@@ -1409,7 +1443,7 @@ def human_history(exp: dict, agent: str) -> dict:
                     continue
                 text = file.get("text")
                 if isinstance(text, str) and text:
-                    public.append(
+                    board.append(
                         {
                             "round": row["round"],
                             "episode": row["episode"],
@@ -1418,7 +1452,7 @@ def human_history(exp: dict, agent: str) -> dict:
                             "text": text,
                         }
                     )
-    private = [
+    mailbox = [
         event
         for event in messages(exp)["events"]
         if event["event_type"] == "message"
@@ -1432,12 +1466,12 @@ def human_history(exp: dict, agent: str) -> dict:
         (seat for seat, other in places_of(exp) if other == agent), None
     )
     tool_kinds = {tool.get("name"): tool.get("kind") for tool in exp.get("tools") or []}
-    public_keys = {
-        (event["episode"], event["from_agent"], event["text"]) for event in public
+    board_keys = {
+        (event["episode"], event["from_agent"], event["text"]) for event in board
     }
-    private_keys = {
+    mailbox_keys = {
         (event["episode"], event["from_agent"], event["to_label"], event["text"])
-        for event in private
+        for event in mailbox
     }
     for request, submission in InteractionStore(harness.interactions_root()).history(
         agent
@@ -1451,8 +1485,8 @@ def human_history(exp: dict, agent: str) -> dict:
             kind = tool_kinds.get(call.name)
             if kind == "post_public":
                 key = (episode, agent, text)
-                if key not in public_keys:
-                    public.append(
+                if key not in board_keys:
+                    board.append(
                         {
                             "round": round,
                             "episode": episode,
@@ -1462,13 +1496,13 @@ def human_history(exp: dict, agent: str) -> dict:
                             "accepted": True,
                         }
                     )
-                    public_keys.add(key)
+                    board_keys.add(key)
             elif kind == "send_message_to":
                 label = call.input.get("to")
                 seat = seat_of_label(exp, label)
                 key = (episode, agent, label, text)
-                if isinstance(label, str) and key not in private_keys:
-                    private.append(
+                if isinstance(label, str) and key not in mailbox_keys:
+                    mailbox.append(
                         {
                             "round": round,
                             "episode": episode,
@@ -1482,8 +1516,8 @@ def human_history(exp: dict, agent: str) -> dict:
                             "accepted": True,
                         }
                     )
-                    private_keys.add(key)
-    public.sort(
+                    mailbox_keys.add(key)
+    board.sort(
         key=lambda event: (
             event["round"],
             event["episode"],
@@ -1491,7 +1525,7 @@ def human_history(exp: dict, agent: str) -> dict:
             event["text"],
         )
     )
-    private.sort(
+    mailbox.sort(
         key=lambda event: (
             event["round"],
             event["episode"],
@@ -1502,8 +1536,8 @@ def human_history(exp: dict, agent: str) -> dict:
     return {
         "experiment_id": exp["experiment_id"],
         "agent": agent,
-        "public": public,
-        "private": private,
+        "board": board,
+        "mailbox": mailbox,
     }
 
 
@@ -1671,8 +1705,9 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
 
     save_state runs when an episode ends, so each column is current as of that
     agent's last committed episode and two columns can be stamped differently. A
-    ballot channel also carries the election of the round shown, whose tally is the
-    one the ballots came to.
+    ballot channel also carries whether the round shown is a vote round, the last of
+    its vote cycle, and the election that follows it, whose tally is the one the
+    ballots came to.
     """
     ch = trees(exp)[channel]
     rows = experiment_episodes(exp)
@@ -1712,6 +1747,8 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
             "what": what_of(ch),
             "static": False,
             "history": {**history, "selected": round_at},
+            # channel_history offers a ballot channel's vote rounds only.
+            "vote_round": history["kind"] == "vote",
             "election": election_of(exp, round_at)
             if history["kind"] == "vote"
             else None,
@@ -1753,15 +1790,23 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
                 ),
             }
         )
+    # The live view is of the round the experiment is in, which votes when it is the
+    # last of its vote cycle, as the header's phase says.
+    current_round = round_now(exp, rows)
+    vote_round = bool(
+        history
+        and history["kind"] == "vote"
+        and current_round
+        and current_round % history["every"] == 0
+    )
     return {
         "experiment_id": exp["experiment_id"],
         "channel": channel,
         "what": what_of(ch),
         "static": False,
         "history": ({**history, "selected": None} if history else None),
-        "election": election_of(exp, round_now(exp, rows))
-        if history and history["kind"] == "vote"
-        else None,
+        "vote_round": vote_round,
+        "election": election_of(exp, current_round) if vote_round else None,
         "columns": columns,
     }
 
@@ -1875,7 +1920,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "forgiven": t.get("forgiven") or 0,
             "provenance": t["provenance"],
             "drift": t.get("provenance_drift") or [],
-            "unseated": t["stop"] in harness.STOPS_THE_AGENT,
+            "stopped_by_run": t["stop"] in harness.STOPS_THE_AGENT,
             "live": False,
         }
         for t in ts
@@ -1897,7 +1942,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
                 "forgiven": 0,
                 "provenance": {},
                 "drift": [],
-                "unseated": False,
+                "stopped_by_run": False,
                 "live": True,
             }
         )

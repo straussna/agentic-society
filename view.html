@@ -124,7 +124,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
              text-transform:none; }
 .tile .v { margin-top:8px; font:500 21px/1 var(--mono); font-variant-numeric:tabular-nums; }
 .tile .v.neg { color:var(--bad); }
-/* One wrapping row, so a seat carrying a transfer and a halt is no taller than a
+/* One wrapping row, so a seat carrying a transfer and a stop is no taller than a
    seat carrying neither. */
 .tile .m { color:var(--dim); font-size:12px; display:flex; gap:6px 9px; flex-wrap:wrap;
            align-items:center; margin-top:5px; }
@@ -336,7 +336,7 @@ td.md, td.kd { color:var(--faint); width:1%; white-space:nowrap; }
 .chip:hover { color:var(--ink); border-color:var(--faint); }
 .chip.on { color:var(--ink); border-color:var(--accent); background:rgba(127,155,176,.12); }
 .chip.live { color:var(--live); border-color:rgba(143,168,125,.45); }
-.chip.halt { color:var(--warn); border-color:rgba(194,160,107,.45); }
+.chip.stopped { color:var(--warn); border-color:rgba(194,160,107,.45); }
 .chip.off { opacity:.4; cursor:default; }
 .txbar { display:flex; justify-content:space-between; align-items:center; gap:16px;
          margin-bottom:8px; }
@@ -740,7 +740,7 @@ function tileHtml(s, i) {
       ? `<span class="tag bad" title="${esc(s.out_reason)}">exhausted</span>`
     : s.out_reason
       ? `<span class="tag bad" title="${esc(s.out_reason)}">unseated</span>`
-    : s.unseated
+    : s.stopped_by_run
       ? `<span class="tag bad" title="its last episode ended on ${esc(s.stop)}, after which the run starts no further episode on it">unseated</span>`
     : s.preparing
       ? `<span class="tag warn"><i class="dot"></i>preparing first round</span>`
@@ -749,7 +749,7 @@ function tileHtml(s, i) {
     : s.behind
       ? `<span class="tag bad" title="more than a round behind, so the run seats it in no further round">unseated</span>`
       : `<span>ep${s.committed} committed</span>`;
-  const idle = s.eliminated || s.out_reason || s.unseated || s.behind;
+  const idle = s.eliminated || s.exhausted || s.unseated;
   return `<div class="tile ${idle ? "idle" : ""}">
     <div class="k"><span style="color:${inkOf(i)}">${s.seat == null ? "agent" : esc(nameOf(s.seat))}</span>
       <b>${esc(s.agent)}</b></div>
@@ -770,8 +770,8 @@ function tileHtml(s, i) {
         ${taken.map(([name, n]) => `<span title="taken for silence on ${esc(name)}">− ${num(n)} ${esc(name)}</span>`).join(" ")}
         ${s.forgiven ? `<span title="floored back to zero; its environment never says so"
           >floored ${num(s.forgiven)}</span>` : ""}${transfer}` : ""}
-      ${(s.unseated || s.drift.length) ? `<i>|</i>
-        ${s.unseated ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
+      ${(s.stopped_by_run || s.drift.length) ? `<i>|</i>
+        ${s.stopped_by_run ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
         ${s.drift.length ? `<span class="tag warn" title="${esc(s.drift.join("; "))}">drift</span>` : ""}` : ""}</div>
   </div>`;
 }
@@ -1213,7 +1213,7 @@ function renderBallotAggregate(channel) {
       ballots.push({c, f, got, target, color:inkOf(i)});
     }
   }
-  const sig = JSON.stringify([channel, d.history, d.election, ballots.map(b =>
+  const sig = JSON.stringify([channel, d.history, d.vote_round, d.election, ballots.map(b =>
     [b.c.agent, b.c.committed, b.f.stamp, b.got && b.got.stamp, b.target])]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
@@ -1225,9 +1225,9 @@ function renderBallotAggregate(channel) {
   const results = ranked.map(([label, count]) => `<div class="vote-result">
     <span class="target">${esc(labelName(label))}</span><span class="vote-bar"><i style="width:${count / high * 100}%"></i></span>
     <span class="count">${count} vote${count === 1 ? "" : "s"}</span></div>`).join("");
-  const untallied = selected == null
-    ? "Not tallied yet: the election is held once every elector has taken the round."
-    : `No election after round ${selected} is on record.`;
+  const untallied = selected != null ? `No election after round ${selected} is on record.`
+    : d.vote_round ? "Not tallied yet: the election is held once every elector has taken the round."
+    : "This round is a discussion round: no election follows it.";
   const rows = ballots.map(({c, got, target}) => `<tr><td>${seatTag(c.seat)} · ${esc(c.agent)}</td>
     <td>${got === undefined ? "reading…" : got == null ? "unavailable" : got.text == null ? "binary ballot"
       : target ? `→ ${esc(labelName(target))}` : "empty ballot"}</td></tr>`).join("");
@@ -1410,7 +1410,7 @@ function drawTranscript() {
     const s = byRound[r];
     if (!s) return `<button class="chip off" title="no episode of this agent's is on record for this round">r${r}</button>`;
     const classes = [s.episode === S.episode ? "on" : "", s.live && running(d) ? "live" : "",
-      s.live && !running(d) ? "halt" : "", s.unseated ? "halt" : ""].filter(Boolean).join(" ");
+      s.live && !running(d) ? "stopped" : "", s.stopped_by_run ? "stopped" : ""].filter(Boolean).join(" ");
     const state = esc(s.stop || (running(d) ? "running" : "unfinished"));
     return `<button class="chip ${classes}" data-s="${s.episode}" aria-pressed="${s.episode === S.episode}" title="ep${s.episode} · ${state} · ${s.turns} turns · spent ${num(s.spent)}">r${r}</button>`;
   }).join("");
@@ -1762,41 +1762,41 @@ function wireChatComposer(field, log, destination = "", storageKey = "") {
 }
 
 function renderHumanHistory(history, humanAgent, tiles, currentRound) {
-  const board = document.getElementById("human-board"), publicEvents = history.public || [];
+  const board = document.getElementById("human-board"), boardEvents = history.board || [];
   const deliveredRound = currentRound - 1;
   const requestKey = `${humanAgent}:${(S.interaction || {}).request_id || currentRound}`;
   if (board) {
-    const sig = JSON.stringify(publicEvents.map(event => [event.round, event.episode, event.from_agent, event.text]));
+    const sig = JSON.stringify(boardEvents.map(event => [event.round, event.episode, event.from_agent, event.text]));
     if (board.dataset.sig !== sig) {
       board.dataset.sig = sig;
-      board.innerHTML = humanChatHtml(publicEvents, humanAgent, false, deliveredRound);
+      board.innerHTML = humanChatHtml(boardEvents, humanAgent, false, deliveredRound);
       board.scrollTop = board.scrollHeight;
     }
     wireChatComposer(board.parentElement.querySelector(".chat-compose textarea"), board, "",
       `human-draft:${requestKey}:board`);
   }
-  const privateRoot = document.getElementById("human-private"), privateEvents = history.private || [];
-  if (!privateRoot) return;
-  const drafts = new Map([...privateRoot.querySelectorAll("[data-recipient]")]
+  const mailboxRoot = document.getElementById("human-mailbox"), mailboxEvents = history.mailbox || [];
+  if (!mailboxRoot) return;
+  const drafts = new Map([...mailboxRoot.querySelectorAll("[data-recipient]")]
     .map(field => [field.dataset.recipient, field.value]));
-  const canMessage = privateRoot.hasAttribute("data-message-tool");
+  const canMessage = mailboxRoot.hasAttribute("data-message-tool");
   const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason);
   const sig = JSON.stringify([currentRound, peers.map(peer => [peer.agent, peer.label]),
-    privateEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
-  if (privateRoot.dataset.sig === sig) return;
-  privateRoot.dataset.sig = sig;
-  privateRoot.innerHTML = peers.map(peer => {
-    const events = privateEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
+    mailboxEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
+  if (mailboxRoot.dataset.sig === sig) return;
+  mailboxRoot.dataset.sig = sig;
+  mailboxRoot.innerHTML = peers.map(peer => {
+    const events = mailboxEvents.filter(event => peer.agent === (event.from_agent === humanAgent ? event.to_agent : event.from_agent));
     return `<details class="private-thread ${events.length ? "" : "empty"}" ${events.length ? "open" : ""}>
       <summary><span>${esc(peer.label)}</span><span class="private-count">${events.length ? `${events.length} message${events.length === 1 ? "" : "s"}` : "empty"}</span></summary>
       <div class="human-chat-log" role="log" aria-label="Messages with ${esc(peer.label)}">${humanChatHtml(events, humanAgent, true, deliveredRound)}</div>
       ${canMessage ? `<div class="chat-compose"><textarea rows="2" data-recipient="${esc(peer.label)}"
         aria-label="Message ${esc(peer.label)}" placeholder="Message ${esc(peer.label)}…">${esc(drafts.get(peer.label) || "")}</textarea></div>` : ""}</details>`;
   }).join("");
-  privateRoot.querySelectorAll(".human-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
-  privateRoot.querySelectorAll("[data-recipient]").forEach(field =>
+  mailboxRoot.querySelectorAll(".human-chat-log").forEach(log => { log.scrollTop = log.scrollHeight; });
+  mailboxRoot.querySelectorAll("[data-recipient]").forEach(field =>
     wireChatComposer(field, field.closest(".private-thread").querySelector(".human-chat-log"),
-      field.dataset.recipient, `human-draft:${requestKey}:private:${field.dataset.recipient}`));
+      field.dataset.recipient, `human-draft:${requestKey}:mailbox:${field.dataset.recipient}`));
 }
 
 function pullPeerStatus(request) {
@@ -1847,7 +1847,7 @@ function renderInteraction(request) {
         <div id="human-board" class="human-chat-log" role="log" aria-label="Board"><div class="empty">Loading history&hellip;</div></div>
         ${postIndex >= 0 ? `<div class="chat-compose"><textarea rows="2" data-field="body" data-type="string"
           aria-label="Post to board" placeholder="Post to board…"></textarea></div>` : ""}</section>
-      <h3>Mailbox</h3><div id="human-private" class="private-chat-list" aria-label="Mailbox"
+      <h3>Mailbox</h3><div id="human-mailbox" class="private-chat-list" aria-label="Mailbox"
         ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
       <h3>Turn input</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
     <div class="human-column"><h3>Turn actions</h3>${tools || `<div class="note">Use the composers, then submit the turn.</div>`}
