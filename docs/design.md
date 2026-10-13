@@ -166,9 +166,9 @@ files may explain them or not.
   then the episode ends.
 - Spend is computed from the API's own `usage`, and every turn appends the
   balance after it to the agent's own file. Elements are only ever appended: what the
-  agent read once stays true, and the series is the balance's whole history. A turn
+  agent read once stays true, and the balance history is the balance's whole history. A turn
   whose response the API replayed spends nothing and appends an unchanged balance,
-  so a flat step in the series is a retry artefact — `micros` is 0 on it, and
+  so a flat step in the balance history is a retry artefact — `micros` is 0 on it, and
   the episode's `retries` are not empty.
 - Under `live_balance` those elements arrive as each turn's spend is metered, so the file grows while
   the agent works. Otherwise an episode's worth arrives together at the next episode.
@@ -217,7 +217,7 @@ changes: a JSON array of bare integers, appended to more often.
 Episode boundaries are not marked in it, and the unlabelled format means they will
 not be. They are
 inferable: a turn spends more as the context it carries grows, so the gaps widen
-through an episode and drop back at each episode start, and the series is a sawtooth whose
+through an episode and drop back at each episode start, and the balance history is a sawtooth whose
 teeth are episodes. Reading that off is the agent's problem, and doing it is a
 result.
 

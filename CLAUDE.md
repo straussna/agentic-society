@@ -74,7 +74,7 @@ A worktree has no `.venv`: run the main checkout's interpreter on the worktree's
 
 ## Lanes
 
-Most checks are arithmetic — what a turn cost, what reached the series, which
+Most checks are arithmetic — what a turn cost, what reached the balance history, which
 stop an episode ended on — and run their episodes in a directory and a bash
 process on this machine.
 

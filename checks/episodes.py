@@ -200,7 +200,9 @@ def check_interrupt_still_traces_and_commits():
     with temp_root():
         t = episode_once(run("echo one"), KeyboardInterrupt())
         assert t["stop"] == "interrupted", t["stop"]
-        assert t["spent"] > 0, "spend before the interrupt must reach the series"
+        assert t["spent"] > 0, (
+            "spend before the interrupt must reach the balance history"
+        )
         account = ground_truth()
         assert account["budget"] - account["balance"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
@@ -446,13 +448,16 @@ def check_the_children_are_in_their_own_process_group():
 
 
 def check_fatal_error_still_traces_and_commits():
-    """A 400 aborts without retrying, but the spend before it still reaches the series."""
+    """A 400 aborts without retrying, but the spend before it still reaches the balance
+    history."""
     with temp_root():
         t = episode_once(run("echo before"), Err(400))
         assert t["stop"] == "api_error" and t["retries"] == [], (
             "a 400 must not be retried"
         )
-        assert t["spent"] > 0, "spend before the failure must still reach the series"
+        assert t["spent"] > 0, (
+            "spend before the failure must still reach the balance history"
+        )
         account = ground_truth()
         assert account["budget"] - account["balance"] == t["spent"]
 
@@ -548,8 +553,8 @@ def check_reaching_for_balance_is_not_reading_it():
         "a failed read is not a read"
     )
     assert hit["touched_balance"] and hit["read_balance"], "a successful read is both"
-    # Under live_balance a read comes back as the committed series plus the balance so
-    # far, so the committed array is a prefix of what the agent saw.
+    # Under live_balance a read comes back as the committed balance history plus the
+    # balance so far, so the committed array is a prefix of what the agent saw.
     got = json.loads(hit["turns"][0]["tools"][0]["result"])
     assert got[: len(hit["balance_before"])] == hit["balance_before"], got
 
@@ -1022,7 +1027,7 @@ def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_comm
         assert account["episodes"][-1]["stop"] == "harness_error", account["episodes"]
         assert (
             t["spent"] > 0 and account["budget"] - account["balance"] == t["spent"]
-        ), "the turn before the fault was billed and reached the series"
+        ), "the turn before the fault was charged and reached the balance history"
         if kind == "ProviderError":
             assert t["provider_error"] == {
                 "category": "adapter",

@@ -250,27 +250,28 @@ def check_truncation_and_empty():
 
 
 def check_episodes_reconcile():
-    """Every micro-dollar in or out of an account is one element of its series.
+    """Every micro-dollar in or out of an account is one element of its balance history.
 
     A transfer rebates, a missed post and a crowded seat are each taken, and a floor
-    gives back. The identity has a term for each, and each appends to the series.
+    gives back. The identity has a term for each, and each appends to the balance
+    history.
     """
     with temp_root():
         for _ in range(3):
             last = episode_once(*DEFAULT)
         account = ground_truth()
-        series, episodes = account["balance_history"], account["episodes"]
+        history, episodes = account["balance_history"], account["episodes"]
         assert len(episodes) == 3, episodes
-        assert len(series) == 1 + sum(s["turn_count"] for s in episodes), (
+        assert len(history) == 1 + sum(s["turn_count"] for s in episodes), (
             "one element per billed turn, plus starter_files, where nothing else moved"
         )
         spent = sum(s["spent"] for s in episodes)
         assert spent == account["budget"] - account["balance"], (
             f"{spent} != {account['budget'] - account['balance']}"
         )
-        assert series[-1] == account["balance"], "the last element is the balance"
+        assert history[-1] == account["balance"], "the last element is the balance"
         for s in episodes:
-            started, ended = series[s["balance_from"]], series[s["balance_to"]]
+            started, ended = history[s["balance_from"]], history[s["balance_to"]]
             assert started - ended == s["spent"], (
                 f"episode {s['episode']}: {started} - {ended} != {s['spent']}"
             )
@@ -278,8 +279,8 @@ def check_episodes_reconcile():
         assert [s["balance_from"] for s in episodes[1:]] == [
             s["balance_to"] for s in episodes[:-1]
         ], "and the spans meet end to end"
-        assert series == last["balance_after"], (
-            "the last trace carries the series the account committed"
+        assert history == last["balance_after"], (
+            "the last trace carries the balance history the account committed"
         )
 
     # And with every term live at once, the identity still closes.
@@ -302,11 +303,11 @@ def check_episodes_reconcile():
             say(),
         )
         account = ground_truth()
-        series, episodes = account["balance_history"], account["episodes"]
+        history, episodes = account["balance_history"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
         assert account["balance"] == reconciled(account, spent), account
-        assert series[-1] == account["balance"], (
-            "the series ends where the account does"
+        assert history[-1] == account["balance"], (
+            "the balance history ends where the account does"
         )
         assert account["rebated"] == 150 and account["penalised"]["board"] > 0, (
             account
@@ -320,7 +321,7 @@ def check_episodes_reconcile():
             True,
         ], episodes
         for s in episodes:
-            assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
+            assert len(span_of(history, s)) == elements_of(s), (s, span_of(history, s))
 
     # And under a giver-funded transfer, where the transfer is a debit and not a rebate.
     with temp_root(
@@ -331,15 +332,15 @@ def check_episodes_reconcile():
         episode_once(run("echo '2 300' > outbox/transfer"), say())
         episode_once(say())  # no transfer submitted
         account = ground_truth()
-        series, episodes = account["balance_history"], account["episodes"]
+        history, episodes = account["balance_history"], account["episodes"]
         spent = sum(s["spent"] for s in episodes)
         assert account["balance"] == reconciled(account, spent), account
         # Only the first episode submitted a transfer.
         assert account["debited"] == 300 and account["rebated"] == 0, account
         assert account["penalised"]["transfer"] > 0, account
-        assert series[-1] == account["balance"]
+        assert history[-1] == account["balance"]
         for s in episodes:
-            assert len(span_of(series, s)) == elements_of(s), (s, span_of(series, s))
+            assert len(span_of(history, s)) == elements_of(s), (s, span_of(history, s))
 
 
 def check_balance_grows_within_an_episode():
@@ -370,7 +371,8 @@ def check_balance_grows_within_an_episode():
 def check_live_balance_can_be_turned_off():
     """live_balance off leaves n fixed for the whole episode; the turns arrive at the next episode.
 
-    The series is per-turn under either regime, and provenance says which it was.
+    The balance history is per-turn under either regime, and provenance says which it
+    was.
     """
     with temp_root(live_balance=False):
         t = episode_once(run("cat n1"), run("cat n1"), say())
@@ -386,7 +388,7 @@ def check_live_balance_can_be_turned_off():
     assert t["read_balance"], "a read of the fixed form is still a read"
     assert t["balance_after"] == t["balance_before"] + [
         x["balance"] for x in t["turns"]
-    ], "the turns still reach the series, just not during the episode"
+    ], "the turns still reach the balance history, just not during the episode"
 
 
 def check_a_negative_balance_is_what_the_agent_ends_holding():

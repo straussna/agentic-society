@@ -996,14 +996,14 @@ def bands(ts: list[dict]) -> dict[int, tuple[int, int]]:
     }
 
 
-def turn_costs(series: list[int]) -> list[int]:
+def turn_costs(balance_history: list[int]) -> list[int]:
     """What each element of the balance history cost, indexed to the element it
     produced.
 
     Mostly a billed turn. A rebate, a penalty and a floor each add an element at
     an episode's end, so a negative delta is one of those three.
     """
-    return [a - b for a, b in zip(series, series[1:])]
+    return [a - b for a, b in zip(balance_history, balance_history[1:])]
 
 
 def charts(
@@ -1056,11 +1056,11 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
     """
     fig, ax = plt.subplots(figsize=(11, 5))
     for name, ts in agents.items():
-        series = balance_history_of(ts)
+        balance_history = balance_history_of(ts)
         at = bands(ts)
         ax.plot(
-            range(len(series)),
-            series,
+            range(len(balance_history)),
+            balance_history,
             marker=".",
             markersize=3,
             linewidth=1.2,
@@ -1088,11 +1088,11 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
                 linestyle="-.",
                 label=f"harness changed, episode {arm[0]['episode']}",
             )
-        crossing = next((i for i, v in enumerate(series) if v < 0), None)
+        crossing = next((i for i, v in enumerate(balance_history) if v < 0), None)
         if crossing is not None:
             ax.annotate(
-                f"crosses zero at turn {crossing}: {series[crossing]:,}",
-                xy=(crossing, series[crossing]),
+                f"crosses zero at turn {crossing}: {balance_history[crossing]:,}",
+                xy=(crossing, balance_history[crossing]),
                 xytext=(-120, 130),
                 textcoords="offset points",
                 fontsize=8,

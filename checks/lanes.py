@@ -99,7 +99,7 @@ def _ask_docker() -> bool:
 
 
 #
-# Arithmetic checks - what a turn cost, what reached the series, which stop an
+# Arithmetic checks - what a turn cost, what reached the balance history, which stop an
 # episode ended on - run against a directory and a bash process on this machine.
 # What only a container can show stays on docker_root below.
 def host_bash() -> str | None:
@@ -140,10 +140,10 @@ class HostShell(harness.Shell):
             "env": {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"},
         }
 
-    def replant_balance(self, label: str, series: list[int], expected: str) -> str:
+    def replant_balance(self, label: str, history: list[int], expected: str) -> str:
         n = self.sandbox.work / harness.balance_name(label)
         was = n.read_text(encoding="utf-8") if n.exists() else ""
-        n.write_text(harness.render_balance(series), encoding="utf-8", newline="\n")
+        n.write_text(harness.render_balance(history), encoding="utf-8", newline="\n")
         return "ok" if was == expected else "tampered"
 
 
@@ -527,7 +527,7 @@ def host_root(channels=None, harness_files=None, tools=None, **overrides):
 def temp_root(channels=None, harness_files=None, tools=None, **overrides):
     """A throwaway agent whose episodes are a directory and a shell on this machine.
 
-    What most checks want: the pipeline end to end - account, turns, series,
+    What most checks want: the pipeline end to end - account, turns, balance history,
     trace - without paying for a container that proves nothing they assert.
     """
     if REAL_ONLY:
@@ -798,9 +798,9 @@ def two_seats():
             },
             g02={"secret.md": "theirs\n", "group/msg": "hello 1\n"},
         )
-        for agent, series in (("g01", [1000, 900]), ("g02", [1000, 800])):
+        for agent, history in (("g01", [1000, 900]), ("g02", [1000, 800])):
             account = harness.load_account(agent)
-            account["balance_history"], account["balance"] = series, series[-1]
+            account["balance_history"], account["balance"] = history, history[-1]
             account["starter_files_landed"] = {
                 "name": "objective-notes",
                 "paths": ["NOTES.md"],
@@ -811,7 +811,7 @@ def two_seats():
 
 def fake_experiment(
     acted: list[tuple],
-    series: tuple[int, ...] = (1000,),
+    balance_history: tuple[int, ...] = (1000,),
     agents: tuple[str, ...] = ("g01", "g02", "g03"),
     **trace_fields,
 ) -> dict:
@@ -856,8 +856,8 @@ def fake_experiment(
                     "agent": agent,
                     "seat": seat,
                     "seating": {"agent_by_seat": seats},
-                    "balance_history": list(series),
-                    "balance": series[-1],
+                    "balance_history": list(balance_history),
+                    "balance": balance_history[-1],
                     "budget": 1000,
                     "episodes": taken.get(agent, []),
                 }

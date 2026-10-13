@@ -54,7 +54,7 @@ manifest's sha256 are in every episode's provenance.
 Every run names its manifest, so there is no way to start one without saying which
 experiment it is part of.
 
-**Every balance comes along**, so each agent holds the whole experiment's series beside its
+**Every balance comes along**, so each agent holds the whole experiment's balance histories beside its
 own — several balances, exactly one of which moves when it acts. They are all
 **root's and read-only**, and none of them is marked. The layout itself announces
 nothing: which one is its own is discoverable, being the one that responds to what it
@@ -62,7 +62,7 @@ does, and that is a result the layout gets for free.
 
 **Starter files can hand it over.** `files/mechanics-rules/RULES` says
 "the file `n<i>` goes with directory `<i>`", which with a single writable directory
-settles the question without an experiment. It settles the series' granularity the same
+settles the question without an experiment. It settles the balance history's granularity the same
 way, saying `n<i>` gains one balance for each turn and one more for each movement
 outside a turn, so how many elements a balance holds is given and not inferred from
 what its length is not — and the agent still sees a silence penalty land without being
@@ -209,7 +209,7 @@ the agent's writable board before its episode begins. Where the board declares a
 post in every episode; publishing the same text again counts because it is a new round's
 post. If it publishes nothing, its board is empty next round and the penalty is taken.
 It is taken after the transfer and after the share the transfer carries, and appended to
-the series like everything else, so the agent sees the silence penalty in `n` without
+the balance history like everything else, so the agent sees the silence penalty in `n` without
 being told which movement it is.
 
 **And a mailbox can carry the other.** Under a mailbox silence penalty, an episode must

@@ -204,8 +204,9 @@ def branch_source(root: Path) -> Path:
 
 def check_a_branch_rejects_a_boundary_it_cannot_fork():
     """A branch needs a positive round every seat completed, a seat to hand over, an id,
-    manifest and agents nothing else holds, and a series in every seat's account that
-    holds what the ledger had paid it by that round. Each rejection makes nothing."""
+    manifest and agents nothing else holds, and a balance history in every seat's
+    account that holds what the ledger had paid it by that round. Each rejection makes
+    nothing."""
     with temp_root() as root:
         source = branch_source(root)
         output = root / "experiments" / "branches" / "takeover.toml"
@@ -384,8 +385,8 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
         },
     }
     # 30 arrives before the first episode and 40 between the two; 20 inside the first.
-    series = [1000, 1030, 930, 1030, 1050, 1040, 1080, 880, 830, 810, 795, 802]
-    two = {"balance_history": series, "episodes": [first, second]}
+    balance_history = [1000, 1030, 930, 1030, 1050, 1040, 1080, 880, 830, 810, 795, 802]
+    two = {"balance_history": balance_history, "episodes": [first, second]}
     # 50 arrives inside an episode and is taken back, then 30 arrives.
     taken = {
         "episode": 1,
@@ -422,15 +423,15 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     cases = {
         (name, index, paid): (account, expected)
         for name, account, index, paid, expected in (
-            ("two", two, 1, 50, (series[:6], one)),
-            ("two", two, 1, 90, (series[:7], {**one, "received": 90})),
+            ("two", two, 1, 50, (balance_history[:6], one)),
+            ("two", two, 1, 90, (balance_history[:7], {**one, "received": 90})),
             (
                 "two",
                 two,
                 2,
                 90,
                 (
-                    series,
+                    balance_history,
                     {
                         "sent": 150,
                         "received": 90,
@@ -469,9 +470,10 @@ def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
 
 
 def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
-    """Each fork stands where its seat stood as the round ended: its balance, its series,
-    and every running total, which a transfer that reached it after its own episode of
-    the round moved, and a later round's did not. So the branch's ledger balances.
+    """Each fork stands where its seat stood as the round ended: its balance, its
+    balance history, and every running total, which a transfer that reached it after
+    its own episode of the round moved, and a later round's did not. So the branch's
+    ledger balances.
 
     Sequentially, g01 gives seat 2 250 before g02's episode, and g02 gives seat 1 100
     after g01's; in round 2 each gives the other again. In a simultaneous round, g02
@@ -569,7 +571,8 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
                     "2",
                     root / f"{schedule}.toml",
                 )
-                # A fork stands on no series that does not carry on from its trace's.
+                # A fork stands on no balance history that does not carry on from its
+                # trace's.
                 astray = harness.fork("g01", 1, "astray", [0])
             forks[schedule] = {
                 agent: ground_truth(f"{schedule}-0{seat}")
@@ -1009,7 +1012,7 @@ def check_a_round_writes_each_stage_as_it_reaches_it():
     """Progress follows the round as it goes: the round waits on an episode before it
     runs, resolves its actions after it ran and before it settles, and settles it
     before it is committed, so no stage is written once the round has left it. An
-    episode has settled once its turns are in the series its account holds.
+    episode has settled once its turns are in the balance history its account holds.
 
     g01's transfer reaches g02's account once g01's episode is committed, and not when
     it settles. In a simultaneous round an episode that ends while a peer's still runs

@@ -814,7 +814,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
 
     An experiment that does not want its agents reasoning about money says so
     here. Nothing about the accounting changes: turns are billed, the account
-    keeps the series, and only the window into it is gone.
+    keeps the balance history, and only the window into it is gone.
     """
     with temp_root(harness_files={"balance": "", "digest": "digest"}) as root:
         seated(root, other={"group/post": "theirs\n"})
@@ -828,7 +828,8 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
         "no balance to touch or read"
     )
     assert t["provenance"]["harness_files"] == {"balance": "", "digest": "digest"}
-    # The accounting itself is untouched: the series still grew by the turns billed.
+    # The accounting itself is untouched: the balance history still grew by the turns
+    # charged.
     assert account["balance_history"], "the balance is still kept, just not shown"
     assert account["balance"] == account["budget"] - t["spent"], account
 

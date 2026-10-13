@@ -104,7 +104,7 @@ read-only. Named here, one key at a time; the transfer channel names the other t
 
 | key | what it names |
 |---|---|
-| `balance` | The file holding the agent's balance series, one integer per movement. `""` writes none, and the agent never sees what it holds or that a balance exists |
+| `balance` | The file holding the agent's balance history, one integer per movement. `""` writes none, and the agent never sees what it holds or that a balance exists |
 | `digest` | The file quoting, at episode start under push delivery, every channel marked `pushed` and the other status files. `""` is the same as pull delivery: the episode opens on the listing alone |
 | `round` | An optional round announcement. It states the seat's own round, the agent's label, the agent and its reachable peers, and the round type, then summarizes a vote on the next round; `""` writes none |
 

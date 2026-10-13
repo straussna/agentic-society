@@ -1164,7 +1164,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         # Nothing left on any account, which is the whole point: a seat still to
         # come reads that way on the balance that would stop it starting.
         with rooted(HostSandbox):
-            c = fake_experiment(acted, series=(0,))
+            c = fake_experiment(acted, balance_history=(0,))
             rows = view.experiment_episodes(c)
             current_round = view.round_now(c, rows)
             committed_round = view.furthest_committed_round(c)

@@ -889,8 +889,8 @@ def check_the_channels_answer_differently():
         ("rm what was said", rm_m),
     ):
         assert "DENIED" in out, f"{name} was allowed: {out}"
-    # An agent the experiment laid out but never billed has no series, so its balance
-    # is the empty array: the shape the first round of an experiment reads.
+    # An agent the experiment laid out but never charged has no balance history, so its
+    # balance is the empty array: the shape the first round of an experiment reads.
     assert read.split("\n")[0].strip() == "theirs", (
         f"the peer's board is untouched: {read}"
     )

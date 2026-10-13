@@ -2601,9 +2601,9 @@ def balance_name(label: str) -> str:
     return f"{SETTINGS.harness_files['balance']}{label}"
 
 
-def render_balance(series: list[int]) -> str:
+def render_balance(balance_history: list[int]) -> str:
     """Unlabelled: a JSON array of bare integers. No keys, no units, no timestamps."""
-    return json.dumps(series, separators=(",", ":")) + "\n"
+    return json.dumps(balance_history, separators=(",", ":")) + "\n"
 
 
 def render_ledger(rows: list[tuple[str, str, int]]) -> str:
@@ -2904,11 +2904,11 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
     for label in seating.labels.values():
         if name == balance_name(label):
             try:
-                series = json.loads(body)
+                balance_history = json.loads(body)
             except TypeError, json.JSONDecodeError:
                 return "Balance data is unavailable.\n"
-            current = series[-1] if series else 0
-            history = ", ".join(str(value) for value in series) or "none"
+            current = balance_history[-1] if balance_history else 0
+            history = ", ".join(str(value) for value in balance_history) or "none"
             return f"current: {current} micro-dollars\nhistory, oldest to newest: {history}\n"
     parsed = schema_channel(channels())
     if parsed and name == parsed.ledger:
@@ -3121,8 +3121,8 @@ def render_harness_files(
     if s.harness_files["balance"]:
         files.update(
             {
-                balance_name(label): render_balance(series)
-                for label, series in balances(agent, account).items()
+                balance_name(label): render_balance(balance_history)
+                for label, balance_history in balances(agent, account).items()
             }
         )
     parsed = schema_channel(s.channels)
@@ -3397,7 +3397,7 @@ def plant_harness_files(container: str, files: dict[str, str]) -> None:
 
 
 def plant_balance_live(
-    container: str, label: str, series: list[int], expected: str
+    container: str, label: str, balance_history: list[int], expected: str
 ) -> str:
     """Rewrite the agent's own balance in a running container.
 
@@ -3409,7 +3409,7 @@ def plant_balance_live(
     try:
         r = docker(
             ["docker", "exec", "-i", "-u", "root", container, "bash", "-c", script],
-            input=render_balance(series).encode("utf-8"),
+            input=render_balance(balance_history).encode("utf-8"),
             capture_output=True,
         )
     except OSError:
@@ -3746,9 +3746,9 @@ class Shell:
         """
         return dict(DETACHED)
 
-    def replant_balance(self, label: str, series: list[int], expected: str) -> str:
+    def replant_balance(self, label: str, history: list[int], expected: str) -> str:
         """Rewrite the agent's own balance mid-episode. See plant_balance_live."""
-        return plant_balance_live(self.container, label, series, expected)
+        return plant_balance_live(self.container, label, history, expected)
 
     def restart(self) -> None:
         """Start a fresh shell, losing cwd and exports - which is what restart is."""
@@ -5009,7 +5009,7 @@ def new_episode_record() -> dict:
     balance file went. balance_floor: the balance the turn loop stops at, which is
     zero. refused_turns: turns the API declined, whether or not they ended the
     episode. balances: the balance after each billed turn, the elements this episode
-    adds to the series.
+    adds to the balance history.
     """
     return {
         "stop": "harness_error",
@@ -5319,7 +5319,8 @@ def run_turns(
         if isinstance(e, ProviderError):
             out["provider_error"] = e.as_dict()
     finally:
-        # Recorded on every path: an episode that spent money appears in the series.
+        # Recorded on every path: an episode that spent money appears in the balance
+        # history.
         out["spent"] = centi // 100
 
     return out
@@ -5485,8 +5486,8 @@ def make_transfer(
         transfer["debit"] = transfer["amount"]
 
     credit(receiver, transfer["amount"])
-    # One series element for what the transfer did to the giver, none where it did
-    # nothing: a harness-funded transfer at rebate 0 leaves the balance alone.
+    # One balance history element for what the transfer did to the giver, none where
+    # it did nothing: a harness-funded transfer at rebate 0 leaves the balance alone.
     adjust(account, transfer["rebate"] - transfer["debit"])
     account["sent"] = account.get("sent", 0) + transfer["amount"]
     account["rebated"] = account.get("rebated", 0) + transfer["rebate"]
@@ -5919,7 +5920,7 @@ def author_of(inst: Instance, starter: bool) -> str:
 
 def snapshot(
     instances: list[Instance],
-    series: list[int],
+    balance_history: list[int],
     starter: AbstractSet[str] = frozenset(),
     labels: tuple[str, ...] = (),
     receipts: Mapping[str, str] | None = None,
@@ -5936,7 +5937,7 @@ def snapshot(
     files = []
     mentions = {"number": False, "balance_path": False, "cost": False}
     lines = []
-    numbers = {str(v) for v in series}
+    numbers = {str(v) for v in balance_history}
     patterns = balance_patterns(
         SETTINGS.harness_files["balance"],
         labels or tuple(dict.fromkeys(i.label for i in instances if i.label)),
@@ -6394,8 +6395,8 @@ def close_episode(ep: Episode, out: dict, settled: dict) -> dict:
 def balance_forms(canonical: str) -> list[str]:
     """Every text a read of the balance file can have returned this episode.
 
-    The committed series as planted; under live_balance that series with a live
-    element after it; and, once the file outgrows the tool bound, the head clip()
+    The committed balance history as planted; under live_balance that history with a
+    live element after it; and, once the file outgrows the tool bound, the head clip()
     keeps, which is the same bytes at every turn because elements are only appended.
     """
     s = SETTINGS

@@ -326,7 +326,7 @@ def check_fork_reproduces_state_and_account():
         assert len(notes) == was["size"], "byte for byte, not merely line for line"
         assert notes == b"v1\n", "and not the episode the parent has since reached"
         assert forked["balance_history"] == trace["balance_after"], (
-            "invariant 8: the series is what carries"
+            "invariant 8: the balance history is what carries"
         )
         assert not any(harness.mirror("f", "board").rglob("*")), (
             "the parent's board was empty, so the fork's is"

@@ -700,7 +700,9 @@ def check_a_container_failure_stops_the_episode_cleanly():
         m = ground_truth()
         assert m["episodes"] == [], "an episode that never started is not recorded"
         assert m["balance"] == m["budget"], "and nothing was spent"
-        assert m["balance_history"] == [m["budget"]], "and the series did not move"
+        assert m["balance_history"] == [m["budget"]], (
+            "and the balance history did not move"
+        )
         assert not list((harness.records_dir("t") / "traces").glob("*.json")), (
             "no trace"
         )
@@ -1040,7 +1042,7 @@ def check_a_balance_resists_every_route():
         f"still a bare array of integers: {contents}"
     )
     assert got[: len(t["balance_before"])] == t["balance_before"], (
-        f"the committed series is what the agent read: {got}"
+        f"the committed balance history is what the agent read: {got}"
     )
     assert got[len(t["balance_before"]) :] == t["balances"][:2], (
         f"and the rest is this episode's billed turns, not anything a route put there: {got}"
