@@ -1889,7 +1889,7 @@ REFUSAL_4_KEYS = {"kind": "refusal_type"}
 FILE_4_KEYS = {"ours": "planted"}
 
 
-def renamed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any]:
+def rekeyed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any]:
     """A copy of `record` with every key `keys` names under the name it maps to."""
     return {keys.get(key, key): value for key, value in record.items()}
 
@@ -1899,20 +1899,20 @@ def account_as_current(account: Mapping[str, Any]) -> Mapping[str, Any]:
     account_version kept; any other account as it is."""
     if account.get("account_version") != 2:
         return account
-    out = renamed(account, ACCOUNT_2_KEYS)
+    out = rekeyed(account, ACCOUNT_2_KEYS)
     if "seating" in out:
-        out["seating"] = renamed(out["seating"], SEATING_2_KEYS)
+        out["seating"] = rekeyed(out["seating"], SEATING_2_KEYS)
     out["episodes"] = [
-        renamed(episode, EPISODE_2_KEYS) for episode in out.get("episodes") or []
+        rekeyed(episode, EPISODE_2_KEYS) for episode in out.get("episodes") or []
     ]
     if "elections" in out:
         out["elections"] = [
-            renamed(election, ELECTION_2_KEYS) for election in out["elections"]
+            rekeyed(election, ELECTION_2_KEYS) for election in out["elections"]
         ]
     if "last_election" in out:
-        out["last_election"] = renamed(out["last_election"], ELECTION_2_KEYS)
+        out["last_election"] = rekeyed(out["last_election"], ELECTION_2_KEYS)
     if "starter_files_landed" in out:
-        out["starter_files_landed"] = renamed(
+        out["starter_files_landed"] = rekeyed(
             out["starter_files_landed"], STARTER_2_KEYS
         )
     return out
@@ -1928,21 +1928,21 @@ def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
     """
     if trace.get("trace_version") != 4:
         return trace
-    out = renamed(trace, TRACE_4_KEYS)
-    provenance = renamed(out.get("provenance") or {}, PROVENANCE_4_KEYS)
+    out = rekeyed(trace, TRACE_4_KEYS)
+    provenance = rekeyed(out.get("provenance") or {}, PROVENANCE_4_KEYS)
     provenance.pop("shell_tool", None)
     out["provenance"] = provenance
     turns = []
     for turn in out.get("turns") or []:
-        turn = renamed(turn, TURN_4_KEYS)
+        turn = rekeyed(turn, TURN_4_KEYS)
         turn["charges"] = [
-            renamed(charge, CHARGE_4_KEYS) for charge in turn.get("charges") or []
+            rekeyed(charge, CHARGE_4_KEYS) for charge in turn.get("charges") or []
         ]
         if turn.get("refusal"):
-            turn["refusal"] = renamed(turn["refusal"], REFUSAL_4_KEYS)
+            turn["refusal"] = rekeyed(turn["refusal"], REFUSAL_4_KEYS)
         turns.append(turn)
     out["turns"] = turns
-    files = [renamed(file, FILE_4_KEYS) for file in out.get("files") or []]
+    files = [rekeyed(file, FILE_4_KEYS) for file in out.get("files") or []]
     out["files"] = [
         {key: value for key, value in file.items() if key != "role"} for file in files
     ]
