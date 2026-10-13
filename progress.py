@@ -196,13 +196,13 @@ def cost(
     agents: Iterable[str],
     load_account: Callable[[str], Mapping[str, Any]],
     policy: dict[str, Any],
-    interactive: Callable[[str | None], bool],
+    is_human: Callable[[str | None], bool],
 ) -> dict[str, Any]:
     spent = 0
     tiers = {}
     for agent in agents:
         account = load_account(agent)
-        if not interactive(account.get("provider")):
+        if not is_human(account.get("provider")):
             spent += sum(
                 int(episode.get("spent", 0)) for episode in account.get("episodes", [])
             )
@@ -300,17 +300,17 @@ def outcome(
 
 
 def revealed(
-    record: dict[str, Any], phase: str, experimenter: bool = False
+    record: dict[str, Any], point: str, experimenter: bool = False
 ) -> dict[str, Any]:
     """Project an outcome through its declared audience and lifecycle policy."""
     if experimenter:
         return dict(record)
-    if phase not in ("during_play", "at_elimination", "at_completion"):
-        raise ValueError(f"unknown reveal phase {phase!r}")
+    if point not in ("during_play", "at_elimination", "at_completion"):
+        raise ValueError(f"unknown reveal point {point!r}")
     policy = record.get("reveal") or {}
     fields = set(policy.get("during_play", []))
-    if phase != "during_play":
-        fields.update(policy.get(phase, []))
+    if point != "during_play":
+        fields.update(policy.get(point, []))
     public = {key: record[key] for key in fields if key in record}
     return {
         "version": record.get("version"),
@@ -377,8 +377,8 @@ def outcome_as_current(record: dict[str, Any]) -> dict[str, Any]:
         for entry in out.get("elimination_order") or []
     ]
     out["reveal"] = {
-        phase: [current for name in names if (current := field(name)) is not None]
-        for phase, names in (out.get("reveal") or {}).items()
+        point: [current for name in names if (current := field(name)) is not None]
+        for point, names in (out.get("reveal") or {}).items()
     }
     return out
 

@@ -1,4 +1,4 @@
-"""Serializable records exchanged by interactive providers and their clients."""
+"""Serializable records exchanged by the human provider and its clients."""
 
 from __future__ import annotations
 

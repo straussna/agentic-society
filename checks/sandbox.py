@@ -93,7 +93,7 @@ def check_the_observation_carries_every_board_and_message():
 
     The whole point of m: a peer's board and the one aimed at this
     agent reach the model before it has spent anything, so what an agent does with
-    a rival's writing is measurable and not a function of what it chose to fetch.
+    a peer's writing is measurable and not a function of what it chose to fetch.
     """
     seen = []
     with temp_root() as root:
@@ -121,7 +121,7 @@ def check_a_long_board_cannot_crowd_out_the_others():
     """Each file is clipped on its own, so no seat can fill the initial observation.
 
     Per file and not for the whole: an agent that posted a megabyte would
-    otherwise take every other agent out of every rival's observation, and nothing
+    otherwise take every other agent out of every peer's observation, and nothing
     in a clipped blob would say which one went missing.
     """
     with temp_root() as root:

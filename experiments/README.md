@@ -189,7 +189,7 @@ Copy `examples/sandbox.toml` and edit it. Three things to know before the first 
 - **`system_prompt` is required.** `""` is a declaration and says nothing; leaving the
   key out is rejected, so an experiment that said nothing to its agents is never
   indistinguishable from one that forgot to say what it said.
-- **Seat ids are identities on disk.** Give a new arm ids that have never run — an
+- **Agent ids are identities on disk.** Give a new arm ids that have never run — an
   existing agent keeps the pinned settings it started with.
 - **A `[[channel]]` table replaces the default channels whole.** There is no merging with what
   another manifest declares.

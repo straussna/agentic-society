@@ -210,10 +210,10 @@ def addressed_labels(t: dict) -> list[str]:
     A file named by no label reaches nobody and is not counted. In seat order,
     which is the order the environment lists the agents in.
     """
-    mail = mailbox_channel_of(t)
-    if mail is None:
+    mailbox = mailbox_channel_of(t)
+    if mailbox is None:
         return []
-    box = mail.outbox + "/"
+    box = mailbox.outbox + "/"
     peers = {label: seat for seat, label in labels_of(t).items() if seat != seat_of(t)}
     names = {
         f["path"][len(box) :] for f in outbox_files(t) if f["path"].startswith(box)
@@ -1031,7 +1031,7 @@ def charts(
         ("cost-per-turn", cost_per_turn_chart),
         ("episode-spend", episode_spend_chart),
         ("tokens", tokens_chart),
-        ("notes-size", notes_size_chart),
+        ("own-files-size", own_files_size_chart),
     ]
     if identity:
         figures.append(
@@ -1230,7 +1230,7 @@ def tokens_chart(plt, agents: dict[str, list[dict]]):
     return fig
 
 
-def notes_size_chart(plt, agents: dict[str, list[dict]]):
+def own_files_size_chart(plt, agents: dict[str, list[dict]]):
     """What the agent's own files cost it: their size against the episode's spend."""
     fig, axes = per_agent_axes(plt, agents, 4.5)
     for ax, (name, ts) in zip(axes, agents.items()):

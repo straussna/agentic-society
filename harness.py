@@ -564,8 +564,8 @@ class Channel:
         }
 
 
-# The default set: the competition environment, in the paths the starter files
-# name. Code defaults, not config.toml's: no penalty, a full rebate.
+# The default channels, in the paths the starter files name. Code defaults, not
+# config.toml's: no penalty, a full rebate.
 DEFAULT_CHANNELS: tuple[Channel, ...] = (
     Channel("memory", "self", "self", "directory", path="memory"),
     Channel("board", "self", "all", "directory", path="{label}", measured=True),
@@ -2372,7 +2372,7 @@ def guard_sources(
     them.
 
     Recorded in the account the first time, like starter files: an experiment
-    whose brief changed mid-flight is two experiments.
+    whose source changed mid-flight spans two arms.
     """
     seen = account.setdefault("sources_seen", {})
     changed = False
@@ -5112,7 +5112,7 @@ def run_tools(
 
 
 def open_episode(
-    shell: Shell, episode: int, provider: str, model: str, remaining: int
+    shell: Shell, episode: int, provider: str, model: str, opening_balance: int
 ) -> tuple[dict, str]:
     """The episode's record, and the first user turn it opens on.
 
@@ -5126,7 +5126,8 @@ def open_episode(
     out["observation"] = sh(shell, first, SETTINGS.observation_limit)
     watch(f"\n=== episode {episode} ===")
     watch(
-        f"=== {shell.container}  {provider}/{model}  {remaining:,} micro-dollars remaining  (floor 0) ==="
+        f"=== {shell.container}  {provider}/{model}  balance {opening_balance:,} "
+        "micro-dollars  (floor 0) ==="
     )
     return out, out["observation"]
 
@@ -5192,7 +5193,7 @@ def run_turns(
     alone. Their specs are built once: the tool set stands for the episode.
     """
     s = SETTINGS
-    provider, model, remaining = (
+    provider, model, opening_balance = (
         account["provider"],
         account["model"],
         account["balance"],
@@ -5203,10 +5204,12 @@ def run_turns(
     limit = int(
         providers.model_spec(provider, model).context_window * s.context_fraction
     )
-    centi, balance = 0, remaining
+    centi, balance = 0, opening_balance
     refused = 0  # consecutive refusals, reset by any answered turn
     seen: set[str] = set()
-    out, next_input = open_episode(shell, episode, provider, model, remaining)
+    out, next_input = open_episode(
+        shell, episode, provider, model, opening_balance
+    )
     info = SessionInfo(
         agent, label, episode, interaction_store_root(), lambda: INTERRUPTING
     )
@@ -5242,7 +5245,7 @@ def run_turns(
             out["resolved_model"] = out["resolved_model"] or response.resolved_model
             charges, billed_centi, duplicate = bill_once(response, seen)
             centi += billed_centi
-            previous, balance = balance, remaining - centi // 100
+            previous, balance = balance, opening_balance - centi // 100
             calls = list(response.tool_calls)
             turn = turn_record(
                 turn_number, response, charges, duplicate, previous, balance
@@ -5257,7 +5260,7 @@ def run_turns(
                 republish(shell, label, account, out)
 
             watch(
-                f"\n--- turn {turn_number}   spent {centi // 100:,}/{remaining:,}"
+                f"\n--- turn {turn_number}   spent {centi // 100:,}/{opening_balance:,}"
                 f"   balance {turn['balance']:,}   context "
                 f"{response.usage.prefix_tokens:,}/{limit:,}"
             )

@@ -246,10 +246,10 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 .board-view { flex:1 1 auto; min-height:0; }
 .board-view .thead { justify-content:space-between; }
 .board-view .group-title, .ballot-view .group-title { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
-.board-view .participants { display:flex; align-items:center; }
-.board-view .participant { width:25px; height:25px; display:grid; place-items:center; margin-left:-5px;
+.board-view .posters { display:flex; align-items:center; }
+.board-view .poster { width:25px; height:25px; display:grid; place-items:center; margin-left:-5px;
   border:1px solid var(--line2); border-radius:50%; background:var(--raise); font:600 10px/1 var(--mono); }
-.board-view .participant:first-child { margin-left:0; }
+.board-view .poster:first-child { margin-left:0; }
 .board-view .msg { max-width:min(920px,92%); }
 .board-view .msg .bub { border-left:2px solid var(--speaker,var(--accent)); }
 .board-view .msg .mh b { font-weight:600; }
@@ -611,7 +611,7 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             // How much of the header, and of the thread list, is shown.
             compact: held("compact", false), rail: held("rail", false),
             overviewHeight: heldNumber("overview-height"),
-            mailWidth: heldNumber("mail-width") || 310,
+            mailboxWidth: heldNumber("mailbox-width") || 310,
             treeWidth: heldNumber("tree-width"),
             interaction: null, interactionId: null, interactionSubmitted: false,
             humanExperiment: null, humanExperimentAgent: null,
@@ -1044,8 +1044,8 @@ function renderMessages() {
         aria-label="Clear conversation search" title="Clear search">×</button></div>
       <div class="pair-options"><label class="tail"><input type="checkbox" id="empty-pairs"
         ${S.showEmpty ? "checked" : ""}>show empty pairs</label><span>0 shown</span></div></div>`;
-    redraw(el, `<div class="fill"><div class="chat" style="--split:${S.mailWidth}px"><div class="pairs">${controls}</div>
-      <div class="splitter" data-resize="mail" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
+    redraw(el, `<div class="fill"><div class="chat" style="--split:${S.mailboxWidth}px"><div class="pairs">${controls}</div>
+      <div class="splitter" data-resize="mailbox" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
       <div class="thread"><div class="empty">no conversations match</div></div></div></div>`);
     wireConversationFilters(el);
     return;
@@ -1089,8 +1089,8 @@ function renderMessages() {
       ${S.standing ? "checked" : ""}>show ${same} legacy standing event${same === 1 ? "" : "s"}</label>` : ""}
     </div>`;
   redraw(el, `<div class="fill"><div class="note" style="margin:2px 0 8px">Activity · newest conversations first</div>
-    <div class="chat ${S.rail ? "narrow" : ""}" style="--split:${S.mailWidth}px"><div class="pairs">${controls}${side}</div>
-      <div class="splitter" data-resize="mail" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
+    <div class="chat ${S.rail ? "narrow" : ""}" style="--split:${S.mailboxWidth}px"><div class="pairs">${controls}${side}</div>
+      <div class="splitter" data-resize="mailbox" role="separator" aria-label="Resize conversation list" aria-orientation="vertical" tabindex="0"></div>
       <div class="thread">${head}<div id="thread">${threadHtml(t)}</div></div></div></div>`);
   el.querySelectorAll(".pair").forEach(b => b.onclick = () => {
     if (b.dataset.k === S.pair) return;
@@ -1178,7 +1178,7 @@ function renderBoard(channel) {
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   const roundName = selected == null ? "Live board" : `Round ${selected} board`;
-  const participants = messages.map(m => `<span class="participant" style="color:${m.color}"
+  const posters = messages.map(m => `<span class="poster" style="color:${m.color}"
     title="${esc(m.c.agent)}">${esc(m.c.seat == null ? m.c.agent.slice(0,2) : m.c.seat)}</span>`).join("");
   const posts = messages.map(({c, f, got, color}) => {
     const body = got === undefined ? `<pre class="note">Reading&hellip;</pre>`
@@ -1194,7 +1194,7 @@ function renderBoard(channel) {
     new Set(messages.map(m => m.c.agent)).size} seat${new Set(messages.map(m => m.c.agent)).size === 1 ? "" : "s"}` : "no posts";
   redraw(el, `<div class="fill">${snapshotHtml(d)}<section class="thread board-view" aria-label="${esc(roundName)}">
     <div class="thead"><div class="group-title"><span class="nm">${esc(roundName)}</span><span class="note">${status}</span></div>
-      <div class="participants" aria-label="Seats that posted">${participants}</div></div>
+      <div class="posters" aria-label="Seats that posted">${posters}</div></div>
     <div id="thread" role="log" aria-label="Posts in ${esc(roundName)}">${posts || `<div class="empty">Nothing was posted on this board.</div>`}
       ${missing.length && selected != null ? `<div class="sys">No post from ${missing.map(esc).join(", ")}</div>` : ""}</div>
     </section></div>`);
@@ -1828,7 +1828,7 @@ function renderInteraction(request) {
   const el = document.getElementById("human");
   if (!request) {
     if (S.interactionId !== null || (!el.innerHTML && S.humanMode))
-      el.innerHTML = S.humanMode ? `<h2>Human view</h2><div class="note">No human turn is waiting. This view will update when an interactive provider request arrives.</div>` : "";
+      el.innerHTML = S.humanMode ? `<h2>Human view</h2><div class="note">No human turn is waiting. This view will update when a human seat's request arrives.</div>` : "";
     S.interaction = null; S.interactionId = null; S.interactionSubmitted = false;
     return;
   }
@@ -1959,10 +1959,10 @@ const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 let activeResize = null;
 
 function setSplit(kind, value, container) {
-  const minimum = kind === "mail" ? 220 : 300;
-  const room = kind === "mail" ? 360 : 420;
+  const minimum = kind === "mailbox" ? 220 : 300;
+  const room = kind === "mailbox" ? 360 : 420;
   const width = clamp(value, minimum, Math.max(minimum, container.clientWidth - room));
-  if (kind === "mail") S.mailWidth = width;
+  if (kind === "mailbox") S.mailboxWidth = width;
   else S.treeWidth = width;
   holdNumber(`${kind}-width`, width);
   container.style.setProperty("--split", `${width}px`);
@@ -2037,7 +2037,7 @@ document.addEventListener("keydown", e => {
       setOverviewHeight((S.overviewHeight || document.getElementById("overview").clientHeight) + direction * 16);
     } else {
       const kind = handle.dataset.resize;
-      const current = kind === "mail" ? S.mailWidth : handle.parentElement.firstElementChild.clientWidth;
+      const current = kind === "mailbox" ? S.mailboxWidth : handle.parentElement.firstElementChild.clientWidth;
       setSplit(kind, current + direction * 16, handle.parentElement);
     }
     e.preventDefault();

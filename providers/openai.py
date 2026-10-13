@@ -261,7 +261,7 @@ class OpenAISession:
 
 class OpenAIProvider:
     name = "openai"
-    interactive = False
+    is_human = False
     key_variable = "OPENAI_API_KEY"
     models = MODELS
     provenance_facts = {

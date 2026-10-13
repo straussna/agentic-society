@@ -1,4 +1,4 @@
-"""Interactive provider backed by the durable interaction store."""
+"""The human provider, backed by the durable interaction store."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class HumanSession:
 
 class HumanProvider:
     name = "human"
-    interactive = True
+    is_human = True
     models = MODELS
     provenance_facts = {"adapter": "interaction-store-v1", "endpoint": "local"}
 

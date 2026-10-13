@@ -44,12 +44,12 @@ def provider_names() -> tuple[str, ...]:
     return tuple(FACTORIES)
 
 
-def is_interactive(provider: str | None) -> bool:
+def is_human(provider: str | None) -> bool:
     """Whether a person, not a model, answers this provider's turns.
 
     No one answers for a provider no adapter is registered under, or for none.
     """
-    return provider in FACTORIES and FACTORIES[provider].interactive
+    return provider in FACTORIES and FACTORIES[provider].is_human
 
 
 def model_spec(provider: str, model: str) -> ModelSpec:
@@ -150,7 +150,7 @@ __all__ = [
     "ToolSpec",
     "USAGE_FIELDS",
     "Usage",
-    "is_interactive",
+    "is_human",
     "lapsed_prices",
     "model_spec",
     "provenance",

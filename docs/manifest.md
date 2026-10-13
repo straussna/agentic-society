@@ -22,7 +22,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **System prompt** | What is said to an agent on every turn. The experimenter's constant, sent with every model call; the harness ships none, and every manifest declares one, `""` included |
 | **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare on the prompt surface. The harness rejects any change to the system prompt, starter files or an experimenter channel during an agent's life, and records a changed tool description as configuration drift. Configures everything through `config.toml` and a manifest |
 | **Prompt surface** | The four places the experimenter's own words reach an agent: the system prompt, starter files, an experimenter channel, and tool descriptions. Each is recorded in provenance, and a change to any of them starts a new arm |
-| **Agent** | One participant: an account, a seat, a memory inherited from episode to episode, and the model that acts for it |
+| **Agent** | An account, a seat, a memory inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
 | **Label** | How an agent is named to its peers in paths and files. Defaults to its seat number |
 | **Human seat** | A seat whose turns a person answers instead of a model, declared with `provider = "human"` and `model = "interactive"`. Every other seat is an **autonomous seat** |
@@ -234,7 +234,7 @@ at most `maximum`; `warning` only marks `warning_reached` in the progress log.
 `evidence`. The outcome record remains the complete
 experimenter record; the table is the declarative policy a human-facing display uses.
 
-Seat order determines identity, presentation and settlement order. Every agent sees
+Seat order determines identity, the order seats are shown in, and settlement order. Every agent sees
 agents and records in that same order, and every episode records it as
 `seat_order` in provenance.
 
@@ -396,7 +396,7 @@ whether it goes looking or not, so the choice is only whether it pays a turn fir
 what it wrote to itself last episode is the thing it most needs this one. An experiment
 that wants a memory written and never read back declares `pushed = false` and says so.
 
-`agent_view` changes only the presentation in the agent's digest; storage and traces keep
+`agent_view` changes only how the agent's digest names and renders a channel; storage and traces keep
 their native paths and bytes. `"paths"` is the default.
 `"memory"` presents a memory's files as the agent's own memory, naming starter files
 and an experimenter channel's files as such; `"letters"` presents mailbox messages

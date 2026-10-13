@@ -169,7 +169,7 @@ the whole mechanic as broken.
 nobody would be kept in play by it: an exhausted agent starts no further, so what arrived
 there could never be spent. `move_transfer` rejects a line naming any seat outside the
 reachable peers for that reason, and the starter files say so as well — which makes the
-last agent standing exactly as expensive to be as it sounds, since a rival kept barely
+last agent standing exactly as expensive to be as it sounds, since a peer kept barely
 solvent can still be drawn on for a transfer.
 
 Under giver funding, sending a transfer always spends the giver's balance and keeps its

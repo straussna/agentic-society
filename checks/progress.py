@@ -78,7 +78,7 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
                 "episodes": [{"episode": 1, "spent": 30}],
                 "product": {"quality_tier": "premium"},
             },
-            "player": {
+            "human": {
                 "provider": "human",
                 "balance": 90,
                 "episodes": [{"episode": 1, "spent": 999}],
@@ -94,27 +94,27 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
             accounts,
             load,
             {"maximum": 130, "reserved_completion": 100, "warning": 20},
-            providers.is_interactive,
+            providers.is_human,
         )
         assert cost["autonomous_spend"] == 30 and cost["warning_reached"]
         assert cost["ceiling_reached"], (
             "the reserve is protected before another round starts"
         )
         progress.log_stage(root, "pilot", "preparing_round", 1)
-        progress.log_stage(root, "pilot", "waiting_human", 1, {"agents": ["player"]})
+        progress.log_stage(root, "pilot", "waiting_human", 1, {"agents": ["human"]})
         recorded = progress.records(root, "pilot")["progress"]
         assert [event["stage"] for event in recorded["events"]] == [
             "preparing_round",
             "waiting_human",
         ]
         assert recorded["latest"] == recorded["events"][-1], recorded
-        assert recorded["latest"]["agents"] == ["player"], recorded
+        assert recorded["latest"]["agents"] == ["human"], recorded
         outcome = progress.outcome(
             root,
             "pilot",
-            ["auto", "player"],
+            ["auto", "human"],
             {"1": "A", "2": "P"},
-            {"player"},
+            {"human"},
             "one_remains",
             load,
             harness.trace_path,
@@ -136,14 +136,15 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
         public = progress.revealed(outcome, "at_completion")
         assert public["winners"] == ["P"] and "resources" not in public
         assert "evidence" not in public, (
-            "experimenter-only evidence is not player output"
+            "experimenter-only evidence is not human-facing output"
         )
         private = progress.revealed(outcome, "at_completion", experimenter=True)
         assert private["evidence"]
 
 
 def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
-    """Every seat forks at one boundary and the selected new seat becomes interactive."""
+    """Every seat forks at one boundary and the selected new seat becomes a human
+    seat."""
     with temp_root() as root:
         source = manifest_file(
             root,

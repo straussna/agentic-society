@@ -1,4 +1,4 @@
-"""Interactive provider, durable coordination, and browser control routes."""
+"""The human provider, durable coordination, and browser control routes."""
 
 from __future__ import annotations
 

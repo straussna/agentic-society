@@ -21,7 +21,7 @@ is its own, unless its starter files do. Without `bash`, the digest shows it und
 
 Every episode opens holding `m` — every board and every mailbox message addressed
 to that agent that is new to it, and the ledger and every balance either way — so
-reading a rival is not a purchase.
+reading a peer is not a purchase.
 
 ## What the experiment measures
 

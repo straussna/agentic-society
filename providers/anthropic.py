@@ -225,7 +225,7 @@ class AnthropicSession:
 
 class AnthropicProvider:
     name = "anthropic"
-    interactive = False
+    is_human = False
     key_variable = "ANTHROPIC_API_KEY"
     models = MODELS
     provenance_facts = {"adapter": "anthropic-messages-v1", "endpoint": "first-party"}

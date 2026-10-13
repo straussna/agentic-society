@@ -384,11 +384,11 @@ def inbox_headings(name: str) -> set[str]:
     return {name}
 
 
-def inbox_prefix(mail: harness.Channel | None) -> str | None:
+def inbox_prefix(mailbox: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the digest."""
-    if mail is None:
+    if mailbox is None:
         return None
-    return "Message from " if mail.agent_view == "letters" else f"{mail.inbox}/"
+    return "Message from " if mailbox.agent_view == "letters" else f"{mailbox.inbox}/"
 
 
 def shell_offered(provenance: Mapping[str, Any]) -> bool:
@@ -764,9 +764,9 @@ def read_experiments() -> tuple[list[dict], bool]:
             exp["labels"] = (
                 dict(harness.seating_of(first, account).labels) if exp["seated"] else {}
             )
-            mail = harness.mailbox_channel(table)
+            mailbox = harness.mailbox_channel(table)
             schema = harness.schema_channel(table)
-            exp["posts"] = bool(mail or schema)
+            exp["posts"] = bool(mailbox or schema)
             found = manifest_of(first, account)
             exp["tools"] = (
                 (found[0]["tools"] or [])
@@ -864,9 +864,9 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
     return out
 
 
-def table_round(exp: dict) -> int:
-    """The table's round, as experiment.furthest_round counts it: the furthest round any
-    seat has committed, by the episodes its account lists.
+def furthest_committed_round(exp: dict) -> int:
+    """The furthest round any seat has committed, as experiment.furthest_round counts
+    it, by the episodes its account lists.
 
     The account and not the traces, since a forked seat lists the episodes it
     inherited and holds no trace of them.
@@ -877,10 +877,10 @@ def table_round(exp: dict) -> int:
 
 
 def round_now(exp: dict, rows: list[dict]) -> int:
-    """The round the experiment is in: the table's round, or the round of an episode
-    in flight past it."""
+    """The round the experiment is in: the furthest committed round, or the round of
+    an episode in flight past it."""
     in_flight = [r["round"] for r in rows + live_rows(exp, rows)]
-    return max([*in_flight, table_round(exp)])
+    return max([*in_flight, furthest_committed_round(exp)])
 
 
 # --- what every seat is holding ---------------------------------------------
@@ -957,7 +957,7 @@ def seat_row(
 ) -> dict:
     """One seat's tile: what it holds, what it is doing, and what it has moved.
 
-    `current_round` is round_now's and `committed_round` is table_round's.
+    `current_round` is round_now's and `committed_round` is furthest_committed_round's.
     """
     account = account_of(agent)
     ts = traces_of(agent, account)
@@ -1084,7 +1084,7 @@ def header(exp: dict) -> dict:
     table, hf = agent_environment(last, first, account)
     schema = harness.schema_channel(table)
     stamp = account.get("experiment_stamp") or {}
-    committed_round = table_round(exp)
+    committed_round = furthest_committed_round(exp)
     seat_tiles = [
         seat_row(seat, agent, rows, current_round, committed_round)
         for seat, agent in places_of(exp)
@@ -1115,7 +1115,7 @@ def header(exp: dict) -> dict:
         harness.SETTINGS.root, stamp.get("experiment_id") or exp["experiment_id"]
     )
     cost = progress.cost(
-        exp["seats"], account_of, stamp.get("cost") or {}, providers.is_interactive
+        exp["seats"], account_of, stamp.get("cost") or {}, providers.is_human
     )
     try:
         ledger = (
@@ -1160,7 +1160,7 @@ class Mailroom(NamedTuple):
     """The experiment's mailbox and schema channel, read once for a whole log."""
 
     exp: dict
-    mail: harness.Channel | None
+    mailbox: harness.Channel | None
     schema: harness.Channel | None
 
 
@@ -1189,12 +1189,12 @@ def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
     included even where the experiment declares no mailbox.
     """
     out = {}
-    if room.mail:
-        root = harness.mirror(agent, room.mail.name)
+    if room.mailbox:
+        root = harness.mirror(agent, room.mailbox.name)
         for p in sorted(root.rglob("*")) if root.is_dir() else []:
             if not p.is_file():
                 continue
-            path = f"{room.mail.outbox}/{p.relative_to(root).as_posix()}"
+            path = f"{room.mailbox.outbox}/{p.relative_to(root).as_posix()}"
             if room.schema and path == room.schema.receipt:
                 continue
             got = read_file(p)
@@ -1237,8 +1237,8 @@ def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
         if room.schema.shape == "mailbox" and path.startswith(room.schema.outbox + "/"):
             label = path[len(room.schema.outbox) + 1 :]
             return seat_of_label(room.exp, label), label
-    if room.mail and path.startswith(room.mail.outbox + "/"):
-        label = path[len(room.mail.outbox) + 1 :]
+    if room.mailbox and path.startswith(room.mailbox.outbox + "/"):
+        label = path[len(room.mailbox.outbox) + 1 :]
         return seat_of_label(room.exp, label), label
     return None, None
 
@@ -1337,7 +1337,7 @@ def delivery_of(
         ev["tip"]
         or ev["event_type"] == "transfer"
         or not ev["to_agent"]
-        or room.mail is None
+        or room.mailbox is None
     ):
         return None
     nxt = next(
@@ -1345,7 +1345,7 @@ def delivery_of(
     )
     if nxt is None:
         return None
-    box = f"{room.mail.inbox}/{ev['from_label']}"
+    box = f"{room.mailbox.inbox}/{ev['from_label']}"
     shown_box = digest_name(nxt["agent"], nxt["trace"], box)
     paths = carried_paths.get((nxt["agent"], nxt["episode"]))
     return {
@@ -1595,9 +1595,9 @@ def tabs(exp: dict) -> list[dict]:
     trace."""
     out = []
     table = experiment_table(exp)
-    mail, schema = harness.mailbox_channel(table), harness.schema_channel(table)
-    if mail or schema:
-        activity = " + ".join(ch.name for ch in (mail, schema) if ch)
+    mailbox, schema = harness.mailbox_channel(table), harness.schema_channel(table)
+    if mailbox or schema:
+        activity = " + ".join(ch.name for ch in (mailbox, schema) if ch)
         out.append({"key": "mailbox", "label": activity})
     out += [{"key": name, "label": name} for name in trees(exp)]
     return out + [{"key": "trace", "label": "trace"}]
@@ -2030,7 +2030,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
     """A finished episode, read off its trace. The observation and the diffs travel
     only with the first request (`since` 0); the page holds them from there."""
     table = harness.table_of(trace)
-    mail = harness.mailbox_channel(table)
+    mailbox = harness.mailbox_channel(table)
     out = {
         "source": "trace",
         "live": False,
@@ -2062,8 +2062,8 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
             # `listing` and `shown_before` are `result` split where the digest's
             # record begins; `name` is the digest file the record came from.
             "name": analyze.harness_files_of(trace)["digest"],
-            "inbox": mail.inbox if mail else None,
-            "inbox_prefix": inbox_prefix(mail),
+            "inbox": mailbox.inbox if mailbox else None,
+            "inbox_prefix": inbox_prefix(mailbox),
             "listing": listing,
             "shown_before": sections,
             "clipped": observation_clipped(trace),
@@ -2099,7 +2099,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
             else harness.SETTINGS.bash_declared
         )
     )
-    mail = harness.mailbox_channel(table)
+    mailbox = harness.mailbox_channel(table)
     out = {
         "source": "raw",
         "live": True,
@@ -2128,8 +2128,8 @@ def raw_view(agent: str, index: int, since: int) -> dict:
             "shell": shell,
             "result": None,
             "name": hf["digest"],
-            "inbox": mail.inbox if mail else None,
-            "inbox_prefix": inbox_prefix(mail),
+            "inbox": mailbox.inbox if mailbox else None,
+            "inbox_prefix": inbox_prefix(mailbox),
             "listing": None,
             "shown_before": [],
             "clipped": False,
@@ -2186,7 +2186,7 @@ def episode_changes(agent: str, index: int) -> list[dict]:
 
 
 class View(http.server.BaseHTTPRequestHandler):
-    """Observational GET routes plus a narrow interactive-provider submission route."""
+    """Observational GET routes plus a narrow human-seat submission route."""
 
     server_version = "view.py"
 
@@ -2383,8 +2383,8 @@ class View(http.server.BaseHTTPRequestHandler):
 
 
 class ViewServer(http.server.ThreadingHTTPServer):
-    """Loopback only. An interactive POST must carry `control_token`, which the served page
-    embeds, and come from `origin`, this server's own."""
+    """Loopback only. A submission POST must carry `control_token`, which the served
+    page embeds, and come from `origin`, this server's own."""
 
     focus: str | None
     control_token: str
@@ -2445,7 +2445,7 @@ def main(argv: list[str] | None = None) -> int:
         f" under {harness.records_root()})"
     )
     print(
-        "observer views are read-only; the human view submits only to interactive seats"
+        "observer views are read-only; the human view submits only to human seats"
     )
     if not a.no_browser:
         webbrowser.open(url)

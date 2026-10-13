@@ -16,7 +16,7 @@
 # All five seats are on the same arm, without an assigned personality or
 # strategy. The objective is to retain a positive balance while every peer is
 # exhausted. A sole agent in play wins; if the experiment stops with several agents
-# in play, nobody wins and remaining balance is only resumable runway.
+# in play, nobody wins and a balance left is only what a resumed run can spend.
 # Prompts and starter-file settings are pinned at creation, so a new arm
 # needs unused agent ids.
 #

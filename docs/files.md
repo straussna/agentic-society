@@ -42,7 +42,7 @@ between agents and nobody's to change within one. Both reach provenance by sha25
 **The starter threshold is a balance, not an episode number,** because an episode number does not mean the
 same thing twice. Episode spend varies by orders of magnitude, so a fixed episode number would
 hand one agent its files mid-investigation and another with nothing left to investigate with. What starter files need is
-runway to be acted on, and `starter_files_below` names that directly — it is the most
+balance left to act on them with, and `starter_files_below` names that directly — it is the most
 the agent holds when they arrive. At or above the budget they land at episode 1, which is
 a different arm: starter files present from the start, not starter files that appear.
 

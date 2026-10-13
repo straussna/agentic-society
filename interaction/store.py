@@ -1,4 +1,4 @@
-"""Atomic filesystem coordination for interactive turns."""
+"""Atomic filesystem coordination for human seats' turns."""
 
 from __future__ import annotations
 
@@ -288,7 +288,7 @@ class InteractionStore:
         while True:
             if cancelled():
                 self.cancel(request.agent, request.request_id)
-                raise InteractionCancelled("interactive request cancelled")
+                raise InteractionCancelled("request cancelled")
             try:
                 submission = self._load(path, Submission.from_dict)
             except UnreadableRecord:

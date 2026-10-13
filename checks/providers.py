@@ -658,7 +658,7 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
     }
     assert list(providers.FACTORIES) == list(declared), list(providers.FACTORIES)
     for name, factory in providers.FACTORIES.items():
-        for attr in ("interactive", "models", "provenance_facts"):
+        for attr in ("is_human", "models", "provenance_facts"):
             assert not hasattr(inspect.getattr_static(factory, attr), "__get__"), (
                 f"{name}.{attr} is read off the class, where a property is not its value"
             )
@@ -680,7 +680,7 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
                 name,
                 model,
             )
-    assert [name for name in providers.FACTORIES if providers.is_interactive(name)] == [
+    assert [name for name in providers.FACTORIES if providers.is_human(name)] == [
         "human"
     ], "a person answers the human seat's turns, and no other's"
 

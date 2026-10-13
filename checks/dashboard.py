@@ -1,4 +1,4 @@
-"""view.py: observational views and the interactive-seat control route.
+"""view.py: observational views and the human-seat control route.
 
 view.py reads what is on disk while an agent is going, writing nothing and asking
 Docker nothing, so every check here runs in the arithmetic lane. An episode in
@@ -1167,7 +1167,7 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
             c = fake_experiment(acted, series=(0,))
             rows = view.experiment_episodes(c)
             current_round = view.round_now(c, rows)
-            committed_round = view.table_round(c)
+            committed_round = view.furthest_committed_round(c)
             return current_round, {
                 agent: view.seat_row(seat, agent, rows, current_round, committed_round)
                 for seat, agent in view.places_of(c)
@@ -1231,7 +1231,9 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
                 harness.trace_path(agent, episode).unlink()
         rows = view.experiment_episodes(c)
         forked_round = view.round_now(c, rows)
-        forked = view.seat_row("2", "g02", rows, forked_round, view.table_round(c))
+        forked = view.seat_row(
+            "2", "g02", rows, forked_round, view.furthest_committed_round(c)
+        )
     assert forked_round == 3 and forked["round"] == 2, (forked_round, forked)
     assert forked["pending"] and not forked["behind"], forked
     # Behind is the seat the run seats in no further round, and an empty balance is
@@ -1259,7 +1261,8 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         raw.parent.mkdir(parents=True, exist_ok=True)
         raw.write_text("", encoding="utf-8")
         rows = view.experiment_episodes(c)
-        ahead_round, committed_round = view.round_now(c, rows), view.table_round(c)
+        ahead_round = view.round_now(c, rows)
+        committed_round = view.furthest_committed_round(c)
         missed = view.seat_row("2", "g02", rows, ahead_round, committed_round)
     assert (ahead_round, committed_round) == (4, 3), (ahead_round, committed_round)
     assert not missed["behind"] and not missed["unseated"], missed
@@ -1858,7 +1861,7 @@ def check_the_page_summarises_the_experiment_and_resizes_its_sections():
         "needs attention",
     ):
         assert f'["{label}"' in page, label
-    for kind in ("overview", "mail", "tree"):
+    for kind in ("overview", "mailbox", "tree"):
         assert f'data-resize="{kind}"' in page, kind
     assert (
         'role="separator"' in page and 'document.addEventListener("pointermove"' in page

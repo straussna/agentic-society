@@ -366,16 +366,16 @@ def load_manifest(path: Path) -> Manifest:
     if not isinstance(reveal, dict):
         raise SystemExit(f"{path}: reveal must be a table")
     check_keys(rejecter(path), "reveal: ", reveal, REVEAL_KEYS)
-    for phase, fields in reveal.items():
+    for point, fields in reveal.items():
         if not isinstance(fields, list) or not all(
             isinstance(field, str) for field in fields
         ):
             raise SystemExit(
-                f"{path}: reveal.{phase} must be a list of outcome field names"
+                f"{path}: reveal.{point} must be a list of outcome field names"
             )
         if unknown := set(fields) - OUTCOME_FIELDS:
             raise SystemExit(
-                f"{path}: reveal.{phase} names unknown outcome fields {sorted(unknown)}"
+                f"{path}: reveal.{point} names unknown outcome fields {sorted(unknown)}"
             )
     definitions = top.get("agent")
     if not isinstance(definitions, list) or not all(
@@ -764,7 +764,7 @@ def branch_experiment(
     takeover_seat: str,
     output: Path | None = None,
 ) -> Path:
-    """Fork every seat at a completed round and make one new seat interactive."""
+    """Fork every seat at a completed round and make one new seat a human seat."""
     manifest = load_manifest(source)
     if at_round < 1:
         raise SystemExit("--at-round must be positive")
@@ -1157,7 +1157,7 @@ def sequential_round(
             raise KeyboardInterrupt
         if agent not in seated:
             continue
-        human = providers.is_interactive(
+        human = providers.is_human(
             harness.account_on_disk(agent).get("provider")
         )
         log_stage(
@@ -1285,8 +1285,8 @@ def simultaneous_round(
     if not built:
         return False
 
-    interactive = {
-        agent: providers.is_interactive(ep.account.get("provider"))
+    human_seat = {
+        agent: providers.is_human(ep.account.get("provider"))
         for agent, ep in built.items()
     }
     outs: dict[str, dict] = {}
@@ -1299,13 +1299,13 @@ def simultaneous_round(
         except BaseException as e:  # run_episode has saved and reaped on its way out
             errors[agent] = e
             return
-        if not interactive[agent]:
+        if not human_seat[agent]:
             running = [
                 name for name in built if name not in outs and name not in errors
             ]
             stage = (
                 "waiting_human"
-                if any(interactive[name] for name in running)
+                if any(human_seat[name] for name in running)
                 else "waiting_autonomous"
                 if running
                 else "resolving_actions"
@@ -1316,8 +1316,8 @@ def simultaneous_round(
         threading.Thread(target=go, args=(agent, ep), name=agent, daemon=True)
         for agent, ep in built.items()
     ]
-    autonomous = [agent for agent in built if not interactive[agent]]
-    humans = [agent for agent in built if interactive[agent]]
+    autonomous = [agent for agent in built if not human_seat[agent]]
+    humans = [agent for agent in built if human_seat[agent]]
     try:
         if autonomous:
             log_stage("waiting_autonomous", round, {"agents": autonomous})
@@ -1834,7 +1834,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--takeover-seat",
         metavar="SEAT",
-        help="seat whose new agent uses human/interactive",
+        help="seat whose new agent is a human seat (provider human, model interactive)",
     )
     ap.add_argument("--output", type=Path, help="generated branch manifest path")
     a = ap.parse_args(argv)
@@ -1904,7 +1904,7 @@ def main(argv: list[str] | None = None) -> int:
             "quality_tier": entry.get(
                 "quality_tier",
                 "interactive"
-                if providers.is_interactive(entry["provider"])
+                if providers.is_human(entry["provider"])
                 else "standard",
             )
         }
@@ -1946,7 +1946,7 @@ def main(argv: list[str] | None = None) -> int:
             ]
             round = current_round if finishing else current_round + 1
             cost = progress.cost(
-                agents, harness.load_account, manifest["cost"], providers.is_interactive
+                agents, harness.load_account, manifest["cost"], providers.is_human
             )
             # Judged before the round is prepared, so the record prepares no round that a
             # stop counting seats ends. The ceiling comes first, its round prepared to

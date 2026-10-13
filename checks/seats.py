@@ -977,36 +977,37 @@ def check_an_exhausted_seat_is_not_a_message():
     assert both["channels"]["mailbox"]["penalty"] == 0, both["channels"]["mailbox"]
 
 
-def check_the_first_episodes_of_an_agent_answer_for_nothing():
-    """grace_episodes: the first episodes of an agent are charged none of the three.
+def check_the_grace_episodes_of_an_agent_take_no_silence_penalty():
+    """grace_episodes: the first episodes of an agent take none of the three silence
+    penalties.
 
-    The grace waives the charges and nothing else: turns are billed at the usual
-    rates, every silence is still measured, and a grace episode's transfer moves.
+    The grace waives the silence penalties and nothing else: turns are spent at the
+    usual rates, every silence is still measured, and a grace episode's transfer moves.
     """
     with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
-        free = episode_once(run("echo notes > memory/NOTES"), say())
+        grace = episode_once(run("echo notes > memory/NOTES"), say())
         due = episode_once(run("echo notes >> memory/NOTES"), say())
         account = ground_truth("t")
     assert (
-        free["transfer"]["penalty"] == 0
-        and free["channels"]["board"]["penalty"] == 0
-        and free["channels"]["mailbox"]["penalty"] == 0
-    ), free
-    assert free["spent"] > 0, "the grace is on the charges, not on the account"
+        grace["transfer"]["penalty"] == 0
+        and grace["channels"]["board"]["penalty"] == 0
+        and grace["channels"]["mailbox"]["penalty"] == 0
+    ), grace
+    assert grace["spent"] > 0, "the grace is on the charges, not on the account"
     opening = account["episodes"][0]
     opening_from, opening_to = opening["balance_from"], opening["balance_to"]
     span = account["balance_history"][opening_from : opening_to + 1]
     assert len(span) == opening["turn_count"] + 1, (
-        "a free episode appends its turns to n and nothing else"
+        "a grace episode appends its turns to the balance history and nothing else"
     )
     # Measured and recorded all the same: what an episode did is never a function
     # of what it was charged for doing it.
-    assert free["channels"]["board"]["posted"] is False, (
+    assert grace["channels"]["board"]["posted"] is False, (
         "it posted nothing, and the trace says so"
     )
-    assert free["channels"]["mailbox"]["addressed"] == [], free["channels"]["mailbox"]
-    # The second episode is inside no grace and answers for all three.
+    assert grace["channels"]["mailbox"]["addressed"] == [], grace["channels"]["mailbox"]
+    # The second episode is inside no grace and takes all three.
     assert (
         due["transfer"]["penalty"] > 0
         and due["channels"]["board"]["penalty"] > 0
@@ -1014,7 +1015,7 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     ), due
     assert account["balance"] == account["balance_history"][-1]
 
-    # A transfer is a movement and not a charge, so a free episode still gives.
+    # A transfer is not a silence penalty, so a grace episode still gives.
     with temp_root(
         grace_episodes=1, channels=tables(transfer={**HALF, "rebate_percent": 100})
     ) as root:

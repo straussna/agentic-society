@@ -1,4 +1,4 @@
-"""Terminal client for a pending interactive provider request."""
+"""Terminal client for a human seat's pending request."""
 
 from __future__ import annotations
 

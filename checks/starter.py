@@ -30,7 +30,7 @@ from checks.lanes import (
 
 
 def check_manifest_relative_starter_documents_include_empty_files():
-    """A manifest resolves top-level and per-seat starter documents beside itself."""
+    """A manifest resolves top-level and per-seat starter files beside itself."""
     with temp_root() as root:
         folder = root / "experiments"
         folder.mkdir()
@@ -88,7 +88,8 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
     """Two agents on the same threshold receive the starter files at different starts, at the same balance.
 
     An episode number does not mean the same thing twice, an episode's cost
-    varying by orders of magnitude, so what the starter files land on is runway remaining.
+    varying by orders of magnitude, so what the starter files land on is the balance
+    left.
     """
     landed = {}
     # The gap is two of the cheap agent's turns, so it crosses inside the four

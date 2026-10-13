@@ -285,7 +285,7 @@ class ModelSession(Protocol):
 class ModelProvider(Protocol):
     """A provider adapter, whose class declares what is recorded of it.
 
-    `interactive` says a person, not a model, answers its turns. `provenance_facts`
+    `is_human` says a person, not a model, answers its turns. `provenance_facts`
     is the adapter's part of a trace's provider record, in the order the trace keeps
     it; providers.provenance() puts the name before it and the model spec after.
     Those two and `models` are read off the class, before any adapter is built, so
@@ -296,7 +296,7 @@ class ModelProvider(Protocol):
     """
 
     name: str
-    interactive: bool
+    is_human: bool
 
     @property
     def models(self) -> Mapping[str, ModelSpec]: ...

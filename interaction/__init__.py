@@ -1,4 +1,4 @@
-"""Durable coordination for interactive provider sessions."""
+"""Durable coordination for human seats' provider sessions."""
 
 from .contracts import InteractionRequest, Submission
 from .store import (
