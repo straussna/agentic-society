@@ -691,7 +691,7 @@ def check_a_container_failure_stops_the_episode_cleanly():
     """A container that will not start ends the agent with a message, not a traceback.
 
     The container, the state copy, and the shell all come before the first API
-    call, so nothing reaching this path was billed and there is no trace.
+    call, so nothing reaching this path was spent and there is no trace.
     """
     with docker_root(image="mtr-No-Such-Image:latest"):  # rejected on sight, no pull
         with quiet() as buf:
@@ -1045,7 +1045,7 @@ def check_a_balance_resists_every_route():
         f"the committed balance history is what the agent read: {got}"
     )
     assert got[len(t["balance_before"]) :] == t["balances"][:2], (
-        f"and the rest is this episode's billed turns, not anything a route put there: {got}"
+        f"and the rest is this episode's turns, not anything a route put there: {got}"
     )
     # Not an agent getting at it - it cannot. Anything but zero here means the
     # arrangement that guarantees that has failed.

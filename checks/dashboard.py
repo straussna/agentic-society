@@ -146,7 +146,8 @@ def check_the_view_survives_a_partial_raw_line():
 def check_the_view_costs_a_live_turn_like_the_account():
     """What the view derives mid-episode is what the account commits at the end.
 
-    Scripted with a replayed response id, which bills nothing, and cache-shaped usage.
+    Scripted with a replayed response id, which is charged nothing, and cache-shaped
+    usage.
     """
     served = usage(output_tokens=200)
     with temp_root(MODEL="claude-opus-5"):
@@ -170,7 +171,7 @@ def check_the_view_costs_a_live_turn_like_the_account():
         )
 
     assert gt["balance_history"][2] == gt["balance_history"][3], (
-        "the replayed id has to have billed nothing"
+        "the replayed id has to have been charged nothing"
     )
     assert [t["balance"] for t in turns] == gt["balance_history"][1:], (
         f"derived {[t['balance'] for t in turns]} against {gt['balance_history'][1:]}"

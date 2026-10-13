@@ -1658,7 +1658,7 @@ def check_an_experiment_gives_a_failed_environment_one_more_go():
 
     Building an environment reads other agents' trees and asks Docker for a
     container, so a failure can be the daemon and not the agent. None of it is
-    billed, and the round retries the build alone.
+    spent, and the round retries the build alone.
     """
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})

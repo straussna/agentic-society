@@ -690,7 +690,7 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
 
     The SDKs raise APIConnectionError and APITimeoutError with no status code. Read
     by status alone they are the adapter's fault, and one dropped connection ends a
-    billed episode as harness_error on its first attempt.
+    spending episode as harness_error on its first attempt.
     """
     cases = (
         (APIConnectionError(), "retryable_api"),
@@ -806,7 +806,7 @@ def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
         refused.refusal and refused.refusal.explanation == "I can't help with that."
     ), refused.refusal
     assert refused.text == ("partial",) and refused.charges, (
-        "a refusal that wrote text is billed"
+        "a refusal that wrote text is charged"
     )
 
     cut = normalize_openai(

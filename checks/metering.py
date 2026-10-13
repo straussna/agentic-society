@@ -263,7 +263,7 @@ def check_episodes_reconcile():
         history, episodes = account["balance_history"], account["episodes"]
         assert len(episodes) == 3, episodes
         assert len(history) == 1 + sum(s["turn_count"] for s in episodes), (
-            "one element per billed turn, plus starter_files, where nothing else moved"
+            "one element per turn, plus starter_files, where nothing else moved"
         )
         spent = sum(s["spent"] for s in episodes)
         assert spent == account["budget"] - account["balance"], (
@@ -344,7 +344,7 @@ def check_episodes_reconcile():
 
 
 def check_balance_grows_within_an_episode():
-    """live_balance: every billed turn appends its balance to n while the episode runs.
+    """live_balance: every turn appends its balance to n while the episode runs.
 
     Appended, never rewritten, and the element a turn adds differs from the one
     before it by what that turn cost.
@@ -437,7 +437,7 @@ def check_charges_once():
         retried = episode_once(Err(429), *DEFAULT)
     assert retried["retries"] and retried["retries"][0]["status"] == 429
     assert retried["spent"] == clean["spent"], (
-        f"the 429 was billed: {retried['spent']} vs {clean['spent']}"
+        f"the 429 was charged: {retried['spent']} vs {clean['spent']}"
     )
 
     with temp_root():
@@ -448,7 +448,7 @@ def check_charges_once():
     )
     # The token counts go with the money, so analyze.py's columns reconcile.
     assert dup[1]["duplicate_response"] and not dup[1]["charges"], (
-        f"response billed twice: {dup[1]}"
+        f"response charged twice: {dup[1]}"
     )
     assert dup[0]["charges"], "the first sighting must keep its charges"
 
@@ -570,20 +570,20 @@ def check_a_refusal_is_charged_only_if_it_produced_output():
     with temp_root(REFUSAL_TURNS=3):
         t = episode_once(refuse(), refuse("echo hi"), say())
 
-    assert t["turns"][0]["micros"] == 0, "a refusal before any output is not billed"
+    assert t["turns"][0]["micros"] == 0, "a refusal before any output is not charged"
     assert t["turns"][0]["balance"] == t["balance_before"][-1], (
         "the balance did not move"
     )
-    assert t["turns"][1]["micros"] > 0, "output was produced, so that one was billed"
-    assert len(t["balances"]) == len(t["turns"]), "one element per turn, billed or not"
-    assert t["turns"][2]["micros"] > 0, "the turn that answered was billed"
+    assert t["turns"][1]["micros"] > 0, "output was produced, so that one was charged"
+    assert len(t["balances"]) == len(t["turns"]), "one element per turn, charged or not"
+    assert t["turns"][2]["micros"] > 0, "the turn that answered was charged"
 
 
 def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix():
     """The adapter itself carries the refusal rule and the long-context rates.
 
-    A refusal that emitted nothing is not billed, and says why from its stop details;
-    one that emitted a tool call is billed. A prefix past 200k tokens on a 1M-window
+    A refusal that emitted nothing is not charged, and says why from its stop details;
+    one that emitted a tool call is charged. A prefix past 200k tokens on a 1M-window
     model prices input at twice and output at one and a half times the base rate.
     """
 

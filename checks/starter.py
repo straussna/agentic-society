@@ -345,7 +345,7 @@ def check_fork_reproduces_state_and_account():
             "modes": "defaulted",
         }
         assert not list((harness.records_dir("f") / "traces").glob("*.json")), (
-            "a fork bills nothing"
+            "a fork spends nothing"
         )
 
         # Forking the head restores the modes the parent's sidecar still holds.

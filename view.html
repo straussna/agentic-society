@@ -680,7 +680,7 @@ const inkOf = (i) => INK[i % INK.length];
 // make: who is ahead, and where the lines crossed.
 function overlay(tiles) {
   const all = tiles.flatMap(s => s.balance_history || []);
-  if (all.length < 2) return `<div class="note">no billed turns yet</div>`;
+  if (all.length < 2) return `<div class="note">no turns yet</div>`;
   const lo = loOf(all), hi = hiOf(all);
   const n = tiles.reduce((a, s) => Math.max(a, (s.balance_history || []).length), 0);
   const lines = tiles.map((s, i) => {

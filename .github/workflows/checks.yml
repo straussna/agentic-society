@@ -27,7 +27,7 @@ jobs:
       # The suite imports nothing outside the standard library. This step is
       # here to check the declared dependencies still resolve on a clean box.
       - run: pip install -r requirements.txt
-      # No key, nothing billed: the suite runs against a fake API.
+      # No key, nothing spent: the suite runs against a fake API.
       - run: python check.py --no-docker
       # The same checks under pytest, the runner coverage tools drive.
       - run: pip install pytest

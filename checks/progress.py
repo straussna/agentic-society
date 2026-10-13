@@ -1291,12 +1291,12 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
 
 
 def check_a_progress_record_that_fails_costs_no_episode_its_spend():
-    """A progress write that fails between an episode's billing and its commit, or a
-    second Ctrl+C that lands in one, is raised once the round's billed episodes are
+    """A progress write that fails between an episode's spend and its commit, or a
+    second Ctrl+C that lands in one, is raised once the round's spending episodes are
     committed and an agent whose episode unseated it is unseated, never in place of
     either.
 
-    g01's episode ends on an API error after a billed turn, which unseats it. A
+    g01's episode ends on an API error after a charged turn, which unseats it. A
     simultaneous round also writes from each autonomous episode's own thread as it ends,
     and a write that fails there alone is raised the same way. A second Ctrl+C lands in
     the main thread, never there.
@@ -1344,7 +1344,7 @@ def check_a_progress_record_that_fails_costs_no_episode_its_spend():
         )
         assert taken == took, (case, taken)
         assert traced == {agent: bool(n) for agent, n in took.items()}, (
-            f"every billed episode is traced: {case} {traced}"
+            f"every spending episode is traced: {case} {traced}"
         )
         assert first["stop"] == "api_error" and first["spent"] > 0, (case, first)
         assert seated_ids == {"g02"}, (

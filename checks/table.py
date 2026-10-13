@@ -810,10 +810,10 @@ def check_a_channel_is_settled_only_where_it_asks_to_be():
 
 
 def check_an_empty_balance_plants_none_and_hides_the_accounting():
-    """balance = "" leaves no balance file in any seat, and bills exactly as before.
+    """balance = "" leaves no balance file in any seat, and spends exactly as before.
 
     An experiment that does not want its agents reasoning about money says so
-    here. Nothing about the accounting changes: turns are billed, the account
+    here. Nothing about the accounting changes: turns are charged, the account
     keeps the balance history, and only the window into it is gone.
     """
     with temp_root(harness_files={"balance": "", "digest": "digest"}) as root:

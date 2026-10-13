@@ -1282,7 +1282,7 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
 
     bind_tools leaves such a tool out where the channel planted nothing the agent
     writes, and a Bound made anywhere else without one is rejected as it is made,
-    not inside a billed turn. read_path writes nothing, is built with nothing to
+    not inside a turn. read_path writes nothing, is built with nothing to
     write even on a channel the agent writes, and reads what was planted.
     """
     with temp_root(tools=[POST, LOOK]) as root:
@@ -1465,7 +1465,7 @@ def check_running_one_seat_carries_the_whole_experiment_it_names():
     """harness.py --agent runs one seat of an experiment, so it runs on all of it.
 
     The manifest decides the environment and the actions together. A run that read
-    it for one and not the other would bill an arm nobody declared, under the
+    it for one and not the other would charge an arm nobody declared, under the
     sha256 of the arm they did - the one difference a trace could not show.
     """
 
@@ -1499,7 +1499,7 @@ def check_a_seat_with_no_shell_and_nothing_that_can_act_is_rejected():
     apply_tools holds the declared table against bash_declared, but which of those
     tools can act is the seating's to decide: a mailbox tool alone, in a seat with
     no peers, is left out and leaves nothing behind it. Rejected as the environment
-    is built, before the container starts and before anything is billed.
+    is built, before the container starts and before anything is spent.
     """
     with temp_root(tools=[SEND]) as root:
         # Accepted at declaration: the table is not empty and the digest is pushed.

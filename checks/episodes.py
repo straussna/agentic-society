@@ -122,7 +122,7 @@ def check_a_fault_ends_the_loop():
 
 
 def check_episodes_flag_is_validated():
-    """--episodes below one is rejected before anything is created or billed."""
+    """--episodes below one is rejected before anything is created or spent."""
     with rooted(NoSandbox):
         harness.start = never_start
         for bad in ("0", "-1"):
@@ -350,7 +350,7 @@ def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
 
 
 def check_an_interrupt_ends_the_episode_at_the_turn_boundary():
-    """An interrupt lands between turns: the turn in flight is whole and is billed.
+    """An interrupt lands between turns: the turn in flight is whole and is charged.
 
     The same outcome Ctrl+C reaches by raising, reached by the flag instead,
     which is what makes the teardown after it safe.
@@ -469,7 +469,8 @@ def check_fatal_error_still_traces_and_commits():
 
 
 def check_no_tool_call_on_turn_one():
-    """Text with no tool call on turn one is a clean outcome, not an error, and still bills."""
+    """Text with no tool call on turn one is a clean outcome, not an error, and still
+    spends."""
     with temp_root():
         t = episode_once(say("Nothing to do."))
         assert t["stop"] == "no_tool_call" and t["error"] is None, t
@@ -516,7 +517,7 @@ def check_truncated_turn_is_not_a_clean_end():
         t = episode_once(run("echo hi"), say("half a sen", stop="max_tokens"), say())
         assert t["stop"] == "max_tokens", t["stop"]
         assert t["error"] is None, "truncation is an outcome, not a harness fault"
-        assert t["spent"] > 0, "the truncated turn was still billed"
+        assert t["spent"] > 0, "the truncated turn was still charged"
 
     with temp_root():
         t = episode_once(

@@ -35,7 +35,7 @@ BARE_NUMBER = re.compile(r"^\d+$")
 
 # Goes at building an environment before the agent is unseated. An environment is
 # built from containers and copies of other agents' trees, so a failure can be
-# the daemon and not the agent. None of it is billed, so another go spends only time.
+# the daemon and not the agent. None of it is spent, so another go spends only time.
 ATTEMPTS = 2
 
 # How a round is driven. "sequential": one episode at a time in fixed seat order,
@@ -1000,7 +1000,7 @@ def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
     agent.
 
     Building an environment precedes the first API call, so nothing here is
-    billed. The container name is the agent and episode, so the next
+    spent. The container name is the agent and episode, so the next
     attempt reaps the last one's leavings by name.
     """
     for attempt in range(1, ATTEMPTS + 1):
@@ -1202,7 +1202,7 @@ def build_all(
 
     An agent whose environment fails ATTEMPTS times is unseated; the rest are built.
     Anything that ends the builds early, an interrupt included, abandons every
-    environment built so far, since none has billed.
+    environment built so far, since none has spent.
     """
     built: dict[str, harness.Episode] = {}
     try:
@@ -1336,7 +1336,7 @@ def simultaneous_round(
             t.join(0.2)
 
     # Each agent settles and closes on its own, so one agent's failure to commit
-    # does not discard the others' billed spend; the first failure is raised after
+    # does not discard the others' spend; the first failure is raised after
     # every agent has had its turn.
     # giver, receiver, amount: what each settled episode's transfers owe.
     owed: list[tuple[str, str, int]] = []

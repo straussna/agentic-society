@@ -979,7 +979,7 @@ def transcript(agents: dict[str, list[dict]]) -> str:
 
 
 def balance_history_of(ts: list[dict]) -> list[int]:
-    """The agent's whole balance history: the budget, then one per billed turn."""
+    """The agent's whole balance history: the budget, then one per turn."""
     return list(ts[-1]["balance_after"])
 
 
@@ -987,8 +987,8 @@ def bands(ts: list[dict]) -> dict[int, tuple[int, int]]:
     """Each episode's span in balance-history index, by episode number, from the
     balance it started at to its last.
 
-    len(balance_before) is where an episode's first billed turn lands, so the episode
-    itself sits one element earlier. An episode billed nothing spans no width.
+    len(balance_before) is where an episode's first turn lands, so the episode
+    itself sits one element earlier. An episode that spent nothing spans no width.
     """
     return {
         t["episode"]: (len(t["balance_before"]) - 1, len(t["balance_after"]) - 1)
@@ -1000,7 +1000,7 @@ def turn_costs(balance_history: list[int]) -> list[int]:
     """What each element of the balance history cost, indexed to the element it
     produced.
 
-    Mostly a billed turn. A rebate, a penalty and a floor each add an element at
+    Mostly a turn. A rebate, a penalty and a floor each add an element at
     an episode's end, so a negative delta is one of those three.
     """
     return [a - b for a, b in zip(balance_history, balance_history[1:])]
@@ -1049,7 +1049,7 @@ def charts(
 
 
 def balance_chart(plt, agents: dict[str, list[dict]]):
-    """The balance against billed-turn index, with the episodes shaded under it.
+    """The balance against turn index, with the episodes shaded under it.
 
     The teeth of the sawtooth are episodes, so they are drawn as such: one band
     per episode, zero marked, and the crossing named where there is one.
@@ -1099,10 +1099,10 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
                 arrowprops={"arrowstyle": "->", "linewidth": 0.8},
             )
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-    ax.set_xlabel("billed turn")
+    ax.set_xlabel("turn")
     ax.set_ylabel("balance (micro-dollars)")
     ax.set_title(
-        "Balance, one element per billed turn"
+        "Balance, one element per turn"
         + (": shaded bands are episodes" if len(agents) == 1 else "")
     )
     ax.legend(fontsize=8)
@@ -1152,7 +1152,7 @@ def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
                 arrowprops={"arrowstyle": "->", "linewidth": 0.8},
             )
     ax.set_yscale("symlog", linthresh=1000)
-    ax.set_xlabel("billed turn")
+    ax.set_xlabel("turn")
     ax.set_ylabel("cost of that turn (micro-dollars, symlog)")
     ax.set_title("Cost per turn, and the baseline rising under it")
     ax.legend(fontsize=8)

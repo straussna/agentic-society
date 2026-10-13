@@ -1366,7 +1366,7 @@ class Settings:
     max_turns: int = 200  # a limit
     command_timeout: int = 60  # seconds per bash command
     # Characters per tool result, in what the agent receives and in the trace. Also
-    # the ceiling on what one call can cost, since the model is billed on what
+    # the ceiling on what one call can cost, since the model is charged on what
     # survives the clip and never on what the command produced.
     tool_result_limit: int = 8_000
 
@@ -1380,7 +1380,7 @@ class Settings:
     context_fraction: float = (
         0.85  # of the model's window; crossing it ends the episode
     )
-    # Rewrite the balance file in the container after every billed turn.
+    # Rewrite the balance file in the container after every turn.
     live_balance: bool = True
     # Episodes at the start of an agent that take no silence penalty.
     grace_episodes: int = 0
@@ -2029,7 +2029,7 @@ def load_account(
             *(mirror(agent, c.name) for c in s.channels if c.mirrored),
         ):
             d.mkdir(parents=True, exist_ok=True)
-        # Element 0 of the balance history is the budget; one more per billed turn
+        # Element 0 of the balance history is the budget; one more per turn
         # after it. seat is the agent's place in its experiment: 1 for an agent
         # driven on its own, and experiment.py stamps the rest before each episode.
         save_account(
@@ -2229,7 +2229,7 @@ def reachable(seating: Seating) -> dict[str, str]:
 def adjust(account: Account, delta: int) -> None:
     """Move the balance and append the result to the balance history.
 
-    Everything that moves a balance outside a billed turn goes through here, so
+    Everything that moves a balance outside a turn goes through here, so
     balance_history[-1] is the balance at any moment. A zero delta appends none.
     """
     if delta:
@@ -3587,7 +3587,7 @@ class EnvironmentBuildError(RuntimeError):
     """
 
 
-# The failures that mean an environment could not be built, none of them billed:
+# The failures that mean an environment could not be built, none of them spending:
 # docker refusing a command, the host refusing a file, or a planted environment
 # the agent could not write to.
 BUILD_FAILURES = (subprocess.CalledProcessError, OSError, EnvironmentBuildError)
@@ -5008,7 +5008,7 @@ def new_episode_record() -> dict:
     alias. live_balance_writes/errors/tampered: how the per-turn writes of the
     balance file went. balance_floor: the balance the turn loop stops at, which is
     zero. refused_turns: turns the API declined, whether or not they ended the
-    episode. balances: the balance after each billed turn, the elements this episode
+    episode. balances: the balance after each turn, the elements this episode
     adds to the balance history.
     """
     return {
@@ -5135,7 +5135,7 @@ def open_episode(
 
 
 def republish(shell: Shell, label: str, account: Account, out: dict) -> None:
-    """Rewrite the agent's own balance after a billed turn, and record how the write went.
+    """Rewrite the agent's own balance after a turn, and record how the write went.
 
     What this write replaces is what the last one left: the balance history without
     the element this turn just added.
@@ -6087,7 +6087,7 @@ def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
 def build_episode(agent: str) -> Episode:
     """Build the environment one episode will run in, container included.
 
-    Nothing here bills: no API call is made, and a failure closes what was started
+    Nothing here spends: no API call is made, and a failure closes what was started
     and raises. What it reads of other agents - their balances, messages and
     transfers - it reads now, so an episode sees the experiment as it stood when
     its environment was built and not as it moves while the episode runs.
@@ -6246,7 +6246,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
             ep.bound,
         )
     finally:
-        # While the container is still up, and after the last billed turn: this
+        # While the container is still up, and after the last turn: this
         # asks the image a question, never the model.
         ep.missing = probe_missing(shell, out.get("commands") or [])
         ep.misplaced = rescue_misplaced(shell, ep.instances)
@@ -6463,7 +6463,7 @@ def trace_of(
         # What the experiment could read about who has given what, as it stood
         # when this episode started.
         "ledger": ep.ledger_shown,
-        # What settled after the last billed turn: the parsed channel, every
+        # What settled after the last turn: the parsed channel, every
         # settled channel by name, the floor, and what arrived.
         "transfer": settled["transfer"],
         "channels": settled["channels"],
@@ -6646,7 +6646,7 @@ def run_episodes(
             trace = drive(agent, router, prepare)
         except BUILD_FAILURES as e:
             # Starting the container, copying state in, and starting the shell all
-            # happen before the first API call, so nothing reaching here was billed
+            # happen before the first API call, so nothing reaching here was spent
             # and there is no episode to record.
             print(
                 f"{agent}: could not build an environment for this episode after {ran} of {count}: {failure(e)}",
@@ -6796,7 +6796,7 @@ def fork(
 
     print(
         f"forked {parent} episode {episode} -> agent {new}: {len(rebuild)} files, "
-        f"{len(history) - 1} billed turns, balance {history[-1]}, "
+        f"{len(history) - 1} turns, balance {history[-1]}, "
         f"modes {account['forked_from']['modes']}"
     )
     if planted := account.get("starter_files_landed"):
@@ -6902,7 +6902,7 @@ def print_system(config: Path | None, manifest: Path | None) -> int:
 
     The pinned strings are the shipped default. The config, and where one is given the
     manifest, say what agents are actually told, which is what invariant 2 asks to be
-    auditable. Starts no episode, bills nothing, and installs no setting.
+    auditable. Starts no episode, spends nothing, and installs no setting.
     """
     drifted = []
     for name, text, expected in SHIPPED_TEXT:
