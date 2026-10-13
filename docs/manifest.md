@@ -18,75 +18,114 @@ way their field uses them; the few with no standard are the word a newcomer woul
 
 | Term | Definition |
 |---|---|
-| **Harness** | The code that builds environments, runs episodes, meters cost and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
-| **System prompt** | What is said to an agent on every turn. The experimenter's constant, delivered on the harness's channel; the harness ships none, and every manifest declares one, `""` included |
-| **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness refuses to let any of it stop being constant. Configures everything through `config.toml` and a manifest |
+| **Harness** | The code that builds sandboxes, runs episodes, meters spend and writes traces. What it says to agents it computes from the accounts and rewrites whenever those move: the balances, the digest, the ledger and a receipt. Its fixed text is the pinned refusal notice, the generated tool descriptions (section 4.8), tool-call results, and, for an agent with no `bash` tool, the digest's semantic headings and renderings |
+| **System prompt** | What is said to an agent on every turn. The experimenter's constant, sent with every model call; the harness ships none, and every manifest declares one, `""` included |
+| **Experimenter** | The person running an experiment. Everything they say to agents is a constant they declare — the system prompt, starter files, an experimenter channel — and the harness rejects any change to it during an agent's life. Configures everything through `config.toml` and a manifest |
 | **Prompt surface** | The four places the experimenter's own words reach an agent: the system prompt, starter files, an experimenter channel, and tool descriptions. Each is recorded in provenance, and a change to any of them starts a new arm |
-| **Agent** | One participant: an account, a seat, a private store inherited from episode to episode, and the model that acts for it |
+| **Agent** | One participant: an account, a seat, a memory inherited from episode to episode, and the model that acts for it |
 | **Peer** | Another agent in the same experiment |
 | **Label** | How an agent is named to its peers in paths and files. Defaults to its seat number |
+| **Human seat** | A seat whose turns a person answers instead of a model, declared with `provider = "human"` and `model = "interactive"`. Every other seat is an **autonomous seat** |
 
 ### When
 
 | Term | Definition |
 |---|---|
-| **Episode** | One container lifetime: a fresh sandbox, one shell, turns until the agent ends its turn without a tool call, the context fills, the balance runs out or a safety stop is reached. Produces one trace |
+| **Episode** | The life of one fresh sandbox: one shell, and turns until the agent ends its turn without a tool call, the context fills, the balance reaches zero or a `config.toml` limit is reached. Produces one trace |
 | **Turn** | One model call and the commands it asks for |
-| **Round** | One episode for every agent still in the experiment |
-| **At the table** | A seat is at the table while the run of `experiment.py` still drives it: from the run's start, unless it is out or more than one round behind the table's round, until it is out or leaves for the rest of the run on a fault of its own or an environment that would not build. **The table's round** is the furthest round any seat has played, whether or not it is at the table |
-| **In the competition** | A seat is in the competition while its account admits an episode and it is at most one round behind the table's round, whether or not the run has it at the table. Every stop that counts seats counts the seats in the competition, and they alone are candidates and survivors |
-| **Experiment** | Several agents advancing together under one manifest. The unit of comparison, as in MLflow |
-| **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every environment built first, all episodes run at once, results settled in seat order |
-| **Grace period** | Episodes at the start of an agent's life during which no silence penalty is taken |
+| **Episode steps** | What every episode does, in order. **Build**: make the sandbox and plant `/work`. **Run**: take the turns, then mirror the trees the agent writes back to the host and **reap** the sandbox. **Settle**: apply the spend, the transfer and the silence penalties to the balance. **Close**: apply the floor at zero, write the trace, record the episode in the account and pay what its transfer owes. An episode is **committed** once it is settled and closed, which is when its account is saved |
+| **Round** | One episode for each seated agent, one after another or all at once as the schedule has it. Each seat counts them by its own episodes: the one it is in is its episode count plus one |
+| **Current round** | The furthest round any seat has played, whether or not that seat is still in play |
+| **Vote cycle** | A block of `every` consecutive rounds, as the experiment's `vote` tool declares, counted by each seat's own round. Only the last round of each offers the ballot, so with `every = 5` rounds 5, 10, 15 and so on are votes |
+| **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballot, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already. The round announcement states it on its `phase:` line |
+| **Experiment** | Several agents advancing together under one manifest. The unit of comparison |
+| **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every sandbox built first, all episodes run at once, results settled in seat order |
+| **Grace episodes** | An agent's first `grace_episodes` episodes, in which no silence penalty is taken. Their turns are billed as usual |
+
+### Who is still playing
+
+| Term | Definition |
+|---|---|
+| **In play** | Still a contender: the agent's account admits an episode — it is not exhausted, not eliminated, and not stopped by `REFUSAL_STREAK` refusal-ended episodes running — and its seat is at most one round behind the current round, whether or not this run drives it. Every stop that counts seats counts these, and they alone are candidates and survivors |
+| **Seated** | Driven by this run of `experiment.py`: every seat from the run's start, except one whose account admits no episode or that is more than one round behind the current round, until its account admits none, its episode ends on a fault of its own (`api_error`, `harness_error`), or its sandbox will not build. A seat the run stops driving is **unseated** for the rest of that run |
+| **Exhausted** | Holding a settled balance of zero or less. The agent takes no further episode, and no transfer can reach it |
+| **Eliminated** | Removed by an election, and only by one: the candidate with the unique highest total, and every elector offered the ballot that cast none. The agent takes no further episode |
+| **Election** | The count that follows the last round of each vote cycle. Its **electors** are the seats that took that round's episode without a fault; its **candidates** are the seats in play; a **ballot** is one elector's private choice of one candidate, cast with the `vote` tool. Section 4.8 gives the rules |
+| **Tie** | Two or more candidates sharing the highest total, so the vote eliminates nobody. Under `stop_when_two_remain_after_tie`, that result between the last two seats in play, both electors in it, ends the experiment as `final_tie` |
 
 ### Where
 
 | Term | Definition |
 |---|---|
-| **Environment** | Everything under `/work` in an agent's sandbox: its channels and the harness files, nothing else |
+| **Sandbox** | The Docker container one episode runs in: its own filesystem with real modes and ownership, no network, and `/work` |
+| **Environment** | Everything under `/work` in an agent's sandbox: the declared directories and files it can reach, and the status files, nothing else |
 | **Seat** | An agent's numbered position, from 1: its order, and its default label |
-| **Channel** | One part of the environment with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
-| **Writer** | Who may put bytes in a channel: `self` or `experimenter`. The harness's own files are the `[harness_files]` table, not channels |
+| **Seating** | Which agent holds each seat, the label each seat goes by, and the order every agent is shown the others in. Fixed by the manifest's `[[agent]]` order and recorded in every account and every episode's provenance |
+| **Channel** | One declared part of `/work` with one writer, one set of readers, and one shape. Declared in the manifest, enforced by ownership and modes |
+| **Writer** | Who may put bytes in a channel: `self` or `experimenter`. The harness's own files are the status files, not channels |
 | **Readers** | Who may read it: `self`, `all`, `addressee` (one named peer per file), or `harness` (the harness parses it) |
 | **Shape** | `directory` (any files, any layout), `mailbox` (one file per peer, an outbox on the writer's side and an inbox on each reader's), or `file` (one file at a fixed path) |
-| **Blackboard** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
-| **Mailbox** | A `self`-written, `addressee`-read channel. What one agent puts in its outbox for a peer appears in that peer's next inbox and nowhere else, then expires |
-| **Schema** | A fixed format the harness parses and acts on, either from a `self`-written, `harness`-read file or from a schema-defined mailbox. A fixed menu in code |
-| **Tool** | A named action the request offers an agent, declared as a kind from a fixed menu pointed at a channel, with the words the experimenter gives it. Includes bash only when explicitly declared |
+| **Memory** | A `self`-written, `self`-read directory: what an agent keeps for its own later episodes, and what no other agent ever sees |
+| **Board** | A `self`-written, `all`-read directory: every agent has one, every agent reads all of them |
+| **Mailbox** | A `self`-written, `addressee`-read channel. A **message** is what one agent puts in its outbox for one peer: it appears in that peer's next inbox and nowhere else, then expires |
+| **Reachable peers** | The peers one episode can address: every other seat whose account admits an episode as this one starts. A tool that names a peer takes only these, and one with none to name is not offered |
+| **Schema** | A fixed format the harness parses and acts on, read either from a `self`-written, `harness`-read file or from a `self`-written, `addressee`-read mailbox. A fixed menu in code |
+| **Tool** | A named operation a model call offers an agent, declared as a kind from a fixed menu pointed at a channel, with the description the experimenter gives it. Includes bash only when explicitly declared |
+| **Tool call** | One invocation of a tool that a response asks for: the tool's name and its input. The harness checks the input against the tool's input schema before acting on it |
 | **Kind** | What a tool does, and so what it says of itself: `bash`, `write_slot`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `read_path`, `transfer`. A fixed menu in code |
-| **Starter files** | Files the experimenter gives one agent, copied once into its private directory when its balance first falls to a chosen level |
+| **Starter files** | Files the experimenter gives one agent, copied once into its memory when its balance first falls to its starter threshold |
+| **Starter threshold** | The balance, `starter_files_below`, at or below which an agent's starter files land. At or above the budget, they land at episode 1 |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
-| **Harness file** | A file the harness renders from the accounts and plants read-only: a balance per seat, a ledger per transfer channel, the digest, the round announcement, and a receipt |
-| **Digest** | The harness file that quotes every pushed channel at episode start: new content in full, unchanged content by name |
-| **Initial observation** | The first thing an episode sees: the directory listing, plus the digest under push delivery |
+| **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[harness_files]` table, and a ledger and a receipt, named on the transfer channel |
+| **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
+| **Mirror** | The host's copy of one tree an agent writes, one per channel under `environments/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
+| **Digest** | The status file, written at each episode start, that quotes what the agent's channels hold: content new to the agent in full, unchanged content by name |
+| **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
 
 ### What moves
 
 | Term | Definition |
 |---|---|
-| **Balance** | An agent's micro-dollars, kept as a history: one entry per billed turn and one per movement outside a turn. The last entry is the current balance |
-| **Delivery** | `push`: pushed channels are quoted in the digest at episode start. `pull`: nothing is quoted; the agent reads what it chooses at the ordinary price |
-| **Pushed** | A channel property: whether it is part of the digest under push delivery |
-| **Silence penalty** | A channel property: the share of the remaining balance taken from an episode that added nothing new to the channel |
-| **Transfer** | The only schema: either one line `<label> <amount>` or one addressed mailbox slot containing `<amount>`, crediting that peer with no more than the episode spent |
+| **Balance** | An agent's micro-dollars, kept as a history: one entry per billed turn and one per movement outside a turn. The last entry is what the agent holds now |
+| **Spend** | The micro-dollars an episode's turns consume: the provider's itemized **charges**, one per token class, each priced at the model's **rate** for that class |
+| **Delivery** | Whether an episode opens on quoted channel content. `push`: it does. `pull`: nothing is quoted, and the agent reads what it chooses in turns billed like any other |
+| **Pushed** | A channel property: whether its files are quoted to the agent at episode start or left for it to read |
+| **Silence penalty** | A channel property: the share of the balance taken from an episode that added nothing new to the channel |
+| **Transfer** | Moving balance from one seat to a peer: one line `<label> <amount>` in a parsed file, or one mailbox message to that peer containing `<amount>`. It credits the peer with no more than the giver's episode spent |
 | **Funded by** | Who pays for a transfer. `harness`: the receiver is credited from nowhere and the giver rebated; the total grows. `giver`: the amount leaves the giver; the total is conserved |
 | **Rebate** | Under harness funding, the share of a transfer returned to the giver out of what its episode spent |
 | **Ledger** | Every transfer an experiment has made, three integers a line, rebuilt from the accounts at every episode |
-| **Receipt** | A file the harness writes back into the writer's environment saying what a schema parsed and what it moved. Optional |
-| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. Zero is out either way |
+| **Receipt** | A status file planted for the next episode of the transfer channel's writer, itemizing the settlement of the episode before. Optional |
+| **Floor at zero** | Putting a balance below zero back to zero at the end of an episode, and again once a credit it closed on is taken back, forgiving the overshoot. A balance at zero is exhausted either way |
+| **Settlement** | What an episode's end does to the balance, in a fixed order: the turns' spend, the transfer and its rebate, and each channel's silence penalty in declaration order, which the settle step applies; then the floor at zero, which closing applies. Recorded in the trace and itemized in a receipt |
+| **Reconciliation** | The identity every account satisfies once an episode is committed: `remaining == initial - spent + rebated + received - debited - sum(penalised) + forgiven`. A receipt states it for the episode it covers |
 
 ### What is recorded
 
 | Term | Definition |
 |---|---|
 | **Account** | An agent's ground truth on disk: pinned settings, balance history, episodes, transfers in and out |
-| **Pinned settings** | The six things fixed when an agent is created: the system prompt, budget, provider, model, starter files, and the balance they land at |
+| **Pinned settings** | The six things fixed when an agent is created: the system prompt, budget, provider, model, starter files, and the starter threshold |
 | **Trace** | One episode's complete record: what the agent saw, said, ran and left behind, every file with its author, and the provenance |
 | **Author** | Who wrote a captured file: `experimenter`, `self`, or `peer:<label>` |
-| **Provenance** | Everything an episode ran under, stamped on its trace: digests, rates, every setting, the seating, the schedule, the manifest and channel table digests |
+| **sha256** | The SHA-256 hash of a file, a text or a table, in hex. Provenance identifies the harness, the system prompt, the manifest, the channel and tool tables, starter files and each experimenter channel's source by it |
+| **Provenance** | Everything an episode ran under, stamped on its trace: rates, every setting, the seating, the schedule, and the sha256 of the harness, the manifest and the channel table |
 | **Configuration drift** | Any difference between one episode's provenance and the previous episode's. Reported, and it starts a new arm |
 | **Arm** | A stretch of episodes comparable with each other: same harness, same system prompt, same settings, same files |
 | **Persona drift** | The literature's term for an agent's tone or self-description moving over time. What the identity analysis measures |
+| **Progress log** | `progress.jsonl` under `experiment_records/<experiment_id>/`: one line for each stage a round reaches, as it reaches it, with `progress.json` holding the latest |
+| **Dashboard** | The page `view.py` serves: each experiment's seats, channels, traces and ledger, read from the records as episodes run, and the one route through which a human seat's submission reaches the interaction store |
+
+### Providers and human seats
+
+| Term | Definition |
+|---|---|
+| **Provider** | The adapter that answers a seat's model calls: `anthropic` and `openai` send them to that vendor's API, and `human` to a person. It normalizes what comes back and itemizes its charges |
+| **Session** | One episode's connection to its provider, holding the conversation state carried between turns. Each episode opens its own as its turns begin |
+| **Response** | What one model call returns, normalized: text, reasoning, tool calls, usage, itemized charges and a stop reason |
+| **Request** | A human seat's turn waiting for a person: the system prompt, the input and the tools the turn may call, held in the interaction store until a submission answers it or the episode cancels it |
+| **Submission** | A person's answer to one request: the tool calls to make, or the end of the turn |
+| **Interaction store** | The files under `interactions/` holding each human seat's requests and submissions, which `human.py` and the dashboard both read and write |
 
 ## 1. What a manifest is
 
