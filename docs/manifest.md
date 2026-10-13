@@ -988,8 +988,8 @@ rates, every setting of section 3, the starter files' name and sha256, each expe
 channel's source sha256, the `seating` (each seat's agent), `labels` and `seat_order`,
 the schedule, the manifest's sha256, the status files' names, the channel table in force,
 whole and by sha256, and the tool table in force, whole and by sha256, each tool's
-declared description among its fields and `bash` among them where the shell was offered,
-and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
+declared description among its fields and `bash` among them where the episode offers
+the shell, and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
 their recipient's next episode.
 Two agents offered different tools - or the same tools described differently - are in
 different arms. Where a tool declares no description, what it said of itself follows from
@@ -1031,7 +1031,8 @@ complete native response before their canonical normalized event.
 which names its `turn_count`, where its elements sit in the balance history
 (`balance_from`, `balance_to`), what the floor put back (`floored`) and what peers
 credited inside its span (`received_this_episode`). Every election it took part in
-records its `tally`, whether the top vote was `tied`, and the `candidates_left`.
+records its `tally`, whether more than one candidate held the top vote (`tied`), and
+the `candidates_left`.
 
 A fresh CLI run moves matching prior records and mirrors under `archive/<timestamp>/`.
 `--resume`, `--fork-from`, `--branch-from` and `memory_from` read version-3 accounts and

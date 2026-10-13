@@ -2000,9 +2000,9 @@ def earlier_trace(trace: dict) -> dict:
 
 def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
     """A version-2 account, version-4 traces and version-1 experiment records read in
-    the dashboard and analyze.py as the current versions hold the same values, every
-    key under its current name; --resume and --fork-from reject the account and name
-    the version it holds."""
+    the dashboard, through every route the page asks, and in analyze.py as the current
+    versions hold the same values, every key under its current name; --resume and
+    --fork-from reject the account and name the version it holds."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         with quiet():
@@ -2115,6 +2115,23 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         assert shown["episodes"][0]["balance"] == current["g02"][1]["balance"], shown
         turns = view.episode_view("g02", 1)["turns"]
         assert [t["reasoning"] for t in turns] == ["weighing it"], turns
+        # Every route the page asks, answered from the earlier records.
+        prefix = f"/api/experiment/{exp['experiment_id']}"
+        with serving() as base:
+            listed = got(base, "/api/experiments")[1]["experiments"]
+            assert [e["experiment_id"] for e in listed] == ["earlier"], listed
+            for route in (
+                prefix,
+                f"{prefix}/messages",
+                f"{prefix}/human-history?agent=g01",
+                *(f"{prefix}/tree/{name}" for name in view.trees(exp)),
+                f"{prefix}/file?agent=g01&channel=notes&path=mine",
+                "/api/agent/g01",
+                "/api/agent/g01/episode/1",
+                "/api/agent/g02/episode/1",
+            ):
+                status, body = got(base, route)
+                assert status == 200 and set(body) != {"error"}, (route, body)
 
         manifest = seats_manifest(root, ids)
         harness.start = lambda config=None, **kw: fake()

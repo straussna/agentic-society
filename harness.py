@@ -1834,20 +1834,21 @@ RECORD_VERSIONS = {
 }
 
 
-def stale(record: Mapping[str, Any], kind: str) -> str | None:
-    """Why `record`, an account or a trace as `kind` names it, is not one harness.py
-    reads: the version it records, or that it records none, beside the version read.
-    None for a record of that version."""
-    key, current = RECORD_VERSIONS[kind]
+def stale(record: Mapping[str, Any], record_type: str) -> str | None:
+    """Why `record`, an account or a trace as `record_type` names it, is not one
+    harness.py reads: the version it records, or that it records none, beside the
+    version read. None for a record of that version."""
+    key, current = RECORD_VERSIONS[record_type]
     found = record.get(key)
     if found == current:
         return None
+    article = "an" if record_type == "account" else "a"
     held = (
-        f"a version-{found} {kind}"
+        f"a version-{found} {record_type}"
         if found is not None
-        else f"{'an' if kind == 'account' else 'a'} {kind} that records no version"
+        else f"{article} {record_type} that records no version"
     )
-    return f"{held}, and harness.py reads version-{current} {kind}s only"
+    return f"{held}, and harness.py reads version-{current} {record_type}s only"
 
 
 # The keys a version-2 account and a version-4 trace hold under other names than
@@ -1922,9 +1923,9 @@ def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
     """A version-4 trace in the shape of the current version, its recorded
     trace_version kept; any other trace as it is.
 
-    shell_tool goes from the provenance, whose tool table says the same: whether bash
-    was declared. A file record's role goes, its author and starter flag saying what
-    it said, and ours is planted.
+    shell_tool goes from the provenance, whose tool table says the same: whether it
+    declares bash. A file record's role goes, its author and starter flag saying
+    what it says, and ours is planted.
     """
     if trace.get("trace_version") != 4:
         return trace
