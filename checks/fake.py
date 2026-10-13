@@ -25,18 +25,6 @@ def usage(**kw):
     )
 
 
-def attempt(model, output_tokens, kind="message", **kw):
-    return NS(
-        **{
-            "type": kind,
-            "model": model,
-            "input_tokens": 100,
-            "output_tokens": output_tokens,
-            **kw,
-        }
-    )
-
-
 def say(text="done.", u=None, id=None, stop="end_turn", details=None, model=None):
     return {
         "step_type": "say",
