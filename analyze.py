@@ -638,8 +638,8 @@ def arms(ts: list[dict]) -> list[list[dict]]:
     """
     out: list[list[dict]] = []
     for t in ts:
-        digest = t["provenance"]["harness_sha256"]
-        if out and digest == out[-1][-1]["provenance"]["harness_sha256"]:
+        sha256 = t["provenance"]["harness_sha256"]
+        if out and sha256 == out[-1][-1]["provenance"]["harness_sha256"]:
             out[-1].append(t)
         else:
             out.append([t])
@@ -654,9 +654,9 @@ def arm_lines(ts: list[dict]) -> list[str]:
         return []
     out = [f"  ran in {len(split)} arms, one per harness; the totals above span them"]
     for arm in split:
-        digest = arm[0]["provenance"]["harness_sha256"][:12]
+        sha256 = arm[0]["provenance"]["harness_sha256"][:12]
         out.append(
-            f"    {digest}  episodes {arm[0]['episode']}-{arm[-1]['episode']}, "
+            f"    {sha256}  episodes {arm[0]['episode']}-{arm[-1]['episode']}, "
             f"{sum(t['spent'] for t in arm)} micro-dollars"
         )
     return out

@@ -68,7 +68,7 @@ ABSENT = object()
 PAGE = Path(__file__).with_name("view.html").read_text(encoding="utf-8")
 
 
-# manifest digest -> (manifest, path). The account carries the digest rather than
+# manifest sha256 -> (manifest, path). The account carries the sha256 rather than
 # a path, so shipped manifests can describe a first episode before its trace lands.
 _MANIFESTS: dict[str, tuple[experiment.Manifest, Path]] | None = None
 _MANIFEST_STATE: tuple[tuple[str, int, int], ...] | None = None
@@ -159,7 +159,7 @@ def account_of(agent: str) -> Mapping[str, Any]:
 
 
 def manifests() -> dict[str, tuple[experiment.Manifest, Path]]:
-    """Shipped manifests by digest, reparsed when one changes on disk."""
+    """Shipped manifests by sha256, reparsed when one changes on disk."""
     global _MANIFESTS, _MANIFEST_STATE
     root = Path(__file__).with_name("experiments")
     paths = sorted(root.rglob("*.toml"))
@@ -190,8 +190,8 @@ def manifest_of(
     account is read here.
     """
     account = account_of(agent) if account is None else account
-    digest = (account.get("experiment_stamp") or {}).get("manifest_sha256")
-    return manifests().get(digest) if digest else None
+    sha256 = (account.get("experiment_stamp") or {}).get("manifest_sha256")
+    return manifests().get(sha256) if sha256 else None
 
 
 def manifest_ahead_of(
@@ -201,8 +201,8 @@ def manifest_ahead_of(
     found = manifest_of(agent, account)
     if found is None:
         return None
-    digest = last["provenance"].get("manifest_sha256") if last else None
-    return found if digest != found[0]["sha256"] else None
+    sha256 = last["provenance"].get("manifest_sha256") if last else None
+    return found if sha256 != found[0]["sha256"] else None
 
 
 def committed(agent: str, account: Mapping[str, Any] | None = None) -> int:
@@ -610,14 +610,14 @@ def anchored_experiments(
     """
     out, claimed = [], set()
     catalog = manifests() if catalog is None else catalog
-    for digest, (manifest, path) in catalog.items():
+    for sha256, (manifest, path) in catalog.items():
         declared = [entry["id"] for entry in manifest["agents"]]
         if not any(
             (
                 (accounts.get(agent, {}).get("experiment_stamp") or {}).get(
                     "manifest_sha256"
                 )
-                == digest
+                == sha256
             )
             for agent in declared
         ):
@@ -628,7 +628,7 @@ def anchored_experiments(
             if agent in accounts
             and (
                 (accounts[agent].get("experiment_stamp") or {}).get("manifest_sha256")
-                in (None, digest)
+                in (None, sha256)
             )
         ]
         if not seats:
