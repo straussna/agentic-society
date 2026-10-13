@@ -875,11 +875,14 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
         scrubbed = not receipt.exists()
 
     for t, text in ((first, "early\n"), (second, "mine\n")):
-        rec = files_by_path(t).get("out/receipt")
+        file = files_by_path(t).get("out/receipt")
         assert (
-            rec and rec["text"] == text and rec["author"] == "self" and not rec["ours"]
-        ), (t["episode"], rec)
-        assert rec["channel"] == "mail" and rec["role"] == "own", rec
+            file
+            and file["text"] == text
+            and file["author"] == "self"
+            and not file["ours"]
+        ), (t["episode"], file)
+        assert file["channel"] == "mail" and file["role"] == "own", file
     assert second["turns"][0]["tools"][0]["result"].startswith("round: 1\n"), (
         "the receipt is planted over what the agent left there"
     )
@@ -907,10 +910,13 @@ def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wro
         )
         kept = (harness.mirror("t", "mail") / "receipt").read_text(encoding="utf-8")
     assert "REPLACED" in t["turns"][0]["tools"][0]["result"], t["turns"][0]["tools"][0]
-    rec = files_by_path(t).get("out/receipt")
+    file = files_by_path(t).get("out/receipt")
     assert (
-        rec and rec["text"] == "mine\n" and rec["author"] == "self" and not rec["ours"]
-    ), rec
+        file
+        and file["text"] == "mine\n"
+        and file["author"] == "self"
+        and not file["ours"]
+    ), file
     assert kept == "mine\n", kept
 
 

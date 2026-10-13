@@ -2483,13 +2483,13 @@ def ledger_events(
     rows = []
     for seat, other in s.agent_by_seat.items():
         source = account if other == agent else account_on_disk(other)
-        for rec in source.get("episodes") or []:
-            transfer = rec.get("transfer") or {}
+        for episode in source.get("episodes") or []:
+            transfer = episode.get("transfer") or {}
             if amount := transfer.get("amount") or 0:
                 taker = transfer.get("label") or s.labels.get(
                     transfer["seat"], transfer["seat"]
                 )
-                rows.append((rec["episode"], seat, s.labels[seat], taker, amount))
+                rows.append((episode["episode"], seat, s.labels[seat], taker, amount))
     rows.sort(key=lambda row: (row[0], int(row[1])))
     return [
         (episode, giver, taker, amount) for episode, _, giver, taker, amount in rows
@@ -4875,7 +4875,7 @@ def turn_record(
 def run_tools(
     shell: Shell,
     calls: Iterable[ToolCall],
-    rec: dict,
+    turn: dict,
     out: dict,
     bound: Iterable[Bound] = (),
 ) -> tuple[ToolResult, ...]:
@@ -4898,7 +4898,7 @@ def run_tools(
         args = b.input or {}
         if action := offered.get(name):
             text = clip(action.call(shell, args), SETTINGS.tool_result_limit)
-            rec["tools"].append(
+            turn["tools"].append(
                 {"tool": name, "command": None, "input": args, "result": text}
             )
         elif name == SHELL_SPEC.name and shell_offered:
@@ -4908,13 +4908,13 @@ def run_tools(
             text = " " if cmd is None else sh(shell, cmd)
             if cmd is not None:
                 out["commands"].append(cmd)
-            rec["tools"].append(
+            turn["tools"].append(
                 {"tool": name, "command": cmd, "input": None, "result": text}
             )
         else:
             # Nothing the request offered, so nothing to do but say so.
             text = f"there is no tool named {name!r}. Nothing was done."
-            rec["tools"].append(
+            turn["tools"].append(
                 {"tool": name, "command": None, "input": args, "result": text}
             )
         results.append(ToolResult(b.id, text))
@@ -5023,7 +5023,7 @@ def run_turns(
     session = router.open_session(provider, model, system, specs, s.max_tokens, info)
 
     try:
-        for turn in range(1, s.max_turns + 1):
+        for turn_number in range(1, s.max_turns + 1):
             # The interrupt is read before the balance: when the experimenter
             # interrupted the agent, that is what ended the episode, and it is the
             # reason that ends the rest of the experiment too.
@@ -5041,11 +5041,11 @@ def run_turns(
             )
             # Before the response is read for anything: a turn that fails below is
             # still on disk exactly as it arrived.
-            log_raw(raw, turn, raw_response)
+            log_raw(raw, turn_number, raw_response)
             response = raw_response.normalize()
-            log_normalized(raw, turn, response)
+            log_normalized(raw, turn_number, response)
 
-            rid = response.id or f"anon-{turn}"
+            rid = response.id or f"anon-{turn_number}"
             if not response.id:
                 response = dataclasses.replace(response, id=rid)
             stop_reason = response.stop_reason
@@ -5054,22 +5054,25 @@ def run_turns(
             centi += billed_centi
             previous, balance = balance, remaining - centi // 100
             calls = list(response.tool_calls)
-            rec = turn_record(turn, response, charges, duplicate, previous, balance)
-            out["turns"].append(rec)
+            turn = turn_record(
+                turn_number, response, charges, duplicate, previous, balance
+            )
+            out["turns"].append(turn)
 
             # One element per turn, appended and never rewritten. A replay appends a
             # flat step, findable as micros == 0. Under live_balance the element
             # arrives before this turn's commands run; otherwise at the next episode.
-            out["balances"].append(rec["balance"])
+            out["balances"].append(turn["balance"])
             if s.live_balance and s.harness_files["balance"]:
                 republish(shell, label, account, out)
 
             watch(
-                f"\n--- turn {turn}   spent {centi // 100:,}/{remaining:,}"
-                f"   balance {rec['balance']:,}   context {response.usage.prefix_tokens:,}/{limit:,}"
+                f"\n--- turn {turn_number}   spent {centi // 100:,}/{remaining:,}"
+                f"   balance {turn['balance']:,}   context "
+                f"{response.usage.prefix_tokens:,}/{limit:,}"
             )
-            if rec["text"]:
-                watch_text(rec["text"])
+            if turn["text"]:
+                watch_text(turn["text"])
             at_limit = response.usage.prefix_tokens >= limit
 
             if stop_reason == "max_tokens":
@@ -5097,11 +5100,11 @@ def run_turns(
                 out["stop"] = f"unhandled:{response.native_stop_reason}"
                 break
 
-            if ended := stop_of(stop_reason, calls, turn):
+            if ended := stop_of(stop_reason, calls, turn_number):
                 out["stop"] = ended
                 break
 
-            next_input = run_tools(shell, calls, rec, out, bound)
+            next_input = run_tools(shell, calls, turn, out, bound)
             if at_limit:
                 out["stop"] = "context_threshold"
                 break
@@ -5238,7 +5241,7 @@ def move_transfer(
     ch: Channel,
     path: Path,
     spent: int,
-    rec: TransferRecord,
+    transfer: TransferRecord,
     credit: Callable[[str, int], None],
 ) -> None:
     """Move what the declaration asks for, and record what moved.
@@ -5253,46 +5256,46 @@ def move_transfer(
     if not s.peers:
         return
     found = transfer_declaration(ch, path, [s.labels[seat] for seat in s.peers])
-    rec["declared"] = found.declared
+    transfer["declared"] = found.declared
     if isinstance(found, TransferFault):
-        rec["error"] = found.error
+        transfer["error"] = found.error
         return
     if ch.funded_by == "none":
-        rec["error"] = "transfers are off"
+        transfer["error"] = "transfers are off"
         return
     label = found.label
     seat = by_label.get(label)
     if seat == s.seat:
-        rec["error"] = "an agent cannot transfer to itself"
+        transfer["error"] = "an agent cannot transfer to itself"
         return
     if seat is None:
-        rec["error"] = f"no seat {label} in this experiment"
+        transfer["error"] = f"no seat {label} in this experiment"
         return
     receiver = s.agent_by_seat[seat]
-    rec["seat"], rec["label"], rec["agent"] = seat, label, receiver
+    transfer["seat"], transfer["label"], transfer["agent"] = seat, label, receiver
     if seat not in ep.reach:
-        rec["error"] = f"seat {label} is out"
+        transfer["error"] = f"seat {label} is out"
         return
     if found.amount <= 0:
-        rec["error"] = "the amount must be at least 1"
+        transfer["error"] = "the amount must be at least 1"
         return
     if spent <= 0:
-        rec["error"] = "the episode spent nothing to offset"
+        transfer["error"] = "the episode spent nothing to offset"
         return
 
-    rec["amount"] = min(found.amount, spent)
+    transfer["amount"] = min(found.amount, spent)
     if ch.funded_by == "harness":
-        rec["rebate"] = rec["amount"] * ch.rebate_percent // 100
+        transfer["rebate"] = transfer["amount"] * ch.rebate_percent // 100
     else:
-        rec["debit"] = rec["amount"]
+        transfer["debit"] = transfer["amount"]
 
-    credit(receiver, rec["amount"])
+    credit(receiver, transfer["amount"])
     # One series element for what the transfer did to the giver, none where it did
     # nothing: a harness-funded transfer at rebate 0 leaves the balance alone.
-    adjust(account, rec["rebate"] - rec["debit"])
-    account["sent"] = account.get("sent", 0) + rec["amount"]
-    account["rebated"] = account.get("rebated", 0) + rec["rebate"]
-    account["debited"] = account.get("debited", 0) + rec["debit"]
+    adjust(account, transfer["rebate"] - transfer["debit"])
+    account["sent"] = account.get("sent", 0) + transfer["amount"]
+    account["rebated"] = account.get("rebated", 0) + transfer["rebate"]
+    account["debited"] = account.get("debited", 0) + transfer["debit"]
 
 
 def resolve_transfer(
@@ -5309,15 +5312,15 @@ def resolve_transfer(
     submitted during this episode can move money. `settles` is false for an
     episode with no turn or inside the grace.
     """
-    rec = EMPTY_TRANSFER.copy()
-    move_transfer(ep, inst.channel, inst.host, spent, rec, credit)
-    rec["changed"] = rec["declared"] is not None
-    if rec["amount"] > 0 or not settles:
-        return rec
+    transfer = EMPTY_TRANSFER.copy()
+    move_transfer(ep, inst.channel, inst.host, spent, transfer, credit)
+    transfer["changed"] = transfer["declared"] is not None
+    if transfer["amount"] > 0 or not settles:
+        return transfer
     if spent <= 0 or not ep.reach:
-        return rec
-    rec["penalty"] = penalise(ep.account, inst.channel)
-    return rec
+        return transfer
+    transfer["penalty"] = penalise(ep.account, inst.channel)
+    return transfer
 
 
 def resolve_directory(
@@ -5343,11 +5346,11 @@ def resolve_directory(
             before.get(path) != sha256
             for path, sha256 in tree_sha256(inst.host, inst.exclude).items()
         )
-    rec = {"posted": posted, "penalty": 0}
+    channel_result = {"posted": posted, "penalty": 0}
     if posted or not settles:
-        return rec
-    rec["penalty"] = penalise(ep.account, ch)
-    return rec
+        return channel_result
+    channel_result["penalty"] = penalise(ep.account, ch)
+    return channel_result
 
 
 def resolve_mailbox(
@@ -5365,29 +5368,29 @@ def resolve_mailbox(
     A message moves no money, so `spent` and `credit` go unread.
     """
     slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
-    rec: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
+    channel_result: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
     # An agent with nobody to reach has no outbox in its environment, so anything
     # in the host mirror is from some other arrangement and is not this agent's word.
     if not slots or not inst.host.is_dir():
-        return rec
+        return channel_result
 
     def by_seat(label: str) -> int:
         return int(slots[label])
 
-    rec["broken"] = sorted(
+    channel_result["broken"] = sorted(
         (p.name for p in inst.host.iterdir() if p.name in slots and not p.is_file()),
         key=by_seat,
     )
     after = slot_sha256(inst.host, slots)
-    rec["addressed"] = sorted(after, key=by_seat)
-    spoke = bool(rec["addressed"])
+    channel_result["addressed"] = sorted(after, key=by_seat)
+    spoke = bool(channel_result["addressed"])
     if spoke or not settles:
-        return rec
-    rec["penalty"] = penalise(ep.account, inst.channel)
-    return rec
+        return channel_result
+    channel_result["penalty"] = penalise(ep.account, inst.channel)
+    return channel_result
 
 
-def outbox_why(rec: Mapping[str, Any], ch: Channel) -> str:
+def outbox_why(channel_result: Mapping[str, Any], ch: Channel) -> str:
     """What the outbox was charged for, named by slot where a slot is at fault.
 
     One share covers however many ways an episode broke the rule, so this names
@@ -5395,17 +5398,17 @@ def outbox_why(rec: Mapping[str, Any], ch: Channel) -> str:
     """
     box = ch.outbox
     why = []
-    if rec["broken"] and not rec["addressed"]:
-        why.append(f"{box}/{','.join(rec['broken'])} not one file")
-    if not rec["addressed"]:
+    if channel_result["broken"] and not channel_result["addressed"]:
+        why.append(f"{box}/{','.join(channel_result['broken'])} not one file")
+    if not channel_result["addressed"]:
         why.append("no message")
     return " and ".join(why)
 
 
-def transfer_met(rec: Mapping[str, Any]) -> bool:
+def transfer_met(transfer: Mapping[str, Any]) -> bool:
     """A transfer meets the obligation only when the episode moved money and no share
     was taken for having moved none."""
-    return bool(rec["amount"]) and not rec["penalty"]
+    return bool(transfer["amount"]) and not transfer["penalty"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -5439,24 +5442,28 @@ SETTLEMENTS: dict[SettlesAs, Settlement] = {
     "transfer": Settlement(
         resolve_transfer,
         transfer_met,
-        lambda rec, ch: "no transfer of its own",
-        lambda rec, met: "transfer moved money" if met else "no transfer moved money",
+        lambda transfer, ch: "no transfer of its own",
+        lambda transfer, met: (
+            "transfer moved money" if met else "no transfer moved money"
+        ),
     ),
     "mailbox": Settlement(
         resolve_mailbox,
-        lambda rec: bool(rec["addressed"]),
+        lambda channel_result: bool(channel_result["addressed"]),
         outbox_why,
-        lambda rec, met: (
-            "message sent to " + ", ".join(rec["addressed"])
+        lambda channel_result, met: (
+            "message sent to " + ", ".join(channel_result["addressed"])
             if met
             else "no message sent"
         ),
     ),
     "directory": Settlement(
         resolve_directory,
-        lambda rec: bool(rec["posted"]),
-        lambda rec, ch: "no post",
-        lambda rec, met: "public post published" if met else "no public post",
+        lambda channel_result: bool(channel_result["posted"]),
+        lambda channel_result, ch: "no post",
+        lambda channel_result, met: (
+            "public post published" if met else "no public post"
+        ),
     ),
 }
 
@@ -5469,9 +5476,10 @@ def settled_why(settled: Iterable[tuple[Channel, Mapping[str, Any]]]) -> str:
     A channel is named where a share was taken, in its rule's words.
     """
     return "".join(
-        f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(rec, ch)}, took {rec['penalty']}"
-        for ch, rec in settled
-        if rec["penalty"]
+        f"  {ch.name}: {SETTLEMENTS[ch.settles_as].why(channel_result, ch)}, "
+        f"took {channel_result['penalty']}"
+        for ch, channel_result in settled
+        if channel_result["penalty"]
     )
 
 
@@ -5742,7 +5750,7 @@ def snapshot(
                 continue
             size, text, binary = got
             planted = store and inner in starter
-            rec = {
+            file = {
                 "path": rel,
                 "channel": inst.name,
                 "writer": ch.writer,
@@ -5754,9 +5762,9 @@ def snapshot(
                 "starter": planted,
                 "text": None,
             }
-            files.append(rec)
-            rec["text"] = None if binary else text
-            if rec["ours"]:
+            files.append(file)
+            file["text"] = None if binary else text
+            if file["ours"]:
                 # Captured, because an edit to it is the thing worth reading -
                 # but not scored. mentions is what the agent wrote, and a
                 # neighbour's message full of balances and the word "budget"
@@ -6606,24 +6614,27 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
         )
         return None
     rebuild = []
-    for rec in trace["files"]:
-        if rec.get("role", "own") != "own":
+    for file in trace["files"]:
+        if file.get("role", "own") != "own":
             continue
         why = None
-        if rec["text"] is None:
+        if file["text"] is None:
             why = "was binary and its contents were not stored"
-        elif rec["size"] > FILE_CONTENT_LIMIT:
-            why = f"is {rec['size']} bytes and only the first {FILE_CONTENT_LIMIT} were stored"
-        elif "\ufffd" in rec["text"]:
+        elif file["size"] > FILE_CONTENT_LIMIT:
+            why = (
+                f"is {file['size']} bytes and only the first "
+                f"{FILE_CONTENT_LIMIT} were stored"
+            )
+        elif "\ufffd" in file["text"]:
             why = "did not decode as UTF-8 and its stored text is lossy"
         if why:
             print(
-                f"{parent} episode {episode}: {rec['path']} {why}, "
+                f"{parent} episode {episode}: {file['path']} {why}, "
                 "so this episode cannot be rebuilt",
                 file=sys.stderr,
             )
             return None
-        rebuild.append(rec)
+        rebuild.append(file)
     return rebuild
 
 
@@ -6642,20 +6653,20 @@ def restore_files(
         for c in written
     }
     placed: list[tuple[Path, str]] = []
-    for rec in records:
+    for file in records:
         tree = max(
             (
                 name
                 for name, p in prefixes.items()
-                if rec["path"] == p or rec["path"].startswith(p + "/")
+                if file["path"] == p or file["path"].startswith(p + "/")
             ),
             key=lambda name: len(prefixes[name]),
             default=None,
         )
         if tree is None:
-            return rec["path"]
+            return file["path"]
         placed.append(
-            (mirror(new, tree) / rec["path"][len(prefixes[tree]) + 1 :], rec["text"])
+            (mirror(new, tree) / file["path"][len(prefixes[tree]) + 1 :], file["text"])
         )
     for c in written:
         mirror(new, c.name).mkdir(parents=True, exist_ok=True)
