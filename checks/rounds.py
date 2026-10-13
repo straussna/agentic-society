@@ -2990,24 +2990,25 @@ def check_a_stop_during_the_builds_of_a_simultaneous_round_starts_no_episode():
                 harness.STOPPING = True
             return sandbox
 
-    calls = []
+    sessions = []
     with recording() as events, temp_root(SANDBOX=StoppingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
         live = set(ids)
 
-        def create(**params):
-            calls.append(params)
-            return fake(*DEFAULT)(**params)
+        def opened():
+            sessions.append(threading.current_thread().name)
+
+        router = per_agent(default=DEFAULT, on_open=opened)
 
         with quiet():
             try:
-                experiment.simultaneous_round(ids, live, 0, create)
+                experiment.simultaneous_round(ids, live, 0, router)
             except KeyboardInterrupt:
                 pass
             else:
                 raise AssertionError("the round ran its episodes")
         took = episodes_taken(ids)
-    assert not calls, "no episode was started"
+    assert not sessions, "no episode opened a session"
     assert took == {"g01": 0, "g02": 0, "g03": 0}, took
     starts = [n for what, n in events if what == "start"]
     closes = [n for what, n in events if what == "close"]
