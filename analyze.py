@@ -1,4 +1,6 @@
-"""Read the traces: py -3 analyze.py [--agent live01]
+"""Read the traces.
+
+    .venv/Scripts/python.exe analyze.py [--agent live01]
 
 Writes episodes.csv, report.txt, transcript.txt, and charts/ to
 records/<agent>/analysis/. Charts need matplotlib; the rest is written anyway.

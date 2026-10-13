@@ -1,6 +1,7 @@
 """Verification. No API spend.
 
-    py -3 check.py [names...] [--real | --no-docker] [--list] [-j N] [--sweep-all]
+    .venv/Scripts/python.exe check.py [names...] [--real | --no-docker] [--list] [-j N]
+        [--sweep-all]
 
 A fake router goes into harness.run_once, and its sessions answer each `send` from a
 script, so the pipeline runs unbilled. The checks live under checks/, one module per

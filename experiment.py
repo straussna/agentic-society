@@ -1,8 +1,8 @@
-"""Several agents advancing together, each reading the others' blackboards.
+"""Several agents advancing together, each reading the others' boards.
 
-    py -3 experiment.py sandbox -r 20
+    .venv/Scripts/python.exe experiment.py sandbox -r 20
 
-One round is one episode for each agent; a seat names a blackboard and a balance.
+One round is one episode for each agent; a seat names a board and a balance.
 Every run names its manifest: the schedule, the environment, and each agent's terms.
 config.toml holds only what is true of every run whatever the experiment."""
 

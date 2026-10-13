@@ -1,4 +1,7 @@
-"""Attach a terminal to an interactive agent: py -3 human.py --agent AGENT."""
+"""Attach a terminal to a human seat's pending request.
+
+    .venv/Scripts/python.exe human.py --agent AGENT
+"""
 
 from interaction.cli import main
 

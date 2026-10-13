@@ -1,4 +1,6 @@
-"""One episode of a metered agent: py -3 harness.py --agent live01
+"""One episode of a metered agent.
+
+    .venv/Scripts/python.exe harness.py --agent live01
 
 The harness builds a sandbox, plants the files it renders from the agents' accounts,
 lets the model run bash turns, meters every token into integer micro-dollars, settles
@@ -6361,8 +6363,8 @@ def start(
         if system_sha256(text) != expected:
             reject(
                 f"{name} drifted from its pinned sha256; if the change was meant, run "
-                f"`py -3 harness.py --print-system` and paste the sha256 into "
-                f"{name}_SHA256."
+                "`.venv/Scripts/python.exe harness.py --print-system` and paste the "
+                f"sha256 into {name}_SHA256."
             )
     s, cfg = load_config(SETTINGS, config)
     print(f"config: {cfg or 'built-in defaults'}")

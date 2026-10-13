@@ -1,6 +1,6 @@
 """The verification suite under pytest, set up as check.py sets up a run.
 
-    py -3 -m pytest checks [--docker | --real]
+    .venv/Scripts/python.exe -m pytest checks [--docker | --real]
 
 Without a flag the container checks skip, as under `check.py --no-docker`.
 `--docker` runs them when Docker is up and the image is built; `--real` also
