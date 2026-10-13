@@ -1172,6 +1172,28 @@ def check_the_view_tells_a_seat_not_yet_reached_from_one_that_passed():
         "a seat a whole round behind has been asked and passed"
     )
     assert past_seats["g02"]["pending"], "g02 acted in round 2 and is still to come"
+
+    # A forked seat lists the episodes it inherited and holds no trace of them: g02's
+    # two are still the rounds it played, so round 3 finds it still to come.
+    with rooted(HostBox):
+        c = fake_experiment(
+            [
+                ("g01", "00:01"),
+                ("g02", "00:02"),
+                ("g01", "00:03"),
+                ("g02", "00:04"),
+                ("g01", "00:05"),
+            ],
+            agents=("g01", "g02"),
+        )
+        for agent in ("g01", "g02"):
+            for index in (1, 2):
+                harness.trace_path(agent, index).unlink()
+        rows = view.experiment_episodes(c)
+        forked_round = view.round_now(c, rows)
+        forked = view.seat_row("2", "g02", rows, forked_round)
+    assert forked_round == 3 and forked["round"] == 2, (forked_round, forked)
+    assert forked["pending"] and not forked["behind"], forked
     # Behind is the seat the run seats in no further round, and an empty balance is
     # exhausted whether or not the seat is still to come.
     assert past_seats["g03"]["behind"] and not past_seats["g02"]["behind"], past_seats

@@ -842,8 +842,14 @@ def live_rows(exp: dict, rows: list[dict]) -> list[dict]:
 
 
 def round_now(exp: dict, rows: list[dict]) -> int:
-    """The round the experiment is in, counting one in flight."""
-    return max([r["round"] for r in rows + live_rows(exp, rows)] or [0])
+    """The round the experiment is in: the furthest any seat has reached, by the
+    episodes its account lists or the one it has in flight.
+
+    The account and not the traces, since a forked seat lists the episodes it
+    inherited and holds no trace of them.
+    """
+    reached = [round_of(committed(agent)) for _, agent in places_of(exp)]
+    return max([r["round"] for r in rows + live_rows(exp, rows)] + reached or [0])
 
 
 # --- what every seat is holding ---------------------------------------------
@@ -928,7 +934,9 @@ def seat_row(
     going = live_state(agent, running, account)
     table, _ = agent_environment(last, agent, account)
     mine = [r for r in rows if r["agent"] == agent]
-    played = mine[-1]["round"] if mine else 0
+    # The round of its last committed episode, by its account: a forked seat holds
+    # no trace of the episodes it inherited.
+    played = round_of(committed(agent, account))
     out_reason = harness.why_out(account) if account else None
     # Not having acted in the round yet is two things, and the round has to be
     # over to tell them apart: for most of a sequential round some seats have
@@ -960,7 +968,7 @@ def seat_row(
         "live_balance": going["balance"],
         "committed": len(episodes),
         "round": played,
-        "acted": bool(mine and played == current_round) or running is not None,
+        "acted": bool(played) and played == current_round or running is not None,
         "pending": pending,
         "preparing": bool(
             account
