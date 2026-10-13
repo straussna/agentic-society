@@ -1998,16 +1998,17 @@ def why_out(account: Mapping[str, Any]) -> str | None:
 
 @dataclasses.dataclass(frozen=True)
 class Seating:
-    """Where an agent sits: its own seat, every seat's agent, and every seat's label.
+    """Where an agent sits: its own seat, every seat's agent, every seat's label, and
+    the order every seat is shown in.
 
     An agent driven on its own is an experiment of one, so everything downstream
-    gets a seating either way. Identity maps and presentation are in seat order.
+    gets a seating either way. Both maps and seat_order run in seat number order.
     """
 
     seat: str  # the agent's own seat
-    seen: dict[str, str]  # seat -> agent id, every seat of the experiment
+    agent_by_seat: dict[str, str]  # seat -> agent id, every seat of the experiment
     labels: dict[str, str]  # seat -> label, every seat
-    presentation: tuple[str, ...]  # every seat in fixed display order
+    seat_order: tuple[str, ...]  # every seat in fixed display order
 
     @property
     def label(self) -> str:
@@ -2017,7 +2018,7 @@ class Seating:
     @property
     def peers(self) -> list[str]:
         """Every seat but the agent's own."""
-        return [seat for seat in self.presentation if seat != self.seat]
+        return [seat for seat in self.seat_order if seat != self.seat]
 
 
 def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
@@ -2029,18 +2030,20 @@ def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
     """
     seat = account.get("seat") or "1"
     peers = account.get("peers") or {}
-    seen = peers.get("seen") or {seat: agent}
-    seen = dict(sorted(seen.items(), key=lambda kv: int(kv[0])))
+    by_seat = peers.get("seen") or {seat: agent}
+    by_seat = dict(sorted(by_seat.items(), key=lambda kv: int(kv[0])))
     given = dict(peers.get("labels") or {})
     if account.get("label"):
         given[seat] = account["label"]
     raw_order = peers.get("presentation")
-    presentation = (
-        tuple(str(s) for s in raw_order if str(s) in seen) if raw_order else tuple(seen)
+    order = (
+        tuple(str(s) for s in raw_order if str(s) in by_seat)
+        if raw_order
+        else tuple(by_seat)
     )
-    if raw_order and (len(presentation) != len(seen) or set(presentation) != set(seen)):
-        presentation = tuple(seen)
-    return Seating(seat, seen, {s: given.get(s, s) for s in seen}, presentation)
+    if raw_order and (len(order) != len(by_seat) or set(order) != set(by_seat)):
+        order = tuple(by_seat)
+    return Seating(seat, by_seat, {s: given.get(s, s) for s in by_seat}, order)
 
 
 def reachable(seating: Seating) -> dict[str, str]:
@@ -2053,9 +2056,9 @@ def reachable(seating: Seating) -> dict[str, str]:
     """
     live = {}
     for seat in seating.peers:
-        other = account_on_disk(seating.seen[seat])
+        other = account_on_disk(seating.agent_by_seat[seat])
         if not other or why_out(other) is None:
-            live[seat] = seating.seen[seat]
+            live[seat] = seating.agent_by_seat[seat]
     return live
 
 
@@ -2295,11 +2298,11 @@ def instances(
                 Instance(
                     ch,
                     ch.path_for(s.labels[seat]),
-                    mirror(s.seen[seat], ch.name),
+                    mirror(s.agent_by_seat[seat], ch.name),
                     "own" if seat == s.seat else "peer",
                     s.labels[seat],
                 )
-                for seat in s.presentation
+                for seat in s.seat_order
             ]
         elif ch.shape == "mailbox":
             if not s.peers:
@@ -2309,7 +2312,7 @@ def instances(
                 Instance(
                     ch,
                     f"{ch.inbox}/{s.labels[seat]}",
-                    mirror(s.seen[seat], ch.name) / s.label,
+                    mirror(s.agent_by_seat[seat], ch.name) / s.label,
                     "peer",
                     s.labels[seat],
                 )
@@ -2456,10 +2459,10 @@ def balances(agent: str, account: Account) -> dict[str, list[int]]:
     return {
         s.labels[seat]: (
             list(account["series"])
-            if s.seen[seat] == agent
-            else series_on_disk(s.seen[seat])
+            if s.agent_by_seat[seat] == agent
+            else series_on_disk(s.agent_by_seat[seat])
         )
-        for seat in s.presentation
+        for seat in s.seat_order
     }
 
 
@@ -2469,7 +2472,7 @@ def ledger_events(
     """Every completed transfer as (round, giver label, receiver label, amount)."""
     s = seating_of(agent, account)
     rows = []
-    for seat, other in s.seen.items():
+    for seat, other in s.agent_by_seat.items():
         source = account if other == agent else account_on_disk(other)
         for rec in source.get("episodes") or []:
             transfer = rec.get("transfer") or {}
@@ -2757,7 +2760,7 @@ def election_held(agent: str, account: Account, round_number: int) -> bool:
         account,
         *(
             account_on_disk(other)
-            for seat, other in seating.seen.items()
+            for seat, other in seating.agent_by_seat.items()
             if seat != seating.seat
         ),
     ]
@@ -2777,7 +2780,7 @@ def render_round_status(account: Account) -> str:
         f"{seating.labels[seat]} (you)"
         if seat == seating.seat
         else seating.labels[seat]
-        for seat in seating.presentation
+        for seat in seating.seat_order
         if seat in live
     )
     if vote is None:
@@ -5254,7 +5257,7 @@ def move_transfer(
     if seat is None:
         rec["error"] = f"no seat {label} in this experiment"
         return
-    receiver = s.seen[seat]
+    receiver = s.agent_by_seat[seat]
     rec["seat"], rec["label"], rec["agent"] = seat, label, receiver
     if seat not in ep.reach:
         rec["error"] = f"seat {label} is out"
@@ -5552,9 +5555,9 @@ def provenance(
         # Invariant 9 for an experiment: which agent each seat is, this one included,
         # which is this one's own, and how each is named to the others.
         "seat": seating.seat,
-        "peers": dict(seating.seen),
+        "peers": dict(seating.agent_by_seat),
         "labels": dict(seating.labels),
-        "presentation_order": list(seating.presentation),
+        "presentation_order": list(seating.seat_order),
         # The channel table in force, whole and by sha256, and the harness files'
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],

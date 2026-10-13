@@ -534,9 +534,9 @@ def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | Non
     that leaves the agent out names no blackboard as its own, and None says so.
     """
     s = harness.seating_of(agent, account)
-    if s.seen.get(s.seat) != agent:
+    if s.agent_by_seat.get(s.seat) != agent:
         return None
-    return tuple(s.seen.values())
+    return tuple(s.agent_by_seat.values())
 
 
 def manifest_environment(
@@ -699,7 +699,7 @@ def read_experiments() -> tuple[list[dict], bool]:
         if agent in claimed:
             continue
         key = seating_key(agent, account)
-        seen = harness.seating_of(agent, account).seen
+        agent_by_seat = harness.seating_of(agent, account).agent_by_seat
         ident = key or ("no seating", derived_experiment_id(agent, account))
         exp: dict[str, Any] | None = by_seating.get(ident)
         if exp is None:
@@ -707,7 +707,7 @@ def read_experiments() -> tuple[list[dict], bool]:
                 "experiment_id": (account.get("experiment") or {}).get("experiment_id")
                 or derived_experiment_id(agent, account),
                 "seated": key is not None,
-                "agent_by_seat": dict(seen) if key else {},
+                "agent_by_seat": dict(agent_by_seat) if key else {},
                 "seats": [],
                 "posts": False,
             }
@@ -1960,7 +1960,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         # The mapping has no gap and holds every seat, this agent's among them, so
         # which one is its own has to be said: absence cannot say it.
         "seat": seating.seat,
-        "peers": seating.seen,
+        "peers": seating.agent_by_seat,
         "starter_files": account.get("starter_files_landed") or {},
         "out_reason": harness.why_out(account) if account else None,
         "eliminated": account.get("eliminated"),

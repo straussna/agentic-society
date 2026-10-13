@@ -82,7 +82,7 @@ def check_the_experiment_uses_fixed_order_and_validates():
         )
 
 
-def check_peer_presentation_is_fixed_in_seat_order():
+def check_every_viewer_sees_the_same_seat_order():
     """Every viewer sees the same fixed seat order."""
     agents = ["g01", "g02", "g03", "g04", "g05"]
     seats = experiment.seats_of(agents)
