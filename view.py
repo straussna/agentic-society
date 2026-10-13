@@ -1226,7 +1226,8 @@ def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
 
     <outbox>/<label> arrives at that label's seat as <inbox>/<this agent's label>
     and nowhere else. A parsed file reaches no one; what it moves shows up in the
-    ledger. A transfer-mailbox slot reaches its addressee as well as settlement.
+    ledger. A message in a transfer mailbox reaches its addressee as well as
+    settlement.
     """
     if room.schema:
         if room.schema.shape == "file" and path == room.schema.path:

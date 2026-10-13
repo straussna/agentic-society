@@ -2209,11 +2209,11 @@ def seating_of(agent: str, account: Mapping[str, Any]) -> Seating:
 
 
 def reachable(seating: Seating) -> dict[str, str]:
-    """The seats an episode can still reach: every seat but its own whose account
-    admits an episode.
+    """The seats an episode can still reach: every seat but its own whose agent is in
+    play.
 
-    A seat whose account admits none is neither a transfer target nor a message
-    target, so an outbox slot naming one is neither a message nor a break. Read once
+    A seat whose agent is not in play is neither a transfer target nor a message
+    target, so an outbox file naming one is neither a message nor a break. Read once
     at episode start, from the peers' accounts on disk; a peer not yet created has
     spent nothing.
     """
@@ -2757,8 +2757,8 @@ def named(group: str, paths: list[str]) -> str:
 def said_to(instances: list[Instance]) -> dict[str, str]:
     """Every file of every pushed instance, by path, each clipped at digest_file_limit.
 
-    A binary is named and sized, never inlined. A peer's mailbox slot that holds
-    no regular file is absent, as it is absent from the environment.
+    A binary is named and sized, never inlined. A peer's message that is not a
+    regular file is absent, as it is absent from the environment.
     """
 
     def content(p: Path) -> str:
@@ -3241,15 +3241,15 @@ def tree_sha256(root: Path, exclude: frozenset = frozenset()) -> dict[str, str]:
     return by_path
 
 
-def slot_sha256(box: Path, slots: Iterable[str]) -> dict[str, str]:
+def message_sha256(outbox: Path, labels: Iterable[str]) -> dict[str, str]:
     """The sha256 of each message in an outbox, by the label it is addressed to.
 
-    One sha256 a slot. Only a reachable peer's slot holding a regular file is a
-    message. Empties omitted.
+    One sha256 a message. Only a regular file addressed to one of `labels`, the
+    reachable peers, is a message. Empties omitted.
     """
     by_label = {}
-    for label in slots:
-        p = box / label
+    for label in labels:
+        p = outbox / label
         if not p.is_file():
             continue
         data = p.read_bytes()
@@ -3276,10 +3276,10 @@ def before_sha256(
 ) -> dict[str, Any]:
     """What every settled channel the agent writes held at episode start, by name.
 
-    A directory by path, a mailbox by slot, a parsed file as one sha256. Channels
+    A directory by path, a mailbox by message, a parsed file as one sha256. Channels
     whose rule asks for a change compare their final state against this record.
     """
-    slots = [labels[seat] for seat in reach]
+    reachable_labels = [labels[seat] for seat in reach]
     before: dict[str, Any] = {}
     for inst in instances:
         ch = inst.channel
@@ -3288,11 +3288,11 @@ def before_sha256(
         if ch.schema and ch.shape == "file":
             before[ch.name] = file_sha256(inst.host)
         elif ch.schema and ch.shape == "mailbox":
-            before[ch.name] = slot_sha256(
+            before[ch.name] = message_sha256(
                 inst.host, [label for label in labels.values() if label != inst.label]
             )
         elif ch.shape == "mailbox":
-            before[ch.name] = slot_sha256(inst.host, slots)
+            before[ch.name] = message_sha256(inst.host, reachable_labels)
         else:
             before[ch.name] = tree_sha256(inst.host, inst.exclude)
     return before
@@ -4169,11 +4169,11 @@ class Bound:
         return f"{self.own.path}/{self.kind.file}"
 
     @property
-    def slots(self) -> list[str]:
+    def reachable_peers(self) -> list[str]:
         """The peers a mailbox reaches, as this agent names them, in seat order.
 
         A seat out of play is not a message target - resolve_mailbox judges only
-        the reachable slots - so it is not offered either. Offering it would be
+        messages to reachable peers - so it is not offered either. Offering it would be
         offering a write that lands and settles nothing, which is the one thing a
         tool result must never say.
         """
@@ -4260,7 +4260,7 @@ class Bound:
         return self.kind.act(self, shell, args)
 
     def peer_labels(self) -> list[str]:
-        """Every peer slot planted for this channel, including peers now out."""
+        """Every peer planted for this channel, including peers no longer in play."""
         return list(dict.fromkeys(i.label for i in self.instances if i.role == "peer"))
 
     def save(
@@ -4351,7 +4351,7 @@ class ToolKind:
     expires: bool = False  # that file is cleared as each episode is built
     writes: bool = True  # it needs the instance the agent writes
     names_peers: bool = (
-        False  # it names peers by the seating's reachable labels, not by slot
+        False  # it names peers by the seating's reachable labels, not by instance
     )
     needs_peer: bool = False  # it is offered only where there is a peer to name
     ballot: bool = (
@@ -4420,7 +4420,7 @@ def write_message_input_schema(b: Bound) -> dict:
     return inputs(
         to={
             "type": "string",
-            "enum": b.slots,
+            "enum": b.reachable_peers,
             "description": f"The peer's label. Yours is {b.own.label}.",
         },
         body=text_input(PATH_TEXT),
@@ -4430,8 +4430,11 @@ def write_message_input_schema(b: Bound) -> dict:
 def write_message_call(b: Bound, shell: Shell, args: dict) -> str:
     """Set the message to the named peer, reporting the change by path."""
     to = args.get("to")
-    if to not in b.slots:
-        return f"{to!r} is not a peer this channel reaches; it reaches {', '.join(b.slots)}. Nothing was written."
+    if to not in b.reachable_peers:
+        return (
+            f"{to!r} is not a peer this channel reaches; it reaches "
+            f"{', '.join(b.reachable_peers)}. Nothing was written."
+        )
     return b.put(shell, f"{b.channel.outbox}/{to}", args.get("body"))
 
 
@@ -4450,15 +4453,19 @@ def set_message(b: Bound, shell: Shell, to: str, body: Any) -> str:
 
 def send_message_call(b: Bound, shell: Shell, args: dict) -> str:
     """Set the message to the one peer this mailbox reaches, which there must be."""
-    if len(b.slots) != 1:
+    if len(b.reachable_peers) != 1:
         return "A message needs exactly one receiver. Nothing was sent."
-    return set_message(b, shell, b.slots[0], args.get("body"))
+    return set_message(b, shell, b.reachable_peers[0], args.get("body"))
 
 
 def send_message_to_input_schema(b: Bound) -> dict:
     """A reachable peer's label, and the message."""
     return inputs(
-        to={"type": "string", "enum": b.slots, "description": "The peer's label."},
+        to={
+            "type": "string",
+            "enum": b.reachable_peers,
+            "description": "The peer's label.",
+        },
         body=text_input("The complete message text."),
     )
 
@@ -4466,7 +4473,7 @@ def send_message_to_input_schema(b: Bound) -> dict:
 def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
     """Set the message to the named peer, where that peer can receive one."""
     to = args.get("to")
-    if to not in b.slots:
+    if to not in b.reachable_peers:
         return "That agent cannot receive a message now. Nothing was sent."
     return set_message(b, shell, to, args.get("body"))
 
@@ -4543,7 +4550,7 @@ def vote_input_schema(b: Bound) -> dict:
     return inputs(
         to={
             "type": "string",
-            "enum": b.slots,
+            "enum": b.reachable_peers,
             "description": "The label of the peer you vote to eliminate.",
         }
     )
@@ -4552,7 +4559,7 @@ def vote_input_schema(b: Bound) -> dict:
 def vote_call(b: Bound, shell: Shell, args: dict) -> str:
     """Record this episode's ballot; a later call replaces it."""
     to = args.get("to")
-    if to not in b.slots:
+    if to not in b.reachable_peers:
         return "That agent is not an eligible peer. No vote was recorded."
     was = read_path_in(shell, b.backing)
     if isinstance(was, Unanswered):
@@ -4593,7 +4600,7 @@ def transfer_said(b: Bound) -> str:
 def transfer_input_schema(b: Bound) -> dict:
     """A reachable peer's label, and a whole amount."""
     return inputs(
-        to={"type": "string", "enum": b.slots},
+        to={"type": "string", "enum": b.reachable_peers},
         amount={
             "type": "integer",
             "description": "A whole number of micro-dollars that must be at "
@@ -4606,13 +4613,16 @@ def transfer_input_schema(b: Bound) -> dict:
 def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
     """Declare one transfer for this episode's settlement.
 
-    In mailbox form the declaration is the one filled slot, so the other peers'
-    slots are cleared once it lands.
+    In mailbox form the declaration is the one message in the outbox, so the other
+    peers' outbox files are cleared once it lands.
     """
     ch = b.channel
     to, amount = args.get("to"), args.get("amount")
-    if to not in b.slots:
-        return f"{to!r} is not a peer this channel reaches; it reaches {', '.join(b.slots)}. No transfer was declared."
+    if to not in b.reachable_peers:
+        return (
+            f"{to!r} is not a peer this channel reaches; it reaches "
+            f"{', '.join(b.reachable_peers)}. No transfer was declared."
+        )
     if type(amount) is not int or amount <= 0:
         return (
             "amount must be a whole number that is at least 1; zero and negative "
@@ -4789,7 +4799,7 @@ def bind_tools(
 
     A tool whose channel this episode did not plant - a mailbox in an agent with
     no peers - is not offered, because an affordance that cannot act is not one.
-    A write needs the instance the agent writes, and a slot needs a peer to reach.
+    A write needs the instance the agent writes, and a message needs a peer to reach.
     On a vote cadence, only the ballot and memory tools are offered; where
     `held` says that round's election is held already, no ballot is, and every
     other tool is offered as on any other episode.
@@ -4831,7 +4841,7 @@ def bind_tools(
                     if label != bound.own.label
                 ),
             )
-        if kind.needs_peer and not bound.slots:
+        if kind.needs_peer and not bound.reachable_peers:
             continue
         out.append(bound)
     return out
@@ -5386,11 +5396,11 @@ def transfer_declaration(
 
     active: list[tuple[str, str]] = []
     for label in peer_labels:
-        slot = path / label
-        if not slot.is_file():
+        message = path / label
+        if not message.is_file():
             continue
         try:
-            body = slot.read_text(encoding="utf-8", errors="replace")[
+            body = message.read_text(encoding="utf-8", errors="replace")[
                 :FILE_CONTENT_LIMIT
             ]
         except OSError as e:
@@ -5536,28 +5546,32 @@ def resolve_mailbox(
     settles: bool,
     credit: Callable[[str, int], None],
 ) -> dict:
-    """Take a share of what is left where the episode sent no message.
+    """Take the silence penalty where the episode sent no message.
 
     A message is a file: <outbox>/<label> arrives at that peer as
-    <inbox>/<this agent's label>. Any number of reachable slots may be filled; the
-    episode speaks on the mailbox when at least one is. Only a reachable peer's slot
-    is judged. A message moves no money, so `spent` and `credit` go unread.
+    <inbox>/<this agent's label>. Any number of reachable peers may be sent one; the
+    episode speaks on the mailbox when at least one is. Only a message to a reachable
+    peer is judged. A message moves no money, so `spent` and `credit` go unread.
     """
-    slots = {ep.seating.labels[seat]: seat for seat in ep.reach}
+    seat_by_label = {ep.seating.labels[seat]: seat for seat in ep.reach}
     channel_result: dict[str, Any] = {"broken": [], "addressed": [], "penalty": 0}
     # An agent with nobody to reach has no outbox in its environment, so anything
     # in the host mirror is from some other arrangement and is not this agent's word.
-    if not slots or not inst.host.is_dir():
+    if not seat_by_label or not inst.host.is_dir():
         return channel_result
 
     def by_seat(label: str) -> int:
-        return int(slots[label])
+        return int(seat_by_label[label])
 
     channel_result["broken"] = sorted(
-        (p.name for p in inst.host.iterdir() if p.name in slots and not p.is_file()),
+        (
+            p.name
+            for p in inst.host.iterdir()
+            if p.name in seat_by_label and not p.is_file()
+        ),
         key=by_seat,
     )
-    after = slot_sha256(inst.host, slots)
+    after = message_sha256(inst.host, seat_by_label)
     channel_result["addressed"] = sorted(after, key=by_seat)
     spoke = bool(channel_result["addressed"])
     if spoke or not settles:
@@ -5567,11 +5581,11 @@ def resolve_mailbox(
 
 
 def outbox_silence(channel_result: Mapping[str, Any], ch: Channel) -> str:
-    """What the outbox's silence penalty was taken for, named by slot where a slot is
-    at fault.
+    """What the outbox's silence penalty was taken for, named by the outbox file at
+    fault where one is.
 
-    One share covers however many ways an episode broke the rule, so this names
-    all of them. Slots are how the sender reads its own outbox.
+    One silence penalty covers however many ways an episode broke the rule, so this
+    names all of them. Outbox files are how the sender reads its own outbox.
     """
     box = ch.outbox
     why = []

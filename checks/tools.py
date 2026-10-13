@@ -365,8 +365,8 @@ def check_a_transfer_tool_declares_and_settles_from_the_giver():
         )
 
 
-def check_a_currency_mailbox_delivers_the_previous_episodes_transfer_once():
-    """One addressed currency slot settles once and appears in the receiver's next
+def check_a_transfer_mailbox_delivers_the_previous_episodes_transfer_once():
+    """One addressed transfer settles once and appears in the receiver's next
     episode."""
     channels = tables()
     transfer_channel = next(ch for ch in channels if ch["name"] == "transfer")
@@ -732,7 +732,7 @@ def check_a_tool_writes_where_the_channel_says_and_settles_the_same_way():
         ), "invariant 1: a tool's write is the agent's, not the harness's"
         assert t["channels"]["mailbox"]["addressed"] == ["2"], t["channels"]["mailbox"]
         assert t["channels"]["mailbox"]["penalty"] == 0, (
-            "one new slot spares the silence penalty"
+            "one new message spares the silence penalty"
         )
         assert t["channels"]["board"]["posted"] is True, t["channels"]["board"]
         # The episode ran no command of its own, and the tool's calls are not commands.
@@ -913,10 +913,11 @@ def check_a_tool_is_offered_only_where_its_channel_can_act():
 def check_a_tool_never_offers_an_exhausted_seat():
     """An exhausted seat is not a message target, so it is not offered.
 
-    The mailbox settles only the reachable slots: a write to an exhausted seat is
-    neither addressed nor broken, so the share is taken all the same. A tool that
-    offered the slot would report the write and leave the episode charged for
-    having said nothing - the false success the result wording exists to avoid.
+    The mailbox settles only messages to reachable peers: a write to an exhausted
+    seat is neither addressed nor broken, so the silence penalty is taken all the
+    same. A tool that offered that seat would report the write and leave the episode
+    penalised for having said nothing - the false success the result wording exists
+    to avoid.
     """
     with temp_root(
         channels=tables(mailbox={"silence_penalty_percent": 50}), tools=[SEND]
@@ -1206,8 +1207,8 @@ def check_the_audit_opens_on_the_memory_an_agent_inherits():
 def check_building_an_episode_clears_what_one_episode_submits():
     """Messages, transfers, a post and a ballot are one episode's; memory is not.
 
-    A mailbox's slots are cleared whether the mailbox carries messages or
-    currency, a transfer file is cleared whole, and a tool's own file is cleared
+    A mailbox's outbox is cleared whether the mailbox carries messages or
+    transfers, a transfer file is cleared whole, and a tool's own file is cleared
     where its kind keeps it for one episode only.
     """
 

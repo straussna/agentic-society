@@ -200,7 +200,7 @@ def check_the_csv_row_flattens_a_trace():
         and r1["mailbox_crowded"] == ""
     ), r1
     assert r1["outbox_files"] == 1 and r1["inbox_files"] == 0, (
-        "the declaration is the schema channel's, not a slot"
+        "the declaration is the schema channel's, not a message"
     )
     assert (r1["transfer_to_seat"], r1["transfer_amount"], r1["transfer_rebate"]) == (
         "2",

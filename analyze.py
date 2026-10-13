@@ -198,7 +198,7 @@ def mailbox_channel_of(t: dict) -> harness.Channel | None:
 
 
 def mailbox_of(t: dict) -> dict:
-    """The mailbox record: who was addressed, which slots broke the rule, and
+    """The mailbox record: who was addressed, which outbox files broke the rule, and
     what it cost. Empty where the table has no mailbox or the agent had no peer."""
     ch = mailbox_channel_of(t)
     return (channel_records(t).get(ch.name) or {}) if ch else {}
@@ -290,7 +290,7 @@ def names(place: str, path: str) -> bool:
 
 def touched_peer(t: dict) -> bool:
     """Whether this episode named another agent's label: as a path in a command or a
-    tool argument, or as the peer a slot was addressed to."""
+    tool argument, or as the peer a message was addressed to."""
     others = [label for seat, label in labels_of(t).items() if seat != seat_of(t)]
     return any(f"{label}/" in s or s == label for s in reached(t) for label in others)
 

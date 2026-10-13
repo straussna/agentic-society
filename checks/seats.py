@@ -366,7 +366,7 @@ def check_a_mailbox_message_reaches_one_agent_and_no_other():
 def check_an_outbox_message_expires_before_the_next_sender_episode_ends():
     """What is in outbox/<i> at an episode's end is delivered once, then expires.
 
-    The sender's next episode begins with empty peer slots. Sending nothing leaves
+    The sender's next episode begins with an empty outbox. Sending nothing leaves
     no message for a later receiver episode.
     """
     with temp_root() as root:
@@ -416,14 +416,15 @@ def check_a_crowded_seat_reaches_no_one_and_still_builds_an_environment():
     assert "1" not in listing.split(), f"inbox/ holds nothing at all: {listing!r}"
 
 
-def check_the_outbox_costs_one_share_when_it_says_nothing_new():
-    """A silent or wholly malformed outbox costs one share; multiple messages do not.
+def check_the_outbox_takes_one_silence_penalty_when_it_says_nothing_new():
+    """A silent or wholly malformed outbox takes one silence penalty; multiple messages
+    do not.
 
     The outbox's silence penalty is the post's twin: it is spared when at least one
     agent was told something it was not told before. A wholly malformed outbox and a
-    silent one miss it. Every episode posts, so the share being read is the outbox's
-    alone; it is taken after the post's silence penalty and appended to the series
-    like every other movement, and the console line names every break.
+    silent one miss it. Every episode posts, so the penalty being read is the outbox's
+    alone; it is taken after the post's silence penalty and appended to the balance
+    history like every other movement, and the console line names every break.
     """
     rows = (
         (
@@ -514,7 +515,7 @@ def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
     """A malformed message expires before the next episode.
 
     Sending nothing in that next episode still takes the silence penalty. Replacing the
-    empty slot with one file both stops the charge and delivers.
+    malformed message with one file both spares the silence penalty and delivers.
     """
     with temp_root(channels=tables(mailbox=HALF)) as root:
         seated(root, other={})
@@ -522,7 +523,8 @@ def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
             run("mkdir -p outbox/2 && echo hi > outbox/2/a", "echo r1 > 1/RESULT"),
             say(),
         )
-        # The malformed slot is cleared, and sending nothing is charged all the same.
+        # The malformed message is cleared, and sending nothing still takes the
+        # silence penalty.
         second = episode_once(run("echo r2 > 1/RESULT"), say())
         third = episode_once(
             run("rm -rf outbox/2 && echo at last > outbox/2", "echo r3 > 1/RESULT"),
@@ -541,7 +543,7 @@ def check_a_crowded_seat_expires_and_silence_still_costs_the_next_episode():
         first["channels"]["mailbox"]["penalty"]
         > second["channels"]["mailbox"]["penalty"]
         > 0
-    ), "a share of what is left, so the second bite is the smaller"
+    ), "a share of what is left, so the second silence penalty is the smaller"
     assert third["channels"]["mailbox"]["penalty"] == 0, third["channels"]["mailbox"]
     assert third["channels"]["mailbox"]["addressed"] == ["2"], (
         "and replacing it with one file is the episode's one message"
@@ -574,9 +576,9 @@ def check_one_message_an_episode_costs_nothing():
 
 
 def check_each_episode_must_send_a_message_and_same_text_counts_again():
-    """Every episode starts with empty message slots.
+    """Every episode starts with an empty outbox.
 
-    Sending the same bytes again is a new delivery. Emptying or omitting the slot
+    Sending the same bytes again is a new delivery. Emptying or omitting the message
     sends nothing.
     """
     with temp_root(channels=tables(mailbox=HALF)) as root:
@@ -1029,10 +1031,10 @@ def check_the_first_episodes_of_an_agent_answer_for_nothing():
     assert harness.SETTINGS.grace_episodes == 0
 
 
-def check_the_transfer_share_is_taken_before_the_other_two():
+def check_the_transfer_silence_penalty_is_taken_before_the_other_two():
     """Order decides the amounts, and the transfer settles first of the three.
 
-    Each share is half of what is left when it is taken, so an episode failing
+    Each silence penalty is half of what is left when it is taken, so an episode failing
     all three keeps an eighth. Transfer, then board, then outbox.
     """
     with temp_root(channels=ALL_OWED) as root:

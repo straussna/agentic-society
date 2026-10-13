@@ -500,11 +500,13 @@ def check_a_transfer_cannot_lift_an_agent_off_zero():
         assert t["transfer"]["penalty"] == 0, t["transfer"]
 
 
-def check_a_transfer_to_an_exhausted_seat_costs_the_share():
-    """A line naming an exhausted seat gives nothing and is charged for giving nothing.
+def check_a_transfer_to_an_exhausted_seat_takes_the_silence_penalty():
+    """A line naming an exhausted seat gives nothing and is penalised for giving
+    nothing.
 
-    No account moves and nothing reaches g, so the share falls as it would on an
-    episode that declared nothing. The same line to a seat it can reach costs nothing.
+    No account moves and nothing reaches g, so the silence penalty falls as it would on
+    an episode that declared nothing. The same line to a seat it can reach costs
+    nothing.
     """
     with temp_root(channels=OWED_AND_REBATED) as root:
         seated(root, "t", other={}, third={})
