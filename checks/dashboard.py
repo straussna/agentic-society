@@ -244,7 +244,7 @@ def check_the_view_serves_its_api():
             ]
             assert got(base, "/api/agent/t")[1]["seat"] == "1"
             assert got(base, "/api/agent/t/episode/1")[1]["source"] == "trace"
-            # An agent driven on its own is an experiment of one: its private store, the
+            # An agent driven on its own is an experiment of one: its memory, the
             # one balance that goes with the seat it holds, and a ledger with
             # nothing in it. Nothing to address and nobody to be addressed by.
             private = got(base, "/api/experiment/t/tree/notes")[1]["columns"]
@@ -688,8 +688,8 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
 def check_the_view_shows_every_seat_side_by_side():
     """A tab is one tree of every seat's environment, a column each, in seat order.
 
-    The columns are what makes an experiment readable. A peer's private store is in
-    no column of the blackboards and no column but its own of the stores.
+    The columns are what makes an experiment readable. A peer's memory is in no
+    column of the boards and no column but its own of the memories.
     """
     with two_seats() as (c, seats):
         assert c["seated"] and c["agent_by_seat"] == seats, (
@@ -718,9 +718,9 @@ def check_the_view_shows_every_seat_side_by_side():
     # A listing is a listing: a file is read when it is opened, not on every poll.
     assert all("text" not in f for col in boards + stores for f in col["files"])
     assert opened["text"] == "hello 1\n", (
-        "a blackboard is read from the agent that owns it"
+        "a board is read from the agent that owns it"
     )
-    # starter is the starter files alone, and it is a fact about the private store.
+    # starter is the starter files alone, and it is a fact about memory.
     assert [f["path"] for f in stores[0]["files"] if f["starter"]] == ["NOTES.md"]
     assert not [f for col in boards for f in col["files"] if f["starter"]]
     assert [
@@ -728,7 +728,7 @@ def check_the_view_shows_every_seat_side_by_side():
     ] == [
         "secret.md",
         "secret.md",
-    ], "each store holds its own, and neither holds the other's"
+    ], "each memory holds its own, and neither holds the other's"
 
 
 def check_a_round_stays_open_while_a_seat_account_cannot_be_read():
@@ -1255,7 +1255,7 @@ def check_the_view_reads_a_message_out_of_two_outboxes():
     """
     with temp_root() as root:
         seated(root, g02={})
-        # Each episode leaves its blackboard something new as well, so the post
+        # Each episode leaves its board something new as well, so the post
         # penalty does not halve the budget four times over what is being read.
         episode_once(run("echo hello > out/2", "echo r1 >> 1/log"), say())
         episode_once(run("echo louder > out/2", "echo r2 >> 1/log"), say())
@@ -1835,7 +1835,7 @@ def check_the_page_has_one_dismissible_file_inspector():
 
 
 def check_the_page_exposes_ephemeral_round_snapshots():
-    """Blackboards and ballots expose live and committed round choices as buttons."""
+    """Boards and ballots expose live and committed round choices as buttons."""
     page = view.PAGE
     assert 'class="snapshotbar"' in page and 'class="snapshots"' in page
     assert '"Board round snapshots" : "Ballot vote-round snapshots"' in page
