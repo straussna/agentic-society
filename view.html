@@ -1892,7 +1892,7 @@ function submitInteraction() {
   try { calls = interactionCalls(request); }
   catch (error) { setInteractionSubmitted(false, error.message); return; }
   const payload = {version:1, request_id:request.request_id, submission_id:interactionId(),
-    action:calls.length ? "tool_calls" : "end_turn", tool_calls:calls};
+    submission_type:calls.length ? "tool_calls" : "end_turn", tool_calls:calls};
   setInteractionSubmitted(true, "submitting…");
   post(`/api/interaction/${encodeURIComponent(request.agent)}/${encodeURIComponent(request.request_id)}`, payload)
     .then(() => {

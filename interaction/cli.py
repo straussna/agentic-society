@@ -141,11 +141,13 @@ def run(agent: str, root: Path) -> int:
                     "version": VERSION,
                     "request_id": request.request_id,
                     "submission_id": f"human-{uuid.uuid4().hex}",
-                    "action": "tool_calls" if command == "submit" else "end_turn",
+                    "submission_type": (
+                        "tool_calls" if command == "submit" else "end_turn"
+                    ),
                     "tool_calls": draft if command == "submit" else [],
                 }
                 won = store.submit(agent, request.request_id, payload)
-                print(f"submitted {won.action}; use refresh for the next turn")
+                print(f"submitted {won.submission_type}; use refresh for the next turn")
                 request = None
                 draft = []
             elif command:

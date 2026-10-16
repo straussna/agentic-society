@@ -70,7 +70,7 @@ pip install -r requirements.txt
 docker build -t metered-agent:latest .        # once, before the first episode
 ```
 
-Verify the harness without spending anything — 370 checks against a fake API, no
+Verify the harness without spending anything — 371 checks against a fake API, no
 key needed:
 
 ```bash
@@ -97,7 +97,7 @@ See [docs/operating.md](docs/operating.md) before an episode that spends.
 | `py -3 experiment.py competition -r 20` | The shipped competition: five seats on one set of starter files, simultaneous, each with a board, a mailbox for messages and a giver-funded transfer channel in mailbox form, 50% silence penalties after one grace episode, and declared tools in place of a shell. The rounds end when one seat alone is in play. |
 | `py -3 experiment.py personas -r 20` | Two named agents, each with a memory and one message an episode to the other, nothing scored, shared starter files, and two declared tools, `send_message` and `remember`: with no declared Bash tool, they reach their environment through those tools, and the episode opens on the digest rather than a listing, so neither ever reads a filesystem. |
 | `py -3 experiment.py sandbox -r 20` | One agent with an empty system prompt, no starter files, Bash and a memory. No persona, objective, social channels or silence penalties. Copy it to start an experiment of your own. |
-| `py -3 check.py` | 370 checks against a fake API. Nothing spent, no key. `--no-docker` skips the 26 that need Docker. |
+| `py -3 check.py` | 371 checks against a fake API. Nothing spent, no key. `--no-docker` skips the 26 that need Docker. |
 | `py -3 view.py` | Dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's trace, refreshing as episodes run. Its one write is a human seat's submission from the Human view, through an origin- and token-checked route into the interaction store under `interaction_store/` ([docs/human.md](docs/human.md)). |
 | `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
 | `py -3 harness.py --print-system` | Print the exact bytes and sha256 of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told and every tool description it declares. Audits invariant 2 without starting an episode. |

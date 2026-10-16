@@ -11,6 +11,10 @@ from providers.base import ToolCall, ToolSpec
 
 VERSION = 1
 
+# What a submission file that names its type under `action` calls that key, and its
+# current name. from_dict reads such a file under the current name.
+SUBMISSION_KEYS = {"action": "submission_type"}
+
 
 @dataclasses.dataclass(frozen=True)
 class InteractionRequest:
@@ -60,7 +64,7 @@ class Submission:
     version: int
     request_id: str
     submission_id: str
-    action: str
+    submission_type: str
     tool_calls: tuple[ToolCall, ...]
     submitted_at: str
 
@@ -71,11 +75,12 @@ class Submission:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "Submission":
+        value = {SUBMISSION_KEYS.get(key, key): item for key, item in value.items()}
         return cls(
             int(value["version"]),
             str(value["request_id"]),
             str(value["submission_id"]),
-            str(value["action"]),
+            str(value["submission_type"]),
             tuple(
                 ToolCall(str(call["id"]), str(call["name"]), dict(call["input"]))
                 for call in value.get("tool_calls", [])
@@ -88,8 +93,9 @@ class Submission:
         """A client's envelope as its submission to `request`, stamped now.
 
         Rejected with a ValueError naming the first fault: a version other than VERSION,
-        another request's id, no submission_id, an action other than tool_calls or
-        end_turn, calls that do not fit the action, or a call to a tool not offered.
+        another request's id, no submission_id, a submission_type other than tool_calls
+        or end_turn, calls that do not fit the submission_type, or a call to a tool not
+        offered.
         """
         try:
             version = int(value.get("version", VERSION))
@@ -100,12 +106,14 @@ class Submission:
         if value.get("request_id", request.request_id) != request.request_id:
             raise ValueError("submission request_id does not match the URL")
         submission_id = value.get("submission_id")
-        action = value.get("action")
+        submission_type = value.get("submission_type")
         raw_calls = value.get("tool_calls", [])
         if not isinstance(submission_id, str) or not submission_id:
             raise ValueError("submission_id must be a non-empty string")
-        if action not in ("tool_calls", "end_turn") or not isinstance(raw_calls, list):
-            raise ValueError("action must be tool_calls or end_turn")
+        if submission_type not in ("tool_calls", "end_turn") or not isinstance(
+            raw_calls, list
+        ):
+            raise ValueError("submission_type must be tool_calls or end_turn")
         calls = []
         for call in raw_calls:
             if (
@@ -116,9 +124,9 @@ class Submission:
             ):
                 raise ValueError("tool calls require string id/name and object input")
             calls.append(ToolCall(call["id"], call["name"], call["input"]))
-        if action == "end_turn" and calls:
+        if submission_type == "end_turn" and calls:
             raise ValueError("end_turn cannot contain tool calls")
-        if action == "tool_calls" and not calls:
+        if submission_type == "tool_calls" and not calls:
             raise ValueError("tool_calls requires at least one call")
         names = {tool.name for tool in request.available_tools}
         if any(
@@ -126,13 +134,19 @@ class Submission:
         ):
             raise ValueError("each call needs an id and a declared tool name")
         return cls(
-            VERSION, request.request_id, submission_id, action, tuple(calls), now()
+            VERSION,
+            request.request_id,
+            submission_id,
+            submission_type,
+            tuple(calls),
+            now(),
         )
 
     def same_as(self, other: "Submission") -> bool:
-        """Whether `other` is this submission sent again: the same id, action and calls."""
-        return (self.submission_id, self.action, self.tool_calls) == (
+        """Whether `other` is this submission sent again: the same id, submission type
+        and calls."""
+        return (self.submission_id, self.submission_type, self.tool_calls) == (
             other.submission_id,
-            other.action,
+            other.submission_type,
             other.tool_calls,
         )

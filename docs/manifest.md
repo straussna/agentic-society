@@ -1054,8 +1054,8 @@ version-5 traces only, and reject a record of any other version, naming the vers
 holds or saying it holds none. The dashboard and `analyze.py` also read version-2
 accounts and version-4 traces, and the dashboard version-1 and version-2 progress and
 outcome records, as history: each under the names the current version gives the
-same values. The dashboard reads a raw log line that names its type under `kind` the
-same way.
+same values. The dashboard reads a raw log line that names its type under `kind`, and
+an interaction submission that names its type under `action`, the same way.
 
 ## 12. Invariants, restated in this vocabulary
 

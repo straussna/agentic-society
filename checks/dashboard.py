@@ -893,7 +893,7 @@ def answered(
         request.request_id,
         {
             "submission_id": f"s{episode}{turn}",
-            "action": "tool_calls",
+            "submission_type": "tool_calls",
             "tool_calls": [
                 {"id": f"c{i}", "name": name, "input": value}
                 for i, (name, value) in enumerate(calls)
@@ -952,7 +952,8 @@ def check_the_human_history_adds_each_submitted_human_call_once():
             / "g01"
             / f"{cut.request_id}.json"
         ).write_text(
-            '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na',
+            '{"submission_id": "s23", "submission_type": "tool_calls", '
+            '"tool_calls": [{"id": "c0", "na',
             encoding="utf-8",
         )
         store.publish("g01", "1", 2, 4, "", "observation", HUMAN_OFFERED)
