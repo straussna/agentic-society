@@ -446,7 +446,11 @@ def load_manifest(path: Path) -> Manifest:
         # the one in force, so it is rejected here for the reason start() would
         # reject it later.
         chans = harness.validate_channels(
-            tables, status_files, str(path), tuple(labels.values())
+            tables,
+            status_files,
+            str(path),
+            tuple(labels.values()),
+            table_name=named[0] if named else "status_files",
         )[0]
         if tool_tables is not None:
             harness.validate_tools(tool_tables, chans, str(path))

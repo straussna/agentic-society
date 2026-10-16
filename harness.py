@@ -737,25 +737,27 @@ def validate_channels(
     labels: Iterable[str] = ("1",),
     *,
     base: Settings | None = None,
+    table_name: str = "status_files",
 ) -> tuple[list[Channel], dict[str, str]]:
     """Read a channel table and status file names, or reject them naming the file
     and key.
 
     `tables` None keeps the table `base` holds; `harness_files` None keeps the names
     it holds, and a table given overlays them key by key. `base` is the settings in
-    force where none is given. Every concrete path is checked against every other and
-    against every status file, with `labels` standing in for {label}. Pure: nothing
-    is set.
+    force where none is given, and `table_name` is the one of STATUS_FILES_TABLES
+    the names were declared under, which a rejection names. Every concrete path is
+    checked against every other and against every status file, with `labels`
+    standing in for {label}. Pure: nothing is set.
     """
     reject = rejecter(source)
     base = SETTINGS if base is None else base
     hf = dict(base.harness_files)
     if harness_files is not None:
         if not isinstance(harness_files, dict):
-            reject("[status_files] is a table")
+            reject(f"[{table_name}] is a table")
         check_keys(
             reject,
-            "status_files: ",
+            f"{table_name}: ",
             harness_files,
             HARNESS_FILE_KEYS,
             [(key, str) for key in HARNESS_FILE_KEYS],
@@ -763,7 +765,9 @@ def validate_channels(
         hf.update(harness_files)
         for key in HARNESS_FILE_KEYS:
             if hf.get(key) and not NAME.match(hf[key]):
-                reject(f'status_files: {key} must be one path segment, or "" for none')
+                reject(
+                    f'{table_name}: {key} must be one path segment, or "" for none'
+                )
 
     if tables is None:
         table = list(base.channels)
@@ -827,9 +831,19 @@ def check_path(
         )
 
 
-def validate_agent_view(channel: Channel, reject: Reject) -> None:
-    """Require a view from AGENT_VIEWS, and one that describes the channel shape it names."""
+def validate_agent_view(
+    channel: Channel, reject: Reject, declared: str | None = None
+) -> None:
+    """Require a view from AGENT_VIEWS, and one that describes the channel shape it
+    names.
+
+    `declared` is the spelling the manifest used, which a rejection names beside the
+    view it reads as when the two differ.
+    """
     view = channel.agent_view
+    named = repr(view)
+    if declared not in (None, view):
+        named = f"{declared!r} (read as {view!r})"
     if view not in AGENT_VIEWS:
         reject(
             f"channel {channel.name}: agent_view must be one of {list(AGENT_VIEWS)}, got {view!r}"
@@ -859,7 +873,7 @@ def validate_agent_view(channel: Channel, reject: Reject) -> None:
     )
     if not valid:
         reject(
-            f"channel {channel.name}: agent_view {view!r} does not describe its "
+            f"channel {channel.name}: agent_view {named} does not describe its "
             f"{channel.writer}/{channel.readers}/{channel.shape} channel"
         )
 
@@ -910,7 +924,7 @@ def experimenter_channel(name: str, raw: dict, reject: Reject) -> Channel:
         source=src,
         agent_view=raw.get("agent_view", "paths"),
     )
-    validate_agent_view(channel, reject)
+    validate_agent_view(channel, reject, raw.get("agent_view"))
     return channel
 
 
@@ -1089,7 +1103,7 @@ def parse_channel(raw: dict, table: list[Channel], reject: Reject) -> Channel:
         agent_view=raw.get("agent_view", "paths"),
         **(transfer_terms(name, raw, penalty, reject) if schema else {}),
     )
-    validate_agent_view(channel, reject)
+    validate_agent_view(channel, reject, raw.get("agent_view"))
     return channel
 
 
@@ -2520,7 +2534,7 @@ def nested(instances: list[Instance]) -> list[Instance]:
 
 
 def reserved(instances: list[Instance], paths: list[str]) -> list[Instance]:
-    """Keep the harness's own files out of the directories they are planted in.
+    """Keep the status files out of the directories they are planted in.
 
     A receipt sits inside a directory the agent writes and comes back with it at
     the episode's end; excluding it keeps it out of the digest, the obligation and
@@ -2831,7 +2845,7 @@ def experimenter_digest_paths(
 
 
 def harness_digest_name(name: str, agent: str, account: Account) -> str:
-    """A harness-owned file's semantic heading in a tool-only observation."""
+    """A status file's semantic heading in a tool-only observation."""
     s = SETTINGS
     if s.shell_tool:
         return name
@@ -2879,7 +2893,7 @@ def digest_body(path: str, body: str, instances: list[Instance]) -> str:
 
 
 def harness_digest_body(name: str, body: str, agent: str, account: Account) -> str:
-    """Render harness-owned content semantically when the agent has no shell."""
+    """Render status-file content semantically when the agent has no shell."""
     if SETTINGS.shell_tool:
         return body
     seating = seating_of(agent, account)
@@ -3319,7 +3333,7 @@ def reap(container: str) -> None:
 
 
 def plant_harness_files(container: str, files: dict[str, str]) -> None:
-    """Write every harness-owned file into /work, root's and read-only.
+    """Write every status file into /work, root's and read-only.
 
     The balances, the ledger, a receipt and the digest, each copied on its own so
     that a file planted inside a directory the agent owns leaves that directory's

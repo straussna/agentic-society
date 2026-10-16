@@ -3087,8 +3087,9 @@ def check_labels_are_validated():
 
 def check_a_manifest_table_replaces_the_whole_set():
     """A manifest's [[channel]] tables are the whole table; its [status_files] overlay
-    one key at a time, read alike under the other name [harness_files], and a
-    manifest declaring both is rejected."""
+    one key at a time, read alike under the other name [harness_files], a rejection
+    names the table as the manifest declared it, and a manifest declaring both is
+    rejected."""
     agents = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
     with temp_root() as root:
         p = manifest_file(
@@ -3141,6 +3142,19 @@ def check_a_manifest_table_replaces_the_whole_set():
             "both.toml",
             "[harness_files] is another name for [status_files]",
         )
+
+        for name in harness.STATUS_FILES_TABLES:
+            for body, words in (
+                (f'{name} = "x"\n', f"[{name}] is a table"),
+                (f'[{name}]\ncolour = "n"\n', f"{name}: unknown key 'colour'"),
+                (f'[{name}]\ndigest = "a/b"\n', f"{name}: digest must be one path"),
+            ):
+                p = manifest_file(
+                    root,
+                    'system_prompt = ""\n' + body + agents,
+                    name=f"bad-{name}.toml",
+                )
+                rejected(lambda: experiment.load_manifest(p), f"bad-{name}.toml", words)
 
 
 def check_a_manifest_declares_what_the_harness_says():

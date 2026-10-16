@@ -30,7 +30,7 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/docker \
 # whatever USER is in force, which is the agent. Every directory below it is made
 # when an episode is built, from the channel table in force, so nothing here
 # presumes a path and a table naming none of the defaults leaves nothing stale.
-# rm and mv ask the directory, not the file, so a harness file is read-only
+# rm and mv ask the directory, not the file, so a status file is read-only
 # because it sits somewhere the agent cannot write.
 # The home directory is root's for the same reason: the only place an episode
 # can leave anything is a channel, and a channel is what comes back. /tmp stays

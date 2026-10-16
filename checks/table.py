@@ -163,7 +163,10 @@ def check_a_channel_table_is_validated():
                 ["agent_view must be one of"],
             ),
             (one(agent_view="mailbox"), ["agent_view 'mailbox' does not describe"]),
-            (one(agent_view="letters"), ["agent_view 'mailbox' does not describe"]),
+            (
+                one(agent_view="letters"),
+                ["agent_view 'letters' (read as 'mailbox') does not describe"],
+            ),
             (mail(agent_view="board"), ["agent_view 'board' does not describe"]),
             (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
             (parsed(funded_by="loud"), ["funded_by must be one of"]),
