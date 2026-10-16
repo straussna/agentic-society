@@ -329,7 +329,7 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     ]
     logged = [
         {
-            "kind": "normalized_response",
+            "line_type": "normalized_response",
             "turn": 1,
             "response": {"id": "r", "tool_calls": calls, "charges": []},
         }

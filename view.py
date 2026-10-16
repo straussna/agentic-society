@@ -284,13 +284,46 @@ def latest_attempt(lines: list[dict]) -> list[dict]:
         i
         for i, line in enumerate(lines)
         if line.get("turn") == 1
-        and line.get("kind", "native_response") == "native_response"
+        and line.get("line_type", "raw_response") == "raw_response"
     ]
     return lines[starts[-1] :] if starts else lines
 
 
+# The names a raw log line that types itself under `kind` gives its type key, the type
+# of its native response line, and the keys of its normalized response's usage,
+# charges and refusal, each with its current name. The dashboard reads such a line,
+# which sits beside a version-4 trace, through raw_line_as_current.
+RAW_LINE_KEYS = {"kind": "line_type"}
+RAW_LINE_TYPES = {"native_response": "raw_response"}
+
+
+def raw_line_as_current(line: Any) -> Any:
+    """A raw log line that types itself under `kind` in the shape of the current
+    ones; any other line as it is."""
+    if not isinstance(line, dict) or "kind" not in line:
+        return line
+    out = harness.rekeyed(line, RAW_LINE_KEYS)
+    out["line_type"] = RAW_LINE_TYPES.get(out["line_type"], out["line_type"])
+    response = out.get("response")
+    if isinstance(response, dict):
+        response = dict(response)
+        if isinstance(response.get("usage"), dict):
+            response["usage"] = harness.rekeyed(response["usage"], harness.USAGE_4_KEYS)
+        if isinstance(response.get("charges"), list):
+            response["charges"] = [
+                harness.rekeyed(charge, harness.CHARGE_4_KEYS)
+                for charge in response["charges"]
+            ]
+        if isinstance(response.get("refusal"), dict):
+            response["refusal"] = harness.rekeyed(
+                response["refusal"], harness.REFUSAL_4_KEYS
+            )
+        out["response"] = response
+    return out
+
+
 def raw_lines(path: Path) -> list[dict]:
-    """Every whole response in an episode's raw log.
+    """Every whole response in an episode's raw log, each line in the current shape.
 
     log_raw appends while the episode runs, so a trailing fragment is dropped
     and the next poll picks it up whole.
@@ -304,7 +337,7 @@ def raw_lines(path: Path) -> list[dict]:
         if not line.strip():
             continue
         try:
-            out.append(json.loads(line.decode("utf-8")))
+            out.append(raw_line_as_current(json.loads(line.decode("utf-8"))))
         except ValueError, UnicodeDecodeError:
             continue
     return out
@@ -454,7 +487,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     opening = account.get("balance", 0)
     centi, seen, out = 0, set(), []
     for line in lines:
-        if line.get("kind") != "normalized_response":
+        if line.get("line_type") != "normalized_response":
             continue
         data = line.get("response") or {}
         rid = data.get("id") or f"anon-{line.get('turn')}"

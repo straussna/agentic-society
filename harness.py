@@ -4966,7 +4966,7 @@ def log_raw(path: Path | None, turn: int, raw_response: providers.RawResponse) -
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         line = {
-            "kind": "native_response",
+            "line_type": "raw_response",
             "turn": turn,
             "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "provider": raw_response.provider,
@@ -4984,7 +4984,7 @@ def log_normalized(path: Path | None, turn: int, response: NormalizedResponse) -
         return
     try:
         line = {
-            "kind": "normalized_response",
+            "line_type": "normalized_response",
             "turn": turn,
             "provider": response.provider,
             "response": response.as_dict(),

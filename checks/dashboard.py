@@ -2060,12 +2060,38 @@ def earlier_trace(trace: dict) -> dict:
     return out
 
 
+def earlier_raw_line(line: dict) -> dict:
+    """A raw log line as a harness that typed its lines under `kind` wrote it: the
+    same values under its names, its normalized response's among them."""
+    out = {("kind" if k == "line_type" else k): v for k, v in line.items()}
+    if out["kind"] == "raw_response":
+        out["kind"] = "native_response"
+    if "response" in out:
+        response = dict(out["response"])
+        response["usage"] = {
+            ("prefix_tokens" if k == "input_tokens" else k): v
+            for k, v in response["usage"].items()
+        }
+        response["charges"] = [
+            {("kind" if k == "token_class" else k): v for k, v in charge.items()}
+            for charge in response["charges"]
+        ]
+        if response["refusal"]:
+            response["refusal"] = {
+                ("kind" if k == "refusal_type" else k): v
+                for k, v in response["refusal"].items()
+            }
+        out["response"] = response
+    return out
+
+
 def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
     """A version-2 account, version-4 traces, version-1 experiment records and a
     version-2 progress log read in the dashboard, through every route the page asks, and
     in analyze.py as the current versions hold the same values, every key under its
     current name, and so does a version-2 log a resumed run carries on; --resume and
-    --fork-from reject the account and name the version it holds."""
+    --fork-from reject the account and name the version it holds. A raw log whose
+    lines are typed under `kind` reads as the same lines typed under `line_type`."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         with quiet():
@@ -2243,3 +2269,13 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         assert all(harness.account_path(agent).exists() for agent in ids), (
             "a rejected resume leaves the records where they are"
         )
+
+        lines = view.raw_lines(harness.raw_path("g01", 1))
+        assert any(
+            line.get("response", {}).get("refusal") for line in lines
+        ), "the log holds a refusal to translate"
+        harness.raw_path("g01", 2).write_text(
+            "".join(json.dumps(earlier_raw_line(line)) + "\n" for line in lines),
+            encoding="utf-8",
+        )
+        assert view.raw_lines(harness.raw_path("g01", 2)) == lines

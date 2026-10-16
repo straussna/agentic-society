@@ -1033,9 +1033,10 @@ whether the episode's trees were mirrored back; where they were not, `files` hol
 previous episode's. Every turn carries canonical `usage` (its `input_tokens` the whole
 prompt, cached tokens included), itemized `charges`, each naming its `token_class`, the
 model's `reasoning` apart from its `text`, a `refusal` naming its `refusal_type` where
-the model declined, canonical and native stop reasons, and the provider provenance. Raw
-logs write the provider and complete native response before their canonical normalized
-event.
+the model declined, canonical and native stop reasons, and the provider provenance. A
+raw log line names its `line_type`: each turn's `raw_response` line, the provider and
+the complete native response under `native_response`, is written before its
+`normalized_response` line, the canonical response.
 
 `account_version` is 3. An account holds its `budget`, its `balance` and
 `balance_history`, the `seating` (`agent_by_seat`, `labels`, `seat_order`) and the
@@ -1053,7 +1054,8 @@ version-5 traces only, and reject a record of any other version, naming the vers
 holds or saying it holds none. The dashboard and `analyze.py` also read version-2
 accounts and version-4 traces, and the dashboard version-1 and version-2 progress and
 outcome records, as history: each under the names the current version gives the
-same values.
+same values. The dashboard reads a raw log line that names its type under `kind` the
+same way.
 
 ## 12. Invariants, restated in this vocabulary
 

@@ -250,7 +250,7 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
     assert t["episode"] == 1, (
         "the next episode takes the episode number the lost one never claimed"
     )
-    turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
+    turns = [line["turn"] for line in raw if line["line_type"] == "raw_response"]
     assert turns == [1, 2, 1], (
         f"the raw log holds both attempts at the episode, lost first: {turns}"
     )
@@ -909,15 +909,15 @@ def check_every_response_is_logged_raw():
         log = harness.records_dir("t") / "raw" / f"episode-{t['episode']:04d}.jsonl"
         lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
 
-    assert [x["kind"] for x in lines] == [
-        "native_response",
+    assert [x["line_type"] for x in lines] == [
+        "raw_response",
         "normalized_response",
     ] * 2, lines
     assert all(
-        x["native_response"]["id"] for x in lines if x["kind"] == "native_response"
+        x["native_response"]["id"] for x in lines if x["line_type"] == "raw_response"
     )
     assert all(x["provider"] == "anthropic" for x in lines)
-    refused = [x for x in lines if x["kind"] == "normalized_response"][-1]
+    refused = [x for x in lines if x["line_type"] == "normalized_response"][-1]
     assert refused["response"]["refusal"]["details"]["category"] == "cyber", refused
 
 
