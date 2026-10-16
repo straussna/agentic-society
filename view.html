@@ -140,8 +140,8 @@ button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:foc
 
 .gbox { border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
         padding:12px 14px; box-shadow:var(--glow); }
-.product-state { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line); }
-.product-state .result { color:var(--dim); margin-top:7px; }
+.progress-state { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line); }
+.progress-state .result { color:var(--dim); margin-top:7px; }
 /* An experiment that has been trading for a while has a ledger longer than the
    seats beside it; it scrolls instead of setting how tall the header is. */
 .gbox .led { max-height:150px; overflow-y:auto; margin-top:6px; }
@@ -771,9 +771,9 @@ function tileHtml(s, i) {
         ${taken.map(([name, n]) => `<span title="taken for silence on ${esc(name)}">− ${num(n)} ${esc(name)}</span>`).join(" ")}
         ${s.floored ? `<span title="floored back to zero; its environment never says so"
           >floored ${num(s.floored)}</span>` : ""}${transfer}` : ""}
-      ${(s.stopped_by_run || s.drift.length) ? `<i>|</i>
+      ${(s.stopped_by_run || s.config_drift.length) ? `<i>|</i>
         ${s.stopped_by_run ? `<span class="tag bad">${esc(s.stop)}</span>` : ""}
-        ${s.drift.length ? `<span class="tag warn" title="${esc(s.drift.join("; "))}">drift</span>` : ""}` : ""}</div>
+        ${s.config_drift.length ? `<span class="tag warn" title="${esc(s.config_drift.join("; "))}">drift</span>` : ""}` : ""}</div>
   </div>`;
 }
 
@@ -825,7 +825,7 @@ function renderHeader() {
   const totalSpent = h.seat_tiles.reduce((sum, s) => sum + Number(s.spent || 0), 0);
   const autonomousSpent = Number((h.cost || {}).autonomous_spend || 0);
   const live = h.seat_tiles.filter(running).length;
-  const attention = h.seat_tiles.filter(s => s.unseated || (s.drift || []).length || (s.silent || []).length
+  const attention = h.seat_tiles.filter(s => s.unseated || (s.config_drift || []).length || (s.silent || []).length
     || (s.running_episode != null && !running(s))).length;
   const pct = budget ? `${Math.max(0, balance / budget * 100).toFixed(0)}% of budget` : "current balance";
   document.getElementById("metrics").innerHTML = [
@@ -848,10 +848,10 @@ function renderHeader() {
   const result = terminal ? h.outcome : null;
   const lineage = h.lineage;
   const productState = result
-    ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
+    ? `<div class="progress-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
        <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
          : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
-    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc((latest.stage || "").replaceAll("_", " "))}</div></div>
+    : latest ? `<div class="progress-state"><div class="kv"><div class="k">${esc((latest.stage || "").replaceAll("_", " "))}</div></div>
        <div class="result">round ${num(latest.round)}${lineage ? ` · branch of ${esc(lineage.source_experiment_id)} at round ${num(lineage.source_round)}` : ""}</div></div>` : "";
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
     ${productState}
@@ -1422,9 +1422,9 @@ function drawTranscript() {
   // and not between the reader and the transcript. Every key the trace
   // holds is shown, in the order provenance() writes them, because drift
   // reports on all of them and a banner may not name a field the panel hides.
-  const drifted = here.drift && here.drift.length;
+  const drifted = here.config_drift && here.config_drift.length;
   // "<key>: <was> -> <now>", so the key is what stands before the first colon.
-  const moved = new Set((here.drift || []).map(s => s.split(":")[0]));
+  const moved = new Set((here.config_drift || []).map(s => s.split(":")[0]));
   el.innerHTML = `<div class="fill">
     <div class="strip" style="margin-bottom:6px"><span class="lbl">agent</span>${chips}</div>
     <div class="strip"><span class="lbl">round</span>${
@@ -1437,7 +1437,7 @@ function drawTranscript() {
     <div class="txwrap"><div id="tx"><div class="empty">loading&hellip;</div></div>
       <button class="jump" id="jump" style="display:none">jump to latest ↓</button></div>
     ${drifted ? `<div class="note" style="margin-top:8px;color:var(--warn)"
-      >configuration drift between episodes: ${esc(here.drift.join("; "))}</div>` : ""}
+      >configuration drift between episodes: ${esc(here.config_drift.join("; "))}</div>` : ""}
     <details style="margin-top:8px"><summary class="note" style="cursor:pointer"
       >provenance · episode ${S.episode}</summary>
       <div class="panel" style="margin-top:8px">${

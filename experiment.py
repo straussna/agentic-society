@@ -773,15 +773,15 @@ def branch_experiment(
     source: Path,
     at_round: int,
     experiment_id: str,
-    takeover_seat: str,
+    human_seat: str,
     output: Path | None = None,
 ) -> Path:
     """Fork every seat at a completed round and make one new seat a human seat."""
     manifest = load_manifest(source)
     if at_round < 1:
         raise SystemExit("--at-round must be positive")
-    if takeover_seat not in manifest["labels"]:
-        raise SystemExit(f"no seat {takeover_seat!r} in {source}")
+    if human_seat not in manifest["labels"]:
+        raise SystemExit(f"no seat {human_seat!r} in {source}")
     output = (
         output
         or Path(__file__).with_name("experiments")
@@ -887,11 +887,11 @@ def branch_experiment(
                 "source_episode": episode,
                 "source_round": at_round,
             }
-            if seat == takeover_seat:
+            if seat == human_seat:
                 account["provider"], account["model"] = "human", "interactive"
             quality_tier = (
                 "interactive"
-                if seat == takeover_seat
+                if seat == human_seat
                 else entry.get("quality_tier", "standard")
             )
             account["product"] = {"quality_tier": quality_tier}
@@ -936,7 +936,7 @@ def branch_experiment(
             "source_manifest": str(source),
             "source_manifest_sha256": manifest["sha256"],
             "source_round": at_round,
-            "takeover_seat": takeover_seat,
+            "takeover_seat": human_seat,
             "created_agents": new_ids,
             "traces": evidence,
             "branch_manifest": str(output),

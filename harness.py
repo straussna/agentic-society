@@ -6046,7 +6046,7 @@ class Episode:
     )  # what the digest showed, by section; None under pull
     ledger_shown: list[tuple[str, str, int]]
     canonical: str  # the balance file as planted
-    prov: dict
+    provenance: dict
     config_drift: list[str]
     records: Path
     before: dict[str, Any]  # what each settled channel held at episode start
@@ -6208,7 +6208,7 @@ def build_episode(agent: str) -> Episode:
         shown_now=shown_now,
         ledger_shown=ledger(agent, account),
         canonical=render_balance(account["balance_history"]),
-        prov=prov,
+        provenance=prov,
         config_drift=drifted,
         records=records_dir(agent),
         before=before,
@@ -6466,8 +6466,8 @@ def trace_of(
         "provider": account["provider"],
         "requested_model": account["model"],
         "resolved_model": out.get("resolved_model"),
-        "system_sha256": ep.prov["system_sha256"],
-        "provenance": ep.prov,
+        "system_sha256": ep.provenance["system_sha256"],
+        "provenance": ep.provenance,
         "provenance_drift": ep.config_drift,
         # The tools the episode's model calls carried, by name, the shell among them
         # where it was: what an election reads to tell a seat offered no ballot.

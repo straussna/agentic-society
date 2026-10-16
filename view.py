@@ -1053,7 +1053,7 @@ def seat_row(
         # the console line uses.
         "silent": silent(last),
         "refused": sum(len(analyze.refused_turns_of(t)) for t in ts),
-        "drift": (last or {}).get("provenance_drift") or [],
+        "config_drift": (last or {}).get("provenance_drift") or [],
         # Everything that moved the balance without being a turn. Read off the
         # account, not summed from the traces: these are cumulative there, and
         # an agent can be credited between its own starts.
@@ -1950,7 +1950,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "channels": analyze.channel_records(t),
             "floored": t.get("floored") or 0,
             "provenance": t["provenance"],
-            "drift": t.get("provenance_drift") or [],
+            "config_drift": t.get("provenance_drift") or [],
             "stopped_by_run": t["stop"] in harness.STOPS_THE_AGENT,
             "live": False,
         }
@@ -1972,7 +1972,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
                 "channels": {},
                 "floored": 0,
                 "provenance": {},
-                "drift": [],
+                "config_drift": [],
                 "stopped_by_run": False,
                 "live": True,
             }
