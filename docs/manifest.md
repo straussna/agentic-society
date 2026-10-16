@@ -76,10 +76,10 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Starter files** | Files the experimenter gives one agent, copied once into its memory when its balance first falls to its starter threshold |
 | **Starter threshold** | The balance, `starter_files_below`, at or below which an agent's starter files land. At or above the budget, they land at episode 1 |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
-| **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[harness_files]` table, and a ledger and a receipt, named on the transfer channel |
+| **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[status_files]` table, and a ledger and a receipt, named on the transfer channel |
 | **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
 | **Mirror** | The host's copy of one tree an agent writes, one per channel under `mirrors/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
-| **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[harness_files] digest = ""` writes none |
+| **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[status_files] digest = ""` writes none |
 | **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
 
 ### What moves
@@ -207,7 +207,7 @@ true where the run ended `final_tie`. Human seats are answered as [docs/human.md
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is in play (section 1) |
 | `stop_when_two_remain_after_tie` | bool, default `false` | Whether a vote round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are in play (section 1), both of them electors in it. A tie the experimenter's stop kept an elector's ballot from ends nothing, since that ballot could have broken it |
-| `[harness_files]` | table | Names of the status files `balance`, `digest` and `round`, overlaid key by key. Section 5 |
+| `[status_files]` | table | Names of the status files `balance`, `digest` and `round`, overlaid key by key; `[harness_files]` is accepted as another name for it. Section 5 |
 | `[[channel]]` | tables | The channels. Declaring any replaces the default channels whole |
 | `[[tool]]` | tables | The tools offered beside the shell, each pointed at a channel and carrying its description. Section 4.8 |
 | `[cost]` | table | The experiment's cost ceiling on autonomous spend: maximum, reserve, warning, and policy at the ceiling |
@@ -342,7 +342,7 @@ path = "{label}"            # where it sits in /work; see 4.2
 pushed = true               # quoted in the digest under push delivery
 restated = false            # quoted in full every episode; needs pushed; see 4.3
 measured = true             # the episode records what this channel gained; see 4.4
-agent_view = "paths"        # paths | memory | letters | board | transfer; digest labels
+agent_view = "paths"        # paths | memory | mailbox | board | transfer; digest labels
 silence_penalty_percent = 50
 ```
 
@@ -398,14 +398,15 @@ that wants a memory written and never read back declares `pushed = false` and sa
 `agent_view` changes only the presentation in the agent's digest; storage and traces keep
 their native paths and bytes. `"paths"` is the default.
 `"memory"` presents a memory's files as the agent's own memory, naming starter files
-and an experimenter channel's files as such; `"letters"` presents mailbox messages
+and an experimenter channel's files as such; `"mailbox"` presents mailbox messages
 under `Message from` and `Message to` headings naming the peer; `"board"` presents board
 files as board posts from their authors; and `"transfer"` presents a transfer channel,
 file or mailbox, as outgoing and incoming transfers. Storage and access rules
 remain the same, so an experiment can give agents persistent memory without making a
-filesystem part of their environment.
+filesystem part of their environment. `"letters"` is accepted as another spelling of
+`"mailbox"`: the channel holds, renders and records it as `"mailbox"`.
 
-The semantic views are checked against the channel they describe: `"letters"` requires
+The semantic views are checked against the channel they describe: `"mailbox"` requires
 a mailbox, `"board"` a board, `"transfer"` a transfer-schema
 file or mailbox, and `"memory"` a memory or an experimenter channel. What the
 experimenter provides is labelled as such in a memory view rather than presented as the
@@ -581,7 +582,7 @@ would end every episode on its first turn:
 | Rejected | Why |
 |---|---|
 | no `[[tool]]` at all | the agent is offered nothing to act with, and an empty tool set is not a model call the API takes |
-| no declared `bash` tool with `delivery = "pull"` or `[harness_files] digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
+| no declared `bash` tool with `delivery = "pull"` or `[status_files] digest = ""` | the listing is gone and no digest replaces it, so the first user turn would be empty |
 | no declared `bash` tool where this seating leaves every declared tool out | the tool table is not empty but the model call's tools would be, for the same reason and with the same result |
 
 The first two are decided when the harness starts, before any sandbox is built. The
@@ -676,11 +677,12 @@ nowhere a channel could not.
 ## 5. Status files
 
 The files the harness renders from the accounts and plants read-only in every seat. The
-`[harness_files]` table names three of them; the transfer channel names the ledger and
-the receipt.
+`[status_files]` table names three of them; the transfer channel names the ledger and
+the receipt. A manifest may declare the table as `[harness_files]` instead, which reads
+the same; a manifest declaring both is rejected.
 
 ```toml
-[harness_files]
+[status_files]
 balance = "n"       # one file per seat, <balance><label>: the seat's balance history; "" plants none
 digest = "m"        # the digest under push delivery; "" is the same as delivery = "pull"
 round = ""          # default: no round announcement; a name such as "round" plants one
@@ -765,13 +767,13 @@ about an agent comes from the experiment's settings.
 
 ## 8. The default channels
 
-What an experiment gets when it declares no `[[channel]]` and no `[harness_files]`. It is
+What an experiment gets when it declares no `[[channel]]` and no `[status_files]`. It is
 not a manifest of its own: no tools, no system prompt and no agents. The shipped
 competition, `experiments/competition.toml`, is a separate manifest that declares its own
 channels, with silence penalties.
 
 ```toml
-[harness_files]
+[status_files]
 balance = "n"
 digest = "m"
 
@@ -833,7 +835,7 @@ model = "claude-sonnet-5"
 # below, so the harness says nothing - declared, as every manifest must.
 system_prompt = ""
 
-[harness_files]
+[status_files]
 balance = "balance"
 digest = "digest"
 
@@ -860,7 +862,7 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "to"
 inbox = "from"
-agent_view = "letters"
+agent_view = "mailbox"
 
 [[channel]]
 name = "brief"
@@ -907,8 +909,8 @@ Every rejection is a `SystemExit` naming the file and the key.
 - Unknown keys anywhere; wrong types; values out of range as section 3 states; any key of
   the rejected tables in section 3, naming where the setting is declared or the file it
   lives in.
-- A `[[channel]]`, `[[tool]]` or `[harness_files]` table in `config.toml`, which declares
-  no channels and so no tools acting on them.
+- A `[[channel]]`, `[[tool]]`, `[status_files]` or `[harness_files]` table in
+  `config.toml`, which declares no channels and so no tools acting on them.
 - A `schedule` outside `sequential`, `simultaneous`; a `stop_when_one_remains` or
   `stop_when_two_remain_after_tie` that is not a bool; an `experiment_id` outside
   letters, digits, `.`, `_` and `-`, or `.` or `..`.
@@ -937,8 +939,8 @@ Every rejection is a `SystemExit` naming the file and the key.
 - A writer other than `self` or `experimenter`; a writer and readers pair outside 4.1.
 - An experimenter channel with anything but `source` (a directory under `files/`),
   `path`, `pushed`, `restated` and `agent_view`; `measured` is rejected by name.
-- An `agent_view` outside `paths`, `memory`, `letters`, `board`, `transfer`, or one that
-  does not describe its channel as 4.3 states.
+- An `agent_view` outside `paths`, `memory`, `mailbox` (or `letters`), `board`,
+  `transfer`, or one that does not describe its channel as 4.3 states.
 - A shape outside `directory`, `mailbox`, `file`; a mailbox with a `path` or without
   distinct `outbox` and `inbox`; `outbox` or `inbox` on anything else; `addressee`
   readers on anything but a mailbox.
@@ -975,9 +977,11 @@ Every rejection is a `SystemExit` naming the file and the key.
   planted no channel for it to act on — an episode that would open on a turn the agent
   has nothing to answer with. Rejected as the sandbox is built, before it starts and
   before anything is spent.
-- `[harness_files]` with a key other than `balance`, `digest` and `round`, a value that
-  is not a string, or a multi-segment file name. Any may be `""`: no balance file is
-  planted for any seat, no digest is written, or no round announcement is written.
+- `[status_files]` (or `[harness_files]`) with a key other than `balance`, `digest` and
+  `round`, a value that is not a string, or a multi-segment file name. Any may be `""`:
+  no balance file is planted for any seat, no digest is written, or no round
+  announcement is written. A manifest declaring both `[status_files]` and
+  `[harness_files]`.
 - Settings' own ranges are checked once, by `overlay`, wherever they came from.
 
 ## 11. What reaches the trace
