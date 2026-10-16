@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import unittest.mock
 import analyze
 import harness
 import view
@@ -181,6 +182,43 @@ def check_the_report_names_what_the_traces_hold():
     assert text in buf.getvalue(), buf.getvalue()
     # The starter file the agent overwrote in its first episode.
     assert analyze.report_line("first changed a starter", 1) in text, text
+
+
+def check_a_harness_change_mid_history_splits_the_agent_into_two_arms():
+    """Episodes either side of a change to the harness are two arms, each with its
+    own episodes and spend in the report."""
+    running, edited = harness.HARNESS_SHA256, "e" * 64
+    with temp_root():
+        episode_once(run("echo one"), say())
+        episode_once(say())
+        with unittest.mock.patch.object(harness, "HARNESS_SHA256", edited):
+            episode_once(run("echo three"), say())
+            episode_once(say())
+        ts = analyze.load("t")["t"]
+        text = analyze.report({"t": ts})
+        with quiet():
+            assert analyze.main(["--agent", "t"]) == 0
+        written = (harness.records_dir("t") / "analysis" / "report.txt").read_text(
+            encoding="utf-8"
+        )
+    assert [[t["episode"] for t in arm] for arm in analyze.arms(ts)] == [
+        [1, 2],
+        [3, 4],
+    ]
+    lines = analyze.arm_lines(ts)
+    assert lines == [
+        "  ran in 2 arms, one per harness; the totals above span them",
+        f"    {running[:12]}  episodes 1-2, "
+        f"{ts[0]['spent'] + ts[1]['spent']} micro-dollars",
+        f"    {edited[:12]}  episodes 3-4, "
+        f"{ts[2]['spent'] + ts[3]['spent']} micro-dollars",
+    ], lines
+    for line in lines:
+        assert line in text.splitlines() and line in written.splitlines(), (
+            line,
+            text,
+        )
+    assert analyze.arm_lines(ts[2:]) == [], "one harness is one arm, and no section"
 
 
 def check_the_csv_row_flattens_a_trace():

@@ -945,9 +945,22 @@ def posted(base: str, path: str, body: bytes, headers: dict[str, str]) -> int:
         return error.code
 
 
+def refused(base: str, path: str, body: bytes, headers: dict[str, str]) -> tuple:
+    """The status and the error text one POST the served API refuses is answered
+    with."""
+    request = urllib.request.Request(
+        base + path, data=body, method="POST", headers=headers
+    )
+    try:
+        urllib.request.urlopen(request).close()
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read().decode("utf-8"))["error"]
+    raise AssertionError(f"POST {path} was accepted")
+
+
 def check_view_interaction_route_answers_each_rejection_with_its_own_status():
     """The page reads the status to tell a human whether to fix the turn, refresh or
-    retry."""
+    retry. A refusal of the origin, the token or the body size names its reason."""
     with temp_root() as root:
         episode_once()
         store = InteractionStore(root / "interaction_store")
@@ -970,6 +983,13 @@ def check_view_interaction_route_answers_each_rejection_with_its_own_status():
                 value if isinstance(value, bytes) else json.dumps(value).encode("utf-8")
             )
             return posted(base, "/api/interaction/" + path, body, sent)
+
+        def why(value: Any, *without: str, **headers: str) -> tuple:
+            sent = {k: v for k, v in {**allowed, **headers}.items() if k not in without}
+            body = (
+                value if isinstance(value, bytes) else json.dumps(value).encode("utf-8")
+            )
+            return refused(base, f"/api/interaction/{answer}", body, sent)
 
         answer = f"t/{pending.request_id}"
         try:
@@ -1037,6 +1057,30 @@ def check_view_interaction_route_answers_each_rejection_with_its_own_status():
                         },
                     ),
                     409,
+                ),
+            }
+            # The refusals the route makes before it reads a body, each with its
+            # own words.
+            statuses |= {
+                "the token without an origin, in words": (
+                    why(submission(pending), "Origin"),
+                    (403, "origin rejected"),
+                ),
+                "the token from another origin, in words": (
+                    why(submission(pending), Origin="http://example.invalid"),
+                    (403, "origin rejected"),
+                ),
+                "the origin without a token, in words": (
+                    why(submission(pending), "X-Interaction-Token"),
+                    (403, "control token required"),
+                ),
+                "the origin with another token, in words": (
+                    why(submission(pending), **{"X-Interaction-Token": "other"}),
+                    (403, "control token required"),
+                ),
+                "a body over the bound, in words": (
+                    why(b" " * (view.MAX_INTERACTION_BODY + 1)),
+                    (413, "request body size rejected"),
                 ),
             }
             unread = store.publish("t", "1", 3, 1, "system", "observation", TOOLS)
