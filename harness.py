@@ -197,7 +197,9 @@ RETIRED = {
     "transfer_funded_by": 'funded_by on the [[channel]] with schema = "transfer"',
     "rebate_percent": 'rebate_percent on the channel with schema = "transfer"',
     "transfer_silence_penalty_percent": 'silence_penalty_percent on the channel with schema = "transfer"',
-    "blackboard_silence_penalty_percent": "silence_penalty_percent on the board channel",
+    "blackboard_silence_penalty_percent": (
+        "silence_penalty_percent on the board channel"
+    ),
     "mailbox_silence_penalty_percent": "silence_penalty_percent on the mailbox channel",
     "shared_files": 'a [[channel]] with writer = "experimenter" and a source',
 }
