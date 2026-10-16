@@ -2236,6 +2236,13 @@ class View(http.server.BaseHTTPRequestHandler):
             self.send_json({"error": f"{type(e).__name__}: {e}"}, status=500)
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            length = -1
+        # A body within the limit is read whole before any answer: a socket closed
+        # on unread bytes is reset, and the reset can reach the client first.
+        body = self.rfile.read(length) if 0 <= length <= MAX_INTERACTION_BODY else None
         url = urllib.parse.urlsplit(self.path)
         parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         if len(parts) != 4 or parts[:2] != ["api", "interaction"]:
@@ -2253,14 +2260,10 @@ class View(http.server.BaseHTTPRequestHandler):
             return self.send_json(
                 {"error": "Content-Type must be application/json"}, status=415
             )
-        try:
-            length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            length = -1
-        if length < 0 or length > MAX_INTERACTION_BODY:
+        if body is None:
             return self.send_json({"error": "request body size rejected"}, status=413)
         try:
-            payload = json.loads(self.rfile.read(length))
+            payload = json.loads(body)
             if not isinstance(payload, dict):
                 raise ValueError("body is not an object")
             result = self.interaction_store().submit(parts[2], parts[3], payload)
