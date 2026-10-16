@@ -2020,7 +2020,8 @@ def load_account(
     uses from then on. Provider and model are always explicit; other omitted settings
     use the experiment's settings. A setting given for an existing agent must match what
     it was created on. An account that holds no provider, no model, or no setting it is
-    given is rejected by the key it lacks.
+    given is rejected by the key it lacks, except a fork of an episode before its
+    parent's starter files landed, which pins the starter files it is given.
     """
     s = SETTINGS
     given = {
