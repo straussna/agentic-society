@@ -1866,12 +1866,12 @@ def check_the_page_summarises_the_experiment_and_resizes_its_sections():
         "needs attention",
     ):
         assert f'["{label}"' in page, label
-    for kind in ("overview", "mailbox", "tree"):
-        assert f'data-resize="{kind}"' in page, kind
+    for pane in ("overview", "mailbox", "tree"):
+        assert f'data-resize="{pane}"' in page, pane
     assert (
         'role="separator"' in page and 'document.addEventListener("pointermove"' in page
     )
-    assert "holdNumber(`${kind}-width`, width)" in page, (
+    assert "holdNumber(`${pane}-width`, width)" in page, (
         "resized sections persist locally"
     )
 
