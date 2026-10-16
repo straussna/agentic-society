@@ -143,8 +143,8 @@ class ModelSpec:
     long_context_threshold: int | None = None
     long_context_input_multiplier: tuple[int, int] = (1, 1)
     long_context_output_multiplier: tuple[int, int] = (1, 1)
-    price_valid_through: str | None = None
-    price_replacement: str | None = None
+    rate_valid_through: str | None = None
+    rate_replacement: str | None = None
 
     def rate(self, token_class: str) -> int:
         return dict(self.rates)[token_class]

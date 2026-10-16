@@ -1935,6 +1935,8 @@ EARLIER_KEYS = {
     "harness_files",
     "provenance_drift",
     "state_saved",
+    "price_valid_through",
+    "price_replacement",
     "termination_reason",
     "draw",
     "scores",
@@ -1990,8 +1992,9 @@ def earlier_account(account: dict) -> dict:
 
 
 def earlier_trace(trace: dict) -> dict:
-    """A trace as a version-4 harness wrote it: the same values under its names, with
-    the provenance's shell_tool and each file record's role and ours."""
+    """A trace as a version-4 harness wrote it: the same values under its names, its
+    provider's model spec among them, with the provenance's shell_tool and each file
+    record's role and ours."""
     names = {
         "balance_before": "series_before",
         "balance_after": "series_after",
@@ -2014,6 +2017,15 @@ def earlier_trace(trace: dict) -> dict:
     out["provenance"]["shell_tool"] = any(
         t["kind"] == "bash" for t in out["provenance"]["tools"]
     )
+    spec = {
+        "rate_valid_through": "price_valid_through",
+        "rate_replacement": "price_replacement",
+    }
+    provider = out["provenance"]["provider"]
+    out["provenance"]["provider"] = {
+        **provider,
+        "model_spec": {spec.get(k, k): v for k, v in provider["model_spec"].items()},
+    }
     turns = []
     for turn in out["turns"]:
         turn = {("thinking" if k == "reasoning" else k): v for k, v in turn.items()}

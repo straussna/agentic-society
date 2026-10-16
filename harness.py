@@ -1940,6 +1940,10 @@ PROVENANCE_4_KEYS = {
     "message_delivery": "message_lifetime",
     "harness_files": "status_files",
 }
+MODEL_SPEC_4_KEYS = {
+    "price_valid_through": "rate_valid_through",
+    "price_replacement": "rate_replacement",
+}
 TURN_4_KEYS = {"thinking": "reasoning"}
 CHARGE_4_KEYS = {"kind": "token_class"}
 REFUSAL_4_KEYS = {"kind": "refusal_type"}
@@ -1988,6 +1992,12 @@ def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
     out = rekeyed(trace, TRACE_4_KEYS)
     provenance = rekeyed(out.get("provenance") or {}, PROVENANCE_4_KEYS)
     provenance.pop("shell_tool", None)
+    provider = provenance.get("provider")
+    if isinstance(provider, dict) and isinstance(provider.get("model_spec"), dict):
+        provenance["provider"] = {
+            **provider,
+            "model_spec": rekeyed(provider["model_spec"], MODEL_SPEC_4_KEYS),
+        }
     out["provenance"] = provenance
     turns = []
     for turn in out.get("turns") or []:
