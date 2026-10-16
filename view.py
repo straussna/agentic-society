@@ -583,8 +583,8 @@ def agent_environment(
     if found:
         return manifest_environment(*found)
     if last:
-        return harness.table_of(last), analyze.harness_files_of(last)
-    return harness.channels(), dict(harness.SETTINGS.harness_files)
+        return harness.table_of(last), analyze.status_files_of(last)
+    return harness.channels(), dict(harness.SETTINGS.status_files)
 
 
 def experiment_table(exp: dict) -> list[harness.Channel]:
@@ -2061,7 +2061,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
             "result": trace.get("observation") or "",
             # `listing` and `shown_before` are `result` split where the digest's
             # record begins; `name` is the digest file the record came from.
-            "name": analyze.harness_files_of(trace)["digest"],
+            "name": analyze.status_files_of(trace)["digest"],
             "inbox": mailbox.inbox if mailbox else None,
             "inbox_prefix": inbox_prefix(mailbox),
             "listing": listing,

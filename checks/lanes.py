@@ -359,7 +359,7 @@ def offers(*declared: dict) -> list[dict]:
 
 def digest_name() -> str:
     """What the digest is called under the table in force."""
-    return harness.SETTINGS.harness_files["digest"]
+    return harness.SETTINGS.status_files["digest"]
 
 
 def ledger_name() -> str:
@@ -462,7 +462,7 @@ def amend(**fields) -> None:
 
 
 @contextlib.contextmanager
-def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
+def rooted(sandbox, channels=None, status_files=None, tools=None, **overrides):
     """Point harness at a throwaway directory, with episodes running in `sandbox`.
 
     `overrides` amend a setting (max_turns=1, command_timeout=2) or move a seam
@@ -497,15 +497,15 @@ def rooted(sandbox, channels=None, harness_files=None, tools=None, **overrides):
         harness.load_account = load_test_account
         for k, v in seams.items():
             setattr(harness, k, v)
-        if channels is not None or harness_files is not None:
-            harness.apply_channels(channels, harness_files, "check")
+        if channels is not None or status_files is not None:
+            harness.apply_channels(channels, status_files, "check")
         declared = [{"name": "bash", "kind": "bash"}] if tools is None else tools
         harness.apply_tools(declared, harness.channels(), "check")
         yield Path(d)
 
 
 @contextlib.contextmanager
-def host_root(channels=None, harness_files=None, tools=None, **overrides):
+def host_root(channels=None, status_files=None, tools=None, **overrides):
     """A throwaway agent pinned to this machine, whatever --real says.
 
     For the few checks about what is *sent* and not about the episode it drives.
@@ -516,7 +516,7 @@ def host_root(channels=None, harness_files=None, tools=None, **overrides):
     with rooted(
         HostSandbox,
         channels=channels,
-        harness_files=harness_files,
+        status_files=status_files,
         tools=tools,
         **overrides,
     ) as d:
@@ -524,7 +524,7 @@ def host_root(channels=None, harness_files=None, tools=None, **overrides):
 
 
 @contextlib.contextmanager
-def temp_root(channels=None, harness_files=None, tools=None, **overrides):
+def temp_root(channels=None, status_files=None, tools=None, **overrides):
     """A throwaway agent whose episodes are a directory and a shell on this machine.
 
     What most checks want: the pipeline end to end - account, turns, balance history,
@@ -532,18 +532,18 @@ def temp_root(channels=None, harness_files=None, tools=None, **overrides):
     """
     if REAL_ONLY:
         with docker_root(
-            channels=channels, harness_files=harness_files, tools=tools, **overrides
+            channels=channels, status_files=status_files, tools=tools, **overrides
         ) as d:
             yield d
         return
     with host_root(
-        channels=channels, harness_files=harness_files, tools=tools, **overrides
+        channels=channels, status_files=status_files, tools=tools, **overrides
     ) as d:
         yield d
 
 
 @contextlib.contextmanager
-def docker_root(channels=None, harness_files=None, tools=None, **overrides):
+def docker_root(channels=None, status_files=None, tools=None, **overrides):
     """A throwaway agent whose episodes are real containers.
 
     For the checks that turn on something only a container has. Skips when
@@ -554,7 +554,7 @@ def docker_root(channels=None, harness_files=None, tools=None, **overrides):
     with rooted(
         harness.Container,
         channels=channels,
-        harness_files=harness_files,
+        status_files=status_files,
         tools=tools,
         **overrides,
     ) as d:
@@ -838,7 +838,7 @@ def fake_experiment(
             "provenance": {
                 "started_at": f"2026-01-01T{at}:00Z",
                 "seating": seats,
-                "harness_files": dict(harness.SETTINGS.harness_files),
+                "harness_files": dict(harness.SETTINGS.status_files),
                 "message_lifetime": "episode",
             },
             **trace_fields,

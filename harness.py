@@ -20,7 +20,7 @@ Sections, in the order an episode meets them:
   6. Accounts                       Account, load_account, Seating, adjust, penalise
   7. Starter files and sources      files_sha256, plant_starter_files, guard_sources
   8. The environment                Instance, instances, digest_for,
-                                    render_harness_files
+                                    render_status_files
   9. What the agent's channels held before_sha256
  10. The sandbox and the shell      Sandbox, Container, Shell, plant_trees,
                                     mirror_trees, clip, Bound, TOOL_KINDS, bind_tools,
@@ -608,7 +608,7 @@ DEFAULT_CHANNELS: tuple[Channel, ...] = (
 # this agent. docs/manifest.md section 5. The code's default names, as
 # DEFAULT_CHANNELS are its default channels: what a trace that records none is read
 # under.
-DEFAULT_HARNESS_FILES: Mapping[str, str] = MappingProxyType(
+DEFAULT_STATUS_FILES: Mapping[str, str] = MappingProxyType(
     {"balance": "n", "digest": "m"}
 )
 
@@ -729,7 +729,7 @@ SEGMENT = re.compile(r"^(?:[A-Za-z0-9._-]|\{label\})+$")
 
 SIDECARS = (".modes", ".incoming", ".previous")
 
-HARNESS_FILE_KEYS = ("balance", "digest", "round")
+STATUS_FILE_KEYS = ("balance", "digest", "round")
 
 # The manifest table that names the status files, then the other name it is
 # accepted under. A manifest declares one of them; config.toml declares neither.
@@ -738,7 +738,7 @@ STATUS_FILES_TABLES = ("status_files", "harness_files")
 
 def validate_channels(
     tables: list[dict] | None,
-    harness_files: dict | None,
+    status_files: dict | None,
     source: str,
     labels: Iterable[str] = ("1",),
     *,
@@ -748,7 +748,7 @@ def validate_channels(
     """Read a channel table and status file names, or reject them naming the file
     and key.
 
-    `tables` None keeps the table `base` holds; `harness_files` None keeps the names
+    `tables` None keeps the table `base` holds; `status_files` None keeps the names
     it holds, and a table given overlays them key by key. `base` is the settings in
     force where none is given, and `table_name` is the one of STATUS_FILES_TABLES
     the names were declared under, which a rejection names. Every concrete path is
@@ -757,19 +757,19 @@ def validate_channels(
     """
     reject = rejecter(source)
     base = SETTINGS if base is None else base
-    hf = dict(base.harness_files)
-    if harness_files is not None:
-        if not isinstance(harness_files, dict):
+    hf = dict(base.status_files)
+    if status_files is not None:
+        if not isinstance(status_files, dict):
             reject(f"[{table_name}] is a table")
         check_keys(
             reject,
             f"{table_name}: ",
-            harness_files,
-            HARNESS_FILE_KEYS,
-            [(key, str) for key in HARNESS_FILE_KEYS],
+            status_files,
+            STATUS_FILE_KEYS,
+            [(key, str) for key in STATUS_FILE_KEYS],
         )
-        hf.update(harness_files)
-        for key in HARNESS_FILE_KEYS:
+        hf.update(status_files)
+        for key in STATUS_FILE_KEYS:
             if hf.get(key) and not NAME.match(hf[key]):
                 reject(
                     f'{table_name}: {key} must be one path segment, or "" for none'
@@ -1165,7 +1165,7 @@ def claim_paths(
 def with_channels(
     base: Settings,
     tables: list[dict] | None,
-    harness_files: dict | None,
+    status_files: dict | None,
     source: str,
     labels: Iterable[str] = ("1",),
 ) -> Settings:
@@ -1174,21 +1174,21 @@ def with_channels(
     An experimenter channel's source is found under the root in force, so `base`
     holds that root (see Settings).
     """
-    table, hf = validate_channels(tables, harness_files, source, labels, base=base)
+    table, hf = validate_channels(tables, status_files, source, labels, base=base)
     return dataclasses.replace(
-        base, channels=tuple(table), harness_files=MappingProxyType(hf)
+        base, channels=tuple(table), status_files=MappingProxyType(hf)
     )
 
 
 def apply_channels(
     tables: list[dict] | None,
-    harness_files: dict | None,
+    status_files: dict | None,
     source: str,
     labels: Iterable[str] = ("1",),
 ) -> None:
     """Validate a channel table and status file names and put them in force."""
     global SETTINGS
-    SETTINGS = with_channels(SETTINGS, tables, harness_files, source, labels)
+    SETTINGS = with_channels(SETTINGS, tables, status_files, source, labels)
 
 
 # --- the tools a channel offers --------------------------------------------------
@@ -1350,11 +1350,11 @@ def with_tools(
                 f"the agent is offered nothing to act with and every episode "
                 f"ends on its first turn"
             )
-        if s.delivery != "push" or not s.harness_files["digest"]:
+        if s.delivery != "push" or not s.status_files["digest"]:
             raise SystemExit(
                 f"{source}: bash is not declared, so an episode opens on the "
                 f"digest and nothing else; delivery is {s.delivery!r} and the "
-                f"digest is {s.harness_files['digest']!r}, which leaves the first "
+                f"digest is {s.status_files['digest']!r}, which leaves the first "
                 f"turn with nothing in it"
             )
     return s
@@ -1434,7 +1434,7 @@ class Settings:
     # A manifest's tables. The channel table: the default until a manifest declares one.
     channels: tuple[Channel, ...] = DEFAULT_CHANNELS
     # The status files' names: the default until a manifest declares its own.
-    harness_files: Mapping[str, str] = DEFAULT_HARNESS_FILES
+    status_files: Mapping[str, str] = DEFAULT_STATUS_FILES
     # The tools: none, until a manifest declares some. config.toml declares no
     # environment, so it declares no tools on one.
     tools: tuple[Tool, ...] = ()
@@ -2628,7 +2628,7 @@ def ensure_mirrors(instances: list[Instance]) -> None:
 
 def balance_name(label: str) -> str:
     """What the balance of the agent labelled `label` is called: the balance file name, then the label."""
-    return f"{SETTINGS.harness_files['balance']}{label}"
+    return f"{SETTINGS.status_files['balance']}{label}"
 
 
 def render_balance(balance_history: list[int]) -> str:
@@ -2883,7 +2883,7 @@ def harness_digest_name(name: str, agent: str, account: Account) -> str:
     s = SETTINGS
     if s.bash_declared:
         return name
-    if name == s.harness_files.get("round"):
+    if name == s.status_files.get("round"):
         return "Round status"
     seating = seating_of(agent, account)
     for label in seating.labels.values():
@@ -3080,7 +3080,7 @@ def digest_for(
         for name, body in said.items()
     }
     out, unchanged = [], []
-    round_name = SETTINGS.harness_files.get("round")
+    round_name = SETTINGS.status_files.get("round")
     if round_name and round_name in files:
         out.append(
             section(harness_digest_name(round_name, agent, account), files[round_name])
@@ -3133,7 +3133,7 @@ def digest_for(
     return "".join(out), shown_now
 
 
-def render_harness_files(
+def render_status_files(
     agent: str, account: Account
 ) -> tuple[dict[str, str], dict[str, str] | None]:
     """Every file the harness writes into /work, by name, and what the digest showed.
@@ -3146,9 +3146,9 @@ def render_harness_files(
     """
     s = SETTINGS
     files: dict[str, str] = {}
-    if round_name := s.harness_files.get("round"):
+    if round_name := s.status_files.get("round"):
         files[round_name] = render_round_status(account)
-    if s.harness_files["balance"]:
+    if s.status_files["balance"]:
         files.update(
             {
                 balance_name(label): render_balance(balance_history)
@@ -3162,8 +3162,8 @@ def render_harness_files(
     if parsed and parsed.receipt and (text := receipt_text(account, parsed)):
         files[parsed.receipt] = text
         carried.add(parsed.receipt)
-    if s.delivery == "push" and s.harness_files["digest"]:
-        files[s.harness_files["digest"]], shown_now = digest_for(
+    if s.delivery == "push" and s.status_files["digest"]:
+        files[s.status_files["digest"]], shown_now = digest_for(
             agent, account, files, carried
         )
         return files, shown_now
@@ -3202,7 +3202,7 @@ def observation(
     """
     s = SETTINGS
     listing = listing_command(s.channels if table is None else table)
-    digest = s.harness_files["digest"] if digest is None else digest
+    digest = s.status_files["digest"] if digest is None else digest
     pushed = (s.delivery if delivery is None else delivery) == "push" and digest
     if s.bash_declared if shell is None else shell:
         return f"{listing}; cat {shlex.quote(digest)}" if pushed else listing
@@ -3369,7 +3369,7 @@ def reap(container: str) -> None:
         pass
 
 
-def plant_harness_files(container: str, files: dict[str, str]) -> None:
+def plant_status_files(container: str, files: dict[str, str]) -> None:
     """Write every status file into /work, root's and read-only.
 
     The balances, the ledger, a receipt and the digest, each copied on its own so
@@ -3540,7 +3540,7 @@ def plant_trees(
         check=True,
         capture_output=True,
     )
-    plant_harness_files(container, files)
+    plant_status_files(container, files)
 
 
 def mirror_trees(
@@ -5288,7 +5288,7 @@ def run_turns(
             # flat step, findable as micros == 0. Under live_balance the element
             # arrives before this turn's commands run; otherwise at the next episode.
             out["balances"].append(turn["balance"])
-            if s.live_balance and s.harness_files["balance"]:
+            if s.live_balance and s.status_files["balance"]:
                 replant_live_balance(shell, label, account, out)
 
             watch(
@@ -5817,7 +5817,7 @@ def provenance(
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
-        "harness_files": dict(s.harness_files),
+        "harness_files": dict(s.status_files),
         # Invariant 9 for what the agent can do: the tools offered, bash among them
         # where it is declared, whole and by sha256, so two agents offered
         # different tools are different arms. What each one says of itself the
@@ -5969,7 +5969,7 @@ def snapshot(
     lines = []
     numbers = {str(v) for v in balance_history}
     patterns = balance_patterns(
-        SETTINGS.harness_files["balance"],
+        SETTINGS.status_files["balance"],
         labels or tuple(dict.fromkeys(i.label for i in instances if i.label)),
     )
     written = {
@@ -6159,7 +6159,7 @@ def build_episode(agent: str) -> Episode:
 
     # After the planting: a digest built before it cannot quote the starter files,
     # and the episode they land in is the one that most needs them.
-    shown, shown_now = render_harness_files(agent, account)
+    shown, shown_now = render_status_files(agent, account)
 
     prov = provenance(
         account["provider"],
@@ -6455,7 +6455,7 @@ def trace_of(
     """
     account = ep.account
     patterns = balance_patterns(
-        SETTINGS.harness_files["balance"], tuple(ep.seating.labels.values())
+        SETTINGS.status_files["balance"], tuple(ep.seating.labels.values())
     )
     ref = patterns[0] if patterns else None
     forms = balance_forms(ep.canonical)
@@ -6588,7 +6588,7 @@ def start(
     overrides: dict[str, Any] | None = None,
     requirements: Iterable[tuple[str, str]] = (),
     channel_tables: list[dict] | None = None,
-    harness_files: dict | None = None,
+    status_files: dict | None = None,
     labels: Iterable[str] = ("1",),
     tool_tables: list[dict] | None = None,
 ) -> ProviderRouter:
@@ -6616,7 +6616,7 @@ def start(
         s = overlay(s, overrides, "manifest", MANIFEST_SETTINGS, NOT_MANIFEST)
     # A manifest's table replaces the set whole; its names overlay one by one; and
     # whatever is in force is held against the labels this experiment will use.
-    s = with_channels(s, channel_tables, harness_files, "manifest", tuple(labels))
+    s = with_channels(s, channel_tables, status_files, "manifest", tuple(labels))
     # After the channels, and whether or not this manifest declares any: a tool
     # points at a channel, so a table that replaced the channels re-decides them.
     s = with_tools(s, tool_tables, list(s.channels), "manifest")
@@ -7082,8 +7082,8 @@ def print_context(
                     for earlier in range(1, episode)
                 ]
                 channel_instances = instances(entry["id"], view)
-                rendered, _ = render_harness_files(entry["id"], view)
-                opening = rendered.get(s.harness_files["digest"], "")
+                rendered, _ = render_status_files(entry["id"], view)
+                opening = rendered.get(s.status_files["digest"], "")
                 reach = [
                     view["seating"]["labels"][seat]
                     for seat in seating_of(entry["id"], view).peers
@@ -7260,7 +7260,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides=m["overrides"],
         requirements={(e["provider"], e["model"]) for e in m["agents"]},
         channel_tables=m["channels"],
-        harness_files=m["status_files"],
+        status_files=m["status_files"],
         labels=tuple(m["labels"].values()),
         tool_tables=m["tools"],
     )

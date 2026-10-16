@@ -646,7 +646,7 @@ def check_a_trace_that_predates_the_status_file_names_still_groups():
     names, as one naming no channel table is read under the default channels, so its
     experiment still groups and its header still opens instead of failing every poll.
     The names in force are another experiment's, and not the ones it ran under."""
-    with rooted(HostSandbox, harness_files={"balance": "purse"}):
+    with rooted(HostSandbox, status_files={"balance": "purse"}):
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
@@ -657,7 +657,7 @@ def check_a_trace_that_predates_the_status_file_names_still_groups():
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
-    assert head.get("balance") == harness.DEFAULT_HARNESS_FILES["balance"] != "purse", (
+    assert head.get("balance") == harness.DEFAULT_STATUS_FILES["balance"] != "purse", (
         head
     )
 
@@ -1100,7 +1100,7 @@ def check_the_view_reads_the_round_the_harness_announces():
     Not the order the episodes started in: g02 starting after g01's second episode is
     still told round 1, and the page says round 1 too.
     """
-    with temp_root(harness_files={"round": "round"}) as root:
+    with temp_root(status_files={"round": "round"}) as root:
         seated(root, "g01", g02={})
         for agent in ("g01", "g01", "g02"):
             with quiet():
@@ -1630,7 +1630,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
 
 def check_the_view_builds_its_tabs_from_the_table():
     """The page's tabs, trees, message log and diffs follow the table the traces record."""
-    with temp_root(channels=PERSONA, harness_files=PERSONA_FILES) as root:
+    with temp_root(channels=PERSONA, status_files=PERSONA_FILES) as root:
         seated(root, labels=PERSONA_LABELS, other={})
         episode_once(
             run(

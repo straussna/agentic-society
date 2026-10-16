@@ -190,7 +190,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
 
     with temp_root(
         channels=manifest["channels"],
-        harness_files=manifest["status_files"],
+        status_files=manifest["status_files"],
         tools=manifest["tools"],
     ) as root:
         seated(root, "g01", g02={})
@@ -199,7 +199,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
             post.parent.mkdir(parents=True, exist_ok=True)
             post.write_text(f"from {agent}\n", encoding="utf-8")
         account = harness.load_account("g01")
-        first = harness.render_harness_files("g01", account)[0]["m"]
+        first = harness.render_status_files("g01", account)[0]["m"]
         assert first.startswith(
             "=== Round status ===\nround: 1 (vote cycle 1, 1/5)\nyou: 1\n"
             "in play: 1 (you), 2\nround type: discussion\n"
@@ -210,7 +210,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
             {"episode": i, "stop": "no_tool_call"} for i in range(1, 5)
         ]
         harness.save_account("g01", account)
-        fifth = harness.render_harness_files("g01", account)[0]["m"]
+        fifth = harness.render_status_files("g01", account)[0]["m"]
         assert fifth.startswith(
             "=== Round status ===\nround: 5 (vote cycle 1, 5/5)\n"
             "you: 1\nin play: 1 (you), 2\n"
@@ -794,7 +794,7 @@ def check_an_elector_an_interrupt_kept_from_voting_leaves_the_vote_eliminating_n
     its place.
     """
     with temp_root(
-        channels=tables(BALLOT), tools=[SHELL, VOTE], harness_files={"round": "round"}
+        channels=tables(BALLOT), tools=[SHELL, VOTE], status_files={"round": "round"}
     ) as root:
         ids = seated(root, "g01", g02={}, g03={})
         manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)
@@ -1782,7 +1782,7 @@ def check_a_resumed_experiment_finishes_the_round_an_interrupt_left_unfinished()
     in seat order, and the finishing counts as one of the -r rounds. The next round seats
     everyone, and every agent is told the same round.
     """
-    with temp_root(harness_files={"round": "round"}) as root:
+    with temp_root(status_files={"round": "round"}) as root:
         ids = seated(root, "g01", g02={}, g03={})
         manifest = seats_manifest(root, ids)
         built: list[str] = []
@@ -1976,7 +1976,7 @@ def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_o
         with temp_root(
             channels=tables(BALLOT),
             tools=[SHELL, note, VOTE],
-            harness_files={"round": "round"},
+            status_files={"round": "round"},
         ) as root:
             ids = seated(root, "g01", g02={}, g03={}, g04={})
             manifest = voting(root, dict.fromkeys(ids, 0), {}, shell=True)

@@ -1425,7 +1425,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
         )
         undigested = dataclasses.replace(
             harness.SETTINGS,
-            harness_files={**harness.SETTINGS.harness_files, "digest": ""},
+            status_files={**harness.SETTINGS.status_files, "digest": ""},
         )
         rejected(
             lambda: harness.with_tools(undigested, [POST], chans, "manifest"),
@@ -1448,7 +1448,7 @@ def check_withholding_the_shell_needs_something_to_act_with():
             "with_tools builds settings and installs none"
         )
 
-    with temp_root(harness_files={"digest": ""}):
+    with temp_root(status_files={"digest": ""}):
         rejected(
             lambda: harness.apply_tools([POST], chans, "manifest"),
             "manifest:",

@@ -385,7 +385,7 @@ def check_a_transfer_is_public_to_the_whole_experiment():
         assert harness.render_ledger(rows["third"]) == "1 2 300\n"
         # And it is planted in every environment, beside the balances and like them.
         for r in ("t", "other", "third"):
-            files, _ = harness.render_harness_files(r, harness.load_account(r))
+            files, _ = harness.render_status_files(r, harness.load_account(r))
             assert files[ledger_name()] == "1 2 300\n", (r, files)
 
 
@@ -415,7 +415,7 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
         with quiet():
             harness.run_once("t", fake(run("echo '2 250' > outbox/transfer"), say()))
         # The next agent to start builds its environment now, and the transfer is already in it.
-        later, _ = harness.render_harness_files("other", harness.load_account("other"))
+        later, _ = harness.render_status_files("other", harness.load_account("other"))
         assert later[ledger_name()] == "1 2 250\n", later[ledger_name()]
 
 

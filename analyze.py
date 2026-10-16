@@ -155,10 +155,10 @@ def label_of(t: dict) -> str:
     return labels_of(t).get(seat_of(t), seat_of(t))
 
 
-def harness_files_of(t: dict) -> dict[str, str]:
+def status_files_of(t: dict) -> dict[str, str]:
     """What the status files were called this episode, or the code's default
     names where the trace predates them, as table_of reads the default channels."""
-    return t["provenance"].get("harness_files") or dict(harness.DEFAULT_HARNESS_FILES)
+    return t["provenance"].get("harness_files") or dict(harness.DEFAULT_STATUS_FILES)
 
 
 def channel_records(t: dict) -> dict[str, dict]:
@@ -725,7 +725,7 @@ def peer_lines(ts: list[dict]) -> list[str]:
         return [report_line("experiment", "none; the agent was alone")]
     mine, label = seat_of(ts[-1]), label_of(ts[-1])
     labels = labels_of(ts[-1])
-    balance = harness_files_of(ts[-1])["balance"]
+    balance = status_files_of(ts[-1])["balance"]
     return [
         report_line(
             "experiment",

@@ -332,7 +332,7 @@ def check_the_default_channels_are_what_config_toml_declares():
                 got.name,
                 moved,
             )
-        assert harness.SETTINGS.harness_files == {"balance": "n", "digest": "m"}
+        assert harness.SETTINGS.status_files == {"balance": "n", "digest": "m"}
         assert harness.observation(shell=True) == "ls -la . ./memory; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "memory", "writer": "self", "readers": "self", "path": "memory"},
@@ -371,7 +371,7 @@ def check_a_declared_table_reshapes_the_environment():
     mirrors on the host follow the table and the labels; nothing of the default
     environment remains.
     """
-    with temp_root(channels=PERSONA, harness_files=PERSONA_FILES) as root:
+    with temp_root(channels=PERSONA, status_files=PERSONA_FILES) as root:
         seated(root, labels=PERSONA_LABELS, other={})
         board = harness.mirror("other", "noticeboard")
         board.mkdir(parents=True, exist_ok=True)
@@ -548,7 +548,7 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
             run("echo '2 100' > outbox/transfer", "echo hi > outbox/2"), say()
         )
         account = ground_truth()
-        planted = set(harness.render_harness_files("t", account)[0])
+        planted = set(harness.render_status_files("t", account)[0])
         other = harness.load_account("other")["balance"]
     assert planted == {"n1", "n2", "m"}, planted
     assert "=== g ===" not in t["observation"] and "transfer" not in t["channels"]
@@ -754,10 +754,10 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
 
 def check_status_files_can_be_renamed():
     """[status_files] renames the balance and the digest, or writes no digest at all."""
-    with temp_root(harness_files={"balance": "bal", "digest": "say"}) as root:
+    with temp_root(status_files={"balance": "bal", "digest": "say"}) as root:
         seated(root, other={})
         t = episode_once(run("cat bal1", "cat say"), say())
-        planted = set(harness.render_harness_files("t", ground_truth())[0])
+        planted = set(harness.render_status_files("t", ground_truth())[0])
     assert t["commands"][0] == "ls -la . ./memory; cat say", t["commands"]
     assert planted == {"bal1", "bal2", "g", "say"}, planted
     assert "=== bal1 ===" in t["observation"] and "=== bal2 ===" in t["observation"]
@@ -765,10 +765,10 @@ def check_status_files_can_be_renamed():
     assert t["touched_balance"] and t["read_balance"]
     assert t["provenance"]["harness_files"] == {"balance": "bal", "digest": "say"}
 
-    with temp_root(harness_files={"digest": ""}) as root:
+    with temp_root(status_files={"digest": ""}) as root:
         seated(root, other={"group/post": "theirs\n"})
         t = episode_once(run("cat 2/post"), say())
-        planted = set(harness.render_harness_files("t", ground_truth())[0])
+        planted = set(harness.render_status_files("t", ground_truth())[0])
     assert t["commands"][0] == "ls -la . ./memory", "no digest, so nothing to cat"
     assert planted == {"n1", "n2", "g"}, planted
     assert "===" not in t["observation"], "the listing alone"
@@ -787,10 +787,10 @@ def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
     """
     with pinned():
         harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")
-        in_force = dict(harness.SETTINGS.harness_files)
-        old = analyze.harness_files_of({"provenance": {}})
-        recorded = analyze.harness_files_of({"provenance": {"harness_files": in_force}})
-        default = dict(harness.DEFAULT_HARNESS_FILES)
+        in_force = dict(harness.SETTINGS.status_files)
+        old = analyze.status_files_of({"provenance": {}})
+        recorded = analyze.status_files_of({"provenance": {"harness_files": in_force}})
+        default = dict(harness.DEFAULT_STATUS_FILES)
     assert in_force == {"balance": "bal", "digest": "say"}, in_force
     assert old == default == {"balance": "n", "digest": "m"}, (old, default)
     assert recorded == in_force, "a trace that names its files is read by them"
@@ -841,10 +841,10 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     here. Nothing about the accounting changes: turns are charged, the account
     keeps the balance history, and only the window into it is gone.
     """
-    with temp_root(harness_files={"balance": "", "digest": "digest"}) as root:
+    with temp_root(status_files={"balance": "", "digest": "digest"}) as root:
         seated(root, other={"group/post": "theirs\n"})
         t = episode_once(run("ls"), say())
-        planted = set(harness.render_harness_files("t", ground_truth())[0])
+        planted = set(harness.render_status_files("t", ground_truth())[0])
         account = ground_truth()
     assert planted == {"g", "digest"}, planted
     assert not any(p.startswith("n") for p in planted), planted
@@ -862,7 +862,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     # does not lift it: the episodes still stop at the floor and no further one
     # starts, exactly as they do where the agent can read what it holds.
     cost = turn_cost()
-    with temp_root(harness_files={"balance": "", "digest": "digest"}, budget=cost * 3):
+    with temp_root(status_files={"balance": "", "digest": "digest"}, budget=cost * 3):
         with quiet() as buf:
             assert harness.run_episodes("t", fake(), 8) == 0
         exhausted = ground_truth()

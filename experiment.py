@@ -1887,7 +1887,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides=manifest["overrides"],
         requirements={(e["provider"], e["model"]) for e in manifest["agents"]},
         channel_tables=manifest["channels"],
-        harness_files=manifest["status_files"],
+        status_files=manifest["status_files"],
         labels=tuple(manifest["labels"].values()),
         tool_tables=manifest["tools"],
     )
