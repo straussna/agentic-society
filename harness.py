@@ -4224,7 +4224,7 @@ class Bound:
         """Every path of this channel the agent can reach, in the environment's order."""
         return [i.path for i in self.instances]
 
-    def paths_said(self) -> str:
+    def describe_paths(self) -> str:
         """Those paths as the description names them: a directory ends in a slash.
 
         A tool reads files, and a channel every agent reads is a directory per
@@ -4262,7 +4262,7 @@ class Bound:
         """
         return self.kind.describe(self)
 
-    def readers_said(self) -> str:
+    def describe_readers(self) -> str:
         """Who reads the channel this tool writes, in a sentence."""
         return (
             "Every agent in the experiment can read it."
@@ -4353,7 +4353,7 @@ class Bound:
         ):
             return (
                 f"{path} is not in the {self.channel.name!r} channel, which holds "
-                f"{self.paths_said()}. Nothing was read."
+                f"{self.describe_paths()}. Nothing was read."
             )
         held = read_path_in(shell, path)
         if isinstance(held, Unanswered):
@@ -4437,7 +4437,7 @@ def shell_only(*_: Any) -> NoReturn:
     raise TypeError("bash is the episode shell and is bound to no channel")
 
 
-def write_message_said(b: Bound) -> str:
+def describe_write_message(b: Bound) -> str:
     """write_message's description: the message it sets and where the peer reads it."""
     ch = b.channel
     return (
@@ -4512,12 +4512,12 @@ def send_message_to_call(b: Bound, shell: Shell, args: dict) -> str:
     return set_message(b, shell, to, args.get("body"))
 
 
-def write_file_said(b: Bound) -> str:
+def describe_write_file(b: Bound) -> str:
     """write_file's description: where under the agent's own instance it writes, and
     who reads it."""
     return (
         f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
-        f"It replaces whatever that path holds. {b.readers_said()}"
+        f"It replaces whatever that path holds. {b.describe_readers()}"
     )
 
 
@@ -4568,7 +4568,7 @@ def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
     )
 
 
-def vote_said(b: Bound) -> str:
+def describe_vote(b: Bound) -> str:
     """vote's description: the cadence it is offered on, and what a ballot reveals."""
     return (
         f"Vote to eliminate one peer. This tool is offered only on every "
@@ -4609,7 +4609,7 @@ def vote_call(b: Bound, shell: Shell, args: dict) -> str:
     )
 
 
-def transfer_said(b: Bound) -> str:
+def describe_transfer(b: Bound) -> str:
     """transfer's description: who funds it, and that it stands for one episode."""
     ch = b.channel
     funding = (
@@ -4695,12 +4695,12 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
     )
 
 
-def read_path_said(b: Bound) -> str:
+def describe_read_path(b: Bound) -> str:
     """read_path's description: what the channel holds, and where a result is
     clipped."""
     return (
         f"Read one file in the {b.channel.name!r} channel, which holds "
-        f"{b.paths_said()}. Returns what that file holds, clipped at "
+        f"{b.describe_paths()}. Returns what that file holds, clipped at "
         f"{SETTINGS.tool_result_limit} characters."
     )
 
@@ -4730,7 +4730,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "write_message": ToolKind(
         "a mailbox channel",
         unparsed_mailbox,
-        write_message_said,
+        describe_write_message,
         write_message_input_schema,
         write_message_call,
         needs_peer=True,
@@ -4760,7 +4760,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "write_file": ToolKind(
         "a directory channel the agent writes",
         lambda ch: ch.writer == "self" and ch.shape == "directory",
-        write_file_said,
+        describe_write_file,
         write_file_input_schema,
         write_file_call,
     ),
@@ -4791,7 +4791,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "vote": ToolKind(
         "a memory channel",
         lambda ch: ch.is_memory,
-        vote_said,
+        describe_vote,
         vote_input_schema,
         vote_call,
         file="vote",
@@ -4804,7 +4804,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "transfer": ToolKind(
         "an enabled transfer schema channel",
         lambda ch: ch.schema == "transfer" and ch.funded_by != "none",
-        transfer_said,
+        describe_transfer,
         transfer_input_schema,
         transfer_call,
         names_peers=True,
@@ -4813,7 +4813,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
     "read_path": ToolKind(
         "any channel the environment plants",
         lambda ch: True,
-        read_path_said,
+        describe_read_path,
         read_path_input_schema,
         read_path_call,
         writes=False,
