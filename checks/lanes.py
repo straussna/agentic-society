@@ -905,7 +905,7 @@ PERSONA = [
 
 PERSONA_FILES = {"balance": "balance", "digest": "digest"}
 
-PERSONA_LABELS = {"1": "Studio", "2": "Game"}
+PERSONA_LABELS = {"1": "Workshop", "2": "Game"}
 
 
 def rejected(

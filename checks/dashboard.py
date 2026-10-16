@@ -1631,7 +1631,7 @@ def check_the_view_builds_its_tabs_from_the_table():
         episode_once(
             run(
                 "echo me > journal/IDENTITY.md",
-                "echo n > from-Studio/post",
+                "echo n > from-Workshop/post",
                 "echo hi > to/Game",
             ),
             say(),
@@ -1652,7 +1652,7 @@ def check_the_view_builds_its_tabs_from_the_table():
         ("trace", "trace"),
     ], h["tabs"]
     assert h["balance"] == "balance" and h["labels"] == PERSONA_LABELS
-    assert [s["label"] for s in h["seat_tiles"]] == ["Studio", "Game"]
+    assert [s["label"] for s in h["seat_tiles"]] == ["Workshop", "Game"]
     assert journal["what"] == "no other agent ever reads this one"
     assert board["what"] == "every agent reads this one"
     assert [f["path"] for f in journal["columns"][0]["files"]] == ["IDENTITY.md"]
@@ -1675,7 +1675,7 @@ def check_the_view_builds_its_tabs_from_the_table():
     )
     assert [
         (e["path"], e["from_label"], e["to_label"], e["to_seat"]) for e in events
-    ] == [("to/Game", "Studio", "Game", "2")], events
+    ] == [("to/Game", "Workshop", "Game", "2")], events
 
 
 def check_the_view_shows_an_experimenter_channel_once():

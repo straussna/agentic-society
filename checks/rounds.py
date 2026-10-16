@@ -3096,7 +3096,7 @@ def check_labels_are_validated():
                 because=f"accepted a bad label: {bad!r}",
             )
         m = experiment.load_manifest(
-            manifest_file(root, two('label = "Studio"\n', 'label = "Game"\n'))
+            manifest_file(root, two('label = "Workshop"\n', 'label = "Game"\n'))
         )
         assert m["labels"] == PERSONA_LABELS, m["labels"]
         assert experiment.load_manifest(manifest_file(root, two()))["labels"] == {
@@ -3151,7 +3151,7 @@ def check_a_manifest_declares_what_the_harness_says():
     the prompt is pinned like the other four settings: an agent asked to run on a
     different one is rejected, episodes either side of it not being one experiment.
     """
-    mine, ours = "You are studio 1.", "You are one of several studios."
+    mine, ours = "You are workshop 1.", "You are one of several workshops."
     text = (
         'system_prompt = "'
         + ours

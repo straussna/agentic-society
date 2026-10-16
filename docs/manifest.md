@@ -484,7 +484,7 @@ default, since it is an additional statement from the harness.
 [[channel]]
 name = "brief"
 writer = "experimenter"
-source = "studio-brief"     # files/studio-brief/, copied root-owned into every seat at every episode
+source = "workshop-brief"   # files/workshop-brief/, copied root-owned into every seat at every episode
 path = "brief"
 ```
 
@@ -711,11 +711,11 @@ ledger for the separately settled amount.
 
 ```toml
 [[agent]]
-id = "studio"               # required; not a bare number; distinct
-label = "Studio"            # optional; defaults to the seat number
-seats = 3                   # optional; creates studio01..studio03 and Studio01..Studio03
-memory_from = { agent = "prior-studio", episode = 12 }
-system_prompt = "You run a studio."
+id = "workshop"             # required; not a bare number; distinct
+label = "Workshop"          # optional; defaults to the seat number
+seats = 3                   # optional; creates workshop01..workshop03 and Workshop01..Workshop03
+memory_from = { agent = "prior-workshop", episode = 12 }
+system_prompt = "You run a workshop."
 starter_files = "persona-ana"
 starter_files_below = 1500000
 budget = 2000000            # optional

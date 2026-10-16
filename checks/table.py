@@ -72,7 +72,7 @@ def check_a_channel_table_is_validated():
         )
 
     with temp_root() as root:
-        plant(root, "studio-brief", BRIEF="read me\n")
+        plant(root, "workshop-brief", BRIEF="read me\n")
         for declared, words in (
             ({"name": "x"}, ["[[channel]] tables"]),
             (tables({"writer": "self"}), ["needs a name"]),
@@ -93,7 +93,7 @@ def check_a_channel_table_is_validated():
                     {
                         "name": "b",
                         "writer": "experimenter",
-                        "source": "studio-brief",
+                        "source": "workshop-brief",
                         "path": "b",
                         "shape": "directory",
                     }
@@ -153,7 +153,7 @@ def check_a_channel_table_is_validated():
                     {
                         "name": "b",
                         "writer": "experimenter",
-                        "source": "studio-brief",
+                        "source": "workshop-brief",
                         "path": "b",
                         "agent_view": "shelf",
                     }
@@ -231,7 +231,7 @@ def check_a_channel_table_is_validated():
         brief = {
             "name": "brief",
             "writer": "experimenter",
-            "source": "studio-brief",
+            "source": "workshop-brief",
             "path": "brief",
         }
         table, hf = harness.validate_channels(
@@ -248,7 +248,7 @@ def check_a_channel_table_is_validated():
             "brief",
         ]
         assert hf == {"balance": "balance", "digest": "m"}, "an overlay, key by key"
-        assert table[4].readers == "all" and table[4].source == "studio-brief"
+        assert table[4].readers == "all" and table[4].source == "workshop-brief"
         assert all(c.pushed for c in table), (
             "every channel is quoted unless the manifest says otherwise, memory "
             "included"
@@ -353,11 +353,11 @@ def check_a_declared_table_reshapes_the_environment():
         (board / "hello").write_text("from game\n", encoding="utf-8")
         letters = harness.mirror("other", "letters")
         letters.mkdir(parents=True, exist_ok=True)
-        (letters / "Studio").write_text("psst studio\n", encoding="utf-8")
+        (letters / "Workshop").write_text("psst workshop\n", encoding="utf-8")
         t = episode_once(
             run(
                 "echo me > journal/IDENTITY.md",
-                "echo note > from-Studio/post",
+                "echo note > from-Workshop/post",
                 "echo reply > to/Game",
             ),
             say(),
@@ -376,7 +376,7 @@ def check_a_declared_table_reshapes_the_environment():
     assert env == [
         ("journal", "journal", "own"),
         ("journal/IDENTITY.md", "identity", "own"),
-        ("from-Studio", "noticeboard", "own"),
+        ("from-Workshop", "noticeboard", "own"),
         ("from-Game", "noticeboard", "peer"),
         ("to", "letters", "own"),
         ("from/Game", "letters", "peer"),
@@ -386,7 +386,7 @@ def check_a_declared_table_reshapes_the_environment():
     for section in (
         "=== from-Game/hello ===",
         "=== from/Game ===",
-        "=== balanceStudio ===",
+        "=== balanceWorkshop ===",
         "=== balanceGame ===",
     ):
         assert section in said, (section, said)
@@ -395,7 +395,7 @@ def check_a_declared_table_reshapes_the_environment():
     by = files_by_path(t)
     assert set(by) == {
         "journal/IDENTITY.md",
-        "from-Studio/post",
+        "from-Workshop/post",
         "from-Game/hello",
         "to/Game",
         "from/Game",
