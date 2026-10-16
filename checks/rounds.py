@@ -177,8 +177,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     assert manifest["schedule"] == "simultaneous" and manifest["stop_when_one_remains"]
     assert vote["every"] == 5
     assert all(tool["kind"] != "bash" for tool in manifest["tools"])
-    assert manifest["harness_files"]["balance"] == ""
-    assert manifest["harness_files"]["round"] == "round"
+    assert manifest["status_files"]["balance"] == ""
+    assert manifest["status_files"]["round"] == "round"
     assert all(
         word not in surface.lower() for word in ("budget", "balance", "micro-dollar")
     )
@@ -190,7 +190,7 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
 
     with temp_root(
         channels=manifest["channels"],
-        harness_files=manifest["harness_files"],
+        harness_files=manifest["status_files"],
         tools=manifest["tools"],
     ) as root:
         seated(root, "g01", g02={})
@@ -3086,7 +3086,9 @@ def check_labels_are_validated():
 
 
 def check_a_manifest_table_replaces_the_whole_set():
-    """A manifest's [[channel]] tables are the whole table; its [harness_files] overlay one key at a time."""
+    """A manifest's [[channel]] tables are the whole table; its [status_files] overlay
+    one key at a time, read alike under the other name [harness_files], and a
+    manifest declaring both is rejected."""
     agents = '[[agent]]\nid = "g01"\n[[agent]]\nid = "g02"\n'
     with temp_root() as root:
         p = manifest_file(
@@ -3097,12 +3099,12 @@ def check_a_manifest_table_replaces_the_whole_set():
         )
         m = experiment.load_manifest(p)
         table, hf = harness.validate_channels(
-            m["channels"], m["harness_files"], str(p), tuple(m["labels"].values())
+            m["channels"], m["status_files"], str(p), tuple(m["labels"].values())
         )
         assert [c.name for c in table] == ["notes"], (
             "one table declared, one channel in force"
         )
-        assert hf == {"balance": "n", "digest": "m"}, "no [harness_files], no change"
+        assert hf == {"balance": "n", "digest": "m"}, "no [status_files], no change"
         assert [c.name for c in harness.channels()] == [
             "notes",
             "blackboard",
@@ -3110,15 +3112,35 @@ def check_a_manifest_table_replaces_the_whole_set():
             "transfer",
         ], "loading a manifest sets nothing; start() does"
 
+        for name in harness.STATUS_FILES_TABLES:
+            p = manifest_file(
+                root,
+                f'system_prompt = ""\n[{name}]\ndigest = ""\n' + agents,
+                name=f"{name}.toml",
+            )
+            m = experiment.load_manifest(p)
+            assert m["channels"] is None, "no [[channel]], and the table in force stays"
+            assert m["status_files"] == {"digest": ""}, (name, m["status_files"])
+            table, hf = harness.validate_channels(
+                m["channels"], m["status_files"], str(p)
+            )
+            assert len(table) == 4 and hf == {"balance": "n", "digest": ""}, (
+                name,
+                table,
+                hf,
+            )
+
         p = manifest_file(
             root,
-            'system_prompt = ""\n[harness_files]\ndigest = ""\n' + agents,
-            name="d.toml",
+            'system_prompt = ""\n[status_files]\ndigest = ""\n'
+            '[harness_files]\nbalance = "b"\n' + agents,
+            name="both.toml",
         )
-        m = experiment.load_manifest(p)
-        assert m["channels"] is None, "no [[channel]], and the table in force stays"
-        table, hf = harness.validate_channels(m["channels"], m["harness_files"], str(p))
-        assert len(table) == 4 and hf == {"balance": "n", "digest": ""}, (table, hf)
+        rejected(
+            lambda: experiment.load_manifest(p),
+            "both.toml",
+            "[harness_files] is another name for [status_files]",
+        )
 
 
 def check_a_manifest_declares_what_the_harness_says():

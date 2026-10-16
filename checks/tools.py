@@ -111,7 +111,7 @@ def check_a_tool_only_observation_uses_semantic_names_not_backing_paths():
     channels = tables(
         notes={"pushed": True, "restated": True, "agent_view": "memory"},
         blackboard={"restated": True, "agent_view": "board"},
-        mail={"restated": True, "agent_view": "letters"},
+        mail={"restated": True, "agent_view": "mailbox"},
         transfer={"agent_view": "transfer"},
     )
     declared = offers(
@@ -215,7 +215,7 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     """Semantic records identify transfer rounds and itemize the preceding settlement."""
     channels = tables(
         blackboard={"restated": True, "agent_view": "board"},
-        mail={"restated": True, "agent_view": "letters"},
+        mail={"restated": True, "agent_view": "mailbox"},
         transfer={
             "agent_view": "transfer",
             "funded_by": "giver",

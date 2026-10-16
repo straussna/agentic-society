@@ -156,7 +156,7 @@ def label_of(t: dict) -> str:
 
 
 def harness_files_of(t: dict) -> dict[str, str]:
-    """What the harness's own files were called this episode, or the code's default
+    """What the status files were called this episode, or the code's default
     names where the trace predates them, as table_of reads the default table."""
     return t["provenance"].get("harness_files") or dict(harness.DEFAULT_HARNESS_FILES)
 
