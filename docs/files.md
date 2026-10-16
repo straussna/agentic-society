@@ -29,7 +29,8 @@ because clobbering the agent's own file would destroy the only record of it.
 The starter files' name and threshold are pinned in `account.json` when the agent is created, beside
 its budget and model, and that is what every later episode reads: editing the manifest does
 not re-plant an agent in flight, and a manifest may give each agent its own. An account
-missing these settings is rejected.
+missing these settings is rejected, except a fork of an episode before they landed, which
+pins the ones the manifest it is next run under gives it.
 
 An experimenter channel is the other way the experimenter's files reach an agent. A `[[channel]]` with
 `writer = "experimenter"` names a directory under `files/` as its `source` and a `path`; the

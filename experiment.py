@@ -488,19 +488,10 @@ def load_manifest(path: Path) -> Manifest:
     }
 
 
-def pinned_settings_of(entry: dict) -> dict[str, Any]:
-    """One agent's pinned settings as load_account's keywords, None where the manifest is silent."""
-    return {
-        k: entry.get(k)
-        for k in (
-            "provider",
-            "model",
-            "budget",
-            "starter_files",
-            "starter_files_below",
-            "system_prompt",
-        )
-    }
+def pinned_settings_of(entry: dict, defaults: Mapping[str, Any]) -> dict[str, Any]:
+    """One agent's pinned settings as load_account's keywords: its [[agent]] table's,
+    else the manifest's top-level default, None where the manifest sets neither."""
+    return {k: entry.get(k, defaults.get(k)) for k in harness.PINNED_SETTINGS}
 
 
 def stamp_of(manifest: Manifest) -> dict[str, Any]:
@@ -1912,7 +1903,9 @@ def main(argv: list[str] | None = None) -> int:
     # peers' boards in place. Each is created with its own pinned settings, and one that
     # exists must have been created on the same.
     for entry in manifest["agents"]:
-        account = harness.load_account(entry["id"], **pinned_settings_of(entry))
+        account = harness.load_account(
+            entry["id"], **pinned_settings_of(entry, manifest["overrides"])
+        )
         account["product"] = {
             "quality_tier": entry.get(
                 "quality_tier",
