@@ -48,7 +48,7 @@ POLL_MS = 1500
 
 # An episode quiet for longer than this is not being waited on, it is over: no
 # trace will follow it, and the next episode will take its index back. A turn is an
-# API call plus the commands it runs, so the threshold clears a slow one.
+# model call plus the commands it runs, so the threshold clears a slow one.
 STALE_AFTER = 180
 
 # Points kept in a header sparkline. A long-lived agent's balance history runs to
@@ -258,7 +258,7 @@ def running_episode(agent: str, account: Mapping[str, Any] | None = None) -> int
 def live_age(agent: str, episode: int | None) -> float | None:
     """Seconds since the episode's raw log last grew, or None if there is none.
 
-    A turn takes as long as the API call plus the commands it runs, so a live
+    A turn takes as long as the model call plus the commands it runs, so a live
     episode is quiet for stretches; a dead one is quiet for good.
     """
     if episode is None:
@@ -397,12 +397,13 @@ def shell_offered(provenance: Mapping[str, Any]) -> bool:
     return any(t.get("kind") == "bash" for t in provenance.get("tools") or [])
 
 
-def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
+def thin(balance_history: list[int], points: int = SPARK_POINTS) -> list[int]:
     """A long balance history sampled down, keeping the first element and the last."""
-    if len(series) <= points:
-        return list(series)
-    step = (len(series) - 1) / (points - 1)
-    return [series[round(i * step)] for i in range(points - 1)] + [series[-1]]
+    if len(balance_history) <= points:
+        return list(balance_history)
+    step = (len(balance_history) - 1) / (points - 1)
+    sampled = [balance_history[round(i * step)] for i in range(points - 1)]
+    return sampled + [balance_history[-1]]
 
 
 # --- one turn, from either source -------------------------------------------
@@ -978,7 +979,7 @@ def seat_row(
     # The round of its last committed episode, by its account: a forked seat holds
     # no trace of the episodes it inherited.
     last_round = round_of(committed(agent, account))
-    out_reason = harness.why_not_in_play(account) if account else None
+    why_not_in_play = harness.why_not_in_play(account) if account else None
     eliminated = account.get("eliminated")
     exhausted = bool(account) and harness.exhausted(account)
     stopped_by_run = bool(last and last["stop"] in harness.STOPS_THE_AGENT)
@@ -1031,12 +1032,12 @@ def seat_row(
         # further episode on it after a stop in STOPS_THE_AGENT, after
         # why_not_in_play's other reason, or once it is more than a round behind. At
         # most one is true.
-        "out_reason": out_reason,
+        "why_not_in_play": why_not_in_play,
         "eliminated": eliminated,
         "exhausted": exhausted,
         "unseated": not eliminated
         and not exhausted
-        and (out_reason is not None or stopped_by_run or behind),
+        and (why_not_in_play is not None or stopped_by_run or behind),
         "behind": behind,
         "last_election": account.get("last_election"),
         # What its turns cost, summed from the episodes that ran them and the one
@@ -1140,7 +1141,7 @@ def header(exp: dict) -> dict:
         or stamp.get("schedule")
         or "",
         "stop_when_one_remains": stamp.get("stop_when_one_remains", False),
-        "active": sum(tile["out_reason"] is None for tile in seat_tiles),
+        "in_play": sum(tile["why_not_in_play"] is None for tile in seat_tiles),
         "every": every,
         "round_type": round_type,
         "vote_cycle": (current_round - 1) // every + 1
@@ -1468,7 +1469,7 @@ def human_history(exp: dict, agent: str) -> dict:
             for file in row["trace"].get("files") or []:
                 if file.get("channel") != post_channel.name:
                     continue
-                if not analyze.is_own(file):
+                if not analyze.is_self(file):
                     continue
                 path = str(file.get("path") or "").strip("/")
                 if prefix and not path.startswith(prefix + "/"):
@@ -1700,7 +1701,7 @@ def historical_listing(
     prefix = ch.path_for(label).strip("/")
     out = []
     for file in row["trace"].get("files") or []:
-        if file.get("channel") != channel or not analyze.is_own(file):
+        if file.get("channel") != channel or not analyze.is_self(file):
             continue
         path = str(file.get("path") or "").strip("/")
         if prefix:
@@ -1895,7 +1896,7 @@ def file_view(
                 item
                 for item in row["trace"].get("files") or []
                 if item.get("channel") == channel
-                and analyze.is_own(item)
+                and analyze.is_self(item)
                 and str(item.get("path") or "").strip("/") == full
             ),
             None,
@@ -1994,7 +1995,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
         "seat": seating.seat,
         "agent_by_seat": seating.agent_by_seat,
         "starter_files": account.get("starter_files_landed") or {},
-        "out_reason": harness.why_not_in_play(account) if account else None,
+        "why_not_in_play": harness.why_not_in_play(account) if account else None,
         "eliminated": account.get("eliminated"),
         "last_election": account.get("last_election"),
     }
@@ -2151,7 +2152,7 @@ def episode_changes(agent: str, episode: int) -> list[dict]:
         return {
             f["path"]: f["text"]
             for f in (t or {}).get("files") or []
-            if f["channel"] == name and analyze.is_own(f) and f["text"] is not None
+            if f["channel"] == name and analyze.is_self(f) and f["text"] is not None
         }
 
     this = load_trace(harness.trace_path(agent, episode))

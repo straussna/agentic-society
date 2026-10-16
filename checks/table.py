@@ -400,11 +400,11 @@ def check_a_declared_table_reshapes_the_environment():
         ]
 
     assert env == [
-        ("journal", "journal", "own"),
-        ("journal/IDENTITY.md", "identity", "own"),
-        ("from-Workshop", "noticeboard", "own"),
+        ("journal", "journal", "self"),
+        ("journal/IDENTITY.md", "identity", "self"),
+        ("from-Workshop", "noticeboard", "self"),
         ("from-Game", "noticeboard", "peer"),
-        ("to", "letters", "own"),
+        ("to", "letters", "self"),
         ("from/Game", "letters", "peer"),
     ], env
     assert t["commands"][0] == "ls -la . ./journal; cat digest", t["commands"]
@@ -479,11 +479,11 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         env = [(i.path, i.name, i.role) for i in harness.instances("t", account)]
         rows = harness.ledger("t", account)
     assert env == [
-        ("memory", "memory", "own"),
-        ("alpha", "board", "own"),
+        ("memory", "memory", "self"),
+        ("alpha", "board", "self"),
         ("beta", "board", "peer"),
-        ("outbox", "mailbox", "own"),
-        ("outbox/transfer", "transfer", "own"),
+        ("outbox", "mailbox", "self"),
+        ("outbox/transfer", "transfer", "self"),
         ("inbox/beta", "mailbox", "peer"),
     ], env
     assert "=== nalpha ===" in t["observation"] and "=== nbeta ===" in t["observation"]
@@ -522,7 +522,7 @@ def check_a_second_board_channel_takes_its_own_silence_penalty():
             for i in harness.instances("t", account)
             if i.name == "gallery"
         ]
-    assert env == [("art-1", "own"), ("art-2", "peer")], env
+    assert env == [("art-1", "self"), ("art-2", "peer")], env
     assert (
         t["channels"]["board"]["posted"]
         and t["channels"]["board"]["penalty"] == 0

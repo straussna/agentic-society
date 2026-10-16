@@ -195,7 +195,7 @@ def check_a_memory_view_heads_each_file_by_where_it_came_from():
         agent_view="memory",
     )
     instances = [
-        harness.Instance(memory, "memory", harness.mirror("t", "memory"), "own", "1"),
+        harness.Instance(memory, "memory", harness.mirror("t", "memory"), "self", "1"),
         harness.Instance(
             brief, "brief", harness.files_dir("brief"), "experimenter", ""
         ),
@@ -675,7 +675,7 @@ def check_a_tool_description_is_the_experimenters_and_the_schema_is_not():
         )
         said = {b.tool.name: b.spec().as_dict() for b in bound}
         assert set(said) == {"send", "post", "look"}, sorted(said)
-        assert all(b.description() == b.generated() for b in bound), (
+        assert all(b.description() == b.describe_generated() for b in bound), (
             "an experiment that writes no words is given the harness's"
         )
 
@@ -1291,10 +1291,11 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
         post, look = harness.bind_tools(
             harness.tools(), harness.channels(), instances, ["2"]
         )
-        assert post.own.path == "1" and post.own.writable, post.own
+        mine = post.self_instance
+        assert mine.path == "1" and mine.writable, mine
         assert look.writes_to is None, look.writes_to
         try:
-            harness.Bound(look.tool, look.channel, look.instances, post.own)
+            harness.Bound(look.tool, look.channel, look.instances, post.self_instance)
         except ValueError as e:
             assert "writes nothing" in str(e), e
         else:
@@ -1312,7 +1313,7 @@ def check_a_tool_that_writes_is_built_with_the_instance_it_writes():
         reader = harness.Bound(look.tool, look.channel, theirs, None)
         assert "which holds 2/." in reader.spec().description, reader.spec().description
         try:
-            reader.own
+            reader.self_instance
         except ValueError as e:
             assert "writes nothing" in str(e), e
         else:

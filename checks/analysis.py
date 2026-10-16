@@ -25,7 +25,7 @@ from checks.lanes import (
 SERVED = usage(output_tokens=200)
 
 # A root under which an agent meets its starter files at once, carries on past
-# one refusal, and is priced at opus-5's rates.
+# one refusal, and is charged at opus-5's rates.
 BUSY = {
     "REFUSAL_TURNS": 2,
     "budget": 500_000,

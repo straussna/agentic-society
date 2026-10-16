@@ -867,8 +867,8 @@ def fake_experiment(
     return view.experiment_by_id("g")
 
 
-# A persona channel table without a brief: a journal with an identity file inside
-# it, a noticeboard per label, letters, and no transfer channel.
+# A persona channel table without an experimenter channel: a journal with an identity
+# file inside it, a noticeboard per label, letters, and no transfer channel.
 PERSONA = [
     {
         "name": "journal",

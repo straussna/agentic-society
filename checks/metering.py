@@ -465,7 +465,7 @@ def check_charges_once():
 def check_per_turn_micros_partition_the_spend():
     """The per-turn column sums to exactly what the episode spent.
 
-    A cache read prices at a tenth, so a single one puts half a micro-dollar on
+    A cache read is rated at a tenth, so a single one puts half a micro-dollar on
     each turn and the fraction has to carry.
     """
     odd = usage(cache_read_input_tokens=1)
@@ -632,9 +632,9 @@ def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix
     )
     base = {c.token_class: c.centi_micros for c in at.charges}
     assert base["output"] == 100 * 2500, "the threshold is base"
-    priced = {c.token_class: c.centi_micros for c in past.charges}
-    assert priced["output"] == 100 * 2500 * 3 // 2, priced
-    assert priced["uncached_input"] == 250_000 * 500 * 2, priced
+    rated = {c.token_class: c.centi_micros for c in past.charges}
+    assert rated["output"] == 100 * 2500 * 3 // 2, rated
+    assert rated["uncached_input"] == 250_000 * 500 * 2, rated
 
 
 def check_the_shipped_prompt_is_pinned_against_a_declaration():

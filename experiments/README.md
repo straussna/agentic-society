@@ -69,7 +69,7 @@ or revises a view coherently, and follows through across rounds. Changed bytes a
 do not establish a working relationship. Without comparison arms or repeated
 experiments, this example does not isolate an effect of persona or prompt placement.
 
-The balance is hidden and there are no silence penalties, but API calls still
+The balance is hidden and there are no silence penalties, but model calls still
 spend the finite budget. Fresh agents are needed when the prompts or
 starter files differ from an existing agent's recorded settings.
 

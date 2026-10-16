@@ -687,10 +687,10 @@ def check_the_view_reports_aggregate_elections_and_elimination_reasons():
             harness.save_account(agent, account)
         head = view.header(c)
 
-    assert head["active"] == 1 and head["every"] == 5
+    assert head["in_play"] == 1 and head["every"] == 5
     assert head["elections"] == [result], head["elections"]
     second = head["seat_tiles"][1]
-    assert second["out_reason"] == "did not vote in round 5"
+    assert second["why_not_in_play"] == "did not vote in round 5"
     assert second["eliminated"]["round"] == 5
     first = head["seat_tiles"][0]
     assert first["eliminated"] is None and not first["exhausted"], first
@@ -1862,7 +1862,7 @@ def check_the_page_summarises_the_experiment_and_resizes_its_sections():
         "balance",
         "spent this round",
         "spent total",
-        "active now",
+        "in play",
         "needs attention",
     ):
         assert f'["{label}"' in page, label

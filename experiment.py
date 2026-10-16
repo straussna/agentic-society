@@ -809,7 +809,7 @@ def branch_experiment(
             raise SystemExit(f"{entry['id']} did not reach completed round {at_round}")
         if episode < 1 or not harness.trace_path(entry["id"], episode).exists():
             raise SystemExit(
-                f"{entry['id']} has no completed state at round {at_round}"
+                f"{entry['id']} has no completed episode at round {at_round}"
             )
         if (
             harness.records_dir(new_ids[seat]).exists()
@@ -1011,7 +1011,7 @@ def attempted(agent: str, seated: set[str], build: Callable[[], T]) -> T | None:
     """Call `build` up to ATTEMPTS times against environment failures, or unseat the
     agent.
 
-    Building an environment precedes the first API call, so nothing here is
+    Building an environment precedes the first model call, so nothing here is
     spent. The container name is the agent and episode, so the next
     attempt reaps the last one's leavings by name.
     """
@@ -1828,7 +1828,8 @@ def main(argv: list[str] | None = None) -> int:
         "--resume",
         action="store_true",
         help="continue existing compatible agent accounts; without this flag, "
-        "previous state is preserved under archive/ and a fresh run starts",
+        "previous records and mirrors are preserved under archive/ and a fresh "
+        "run starts",
     )
     ap.add_argument(
         "-c", "--config", type=Path, help="default: config.toml beside harness.py"

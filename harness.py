@@ -1617,8 +1617,8 @@ def archive_agents(agents: Iterable[str], notice: str) -> Path | None:
     """
     agents = tuple(agents)
     sources = [
-        (kind, place(agent))
-        for kind, place in (("records", records_dir), ("mirrors", mirror_dir))
+        (subdir, place(agent))
+        for subdir, place in (("records", records_dir), ("mirrors", mirror_dir))
         for agent in agents
         if place(agent).exists()
     ]
@@ -1639,8 +1639,8 @@ def archive_agents(agents: Iterable[str], notice: str) -> Path | None:
 
     moved: list[tuple[Path, Path]] = []
     try:
-        for kind, source in sources:
-            destination = bundle / kind / source.name
+        for subdir, source in sources:
+            destination = bundle / subdir / source.name
             destination.parent.mkdir(exist_ok=True)
             replace_file(source, destination)
             moved.append((source, destination))
@@ -2442,7 +2442,7 @@ class Instance:
     channel: Channel
     path: str  # in /work, no leading slash
     host: Path  # the mirror on disk; for a file, the file
-    role: str  # "own" | "peer" | "experimenter"
+    role: str  # "self" | "peer" | "experimenter"
     label: str  # the writer's label, "" for the experimenter
     nested: bool = False  # a file whose bytes travel with the tree above it
     exclude: frozenset = (
@@ -2455,7 +2455,7 @@ class Instance:
 
     @property
     def writable(self) -> bool:
-        return self.role == "own"
+        return self.role == "self"
 
     @property
     def is_file(self) -> bool:
@@ -2489,14 +2489,14 @@ def instances(
         if ch.writer == "experimenter":
             out.append(Instance(ch, ch.path, files_dir(ch.source), "experimenter", ""))
         elif ch.is_memory:
-            out.append(Instance(ch, ch.path, mirror(agent, ch.name), "own", s.label))
+            out.append(Instance(ch, ch.path, mirror(agent, ch.name), "self", s.label))
         elif ch.shape == "directory":
             out += [
                 Instance(
                     ch,
                     ch.path_for(s.labels[seat]),
                     mirror(s.agent_by_seat[seat], ch.name),
-                    "own" if seat == s.seat else "peer",
+                    "self" if seat == s.seat else "peer",
                     s.labels[seat],
                 )
                 for seat in s.seat_order
@@ -2504,7 +2504,7 @@ def instances(
         elif ch.shape == "mailbox":
             if not s.peers:
                 continue
-            out.append(Instance(ch, ch.outbox, mirror(agent, ch.name), "own", s.label))
+            out.append(Instance(ch, ch.outbox, mirror(agent, ch.name), "self", s.label))
             out += [
                 Instance(
                     ch,
@@ -2518,7 +2518,7 @@ def instances(
         elif ch.shape == "file":
             if ch.readers == "harness" and not s.peers:
                 continue
-            out.append(Instance(ch, ch.path, Path(), "own", s.label))
+            out.append(Instance(ch, ch.path, Path(), "self", s.label))
     return reserved(nested(out), [c.receipt for c in table if c.schema and c.receipt])
 
 
@@ -2531,7 +2531,7 @@ def nested(instances: list[Instance]) -> list[Instance]:
     """
     out: list[Instance] = []
     for inst in instances:
-        if not (inst.channel.shape == "file" and inst.role == "own"):
+        if not (inst.channel.shape == "file" and inst.role == "self"):
             out.append(inst)
             continue
         above = next(
@@ -2837,7 +2837,7 @@ def digest_name(
         if path.startswith(outgoing):
             return f"Message to {path.removeprefix(outgoing)}"
     if inst.channel.agent_view == "board":
-        suffix = " (you)" if inst.role == "own" else ""
+        suffix = " (you)" if inst.role == "self" else ""
         return f"Board post from {inst.label}{suffix}"
     if inst.channel.agent_view == "memory":
         name = path[len(inst.path) :].lstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
@@ -4189,7 +4189,7 @@ class Bound:
         return TOOL_KINDS[self.tool.kind]
 
     @property
-    def own(self) -> Instance:
+    def self_instance(self) -> Instance:
         """The instance the agent writes, which every kind that writes is built with."""
         if self.writes_to is None:
             raise ValueError(
@@ -4200,7 +4200,7 @@ class Bound:
     @property
     def backing(self) -> str:
         """The one file this kind keeps in the agent's own instance, as a path in /work."""
-        return f"{self.own.path}/{self.kind.file}"
+        return f"{self.self_instance.path}/{self.kind.file}"
 
     @property
     def reachable_peers(self) -> list[str]:
@@ -4252,9 +4252,9 @@ class Bound:
         computed from the channel and cannot say what the channel does not.
         docs/manifest.md section 4.8.
         """
-        return self.tool.description or self.generated()
+        return self.tool.description or self.describe_generated()
 
-    def generated(self) -> str:
+    def describe_generated(self) -> str:
         """The harness's description of this tool, computed from its channel.
 
         What a tool says of itself when the experiment declares no words of its
@@ -4443,7 +4443,7 @@ def describe_write_message(b: Bound) -> str:
     return (
         f"Put a message to one peer at {ch.outbox}/<to> in the {ch.name!r} "
         f"channel, for their next episode. That peer is the only one that can "
-        f"read it, at {ch.inbox}/{b.own.label}; it then expires unless they "
+        f"read it, at {ch.inbox}/{b.self_instance.label}; it then expires unless they "
         "retain it in their memory. A later call to the same peer in this "
         "episode replaces the earlier one."
     )
@@ -4455,7 +4455,7 @@ def write_message_input_schema(b: Bound) -> dict:
         to={
             "type": "string",
             "enum": b.reachable_peers,
-            "description": f"The peer's label. Yours is {b.own.label}.",
+            "description": f"The peer's label. Yours is {b.self_instance.label}.",
         },
         body=text_input(PATH_TEXT),
     )
@@ -4516,7 +4516,8 @@ def describe_write_file(b: Bound) -> str:
     """write_file's description: where under the agent's own instance it writes, and
     who reads it."""
     return (
-        f"Write a file in the {b.channel.name!r} channel, at {b.own.path}/<path>. "
+        f"Write a file in the {b.channel.name!r} channel, at "
+        f"{b.self_instance.path}/<path>. "
         f"It replaces whatever that path holds. {b.describe_readers()}"
     )
 
@@ -4526,7 +4527,7 @@ def write_file_input_schema(b: Bound) -> dict:
     return inputs(
         path={
             "type": "string",
-            "description": f"Where under {b.own.path}/ the file sits.",
+            "description": f"Where under {b.self_instance.path}/ the file sits.",
         },
         body=text_input(PATH_TEXT),
     )
@@ -4539,7 +4540,7 @@ def write_file_call(b: Bound, shell: Shell, args: dict) -> str:
         return f"path {fault}. Nothing was written."
     if "{label}" in rel:
         return f"path {rel!r} names {{label}}, which is the manifest's word and not a path here. Nothing was written."
-    return b.put(shell, f"{b.own.path}/{rel}", args.get("body"))
+    return b.put(shell, f"{b.self_instance.path}/{rel}", args.get("body"))
 
 
 def post_public_call(b: Bound, shell: Shell, args: dict) -> str:
@@ -4662,7 +4663,7 @@ def transfer_call(b: Bound, shell: Shell, args: dict) -> str:
             "amount must be a whole number that is at least 1; zero and negative "
             "amounts are invalid. No transfer was submitted."
         )
-    path = f"{ch.outbox}/{to}" if ch.shape == "mailbox" else b.own.path
+    path = f"{ch.outbox}/{to}" if ch.shape == "mailbox" else b.self_instance.path
     declared = f"{amount}\n" if ch.shape == "mailbox" else f"{to} {amount}\n"
     was = read_path_in(shell, path)
     if isinstance(was, Unanswered):
@@ -4872,7 +4873,7 @@ def bind_tools(
                 reach=tuple(
                     label
                     for label in (reach if reach is not None else peers)
-                    if label != bound.own.label
+                    if label != bound.self_instance.label
                 ),
             )
         if kind.needs_peer and not bound.reachable_peers:
@@ -5701,7 +5702,7 @@ SETTLEMENTS: dict[SettlesAs, Settlement] = {
 }
 
 
-def silence_penalties_said(
+def silence_penalties_line(
     settled: Iterable[tuple[Channel, Mapping[str, Any]]],
 ) -> str:
     """What each channel's silence penalty took, for the console line, named by
@@ -5979,7 +5980,7 @@ def snapshot(
     }
     for inst in instances:
         ch = inst.channel
-        own_memory = inst.role == "own" and ch.is_memory
+        own_memory = inst.role == "self" and ch.is_memory
         for rel, inner, p in channel_files(inst, written):
             got = bounded_read(p)
             if got is None:
@@ -5993,7 +5994,7 @@ def snapshot(
                 "readers": ch.readers,
                 "size": size,
                 "author": author_of(inst, from_starter),
-                "planted": inst.role != "own" or from_starter,
+                "planted": inst.role != "self" or from_starter,
                 "starter": from_starter,
                 "text": None,
             }
@@ -6117,7 +6118,7 @@ def clear_episode_scoped_files(shell: Shell, instances: list[Instance]) -> None:
 def build_episode(agent: str) -> Episode:
     """Build the environment one episode will run in, container included.
 
-    Nothing here spends: no API call is made, and a failure closes what was started
+    Nothing here spends: no model call is made, and a failure closes what was started
     and raises. What it reads of other agents - their balances, messages and
     transfers - it reads now, so an episode sees the experiment as it stood when
     its environment was built and not as it moves while the episode runs.
@@ -6536,7 +6537,7 @@ def console_line(ep: Episode, trace: dict, settled: dict) -> str:
         line += f"  refused={trace['refused_turns']}x  why={refusal_category(trace['turns'])}"
     if transfer["amount"]:
         line += f"  transfer={transfer['amount']}->{transfer['label']}"
-    line += silence_penalties_said(settled["settled"])
+    line += silence_penalties_line(settled["settled"])
     if trace["floored"]:
         line += f"  FLOORED +{trace['floored']}"
     return line
@@ -6675,8 +6676,8 @@ def run_episodes(
         try:
             trace = drive(agent, router, prepare)
         except BUILD_FAILURES as e:
-            # Starting the container, copying state in, and starting the shell all
-            # happen before the first API call, so nothing reaching here was spent
+            # Starting the container, planting the trees, and starting the shell all
+            # happen before the first model call, so nothing reaching here was spent
             # and there is no episode to record.
             print(
                 f"{agent}: could not build an environment for this episode after {ran} of {count}: {failure(e)}",
@@ -6851,7 +6852,7 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
     """
     if not trace["state_saved"]:
         print(
-            f"{parent} episode {episode} did not mirror its state back, so files[] "
+            f"{parent} episode {episode} did not mirror its files back, so files[] "
             f"is the episode before it, not this one; fork an episode that saved",
             file=sys.stderr,
         )
@@ -7159,7 +7160,8 @@ def main(argv: list[str] | None = None) -> int:
         "--resume",
         action="store_true",
         help="continue the existing compatible agent account; without this flag, "
-        "previous state is preserved under archive/ and a fresh run starts",
+        "previous records and mirrors are preserved under archive/ and a fresh "
+        "run starts",
     )
     ap.add_argument(
         "--print-system",

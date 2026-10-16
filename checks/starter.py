@@ -58,8 +58,8 @@ def check_manifest_relative_starter_documents_include_empty_files():
 def check_starter_files_land_when_the_balance_falls():
     """The starter files are absent above the threshold, and in the initial observation listing below it.
 
-    The listing is the agent's whole environment at episode start, so material that is not in
-    it is material the agent was not given.
+    The listing is the agent's whole environment at episode start, so starter files that
+    are not in it are starter files the agent was not given.
     """
     # A say() episode spends 1750, so this is above episode 1's balance and below
     # episode 2's: the starter files land at the second episode and not the first.
@@ -309,7 +309,7 @@ def check_starter_files_config_is_validated():
         )
 
 
-def check_fork_reproduces_state_and_account():
+def check_fork_reproduces_files_and_account():
     """A fork rebuilds the recorded episode exactly, and runs nothing."""
     with temp_root():
         episode_once(run("echo v1 > memory/NOTES.md"), say())

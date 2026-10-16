@@ -544,8 +544,8 @@ def check_missing_tools_are_recorded():
 def check_files_look_like_themselves():
     """The agent sees the modes and ownership that were actually intended.
 
-    The agent's files sit on the container's own filesystem, so its modes and ownership
-    are real on every host.
+    The agent's files sit on the container's own filesystem, so their modes and
+    ownership are real on every host.
     """
     with docker_root():
         t = episode_once(
@@ -716,8 +716,8 @@ def check_a_failed_mirror_keeps_the_last_record():
     """
     with docker_root():
         episode_once(run("echo kept > memory/keep.txt"), say())
-        state = harness.mirror("t", "memory")
-        before = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
+        memory_mirror = harness.mirror("t", "memory")
+        before = {p.name: p.read_bytes() for p in sorted(memory_mirror.iterdir())}
         assert "keep.txt" in before, before
 
         with quiet():
@@ -726,12 +726,12 @@ def check_a_failed_mirror_keeps_the_last_record():
             harness.Container("mtr-no-such-container-9f3c1d").mirror_trees(instances)
             is False
         ), "a mirror of a container that is not there must fail, not raise"
-        after = {p.name: p.read_bytes() for p in sorted(state.iterdir())}
+        after = {p.name: p.read_bytes() for p in sorted(memory_mirror.iterdir())}
         assert after == before, f"a failed mirror lost the record: {sorted(after)}"
-        assert not state.with_name("state.incoming").exists(), (
-            "the staging copy is cleaned up"
-        )
-        assert not state.with_name("state.previous").exists()
+        incoming = memory_mirror.with_name(memory_mirror.name + ".incoming")
+        assert not incoming.exists(), "the staging copy is cleaned up"
+        previous = memory_mirror.with_name(memory_mirror.name + ".previous")
+        assert not previous.exists()
 
 
 def check_mirror_trees_keeps_the_previous_tree_when_the_swap_fails():

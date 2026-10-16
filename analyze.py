@@ -73,7 +73,7 @@ def agent_files_of(t: dict) -> list[dict]:
     return [f for f in t["files"] if not f["planted"]]
 
 
-def is_own(f: dict) -> bool:
+def is_self(f: dict) -> bool:
     """Whether a file record is in a tree of the agent's own: what it wrote, and the
     starter files planted in its memory."""
     return not f["planted"] or f["starter"]
@@ -91,7 +91,7 @@ def starter_files_of(t: dict) -> list[dict]:
 
 def own_public_files(t: dict) -> list[dict]:
     """What the agent put where every other agent reads it."""
-    return [f for f in t["files"] if is_own(f) and f["readers"] == "all"]
+    return [f for f in t["files"] if is_self(f) and f["readers"] == "all"]
 
 
 def peer_public_files(t: dict) -> list[dict]:
@@ -105,7 +105,7 @@ def outbox_files(t: dict) -> list[dict]:
     return [
         f
         for f in t["files"]
-        if is_own(f)
+        if is_self(f)
         and f["readers"] == "addressee"
         and f["channel"] not in parsed
     ]
@@ -126,7 +126,7 @@ def inbox_files(t: dict) -> list[dict]:
 def schema_files(t: dict) -> list[dict]:
     """The agent's files in the channel the harness parses, where it has one."""
     parsed = {ch.name for ch in harness.table_of(t) if ch.schema}
-    return [f for f in t["files"] if is_own(f) and f["channel"] in parsed]
+    return [f for f in t["files"] if is_self(f) and f["channel"] in parsed]
 
 
 # --- what the provenance and the channel records say ---------------------------

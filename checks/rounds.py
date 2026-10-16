@@ -446,7 +446,7 @@ def check_an_experiment_ends_on_the_reason_its_last_round_gives():
     assert outcome["winners"] == outcome["survivors"] == ["2", "3"], outcome
 
 
-# The private channel a ballot is cast in, and a vote every second round; the shell, for
+# The memory channel a ballot is cast in, and a vote every second round; the shell, for
 # an episode that is not a vote to have something to do.
 BALLOT = {
     "name": "ballot",
@@ -1607,8 +1607,9 @@ def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated(
     ], outcome
 
 
-def check_a_fresh_run_archives_previous_state_and_resume_continues_it():
-    """Fresh launches preserve matching state elsewhere; --resume continues compatible state."""
+def check_a_fresh_run_archives_previous_records_and_resume_continues_them():
+    """A fresh launch moves the previous records and mirrors under archive/; --resume
+    continues compatible records."""
     with temp_root() as root:
         old_account = root / "records" / "g01" / "account.json"
         old_account.parent.mkdir(parents=True)

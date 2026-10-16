@@ -738,9 +738,9 @@ function tileHtml(s, i) {
     : s.eliminated
       ? `<span class="tag bad" title="${esc(s.eliminated.reason)}">eliminated · r${s.eliminated.round}</span>`
     : s.exhausted
-      ? `<span class="tag bad" title="${esc(s.out_reason)}">exhausted</span>`
-    : s.out_reason
-      ? `<span class="tag bad" title="${esc(s.out_reason)}">unseated</span>`
+      ? `<span class="tag bad" title="${esc(s.why_not_in_play)}">exhausted</span>`
+    : s.why_not_in_play
+      ? `<span class="tag bad" title="${esc(s.why_not_in_play)}">unseated</span>`
     : s.stopped_by_run
       ? `<span class="tag bad" title="its last episode ended on ${esc(s.stop)}, after which the run starts no further episode on it">unseated</span>`
     : s.preparing
@@ -813,7 +813,7 @@ function renderHeader() {
   if (!h) return;
   renderFold();
   document.getElementById("whosub").innerHTML =
-    `${h.active} of ${h.seat_tiles.length} active · round ${h.round}` +
+    `${h.in_play} of ${h.seat_tiles.length} in play · round ${h.round}` +
     (h.schedule ? ` · ${esc(h.schedule)}` : "") +
     (h.every ? ` · ${h.vote_cycle ? `vote cycle ${h.vote_cycle} · ` : ""}${esc(h.round_type)}` : "") +
     (h.stop_when_one_remains ? ` · stops when one remains` : "") +
@@ -834,7 +834,7 @@ function renderHeader() {
     ["spent total", num(totalSpent), h.cost && h.cost.maximum != null
       ? `${num(autonomousSpent)} autonomous · ${num(h.cost.maximum)} ceiling`
       : `${num(autonomousSpent)} autonomous`, h.cost && h.cost.warning_reached ? "attn" : ""],
-    ["active now", `${h.active}/${h.seat_tiles.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
+    ["in play", `${h.in_play}/${h.seat_tiles.length}`, live ? `${live} episode${live === 1 ? "" : "s"} live` : "no episode live", ""],
     ["needs attention", num(attention), attention ? "unfinished, silent, unseated, or drifted" : "no current alerts", attention ? "attn" : ""]
   ].map(([k, v, s, cls]) => `<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   document.getElementById("seats").innerHTML = h.seat_tiles.map(tileHtml).join("");
@@ -847,14 +847,14 @@ function renderHeader() {
   const terminal = latest && ["completed", "interrupted", "cost_ceiling"].includes(latest.stage);
   const result = terminal ? h.outcome : null;
   const lineage = h.lineage;
-  const productState = result
+  const progressState = result
     ? `<div class="progress-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
        <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
          : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
     : latest ? `<div class="progress-state"><div class="kv"><div class="k">${esc((latest.stage || "").replaceAll("_", " "))}</div></div>
        <div class="result">round ${num(latest.round)}${lineage ? ` · branch of ${esc(lineage.source_experiment_id)} at round ${num(lineage.source_round)}` : ""}</div></div>` : "";
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
-    ${productState}
+    ${progressState}
     ${electionHtml(h)}
     ${h.ledger_name ? `<div class="ledger-block"><div class="kv"><div class="k">${esc(h.ledger_name)} · the transfer ledger</div></div>
     ${rows ? `<div class="led"><table>${rows}</table></div>`
@@ -1429,7 +1429,7 @@ function drawTranscript() {
     <div class="strip" style="margin-bottom:6px"><span class="lbl">agent</span>${chips}</div>
     <div class="strip"><span class="lbl">round</span>${
       rounds || `<span class="note">none yet</span>`}</div>
-    ${d.out_reason ? `<div class="note" style="margin-top:8px;color:var(--bad)">${esc(d.out_reason)}</div>` : ""}
+    ${d.why_not_in_play ? `<div class="note" style="margin-top:8px;color:var(--bad)">${esc(d.why_not_in_play)}</div>` : ""}
     <div class="txbar" style="margin-top:10px">
       <div id="txhead" class="note"></div>
       <label class="tail"><input type="checkbox" id="tailbox" ${S.tail ? "checked" : ""}>follow</label>
@@ -1697,7 +1697,7 @@ function renderPeerStatus(head, humanAgent) {
   const completed = new Set((head.progress && head.progress.events || [])
     .filter(event => event.round === head.round && event.completed_autonomous)
     .map(event => event.completed_autonomous));
-  const badges = (head.seat_tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason)
+  const badges = (head.seat_tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.why_not_in_play)
     .map(seat => {
       let state = "queued", label = "not started";
       if (completed.has(seat.agent) || (seat.round === head.round && seat.acted && seat.running_episode == null)) {
@@ -1782,7 +1782,7 @@ function renderHumanHistory(history, humanAgent, tiles, currentRound) {
   const drafts = new Map([...mailboxRoot.querySelectorAll("[data-receiver]")]
     .map(field => [field.dataset.receiver, field.value]));
   const canMessage = mailboxRoot.hasAttribute("data-message-tool");
-  const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.out_reason);
+  const peers = (tiles || []).filter(seat => seat.agent !== humanAgent && !seat.eliminated && !seat.why_not_in_play);
   const sig = JSON.stringify([currentRound, peers.map(peer => [peer.agent, peer.label]),
     mailboxEvents.map(event => [event.round, event.from_agent, event.to_agent, event.text])]);
   if (mailboxRoot.dataset.sig === sig) return;
@@ -1958,13 +1958,13 @@ function renderMode() {
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 let activeResize = null;
 
-function setSplit(kind, value, container) {
-  const minimum = kind === "mailbox" ? 220 : 300;
-  const room = kind === "mailbox" ? 360 : 420;
+function setSplit(pane, value, container) {
+  const minimum = pane === "mailbox" ? 220 : 300;
+  const room = pane === "mailbox" ? 360 : 420;
   const width = clamp(value, minimum, Math.max(minimum, container.clientWidth - room));
-  if (kind === "mailbox") S.mailboxWidth = width;
+  if (pane === "mailbox") S.mailboxWidth = width;
   else S.treeWidth = width;
-  holdNumber(`${kind}-width`, width);
+  holdNumber(`${pane}-width`, width);
   container.style.setProperty("--split", `${width}px`);
 }
 
@@ -1978,23 +1978,23 @@ function setOverviewHeight(value) {
 }
 
 function beginResize(handle, e) {
-  const kind = handle.dataset.resize;
-  const container = kind === "overview" ? null : handle.parentElement;
-  activeResize = { handle, kind, container };
+  const pane = handle.dataset.resize;
+  const container = pane === "overview" ? null : handle.parentElement;
+  activeResize = { handle, pane, container };
   handle.classList.add("dragging");
   document.body.classList.add("resizing");
-  document.body.classList.toggle("rows", kind === "overview");
+  document.body.classList.toggle("rows", pane === "overview");
   e.preventDefault();
 }
 
 document.addEventListener("pointermove", e => {
   if (!activeResize) return;
-  if (activeResize.kind === "overview") {
+  if (activeResize.pane === "overview") {
     const top = document.getElementById("overview").getBoundingClientRect().top;
     setOverviewHeight(e.clientY - top);
   } else {
     const left = activeResize.container.getBoundingClientRect().left;
-    setSplit(activeResize.kind, e.clientX - left, activeResize.container);
+    setSplit(activeResize.pane, e.clientX - left, activeResize.container);
   }
 });
 
@@ -2036,9 +2036,9 @@ document.addEventListener("keydown", e => {
     if (handle.dataset.resize === "overview") {
       setOverviewHeight((S.overviewHeight || document.getElementById("overview").clientHeight) + direction * 16);
     } else {
-      const kind = handle.dataset.resize;
-      const current = kind === "mailbox" ? S.mailboxWidth : handle.parentElement.firstElementChild.clientWidth;
-      setSplit(kind, current + direction * 16, handle.parentElement);
+      const pane = handle.dataset.resize;
+      const current = pane === "mailbox" ? S.mailboxWidth : handle.parentElement.firstElementChild.clientWidth;
+      setSplit(pane, current + direction * 16, handle.parentElement);
     }
     e.preventDefault();
     return;

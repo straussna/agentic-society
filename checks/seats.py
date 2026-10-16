@@ -76,11 +76,11 @@ def check_memory_never_leaves_its_agent():
     # The environment names its own channels, so nothing downstream has to work out
     # which directory was which.
     assert [(i.path, i.name, i.role) for i in instances] == [
-        ("memory", "memory", "own"),
-        ("1", "board", "own"),
+        ("memory", "memory", "self"),
+        ("1", "board", "self"),
         ("2", "board", "peer"),
-        ("outbox", "mailbox", "own"),
-        ("outbox/transfer", "transfer", "own"),
+        ("outbox", "mailbox", "self"),
+        ("outbox/transfer", "transfer", "self"),
         ("inbox/2", "mailbox", "peer"),
     ], [(i.path, i.name, i.role) for i in instances]
     assert by["memory/secret.md"]["channel"] == "memory"

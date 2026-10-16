@@ -124,7 +124,7 @@ command without `--resume` moves what the interrupted run left under `archive/` 
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
 
-The cost is latency: worst case one whole turn, which is one API call plus the
+The cost is latency: worst case one whole turn, which is one model call plus the
 commands it asks for. Press `Ctrl+C` a second time to stop waiting. The handler
 puts the default back before it returns, so the second press raises
 `KeyboardInterrupt`, and where it lands decides what survives. Inside a turn,
