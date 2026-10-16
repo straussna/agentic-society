@@ -181,24 +181,24 @@ Each experiment writes under `experiment_records/<experiment_id>/`: the progress
 the round the rounds ended at, so its rounds never go back; `progress.json`, the latest of
 those; `outcome.json`; and, for a branch, `lineage.json`. `progress.json` and
 `outcome.json` record `version` 2. Each line of the log names its `stage` and its
-`round`, and a stage that waits on a human seat is `waiting_human`.
-A round that a stop counting
-seats ends the rounds before has no line, and the round the cost ceiling ends them before
-has its preparation alone, which carries the spend that ended them. The outcome's
-`end_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`, `final_tie`,
-`none_in_play`, `none_can_act` or `interrupted`. Every stop that counts seats is judged
-on the seats in play, whose accounts admit an episode and which are at most one round
-behind the current round, whether or not this run seats them: a seat whose episode ended
-on a fault of its own, or whose sandbox would not build, is unseated for the rest of that
-run and stays in play until it falls further behind, which is once the current round is
-two past the last it played. One further behind is unseated in every round of every run,
-and is no longer in play: it counts toward no stop, survives nothing and stands in no
-election. `none_in_play` is no seat left in play, however each one left;
+`round`, and a stage that waits on a human seat is `waiting_human`. A round that a stop
+counting seats ends the rounds before has no line, and the round the cost ceiling ends
+them before has its preparation alone, which carries the spend that ended them. The
+outcome's `end_reason` is one of `round_limit`, `cost_ceiling`, `one_remains`,
+`final_tie`, `none_in_play`, `none_can_act` or `interrupted`. Every stop that counts
+seats is judged on the seats in play, whose accounts admit an episode and which are at
+most one round behind the current round, whether or not this run seats them: a seat whose
+episode ended on a fault of its own, or whose sandbox would not build, is unseated for
+the rest of that run and stays in play until it falls further behind, which is once the
+current round is two past the last it played. One further behind is unseated in every
+round of every run, and is no longer in play: it counts toward no stop, survives nothing
+and stands in no election. `none_in_play` is no seat left in play, however each one left;
 `none_can_act` is seats left in play and not one of them seated in this run. The
 outcome's `survivors` are the seats in play as the run ends, and its `elimination_order`
 the seats an election eliminated, each by `round`, `label` and `reason`, so a seat that
-left play any other way is in neither, and what it holds is in `resources`. `tie` is
-true where the run ended `final_tie`. Human seats are answered as [docs/human.md](human.md) describes.
+left play any other way is in neither, and what it holds is in `resources`. `tie` is true
+where the run ended `final_tie`. Human seats are answered as [docs/human.md](human.md)
+describes.
 
 ## 2. Top level
 
