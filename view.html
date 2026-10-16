@@ -1852,7 +1852,7 @@ function renderInteraction(request) {
       <h3>Mailbox</h3><div id="human-mailbox" class="mailbox-list" aria-label="Mailbox"
         ${sendIndex >= 0 ? `data-tool-index="${sendIndex}" data-message-tool` : ""}><div class="empty">Loading history&hellip;</div></div>
       <h3>Turn input</h3><div class="input-stack">${interactionInputHtml(request)}</div></div>
-    <div class="human-column"><h3>Tool calls</h3>${tools || `<div class="note">Use the composers, then submit the turn.</div>`}
+    <div class="human-column"><h3>Turn actions</h3>${tools || `<div class="note">Use the composers, then submit the turn.</div>`}
       <div class="human-actions"><button id="submit-interaction">Submit turn</button>
       <span class="note" id="interaction-state">ready</span></div></div></div>`;
   document.getElementById("submit-interaction").onclick = submitInteraction;

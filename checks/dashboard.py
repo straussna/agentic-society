@@ -853,7 +853,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
     assert opened["text"] == "post 2-1\n"
     assert served["history"]["selected"] == 1 and served_file["text"] == opened["text"]
     assert ballot["history"] == {
-        "kind": "vote",
+        "history_type": "vote",
         "every": 2,
         "rounds": [2],
         "selected": 2,
