@@ -1,4 +1,4 @@
-"""Provider contracts, wire shapes, pricing, and mixed-seat configuration."""
+"""Provider contracts, wire shapes, rates, and mixed-seat configuration."""
 
 from __future__ import annotations
 

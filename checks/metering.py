@@ -585,7 +585,7 @@ def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix
 
     A refusal that emitted nothing is not charged, and says why from its stop details;
     one that emitted a tool call is charged. A prefix past 200k tokens on a 1M-window
-    model prices input at twice and output at one and a half times the base rate.
+    model rates input at twice and output at one and a half times the base rate.
     """
 
     def response(stop, content, **tokens):

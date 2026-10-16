@@ -1,4 +1,4 @@
-"""Experiment-level progress, cost, outcomes, and human-takeover branches."""
+"""Experiment-level progress, cost, outcomes, and human-seat branches."""
 
 from __future__ import annotations
 

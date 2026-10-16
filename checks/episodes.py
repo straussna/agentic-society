@@ -668,7 +668,7 @@ def check_provenance_is_recorded():
             )
 
             # A rate change between episodes makes early and late entries of the
-            # same series mean different things, so the seam is recorded.
+            # same balance history mean different things, so the drift is recorded.
             amend(context_fraction=0.5)
             second = harness.run_once("t", fake(*DEFAULT))
     assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), (

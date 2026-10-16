@@ -1580,7 +1580,7 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
     """A tile's spend is its turns, and the bar beside it is the balance.
 
     A transfer, a share taken and a floor all move the balance without being spend,
-    so the drop from initial answers a different question and can be larger. The
+    so the drop from the budget answers a different question and can be larger. The
     tile's transfer chip is the declaration submitted by its last episode and what
     settlement made of it. After an episode that submitted nothing there is nothing
     to show.
@@ -1704,9 +1704,9 @@ def check_the_view_shows_an_experimenter_channel_once():
     assert opened["text"] == "same words for every seat\n"
 
 
-def check_a_long_series_is_thinned_to_its_ends():
-    """A header sparkline keeps SPARK_POINTS of a long series, its first element and
-    its last among them, in order; a short series is kept whole."""
+def check_a_long_balance_history_is_thinned_to_its_ends():
+    """A header sparkline keeps SPARK_POINTS of a long balance history, its first
+    element and its last among them, in order; a short one is kept whole."""
     thinned = view.thin(list(range(1000)))
     assert len(thinned) == view.SPARK_POINTS, len(thinned)
     assert thinned[0] == 0 and thinned[-1] == 999, (thinned[0], thinned[-1])

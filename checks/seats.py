@@ -229,7 +229,8 @@ def check_an_agent_with_no_experimenter_channel_starts_where_it_always_did():
 
 
 def check_an_experimenter_channel_is_quoted_once_and_then_named_unchanged():
-    """The experimenter's brief is in the digest at the first episode, and named at the next.
+    """The experimenter channel is in the digest at the first episode, and named at
+    the next.
 
     Like a board: what an agent has been shown and that has not moved is
     named and not repeated, and the file is still there to read at the ordinary

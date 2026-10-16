@@ -16,7 +16,7 @@ Available verification commands:
 ```powershell
 # One behaviour, by name fragment; fragments match anywhere and several can be given
 & "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" refusal fallback
-# Every check that needs no container: pricing, metering, refusals, traces, the declared
+# Every check that needs no container: rates, metering, refusals, traces, the declared
 # system prompt, starter files, forks, experiments, manifests, the channel table, the tool
 # table and what a tool call does, labels, receipts, status file names, simultaneous
 # rounds, experimenter channels, transfer funding, push and pull delivery, author labels,

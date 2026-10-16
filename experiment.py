@@ -516,7 +516,7 @@ def stamp_of(manifest: Manifest) -> dict[str, Any]:
 
 
 def inherit_memory(entry: dict, account: harness.Account) -> None:
-    """Give a fresh agent the exact private memories recorded by another agent's episode.
+    """Give a fresh agent the exact memory recorded by another agent's episode.
 
     Only files owned by write_memory tools cross the boundary. The new agent keeps its
     own account, model, budget, peers and every episode-scoped channel.

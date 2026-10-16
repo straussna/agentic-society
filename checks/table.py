@@ -365,7 +365,8 @@ def check_the_default_channels_are_what_config_toml_declares():
 
 
 def check_a_declared_table_reshapes_the_environment():
-    """The persona table: renamed store, a file channel inside it, labelled boards, letters, no transfer.
+    """The persona table: memory under another name, a file channel inside it,
+    labelled boards, letters, no transfer.
 
     Every path the agent meets, every section of the digest, every record and the
     mirrors on the host follow the table and the labels; nothing of the default
@@ -871,7 +872,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     assert "nothing left to spend" in buf.getvalue(), buf.getvalue()
 
 
-def check_an_unpushed_public_channel_stays_out_of_the_digest():
+def check_an_unpushed_board_stays_out_of_the_digest():
     """pushed = false leaves a channel in the environment and out of the digest."""
     with temp_root(channels=tables(board={"pushed": False})) as root:
         seated(root, other={"group/post": "theirs\n", "outbox/1": "for you\n"})

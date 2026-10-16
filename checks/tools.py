@@ -1250,7 +1250,7 @@ def check_building_an_episode_clears_what_one_episode_submits():
         with temp_root(channels=channels, tools=declared) as root:
             seated(root, "t", t={}, o={}, d={})
             shell = Recorder()
-            harness.clear_episode_actions(
+            harness.clear_episode_scoped_files(
                 shell, harness.instances("t", ground_truth("t"))
             )
             assert len(shell.commands) == 1, shell.commands

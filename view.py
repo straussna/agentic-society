@@ -51,9 +51,9 @@ POLL_MS = 1500
 # API call plus the commands it runs, so the threshold clears a slow one.
 STALE_AFTER = 180
 
-# Points kept in a header sparkline. A long-lived agent's series runs to thousands
-# of elements and the strip is 240 pixels wide, so the rest is bytes on the wire
-# for pixels that do not exist, once per seat, on every poll.
+# Points kept in a header sparkline. A long-lived agent's balance history runs to
+# thousands of elements and the strip is 240 pixels wide, so the rest is bytes on the
+# wire for pixels that do not exist, once per seat, on every poll.
 SPARK_POINTS = 240
 
 # The leading letters of an agent id, which is what an experiment's derived id is
@@ -398,7 +398,7 @@ def shell_offered(provenance: Mapping[str, Any]) -> bool:
 
 
 def thin(series: list[int], points: int = SPARK_POINTS) -> list[int]:
-    """A long series sampled down, keeping the first element and the last."""
+    """A long balance history sampled down, keeping the first element and the last."""
     if len(series) <= points:
         return list(series)
     step = (len(series) - 1) / (points - 1)

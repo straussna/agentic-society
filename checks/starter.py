@@ -117,8 +117,8 @@ def check_the_starter_files_threshold_is_a_balance_not_an_episode():
 
 def check_starter_files_are_recorded_and_idempotent():
     """The account records what landed, and a later episode does not plant it again."""
-    # At the budget itself the threshold is met at episode 1: material that was
-    # always there, not material that appeared.
+    # At the budget itself the threshold is met at episode 1: starter files that
+    # were always there, not starter files that appeared.
     with temp_root(
         budget=500_000, starter_files="s", starter_files_below=500_000
     ) as root:

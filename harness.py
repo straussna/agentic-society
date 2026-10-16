@@ -4765,7 +4765,7 @@ TOOL_KINDS: dict[str, ToolKind] = {
         write_file_call,
     ),
     "post_public": ToolKind(
-        "a public directory channel the agent writes",
+        "a board channel the agent writes",
         lambda ch: (
             ch.writer == "self" and ch.readers == "all" and ch.shape == "directory"
         ),
@@ -6079,8 +6079,8 @@ class Episode:
             self.sandbox.close()
 
 
-def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
-    """Clear actions that must be submitted afresh in the episode being built."""
+def clear_episode_scoped_files(shell: Shell, instances: list[Instance]) -> None:
+    """Clear the messages, transfer and tool files each episode writes afresh."""
     expiring = [
         (tool.channel, TOOL_KINDS[tool.kind].file)
         for tool in tools()
@@ -6111,7 +6111,7 @@ def clear_episode_actions(shell: Shell, instances: list[Instance]) -> None:
         STARTUP_TIMEOUT,
     )
     if cleared.strip() != "cleared":
-        raise EnvironmentBuildError("episode-scoped actions could not be cleared")
+        raise EnvironmentBuildError("episode-scoped files could not be cleared")
 
 
 def build_episode(agent: str) -> Episode:
@@ -6224,7 +6224,7 @@ def build_episode(agent: str) -> Episode:
         sandbox.plant_trees(channel_instances, shown)
         planted = True
         shell = ep.shell = sandbox.shell()
-        clear_episode_actions(shell, channel_instances)
+        clear_episode_scoped_files(shell, channel_instances)
         assert_writable(shell, channel_instances)
     except BaseException:
         # No episode ran. A sandbox that was planted is mirrored back all the same,

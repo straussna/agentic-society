@@ -465,7 +465,7 @@ def check_hostile_output_survives():
         )
 
 
-def check_state_contents_are_captured():
+def check_file_contents_are_captured():
     """Every episode records what the agent's files held at that moment."""
     with docker_root():
         episode_once(run("echo doctrine v1 > memory/notes.md"), say())
@@ -541,10 +541,10 @@ def check_missing_tools_are_recorded():
     assert "cat" not in t["missing_tools"] and "ls" not in t["missing_tools"]
 
 
-def check_state_looks_like_itself():
+def check_files_look_like_themselves():
     """The agent sees the modes and ownership that were actually intended.
 
-    State sits on the container's own filesystem, so its modes and ownership
+    The agent's files sit on the container's own filesystem, so its modes and ownership
     are real on every host.
     """
     with docker_root():
@@ -562,7 +562,7 @@ def check_state_looks_like_itself():
     assert "rwxrwxrwx" not in shown, shown
 
 
-def check_what_the_agent_leaves_survives_the_container():
+def check_what_the_agent_leaves_survives_the_sandbox():
     """What the agent writes comes back out: contents, deletions, owner, modes.
 
     Two episodes, the claim being about what survives between them. The host
@@ -690,8 +690,8 @@ def check_what_an_episode_writes_outside_a_channel_is_kept_and_named():
 def check_a_container_failure_stops_the_episode_cleanly():
     """A container that will not start ends the agent with a message, not a traceback.
 
-    The container, the state copy, and the shell all come before the first API
-    call, so nothing reaching this path was spent and there is no trace.
+    The container, the planted trees, and the shell all come before the first
+    model call, so nothing reaching this path was spent and there is no trace.
     """
     with docker_root(image="mtr-No-Such-Image:latest"):  # rejected on sight, no pull
         with quiet() as buf:

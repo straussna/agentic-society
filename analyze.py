@@ -633,8 +633,8 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
 def arms(ts: list[dict]) -> list[list[dict]]:
     """The agent's episodes, split into arms where the harness that ran them changed.
 
-    Episodes either side of such a seam are not one arm, so the totals above them are
-    not one total either.
+    Episodes either side of a configuration drift are not one arm, so the totals
+    above them are not one total either.
     """
     out: list[list[dict]] = []
     for t in ts:
