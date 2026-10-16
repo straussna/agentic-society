@@ -81,7 +81,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 deny every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 344 of 370.
+down. `--no-docker` runs 347 of 373.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
