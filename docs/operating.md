@@ -145,7 +145,7 @@ believe was configured differently. Every agent prints which file it read.
 agent creation and recorded in `account.json`; editing them later does not rewrite an
 agent in flight, and a manifest may set them per agent. An account missing its
 `provider` or `model` is rejected, and so is one missing any other of them that its
-manifest sets for it; the rejection names the missing key. Start a fresh agent id.
+`[[agent]]` table sets; the rejection names the missing key. Start a fresh agent id.
 
 ## Before the first live agent
 
