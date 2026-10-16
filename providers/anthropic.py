@@ -103,7 +103,7 @@ def normalize(native: Any, requested_model: str) -> NormalizedResponse:
         0,
     )
     spec = MODELS[requested_model]
-    long = usage.prefix_tokens > (spec.long_context_threshold or spec.context_window)
+    long = usage.input_tokens > (spec.long_context_threshold or spec.context_window)
     input_multiplier = spec.long_context_input_multiplier if long else (1, 1)
     output_multiplier = spec.long_context_output_multiplier if long else (1, 1)
     charges: tuple[Charge, ...] = (

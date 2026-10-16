@@ -1471,7 +1471,7 @@ function drawTranscript() {
 function turnHtml(t, pend) {
   const bits = [`turn ${t.turn}`, `${num(t.balance)} left`];
   if (t.micros) bits.push(`−${num(t.micros)}`);
-  if (t.prefix) bits.push(`ctx ${num(t.prefix)}`);
+  if (t.input_tokens) bits.push(`ctx ${num(t.input_tokens)}`);
   const tags = [
     t.stop_reason ? `<span class="tag">${esc(t.stop_reason)}</span>` : "",
     t.provider && t.model ? `<span class="tag">${esc(t.provider)}/${esc(t.model)}</span>` : "",

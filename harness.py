@@ -1945,6 +1945,7 @@ MODEL_SPEC_4_KEYS = {
     "price_replacement": "rate_replacement",
 }
 TURN_4_KEYS = {"thinking": "reasoning"}
+USAGE_4_KEYS = {"prefix_tokens": "input_tokens"}
 CHARGE_4_KEYS = {"kind": "token_class"}
 REFUSAL_4_KEYS = {"kind": "refusal_type"}
 FILE_4_KEYS = {"ours": "planted"}
@@ -2002,6 +2003,8 @@ def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
     turns = []
     for turn in out.get("turns") or []:
         turn = rekeyed(turn, TURN_4_KEYS)
+        if isinstance(turn.get("usage"), dict):
+            turn["usage"] = rekeyed(turn["usage"], USAGE_4_KEYS)
         turn["charges"] = [
             rekeyed(charge, CHARGE_4_KEYS) for charge in turn.get("charges") or []
         ]
@@ -5308,11 +5311,11 @@ def run_turns(
             watch(
                 f"\n--- turn {turn_number}   spent {centi // 100:,}/{opening_balance:,}"
                 f"   balance {turn['balance']:,}   context "
-                f"{response.usage.prefix_tokens:,}/{limit:,}"
+                f"{response.usage.input_tokens:,}/{limit:,}"
             )
             if turn["text"]:
                 watch_text(turn["text"])
-            at_limit = response.usage.prefix_tokens >= limit
+            at_limit = response.usage.input_tokens >= limit
 
             if stop_reason == "max_tokens":
                 # A turn cut off mid-JSON carries no whole tool call, so the

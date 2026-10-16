@@ -72,8 +72,8 @@ def check_spend_is_exact():
     )
     m = normalize_anthropic(r, "claude-opus-5")
     assert sum(c.centi_micros for c in m.charges) == 2_250_000, m
-    assert m.usage.prefix_tokens == 1000 + 5000 + 2000, (
-        "prefix must include cached tokens"
+    assert m.usage.input_tokens == 1000 + 5000 + 2000, (
+        "input_tokens must include cached tokens"
     )
     # per-TTL detail wins over the flat field; 1h writes cost 2x
     r.usage = usage(

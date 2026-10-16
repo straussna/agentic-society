@@ -70,7 +70,7 @@ class ToolResult:
 
 @dataclasses.dataclass(frozen=True)
 class Usage:
-    prefix_tokens: int = 0
+    input_tokens: int = 0
     uncached_input_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0

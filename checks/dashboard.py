@@ -1937,6 +1937,7 @@ EARLIER_KEYS = {
     "state_saved",
     "price_valid_through",
     "price_replacement",
+    "prefix_tokens",
     "termination_reason",
     "draw",
     "scores",
@@ -2029,6 +2030,10 @@ def earlier_trace(trace: dict) -> dict:
     turns = []
     for turn in out["turns"]:
         turn = {("thinking" if k == "reasoning" else k): v for k, v in turn.items()}
+        turn["usage"] = {
+            ("prefix_tokens" if k == "input_tokens" else k): v
+            for k, v in turn["usage"].items()
+        }
         turn["charges"] = [
             {("kind" if k == "token_class" else k): v for k, v in charge.items()}
             for charge in turn["charges"]

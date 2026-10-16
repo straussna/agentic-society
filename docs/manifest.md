@@ -1030,11 +1030,12 @@ offered none.
 as it closed, and what the floor put back as `floored`. `config_drift` lists each
 provenance field that differs from the previous episode's, and `trees_mirrored` says
 whether the episode's trees were mirrored back; where they were not, `files` holds the
-previous episode's. Every turn carries canonical `usage`, itemized `charges`, each
-naming its `token_class`, the model's `reasoning` apart from its `text`, a `refusal`
-naming its `refusal_type` where the model declined, canonical and native stop reasons,
-and the provider provenance. Raw logs write the provider and
-complete native response before their canonical normalized event.
+previous episode's. Every turn carries canonical `usage` (its `input_tokens` the whole
+prompt, cached tokens included), itemized `charges`, each naming its `token_class`, the
+model's `reasoning` apart from its `text`, a `refusal` naming its `refusal_type` where
+the model declined, canonical and native stop reasons, and the provider provenance. Raw
+logs write the provider and complete native response before their canonical normalized
+event.
 
 `account_version` is 3. An account holds its `budget`, its `balance` and
 `balance_history`, the `seating` (`agent_by_seat`, `labels`, `seat_order`) and the

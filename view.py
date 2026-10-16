@@ -415,7 +415,7 @@ def from_trace(t: dict) -> list[dict]:
         {
             "turn": turn.get("turn"),
             "micros": turn.get("micros"),
-            "prefix": (turn.get("usage") or {}).get("prefix_tokens"),
+            "input_tokens": (turn.get("usage") or {}).get("input_tokens"),
             "balance": turn.get("balance"),
             "stop_reason": turn.get("stop_reason"),
             "refusal": turn.get("refusal"),
@@ -475,7 +475,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
                 "turn": line.get("turn"),
                 "received": line.get("received"),
                 "micros": previous - balance,
-                "prefix": u.get("prefix_tokens", 0),
+                "input_tokens": u.get("input_tokens", 0),
                 "balance": balance,
                 "stop_reason": data.get("stop_reason"),
                 "refusal": data.get("refusal"),
