@@ -56,7 +56,8 @@ parent formed, so the arm with starter files and the agent it came from differ i
 else. Two forks of different parents are still not comparable to each other — but a matched
 pair does not need them to be. A fork of an episode the starter files had already landed on carries the
 starter files and the settings they landed on; a fork from before carries neither, and takes the
-manifest it is next run under.
+manifest it is next run under. The manifest a branch generates gives each such fork the
+starter files its source agent pinned.
 
 `live_balance` changes what the agent could have observed, so it is recorded in every episode's
 provenance and a change to it between episodes shows up in `provenance_drift`. Episodes either side of

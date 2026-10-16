@@ -12,12 +12,13 @@ import experiment
 import harness
 import progress
 import providers
-from checks.fake import Err, fake, per_agent, run, say, use
+from checks.fake import DEFAULT, Err, fake, per_agent, run, say, use
 from checks.lanes import (
     channel_toml,
     episodes_taken,
     ground_truth,
     manifest_file,
+    plant,
     quiet,
     reconciled,
     rejected,
@@ -185,6 +186,46 @@ def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
         )
         assert len(lineage["traces"]) == 2
         assert all(path.read_bytes() == before for path, before in source_bytes.items())
+
+
+def check_a_branch_from_before_the_starter_files_landed_gives_its_agents_the_sources():
+    """A branch at a round before its source's starter files landed gives each new
+    agent the starter files its source agent pinned, and they land at their threshold
+    when the branch runs."""
+
+    def start(config=None, overrides=None, requirements=(), **kw):
+        harness.apply_config(overrides or {}, "manifest")
+        return fake(*DEFAULT)
+
+    pinned = {"starter_files": "s", "starter_files_below": 499_000}
+    with temp_root(budget=500_000, **pinned) as root:
+        plant(root)
+        source = manifest_file(
+            root,
+            'experiment_id = "source"\nsystem_prompt = ""\nbudget = 500000\n'
+            'starter_files = "s"\nstarter_files_below = 499000\n'
+            '[[agent]]\nid = "source-a"\nlabel = "A"\n'
+            '[[agent]]\nid = "source-b"\nlabel = "B"\n',
+            name="source.toml",
+        )
+        for agent in ("source-a", "source-b"):
+            with quiet():
+                harness.run_once(agent, fake(say()))
+        assert "starter_files_landed" not in ground_truth("source-a")
+        output = root / "experiments" / "branches" / "early.toml"
+        with quiet():
+            experiment.branch_experiment(source, 1, "early", "2", output)
+        for entry in experiment.load_manifest(output)["agents"]:
+            assert {k: entry.get(k) for k in pinned} == pinned, entry
+        assert "starter_files" not in ground_truth("early-01")
+        harness.start = start
+        alone = ["--agent", "early-01", "--manifest", str(output), "--resume"]
+        with quiet():
+            assert harness.main(alone) == 0
+        account = ground_truth("early-01")
+        assert {k: account[k] for k in pinned} == pinned, account
+        assert account["starter_files_landed"]["episode"] == 2, account
+        assert (harness.mirror("early-01", "memory") / "m1").exists()
 
 
 def branch_source(root: Path) -> Path:

@@ -898,9 +898,11 @@ def branch_experiment(
                     "quality_tier", "standard"
                 ),
             }
+            # A fork of an episode before its source's starter files landed holds no
+            # starter settings, so its entry gives it the ones its source pinned.
             for key in ("starter_files", "starter_files_below"):
-                if key in account:
-                    generated[key] = account[key]
+                if (value := account.get(key, parent.get(key))) is not None:
+                    generated[key] = value
             entries.append(generated)
             trace_path = harness.trace_path(entry["id"], episode)
             evidence.append(
