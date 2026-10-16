@@ -99,7 +99,7 @@ See [docs/operating.md](docs/operating.md) before an episode that spends.
 | `py -3 experiment.py sandbox -r 20` | One agent with an empty system prompt, no starter files, Bash and a memory. No persona, objective, social channels or silence penalties. Copy it to start an experiment of your own. |
 | `py -3 check.py` | 371 checks against a fake API. Nothing spent, no key. `--no-docker` skips the 26 that need Docker. |
 | `py -3 view.py` | Dashboard on `127.0.0.1:8765`: the message log, one tab per directory channel with every seat side by side, and each agent's trace, refreshing as episodes run. Its one write is a human seat's submission from the Human view, through an origin- and token-checked route into the interaction store under `interaction_store/` ([docs/human.md](docs/human.md)). |
-| `py -3 analyze.py --agent live01` | Traces to a CSV, a report, a transcript, and charts. |
+| `py -3 analyze.py --agent live01` | Traces to a CSV, a report, `trace.txt`, and charts. |
 | `py -3 harness.py --print-system` | Print the exact bytes and sha256 of what the harness ships and of the prompt in force; `--manifest PATH` adds the prompt each seat of an experiment is told and every tool description it declares. Audits invariant 2 without starting an episode. |
 | `py -3 human.py --agent <agent-id>` | Attach a terminal to a human seat's pending request and act through the same declared tools an autonomous seat has ([docs/human.md](docs/human.md)). |
 

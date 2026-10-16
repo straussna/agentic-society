@@ -2,7 +2,7 @@
 
     .venv/Scripts/python.exe analyze.py [--agent live01]
 
-Writes episodes.csv, report.txt, transcript.txt, and charts/ to
+Writes episodes.csv, report.txt, trace.txt, and charts/ to
 records/<agent>/analysis/. Charts need matplotlib; the rest is written anyway.
 """
 
@@ -1028,7 +1028,7 @@ def charts(
     drawn = []
     figures = [
         ("balance", balance_chart),
-        ("cost-per-turn", spend_per_turn_chart),
+        ("spend-per-turn", spend_per_turn_chart),
         ("episode-spend", episode_spend_chart),
         ("tokens", tokens_chart),
         ("own-files-size", own_files_size_chart),
@@ -1341,11 +1341,11 @@ def main(argv: list[str] | None = None) -> int:
 
     text = report(agents, a.identity)
     (out_dir / "report.txt").write_text(text + "\n", encoding="utf-8")
-    (out_dir / "transcript.txt").write_text(transcript(agents), encoding="utf-8")
+    (out_dir / "trace.txt").write_text(transcript(agents), encoding="utf-8")
     drawn = charts(agents, out_dir / "charts", a.identity)
 
     print(text)
-    print(f"\nwrote {out_dir}/ : episodes.csv, report.txt, transcript.txt")
+    print(f"\nwrote {out_dir}/ : episodes.csv, report.txt, trace.txt")
     if drawn:
         print(f"wrote {out_dir / 'charts'}/ : {', '.join(drawn)}")
     return 0
