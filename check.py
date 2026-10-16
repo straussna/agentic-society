@@ -4,7 +4,7 @@
         [--sweep-all]
 
 A fake router goes into harness.run_once, and its sessions answer each `send` from a
-script, so the pipeline runs unbilled. The checks live under checks/, one module per
+script, so the pipeline spends nothing. The checks live under checks/, one module per
 topic; this file runs them, several at a time, and removes any container a worker of
 this suite died holding."""
 

@@ -180,7 +180,7 @@ Each experiment writes under `experiment_records/<experiment_id>/`: the progress
 `progress.jsonl`, one line per stage each round reaches as it reaches it, the last naming
 the round the rounds ended at, so its rounds never go back; `progress.json`, the latest of
 those; `outcome.json`; and, for a branch, `lineage.json`. `progress.json` and
-`outcome.json` record `version` 2. Each line of the log names its `stage` and its
+`outcome.json` record `version` 3. Each line of the log names its `stage` and its
 `round`, and a stage that waits on a human seat is `waiting_human`. A round that a stop
 counting seats ends the rounds before has no line, and the round the cost ceiling ends
 them before has its preparation alone, which carries the spend that ended them. The
@@ -1042,8 +1042,9 @@ A fresh CLI run moves matching prior records and mirrors under `archive/<timesta
 `--resume`, `--fork-from`, `--branch-from` and `memory_from` read version-3 accounts and
 version-5 traces only, and reject a record of any other version, naming the version it
 holds or saying it holds none. The dashboard and `analyze.py` also read version-2
-accounts and version-4 traces, and the dashboard version-1 progress and outcome records,
-as history: each under the names the current version gives the same values.
+accounts and version-4 traces, and the dashboard version-1 and version-2 progress and
+outcome records, as history: each under the names the current version gives the
+same values.
 
 ## 12. Invariants, restated in this vocabulary
 

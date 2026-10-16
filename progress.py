@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 
-VERSION = 2
+VERSION = 3
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
 STAGES = (
     "preparing_round",
@@ -319,9 +319,11 @@ def revealed(
     }
 
 
-# What a version-1 progress or outcome record calls a key, a field, a stage or an end
-# reason that version 2 names otherwise, and the version-2 name; None for an outcome
-# field version 2 does not keep.
+# What an earlier progress event or outcome record calls a key, a field, a stage or an
+# end reason that the current version names otherwise, and the current name; None for
+# an outcome field the current version does not keep. A version-1 or version-2 event
+# names its stage "phase"; the rest are version 1's alone, and a version-2 outcome
+# holds the current fields.
 EVENT_1_KEYS = {"phase": "stage", "termination_reason": "end_reason"}
 OUTCOME_1_FIELDS: dict[str, str | None] = {
     "termination_reason": "end_reason",
@@ -333,8 +335,8 @@ END_REASONS_1 = {"all_eliminated": "none_in_play"}
 
 
 def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
-    """A version-1 progress event under the version-2 names of its keys, its stage and
-    its end reason."""
+    """A progress event of any version under the current names of its keys, its stage
+    and its end reason; a current event as it is."""
     out = {EVENT_1_KEYS.get(key, key): value for key, value in event.items()}
     if "stage" in out:
         out["stage"] = STAGES_1.get(out["stage"], out["stage"])
@@ -344,10 +346,9 @@ def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def progress_as_current(record: dict[str, Any]) -> dict[str, Any]:
-    """recorded_progress's record of a version-1 progress.json under the version-2
-    names, its recorded version kept; one of any other version as it is."""
-    if record.get("version") != 1:
-        return record
+    """recorded_progress's record with every event under the current names, its
+    recorded version kept. Each event is read on its own, so a log a resumed run carried
+    on from an earlier version reads whole."""
     out = dict(record)
     if isinstance(out.get("latest"), dict):
         out["latest"] = event_as_current(out["latest"])
@@ -356,7 +357,7 @@ def progress_as_current(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def outcome_as_current(record: dict[str, Any]) -> dict[str, Any]:
-    """A version-1 outcome.json under the version-2 names, its recorded version kept:
+    """A version-1 outcome.json under the current names, its recorded version kept:
     its fields, its end reason, each eliminated seat's label and the fields its reveal
     policy names. One of any other version as it is."""
     if record.get("version") != 1:
@@ -398,8 +399,8 @@ def recorded_progress(base: Path) -> dict[str, Any] | None:
 
 def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
     """An experiment's progress, outcome and lineage for display, each None when it is
-    absent or does not read. A version-1 progress or outcome record is read under the
-    version-2 names."""
+    absent or does not read. An earlier version's progress or outcome record is read
+    under the current names."""
     try:
         base = directory(runtime_root, experiment_id)
     except ValueError:

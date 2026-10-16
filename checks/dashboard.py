@@ -1906,8 +1906,8 @@ def check_the_page_makes_long_transcript_content_explicitly_expandable():
     assert "max-height:26em" not in page
 
 
-# The key names a version-2 account, a version-4 trace and a version-1 experiment
-# record hold that the current versions name otherwise or drop.
+# The key names a version-2 account, a version-4 trace, a version-1 experiment record
+# and a version-2 progress event hold that the current versions name otherwise or drop.
 EARLIER_KEYS = {
     "initial",
     "remaining",
@@ -2034,9 +2034,10 @@ def earlier_trace(trace: dict) -> dict:
 
 
 def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
-    """A version-2 account, version-4 traces and version-1 experiment records read in
-    the dashboard, through every route the page asks, and in analyze.py as the current
-    versions hold the same values, every key under its current name; --resume and
+    """A version-2 account, version-4 traces, version-1 experiment records and a
+    version-2 progress log read in the dashboard, through every route the page asks, and
+    in analyze.py as the current versions hold the same values, every key under its
+    current name, and so does a version-2 log a resumed run carries on; --resume and
     --fork-from reject the account and name the version it holds."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
@@ -2141,6 +2142,28 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         events = records["progress"]["events"]
         assert [event["stage"] for event in events] == ["waiting_human", "completed"]
         assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
+
+        elsewhere = Path(root) / "elsewhere"
+        base_2 = progress.directory(elsewhere, "earlier")
+        base_2.mkdir(parents=True)
+        waiting_2 = {"at": "t", "phase": "waiting_human", "round": 1}
+        (base_2 / "progress.json").write_text(
+            json.dumps({"version": 2, "experiment_id": "earlier", "latest": waiting_2}),
+            encoding="utf-8",
+        )
+        (base_2 / "progress.jsonl").write_text(
+            json.dumps(waiting_2) + "\n", encoding="utf-8"
+        )
+
+        def reads_as(stages: list[str]) -> None:
+            read_2 = progress.records(elsewhere, "earlier")["progress"]
+            assert not keys_in(read_2) & EARLIER_KEYS, read_2
+            assert [e["stage"] for e in read_2["events"]] == stages, read_2
+            assert read_2["latest"]["stage"] == stages[-1], read_2
+
+        reads_as(["waiting_human"])
+        progress.log_stage(elsewhere, "earlier", "settling_round", 1)
+        reads_as(["waiting_human", "settling_round"])
 
         exp = view.experiment_of("g01")
         tiles = view.header(exp)["seat_tiles"]

@@ -620,12 +620,15 @@ def check_records_of_another_version_are_rejected_by_the_version_they_hold():
 
 def check_an_account_missing_its_provider_or_model_is_rejected_by_name():
     """A current-version account that holds no provider or no model is rejected whether
-    or not the caller gives them, and the rejection names the key it lacks."""
+    or not the caller gives them, and so is a fork of it; the rejection names the key it
+    lacks."""
     with temp_root():
         spec = {"provider": "anthropic", "model": "claude-sonnet-5"}
         with quiet():
             harness.load_account("a", **spec)
         whole = json.loads(harness.account_path("a").read_text(encoding="utf-8"))
+        harness.trace_path("a", 1).parent.mkdir(parents=True, exist_ok=True)
+        harness.trace_path("a", 1).write_text("{}", encoding="utf-8")
         for key in harness.MODEL_SETTINGS:
             harness.save_account("a", {k: v for k, v in whole.items() if k != key})
             for given in ({}, spec):
@@ -635,6 +638,12 @@ def check_an_account_missing_its_provider_or_model_is_rejected_by_name():
                     "fresh agent id",
                     because=f"loaded an account missing {key}, given {given}",
                 )
+            rejected(
+                lambda: harness.fork("a", 1, "b"),
+                "a cannot be forked",
+                f"missing {key!r}",
+                because=f"forked an account missing {key}",
+            )
 
 
 def check_each_adapter_declares_the_provenance_its_traces_record():

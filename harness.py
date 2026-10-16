@@ -6704,6 +6704,11 @@ def fork(
     parent_account = json.loads(account_path(parent).read_text(encoding="utf-8"))
     if why := stale(parent_account, "account"):
         raise SystemExit(f"{parent} cannot be forked: it has {why}")
+    for key in MODEL_SETTINGS:
+        if key not in parent_account:
+            raise SystemExit(
+                f"{parent} cannot be forked: {missing_setting(parent, key)}"
+            )
     if episode > len(parent_account["episodes"]):
         # close_episode writes the trace before the account, so a trace can outlive
         # an episode whose commit stopped between the two.

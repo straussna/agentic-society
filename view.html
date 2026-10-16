@@ -600,7 +600,7 @@ const S = { experiments: [], experiment: null, head: null, tab: "mailbox",
             // The message log is append-only, so what is held is extended
             // and not re-fetched; the tip is whatever is ahead of it.
             msgs: [], tips: [], msgn: 0, standing: false, pair: null,
-            mailQuery: "", mailTimer: null, showEmpty: held("show-empty-pairs", false),
+            mailboxQuery: "", mailboxTimer: null, showEmpty: held("show-empty-pairs", false),
             tree: {}, treeRound: {}, inspect: {}, body: {},
             // One agent's transcript, and how many of its turns are drawn.
             agent: null, detail: null, episode: null, view: null,
@@ -711,7 +711,7 @@ function pickExperiment(id) {
   if (id === S.experiment) return;
   S.experiment = id;
   S.msgs = []; S.tips = []; S.msgn = 0; S.pair = null;
-  S.tree = {}; S.treeRound = {}; S.inspect = {}; S.body = {}; S.mailQuery = "";
+  S.tree = {}; S.treeRound = {}; S.inspect = {}; S.body = {}; S.mailboxQuery = "";
   S.agent = null; S.detail = null; S.episode = null; S.view = null; S.drawn = 0;
   blank(document.getElementById("body"), `<div class="empty">loading&hellip;</div>`);
   renderPicks();
@@ -802,7 +802,7 @@ function electionHtml(h) {
     : latest.tied ? `top vote tied at ${num(latest.top_votes)}; nobody eliminated by vote`
     : `nobody eliminated by vote`;
   if ((latest.abstainers || []).length) outcome += ` · abstainers: ${latest.abstainers.map(esc).join(", ")}`;
-  if ((latest.interrupted || []).length) outcome += ` · stopped before voting: ${latest.interrupted.map(esc).join(", ")}`;
+  if ((latest.interrupted || []).length) outcome += ` · interrupted before voting: ${latest.interrupted.map(esc).join(", ")}`;
   return `<div class="election"><div class="kv"><div class="k">round ${latest.round} election · aggregate</div></div>
     <div class="tally">${tally}</div><div class="result">${outcome}</div>
     <div class="note">candidates left: ${(latest.candidates_left || []).map(esc).join(", ") || "none"}</div></div>`;
@@ -851,7 +851,7 @@ function renderHeader() {
     ? `<div class="product-state"><div class="kv"><div class="k">outcome · ${esc(result.end_reason)}</div></div>
        <div class="result">${result.winners && result.winners.length ? `winner${result.winners.length === 1 ? "" : "s"}: ${result.winners.map(esc).join(", ")}`
          : `survivors: ${(result.survivors || []).map(esc).join(", ") || "none"}`}</div></div>`
-    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc(latest.stage.replaceAll("_", " "))}</div></div>
+    : latest ? `<div class="product-state"><div class="kv"><div class="k">${esc((latest.stage || "").replaceAll("_", " "))}</div></div>
        <div class="result">round ${num(latest.round)}${lineage ? ` · branch of ${esc(lineage.source_experiment_id)} at round ${num(lineage.source_round)}` : ""}</div></div>` : "";
   redraw(document.getElementById("gwrap"), !h.seated ? "" : `<div class="gbox">
     ${productState}
@@ -1030,7 +1030,7 @@ function renderMessages() {
   }
   const all = threadsOf();
   if (!all.length) { blank(el, `<div class="empty">no seats to address</div>`); return; }
-  const query = S.mailQuery.trim().toLowerCase();
+  const query = S.mailboxQuery.trim().toLowerCase();
   const ts = all.filter(t => (S.showEmpty || saidIn(t).length || t.tips.length)
       && (!query || conversationText(t).includes(query))).sort((a, b) => {
     const aa = latestOf(a), bb = latestOf(b);
@@ -1039,7 +1039,7 @@ function renderMessages() {
   });
   if (!ts.length) {
     const controls = `<div class="pair-tools"><label class="note" for="pair-search">Find a conversation</label>
-      <div class="search-wrap"><input class="search" id="pair-search" type="search" value="${esc(S.mailQuery)}"
+      <div class="search-wrap"><input class="search" id="pair-search" type="search" value="${esc(S.mailboxQuery)}"
         placeholder="Agent, seat, or message text"><button class="search-clear" id="clear-pair-search"
         aria-label="Clear conversation search" title="Clear search">×</button></div>
       <div class="pair-options"><label class="tail"><input type="checkbox" id="empty-pairs"
@@ -1056,7 +1056,7 @@ function renderMessages() {
     S.pair = ts.reduce((a, b) => saidIn(b).length > saidIn(a).length ? b : a).key;
   }
   const t = ts.find(x => x.key === S.pair);
-  const sig = JSON.stringify([S.pair, S.standing, S.rail, S.mailQuery, S.showEmpty,
+  const sig = JSON.stringify([S.pair, S.standing, S.rail, S.mailboxQuery, S.showEmpty,
     ts.map(x => [x.key, x.events.length]),
     S.tips.map(e => [e.from_seat, e.path, e.change, e.size])]);
   if (el.dataset.sig === sig) return;
@@ -1073,7 +1073,7 @@ function renderMessages() {
   // whole log: switching threads must not move the number it offers.
   const same = S.msgs.filter(e => e.change === "standing").length;
   const controls = `<div class="pair-tools"><label class="note" for="pair-search">Find a conversation</label>
-    <div class="search-wrap"><input class="search" id="pair-search" type="search" value="${esc(S.mailQuery)}"
+    <div class="search-wrap"><input class="search" id="pair-search" type="search" value="${esc(S.mailboxQuery)}"
       placeholder="Agent, seat, or message text"><button class="search-clear" id="clear-pair-search"
       aria-label="Clear conversation search" title="Clear search">×</button></div>
     <div class="pair-options"><label class="tail"><input type="checkbox" id="empty-pairs"
@@ -1111,9 +1111,9 @@ function renderMessages() {
 function wireConversationFilters(el) {
   const search = document.getElementById("pair-search");
   const update = e => {
-    S.mailQuery = e.target.value;
-    clearTimeout(S.mailTimer);
-    S.mailTimer = setTimeout(() => {
+    S.mailboxQuery = e.target.value;
+    clearTimeout(S.mailboxTimer);
+    S.mailboxTimer = setTimeout(() => {
       el.dataset.sig = ""; renderMessages();
       const next = document.getElementById("pair-search");
       if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
@@ -1122,7 +1122,7 @@ function wireConversationFilters(el) {
   if (search) { search.oninput = update; search.onsearch = update; search.onchange = update; }
   const clear = document.getElementById("clear-pair-search");
   if (clear) clear.onclick = () => {
-    clearTimeout(S.mailTimer); S.mailQuery = ""; el.dataset.sig = ""; renderMessages();
+    clearTimeout(S.mailboxTimer); S.mailboxQuery = ""; el.dataset.sig = ""; renderMessages();
     const next = document.getElementById("pair-search");
     if (next) next.focus();
   };
