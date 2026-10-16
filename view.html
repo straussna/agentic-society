@@ -1142,7 +1142,7 @@ function keyOf(channel, agent) {
 
 function snapshotHtml(d) {
   if (!d.history) return "";
-  const isBoard = d.history.kind === "round";
+  const isBoard = d.history.history_type === "round";
   return `<div class="snapshotbar"><span class="lbl">${isBoard ? "Posts" : "Votes"}</span>
     <div class="snapshots" role="group" aria-label="${isBoard ? "Board round snapshots" : "Ballot vote-round snapshots"}">
       <button class="chip ${d.history.selected == null ? "on live" : ""}" data-round="" aria-pressed="${d.history.selected == null}">Live</button>
@@ -1247,8 +1247,8 @@ function renderBallotAggregate(channel) {
 function renderTree(channel) {
   const d = S.tree[channel], el = document.getElementById("body");
   if (!d) return;
-  if (d.history && d.history.kind === "round") return renderBoard(channel);
-  if (d.history && d.history.kind === "vote") return renderBallotAggregate(channel);
+  if (d.history && d.history.history_type === "round") return renderBoard(channel);
+  if (d.history && d.history.history_type === "vote") return renderBallotAggregate(channel);
   const chosen = S.inspect[channel] || null;
   const sig = JSON.stringify([channel, d.history, d.columns.map(c =>
     [c.agent, c.committed, c.running_episode, c.files.map(f => [f.path, f.stamp, f.mode])]),

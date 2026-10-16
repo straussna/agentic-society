@@ -52,8 +52,9 @@ def check_system_is_pinned():
     )
 
 
-def check_cost_is_exact():
-    """Invariant 6: cost matches hand-computed integers, including both cache-write TTLs."""
+def check_spend_is_exact():
+    """Invariant 6: spend matches hand-computed integers, including both cache-write
+    TTLs."""
     # opus-5: in 500, out 2500 centi/token; write 1.25x, read 0.1x
     u = usage(
         input_tokens=1000,

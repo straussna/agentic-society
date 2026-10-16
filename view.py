@@ -251,27 +251,27 @@ def running_episode(agent: str, account: Mapping[str, Any] | None = None) -> int
     raws = harness.raw_paths(agent)
     if not raws:
         return None
-    index = harness.episode_number(raws[-1])
-    return None if index <= committed(agent, account) else index
+    episode = harness.episode_number(raws[-1])
+    return None if episode <= committed(agent, account) else episode
 
 
-def live_age(agent: str, index: int | None) -> float | None:
+def live_age(agent: str, episode: int | None) -> float | None:
     """Seconds since the episode's raw log last grew, or None if there is none.
 
     A turn takes as long as the API call plus the commands it runs, so a live
     episode is quiet for stretches; a dead one is quiet for good.
     """
-    if index is None:
+    if episode is None:
         return None
     try:
-        return max(0.0, time.time() - harness.raw_path(agent, index).stat().st_mtime)
+        return max(0.0, time.time() - harness.raw_path(agent, episode).stat().st_mtime)
     except OSError:
         return None
 
 
-def running_now(agent: str, index: int | None) -> bool:
-    """Whether the agent is moving, not merely holding an unfinished index."""
-    return index is not None and (live_age(agent, index) or 0) < STALE_AFTER
+def running_now(agent: str, episode: int | None) -> bool:
+    """Whether the agent is moving, not merely holding an unfinished episode."""
+    return episode is not None and (live_age(agent, episode) or 0) < STALE_AFTER
 
 
 def latest_attempt(lines: list[dict]) -> list[dict]:
@@ -502,20 +502,21 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     return out
 
 
-def live_turns(agent: str, index: int, account: Mapping[str, Any]) -> list[dict]:
+def live_turns(agent: str, episode: int, account: Mapping[str, Any]) -> list[dict]:
     """The turns of an unfinished episode, read off its raw log."""
-    return from_raw(latest_attempt(raw_lines(harness.raw_path(agent, index))), account)
+    raw = raw_lines(harness.raw_path(agent, episode))
+    return from_raw(latest_attempt(raw), account)
 
 
-def live_state(agent: str, index: int | None, account: Mapping[str, Any]) -> dict:
+def live_state(agent: str, episode: int | None, account: Mapping[str, Any]) -> dict:
     """What an unfinished episode has done so far, derived from its raw log.
 
     `turns` are its turns, `spent` what they have cost, `balance` what the last
     of them left and None before any is on disk, and `current_balance` that balance
     or the account's where there is none yet. Empty for an agent with no episode in
-    flight (`index` None).
+    flight (`episode` None).
     """
-    turns = live_turns(agent, index, account) if index is not None else []
+    turns = live_turns(agent, episode, account) if episode is not None else []
     balance = turns[-1]["balance"] if turns else None
     return {
         "turns": turns,
@@ -1684,7 +1685,7 @@ def channel_history(
         if round % every == 0
     ]
     return {
-        "kind": "vote" if tool.get("kind") == "vote" else "round",
+        "history_type": "vote" if tool.get("kind") == "vote" else "round",
         "every": every,
         "rounds": available,
     }
@@ -1779,9 +1780,9 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
             "static": False,
             "history": {**history, "selected": round_at},
             # channel_history offers a ballot channel's vote rounds only.
-            "vote_round": history["kind"] == "vote",
+            "vote_round": history["history_type"] == "vote",
             "election": election_of(exp, round_at)
-            if history["kind"] == "vote"
+            if history["history_type"] == "vote"
             else None,
             "columns": columns,
         }
@@ -1826,7 +1827,7 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
     current_round = round_now(exp, rows)
     vote_round = bool(
         history
-        and history["kind"] == "vote"
+        and history["history_type"] == "vote"
         and current_round
         and current_round % history["every"] == 0
     )
@@ -1999,26 +2000,26 @@ def agent_view(agent: str, exp: dict | None) -> dict:
     }
 
 
-def episode_view(agent: str, index: int, since: int = 0) -> dict | None:
+def episode_view(agent: str, episode: int, since: int = 0) -> dict | None:
     """One episode's transcript, from the trace or the raw log; None for neither.
 
     `since` is the last turn the page holds, so an episode in flight appends.
     `source` changing from raw to trace tells the page to ask again from zero.
     """
     if (
-        not harness.trace_path(agent, index).exists()
-        and not harness.raw_path(agent, index).exists()
+        not harness.trace_path(agent, episode).exists()
+        and not harness.raw_path(agent, episode).exists()
     ):
         return None
     trace = (
-        load_trace(harness.trace_path(agent, index))
-        if index <= committed(agent)
+        load_trace(harness.trace_path(agent, episode))
+        if episode <= committed(agent)
         else None
     )
     out = (
-        raw_view(agent, index, since)
+        raw_view(agent, episode, since)
         if trace is None
-        else traced_view(agent, index, trace, since)
+        else traced_view(agent, episode, trace, since)
     )
     turns = out["turns"]
     out["turns"] = [t for t in turns if (t["turn"] or 0) > since]
@@ -2026,7 +2027,7 @@ def episode_view(agent: str, index: int, since: int = 0) -> dict | None:
     return out
 
 
-def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
+def traced_view(agent: str, episode: int, trace: dict, since: int) -> dict:
     """A finished episode, read off its trace. The observation and the diffs travel
     only with the first request (`since` 0); the page holds them from there."""
     table = harness.table_of(trace)
@@ -2035,7 +2036,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
         "source": "trace",
         "live": False,
         "age": None,
-        "episode": index,
+        "episode": episode,
         "stop": trace["stop"],
         "spent": trace["spent"],
         "balance": trace["balance"],
@@ -2068,11 +2069,11 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
             "shown_before": sections,
             "clipped": observation_clipped(trace),
         }
-        out["changes"] = episode_changes(agent, index)
+        out["changes"] = episode_changes(agent, episode)
     return out
 
 
-def raw_view(agent: str, index: int, since: int) -> dict:
+def raw_view(agent: str, episode: int, since: int) -> dict:
     """An episode in flight, derived from its raw log.
 
     The table, the status file names and the delivery are the agent's latest
@@ -2081,7 +2082,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     episode runs it is pending like any other command's output.
     """
     account = account_of(agent)
-    going = live_state(agent, index, account)
+    going = live_state(agent, episode, account)
     last = latest_trace(agent, account)
     table, hf = agent_environment(last, agent, account)
     found = manifest_ahead_of(last, agent, account)
@@ -2103,8 +2104,8 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     out = {
         "source": "raw",
         "live": True,
-        "age": live_age(agent, index),
-        "episode": index,
+        "age": live_age(agent, episode),
+        "episode": episode,
         "stop": None,
         "spent": going["spent"],
         "balance": going["current_balance"],
@@ -2137,7 +2138,7 @@ def raw_view(agent: str, index: int, since: int) -> dict:
     return out
 
 
-def episode_changes(agent: str, index: int) -> list[dict]:
+def episode_changes(agent: str, episode: int) -> list[dict]:
     """An episode's diffs against the episode before it, one block per channel the
     agent writes, in table order.
 
@@ -2153,10 +2154,10 @@ def episode_changes(agent: str, index: int) -> list[dict]:
             if f["channel"] == name and analyze.is_own(f) and f["text"] is not None
         }
 
-    this = load_trace(harness.trace_path(agent, index))
+    this = load_trace(harness.trace_path(agent, episode))
     if this is None:
         return []
-    before = load_trace(harness.trace_path(agent, index - 1))
+    before = load_trace(harness.trace_path(agent, episode - 1))
     label = analyze.label_of(this)
     out = []
     for ch in harness.table_of(this):

@@ -1028,7 +1028,7 @@ def charts(
     drawn = []
     figures = [
         ("balance", balance_chart),
-        ("cost-per-turn", cost_per_turn_chart),
+        ("cost-per-turn", spend_per_turn_chart),
         ("episode-spend", episode_spend_chart),
         ("tokens", tokens_chart),
         ("own-files-size", own_files_size_chart),
@@ -1110,7 +1110,7 @@ def balance_chart(plt, agents: dict[str, list[dict]]):
     return fig
 
 
-def cost_per_turn_chart(plt, agents: dict[str, list[dict]]):
+def spend_per_turn_chart(plt, agents: dict[str, list[dict]]):
     """What each turn cost, against the baseline it could not go below.
 
     A symlog axis puts a turn that dumped a file and a turn that said nothing on

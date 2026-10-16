@@ -837,7 +837,7 @@ def check_the_view_recovers_ephemeral_channels_at_round_boundaries():
         discussing = view.tree_view(c, "memory")
 
     assert live["history"] == {
-        "kind": "round",
+        "history_type": "round",
         "every": 1,
         "rounds": [1, 2],
         "selected": None,

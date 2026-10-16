@@ -562,7 +562,7 @@ def check_files_look_like_themselves():
     assert "rwxrwxrwx" not in shown, shown
 
 
-def check_what_the_agent_leaves_survives_the_sandbox():
+def check_what_the_agent_leaves_survives_the_container():
     """What the agent writes comes back out: contents, deletions, owner, modes.
 
     Two episodes, the claim being about what survives between them. The host
