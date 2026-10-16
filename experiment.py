@@ -173,7 +173,8 @@ def seats_of(agents: list[str]) -> dict[str, str]:
 
 
 def shorthand(ids: list[str], schedule: str = "sequential") -> Manifest:
-    """A bare manifest for these agents, which is what a round stamps when driven directly."""
+    """A bare manifest for these agents, which is what a round stamps when driven
+    directly."""
     return {
         "schedule": schedule,
         "stop_when_one_remains": False,
@@ -206,7 +207,8 @@ def check_ids(ids: list[str], where: str) -> None:
         raise SystemExit(f"{where}: an agent is listed twice: {ids}")
     if bad := [i for i in ids if not i or BARE_NUMBER.match(i)]:
         raise SystemExit(
-            f"{where}: agent ids must not be bare numbers, which is what seats are called: {bad}"
+            f"{where}: agent ids must not be bare numbers, "
+            f"which is what seats are called: {bad}"
         )
 
 
@@ -238,7 +240,8 @@ def check_agent(path: Path, entry: dict) -> None:
             reject(f"{agent}: memory_from: agent must name an existing agent")
         if not isinstance(episode, int) or isinstance(episode, bool) or episode < 1:
             reject(
-                f"{agent}: memory_from: episode must be a positive integer, got {episode!r}"
+                f"{agent}: memory_from: episode must be a positive integer, "
+                f"got {episode!r}"
             )
     harness.validate_settings(
         str(path),
@@ -271,7 +274,8 @@ def expand_agents(definitions: list[dict]) -> list[dict]:
 
 
 def manifest_path(named: str) -> Path:
-    """Resolve a manifest: a bare name sits under experiments/, anything else is the path given.
+    """Resolve a manifest: a bare name sits under experiments/, anything else is the
+    path given.
 
     A name with a suffix or a directory in it is a path and is used as written, so a
     manifest anywhere on disk stays reachable. A bare name is looked for in
@@ -530,7 +534,8 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
     source_path = harness.trace_path(source, episode)
     if not source_path.exists():
         raise SystemExit(
-            f"agent {agent}: memory_from names {source!r} episode {episode}, but {source_path} does not exist"
+            f"agent {agent}: memory_from names {source!r} episode {episode}, "
+            f"but {source_path} does not exist"
         )
     trace = json.loads(source_path.read_text(encoding="utf-8"))
     if why := harness.stale(trace, "trace"):
@@ -539,7 +544,8 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
         )
     if not trace.get("state_saved"):
         raise SystemExit(
-            f"agent {agent}: memory_from source {source!r} episode {episode} did not save its state"
+            f"agent {agent}: memory_from source {source!r} episode {episode} "
+            "did not save its state"
         )
 
     source_tools = {
@@ -594,7 +600,8 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
                 )
             if destination.exists() and destination.read_bytes() != data:
                 raise SystemExit(
-                    f"agent {agent}: inherited memory would overwrite {target_tool.channel}/{MEMORY_FILE}"
+                    f"agent {agent}: inherited memory would overwrite "
+                    f"{target_tool.channel}/{MEMORY_FILE}"
                 )
             if not destination.exists():
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -632,7 +639,8 @@ def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str)
         f"experiment_id = {toml_value(experiment_id)}",
         f"schedule = {toml_value(manifest['schedule'])}",
         f"stop_when_one_remains = {toml_value(manifest['stop_when_one_remains'])}",
-        f"stop_when_two_remain_after_tie = {toml_value(manifest['stop_when_two_remain_after_tie'])}",
+        "stop_when_two_remain_after_tie = "
+        f"{toml_value(manifest['stop_when_two_remain_after_tie'])}",
     ]
     for key, value in manifest["overrides"].items():
         if key not in (
@@ -964,7 +972,8 @@ def preparer(
 ) -> Callable[[harness.Account], None]:
     """What an agent's account is told before each episode: where it sits, what it and
     every other agent is called, and how the experiment is being driven. Nothing is
-    copied into anything the agent can write, so there is nothing to revert afterwards."""
+    copied into anything the agent can write, so there is nothing to revert
+    afterwards."""
     named = {seat: (labels or {}).get(seat, seat) for seat in seats}
 
     def prepare(account: harness.Account) -> None:
@@ -990,7 +999,8 @@ def preparers(
     labels: dict[str, str] | None,
     schedule: str = "sequential",
 ) -> Callable[[str], Callable[[harness.Account], None]]:
-    """How each agent's account is stamped this round: its seat, every label, and the schedule.
+    """How each agent's account is stamped this round: its seat, every label, and the
+    schedule.
 
     Both schedules prepare an agent the same way, and a round driven straight from
     a list of ids stands on the shorthand manifest those ids mean.
@@ -1230,8 +1240,9 @@ def build_all(
 
 
 def take_back(agent: str, amount: int) -> None:
-    """Take back from an agent's account on disk a credit it closed on, and floor what is
-    left as its close did, so it stands where it would had the credit never reached it."""
+    """Take back from an agent's account on disk a credit it closed on, and floor what
+    is left as its close did, so it stands where it would had the credit never reached
+    it."""
     account = harness.load_account(agent)
     harness.credit_account(account, -amount)
     floored = (
@@ -1398,7 +1409,8 @@ def simultaneous_round(
             ):
                 take_back(receiver, amount)
                 print(
-                    f"{receiver}: the {amount} transferred by {giver} is taken back, as that episode was not committed",
+                    f"{receiver}: the {amount} transferred by {giver} is taken back, "
+                    "as that episode was not committed",
                     file=sys.stderr,
                 )
         except BaseException as e:
@@ -1453,8 +1465,8 @@ def recorded(account: harness.Account, round: int) -> bool:
 
 def offered_ballot(agent: str, round: int, vote: dict) -> bool:
     """Whether the agent's episode of `round` was offered the ballot, as its trace
-    records what the episode was offered. One with no peer left to name was offered none.
-    A trace that does not say is taken to have offered it."""
+    records what the episode was offered. One with no peer left to name was offered
+    none. A trace that does not say is taken to have offered it."""
     try:
         trace = json.loads(harness.trace_path(agent, round).read_text(encoding="utf-8"))
     except OSError, ValueError:
@@ -1487,10 +1499,11 @@ def resolve_vote(
 
     An election is held once. Once any account records it, its candidates and electors
     are the ones it names, so a seat that took the round's episode after it was held has
-    no vote in it, and it is held again, by them, only where one of them lacks the record.
-    Every account it is written to is saved before any ballot is removed, so a run that
-    stops between two saves leaves the ballots for that holding to come to the same
-    result. Each of those accounts keeps it in `elections` as well as `last_election`.
+    no vote in it, and it is held again, by them, only where one of them lacks the
+    record. Every account it is written to is saved before any ballot is removed, so a
+    run that stops between two saves leaves the ballots for that holding to come to the
+    same result. Each of those accounts keeps it in `elections` as well as
+    `last_election`.
     """
     if vote is None:
         return None
@@ -1691,10 +1704,10 @@ def concluded(
 def before_round(
     agents: list[str], seated: set[str], rounds: int, stop_when_one_remains: bool
 ) -> str | None:
-    """Why the rounds end before the next begins, after `rounds` rounds, or None where it
-    is played: over()'s reasons, judged on the agents in play, and "none_can_act" when
-    some are and not one of them is seated in this run. Every seated agent whose account
-    is out of play is unseated first, saying why."""
+    """Why the rounds end before the next begins, after `rounds` rounds, or None where
+    it is played: over()'s reasons, judged on the agents in play, and "none_can_act"
+    when some are and not one of them is seated in this run. Every seated agent whose
+    account is out of play is unseated first, saying why."""
     unseat_those_out_of_play(agents, seated)
     agents_in_play = in_play(agents)
     if ended := over(agents_in_play, rounds, stop_when_one_remains):
@@ -1921,7 +1934,8 @@ def main(argv: list[str] | None = None) -> int:
         harness.save_account(entry["id"], account)
         inherit_memory(entry, account)
     print(
-        f"experiment: {', '.join(agents)}  ({len(agents)} agents, up to {a.rounds} rounds, {manifest['schedule']})"
+        f"experiment: {', '.join(agents)}  ({len(agents)} agents, "
+        f"up to {a.rounds} rounds, {manifest['schedule']})"
     )
     take_seats(agents, seated)
     log_stage = functools.partial(
@@ -1958,8 +1972,8 @@ def main(argv: list[str] | None = None) -> int:
             cost = progress.cost(
                 agents, harness.load_account, manifest["cost"], providers.is_human
             )
-            # Judged before the round is prepared, so the record prepares no round that a
-            # stop counting seats ends. The ceiling comes first, its round prepared to
+            # Judged before the round is prepared, so the record prepares no round that
+            # a stop counting seats ends. The ceiling comes first, its round prepared to
             # carry the cost that ends the rounds, and a round being finished is played.
             if not cost["ceiling_reached"] and not finishing:
                 ended = before_round(

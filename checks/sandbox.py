@@ -31,7 +31,8 @@ from checks.lanes import (
 
 
 def check_the_observation_is_the_agents_whole_environment():
-    """Invariant 2: turn one is the verbatim ls, it is recorded, and it says where it is.
+    """Invariant 2: turn one is the verbatim ls, it is recorded, and it says where it
+    is.
 
     The listing is the agent's entire stimulus at episode start: what reached the model,
     what the trace kept, and whether it names the directories it is of.
@@ -241,7 +242,8 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
         fetched
     )
     assert "read me first" in fetched and "[500000]" in fetched, (
-        f"the experimenter channel, the ledger and every balance are still in the environment: {fetched}"
+        "the experimenter channel, the ledger and every balance are still in the "
+        f"environment: {fetched}"
     )
     assert "shown_before" not in account, (
         "nothing was shown, so nothing is remembered as shown"
@@ -372,8 +374,9 @@ def check_an_expired_board_post_disappears_silently():
 def check_an_agent_with_no_peers_starts_where_it_always_did():
     """An experiment of one has no outbox, no inbox, and an m of its own record.
 
-    The mechanic is about what the experiment said, so an agent with no experiment must not
-    acquire one: single-agent experiments keep the environment they have always had.
+    The mechanic is about what the experiment said, so an agent with no experiment must
+    not acquire one: single-agent experiments keep the environment they have always
+    had.
     """
     with temp_root():
         t = episode_once(run("ls", f"cat {digest_name()}"), say())
@@ -620,11 +623,13 @@ def check_what_the_agent_leaves_survives_the_container():
 
 
 def check_isolation():
-    """Invariant 4: records/ is absent from the container, DNS is dead, no balance is mirrored."""
+    """Invariant 4: records/ is absent from the container, DNS is dead, no balance is
+    mirrored."""
     with docker_root():
         t = episode_once(
             run(
-                "cat /work/../records/account.json; find / -name account.json 2>/dev/null; "
+                "cat /work/../records/account.json; "
+                "find / -name account.json 2>/dev/null; "
                 "getent hosts api.anthropic.com || echo NO-DNS"
             ),
             say(),
@@ -800,8 +805,8 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
         real = harness.replace_file
 
         def refusing_the_swap_and_rollbacks(refused):
-            """replace_file with the swap refused, and the first `refused` renames of the
-            tree put aside back into place."""
+            """replace_file with the swap refused, and the first `refused` renames of
+            the tree put aside back into place."""
 
             def replace(src, dest):
                 nonlocal refused
@@ -820,7 +825,8 @@ def check_a_tree_a_failed_rollback_left_aside_is_put_back_and_never_built_over()
         assert mirror.is_dir() and sorted(p.name for p in mirror.iterdir()) == [
             "keep.txt"
         ], (
-            f"the second rollback did not put the tree back: {sorted(p.name for p in mirror.parent.iterdir())}"
+            "the second rollback did not put the tree back: "
+            f"{sorted(p.name for p in mirror.parent.iterdir())}"
         )
         assert not previous.exists(), "and the tree is not left aside as well"
 
@@ -907,8 +913,8 @@ def check_a_file_the_agent_puts_at_the_receipt_path_is_its_own():
 
 
 def check_the_agent_can_replace_a_receipt_in_the_container_and_keeps_what_it_wrote():
-    """Root's and read-only, a receipt in the agent's outbox still goes with rm, which asks
-    the directory. What the agent writes in its place comes back as its own."""
+    """Root's and read-only, a receipt in the agent's outbox still goes with rm, which
+    asks the directory. What the agent writes in its place comes back as its own."""
     with docker_root(channels=tables(transfer={"receipt": "outbox/receipt"})) as root:
         seated(root, other={})
         episode_once(run("echo '2 100' > outbox/transfer"), say())
@@ -985,10 +991,16 @@ def check_prose_and_programs_are_not_read_as_commands():
         "# Let's look\npython3 -c \"\nimport json\nprint(open('n'))\n\""
     ) == {"python3"}, "prose in a comment must not expose the program after it"
 
-    nested = 'printf "%s=%d " "$f" "$(python3 -c "import json,sys;print(len(json.load(open(\'$f\'))))")"'
+    nested = (
+        'printf "%s=%d " "$f" '
+        '"$(python3 -c "import json,sys;print(len(json.load(open(\'$f\'))))")"'
+    )
     assert harness.invoked(nested) == {"printf", "python3"}, harness.invoked(nested)
 
-    prose = "printf '%s\\n' '  (c) cheap: python3 - <<PY with a small' '  s.replace(...) patch' >> NOTES.md; wc -l NOTES.md"
+    prose = (
+        "printf '%s\\n' '  (c) cheap: python3 - <<PY with a small' "
+        "'  s.replace(...) patch' >> NOTES.md; wc -l NOTES.md"
+    )
     assert harness.invoked(prose) == {"printf", "wc"}, harness.invoked(prose)
 
     after = "cat > /tmp/d.py <<'EOF'\nimport json\nEOF\npython3 /tmp/d.py"

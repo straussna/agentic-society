@@ -41,7 +41,8 @@ class HumanSession:
         self.tools = tools
         self.info = info
         # interaction imports providers.base, so this adapter imports the store when a
-        # session opens; a module-level import closes a cycle through providers/__init__.
+        # session opens; a module-level import closes a cycle through
+        # providers/__init__.
         from interaction.store import InteractionStore
 
         self.store = InteractionStore(info.interaction_root)

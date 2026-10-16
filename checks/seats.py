@@ -161,7 +161,8 @@ def check_starter_files_and_a_peer_are_told_apart():
 
 
 def check_every_captured_file_names_an_author():
-    """Every file record says who wrote it: experimenter, self, or the seat that sent it.
+    """Every file record says who wrote it: experimenter, self, or the seat that sent
+    it.
 
     Invariant 1. The starter files and the experimenter channel are the
     experimenter's, what the agent wrote anywhere is its own, and a peer's
@@ -197,7 +198,8 @@ def check_every_captured_file_names_an_author():
 
 
 def check_a_peers_file_names_its_seat():
-    """The seat in an author label is the sender's own, whichever seat the reader holds."""
+    """The seat in an author label is the sender's own, whichever seat the reader
+    holds."""
     with temp_root() as root:
         seated(
             root,

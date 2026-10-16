@@ -107,13 +107,15 @@ class PermissionDeniedError(APIStatusError):
 
 
 def statusless(name):
-    """An exception of a class called `name` with no status code, which only its name classifies."""
+    """An exception of a class called `name` with no status code, which only its name
+    classifies."""
     return type(name, (APIError,), {})()
 
 
 @contextlib.contextmanager
 def swapped(table, **values):
-    """Set each key of `table` to its value, or remove it for None; put every one back on exit."""
+    """Set each key of `table` to its value, or remove it for None; put every one back
+    on exit."""
 
     def put(key, value):
         if value is None:
@@ -374,7 +376,11 @@ def check_promotional_rate_expiry_is_scoped_to_seated_models():
 
 
 def check_manifest_resolves_provider_model_per_seat():
-    text = """provider = "anthropic"\nmodel = "claude-sonnet-5"\nsystem_prompt = ""\n\n[[agent]]\nid = "a"\n\n[[agent]]\nid = "b"\nprovider = "openai"\nmodel = "gpt-5.6-terra"\n"""
+    text = (
+        'provider = "anthropic"\nmodel = "claude-sonnet-5"\nsystem_prompt = ""\n\n'
+        '[[agent]]\nid = "a"\n\n[[agent]]\nid = "b"\nprovider = "openai"\n'
+        'model = "gpt-5.6-terra"\n'
+    )
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "mixed.toml"
         path.write_text(text, encoding="utf-8")
@@ -647,7 +653,8 @@ def check_an_account_missing_its_provider_or_model_is_rejected_by_name():
 
 
 def check_each_adapter_declares_the_provenance_its_traces_record():
-    """A trace's provider record is the name, the adapter's own facts, and the model spec.
+    """A trace's provider record is the name, the adapter's own facts, and the model
+    spec.
 
     The facts are declared once, on the adapter class, and pinned here as a reader of
     earlier traces knows them: a change to an adapter's is a change to every trace.
@@ -669,7 +676,8 @@ def check_each_adapter_declares_the_provenance_its_traces_record():
     for name, factory in providers.FACTORIES.items():
         for attr in ("is_human", "models", "provenance_facts"):
             assert not hasattr(inspect.getattr_static(factory, attr), "__get__"), (
-                f"{name}.{attr} is read off the class, where a property is not its value"
+                f"{name}.{attr} is read off the class, "
+                "where a property is not its value"
             )
         assert providers.CATALOGS[name] is factory.models, (
             f"{name}: the catalog is the adapter's"

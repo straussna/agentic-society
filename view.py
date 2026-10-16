@@ -102,7 +102,8 @@ def read_json(path: Path) -> dict | None:
 
 
 def stat_key(path: Path) -> tuple[int, int] | None:
-    """A file's mtime and size, which is what a cache here keys on; None where it is gone."""
+    """A file's mtime and size, which is what a cache here keys on; None where it is
+    gone."""
     try:
         st = path.stat()
     except OSError:
@@ -350,7 +351,8 @@ def observation_split(text: str) -> tuple[str, list[dict]]:
 
 
 def observation_clipped(t: dict) -> bool:
-    """Whether the initial observation ran past the ceiling that episode served it under.
+    """Whether the initial observation ran past the ceiling that episode served it
+    under.
 
     harness.clip keeps a head and a tail with a marker between, so an observation over
     its own limit is one that lost a middle. The limit is the agent's, read off the
@@ -1661,7 +1663,8 @@ def completed_rounds(exp: dict, rows: list[dict]) -> list[int]:
     latest = rounds[-1]
     if live_rows(exp, rows):
         return rounds[:-1]
-    # A seat whose account this poll cannot read is still to act, so its round stays open.
+    # A seat whose account this poll cannot read is still to act, so its round stays
+    # open.
     active = {
         agent
         for _, agent in places_of(exp)
@@ -2380,7 +2383,8 @@ class View(http.server.BaseHTTPRequestHandler):
         return self.server
 
     def interaction_store(self) -> InteractionStore:
-        """The store the human provider publishes to, under the root this request reads."""
+        """The store the human provider publishes to, under the root this request
+        reads."""
         return InteractionStore(harness.interaction_store_root())
 
 

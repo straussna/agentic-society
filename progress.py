@@ -79,7 +79,8 @@ def replace(source: Path, destination: Path) -> None:
 
 
 def atomic(path: Path, value: dict[str, Any]) -> None:
-    """Write `value` as compact JSON: a synced temporary file beside `path`, renamed over it.
+    """Write `value` as compact JSON: a synced temporary file beside `path`, renamed
+    over it.
 
     A reader sees the old file or the new one whole, and a write that fails leaves
     neither a partial file nor its temporary behind.
@@ -99,7 +100,8 @@ def atomic(path: Path, value: dict[str, Any]) -> None:
 
 
 def append(path: Path, values: Iterable[dict[str, Any]]) -> None:
-    """Append each of `values` to `path` as one line of compact JSON, synced before returning.
+    """Append each of `values` to `path` as one line of compact JSON, synced before
+    returning.
 
     A crash can cut the last line short. The next append starts a line of its own, so
     the cut costs that one line and no other.

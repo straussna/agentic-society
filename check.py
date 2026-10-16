@@ -182,7 +182,8 @@ def main(argv: list[str] | None = None) -> int:
     if skipped:
         print(f"\n{len(skipped)} skipped (needs Docker + the image)")
     print(
-        f"{len(chosen)} checks in {time.time() - started:.1f}s across {jobs} process(es)"
+        f"{len(chosen)} checks in {time.time() - started:.1f}s "
+        f"across {jobs} process(es)"
     )
     if failed:
         print(f"\nFAILED: {', '.join(sorted(failed))}")

@@ -73,7 +73,8 @@ def end_submission(request):
 def raised(
     error: type[BaseException], call: Callable[[], Any], because: str
 ) -> BaseException:
-    """What `call` raised, which must be an `error`; `because` says what it did instead."""
+    """What `call` raised, which must be an `error`; `because` says what it did
+    instead."""
     try:
         call()
     except error as caught:
@@ -182,7 +183,8 @@ def check_a_store_write_retries_a_rename_a_reader_holds_up():
 
 
 def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pending():
-    """The envelope is all that stands between a browser POST and a human seat's turn."""
+    """The envelope is all that stands between a browser POST and a human seat's
+    turn."""
     with temp_root() as root:
         store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -274,7 +276,8 @@ def race(
 
 
 def check_two_clients_racing_one_request_leave_one_winner_and_one_conflict():
-    """The browser panel and the terminal can submit one turn at once; the first link wins."""
+    """The browser panel and the terminal can submit one turn at once; the first link
+    wins."""
     with temp_root() as root:
         store = HeldBeforeTheLink(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -305,7 +308,8 @@ def check_two_clients_racing_one_request_leave_one_winner_and_one_conflict():
 
 
 def check_one_submission_sent_twice_at_once_returns_the_winner_to_both():
-    """A double-click is one submission: whichever copy links first, both get it back."""
+    """A double-click is one submission: whichever copy links first, both get it
+    back."""
     with temp_root() as root:
         store = HeldBeforeTheLink(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -376,7 +380,8 @@ def check_an_unreadable_submission_ends_the_wait_instead_of_polling_forever():
 
 
 def check_an_unreadable_submission_is_reported_and_never_taken_for_a_winner():
-    """Neither the client that wrote it nor any other: nothing the store can read won."""
+    """Neither the client that wrote it nor any other: nothing the store can read
+    won."""
     with temp_root() as root:
         store = InteractionStore(root / "interaction_store")
         request = store.publish("a", "A", 1, 1, "", "observation", TOOLS)
@@ -395,7 +400,8 @@ def check_an_unreadable_submission_is_reported_and_never_taken_for_a_winner():
 
 
 def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent():
-    """Absent is None to every caller; there and unreadable is an error naming the file."""
+    """Absent is None to every caller; there and unreadable is an error naming the
+    file."""
     with temp_root() as root:
         store = InteractionStore(root / "interaction_store")
         assert (
@@ -420,7 +426,8 @@ def check_an_interaction_file_that_does_not_read_is_told_from_one_that_is_absent
         assert [r.agent for r in store.pending()] == ["b"]
         pointer.write_text("[]", encoding="utf-8")
         assert [r.agent for r in store.pending()] == ["b"], (
-            "the list of pending requests leaves out the seat it cannot read, and only that one"
+            "the list of pending requests leaves out the seat it cannot read, and only "
+            "that one"
         )
         request_file = (
             root / "interaction_store" / "requests" / "b" / f"{request.request_id}.json"
@@ -494,7 +501,8 @@ def check_a_pending_pointer_that_does_not_read_is_written_over_and_never_ends_a_
 
 
 def answered(store: InteractionStore, episode: int, turn: int, end: bool = False):
-    """Seat a's request for one turn, published, answered and taken, as a human provider's is."""
+    """Seat a's request for one turn, published, answered and taken, as a human
+    provider's is."""
     request = store.publish("a", "A", episode, turn, "", "observation", TOOLS)
     store.submit(
         "a",
@@ -551,7 +559,8 @@ def check_history_leaves_out_a_turn_whose_request_or_submission_does_not_read():
 
 @contextlib.contextmanager
 def terminal(lines: Iterable[str]):
-    """builtins.input answering each of `lines` in turn and then end of input; yields stdout."""
+    """builtins.input answering each of `lines` in turn and then end of input; yields
+    stdout."""
     remaining = iter(lines)
 
     def typed(prompt: str = "") -> str:
@@ -747,7 +756,8 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
 def human_session(
     root: Path, agent: str, stopping: threading.Event | None = None
 ) -> tuple[HumanSession, threading.Event]:
-    """A human provider session, and an event set each time it waits on a published request.
+    """A human provider session, and an event set each time it waits on a published
+    request.
 
     The provider asks whether it is cancelled on every poll of its wait, and the wait
     starts only once the request is on disk, so the check never polls the store for it.
@@ -1103,7 +1113,8 @@ def check_view_interaction_route_answers_each_rejection_with_its_own_status():
 
 
 def check_the_view_reports_a_pending_pointer_that_does_not_read_and_serves_the_rest():
-    """The seat's own route says the file is broken; the list and the header go on without it."""
+    """The seat's own route says the file is broken; the list and the header go on
+    without it."""
     with temp_root() as root:
         episode_once()
         (root / "interaction_store" / "pending").mkdir(parents=True)
@@ -1174,7 +1185,8 @@ def check_the_human_cli_answers_the_store_the_harness_publishes_to():
 
 
 def check_human_py_starts_in_a_fresh_interpreter():
-    """interaction is imported before providers there, the order that exposes an import cycle."""
+    """interaction is imported before providers there, the order that exposes an import
+    cycle."""
     script = Path(__file__).resolve().parent.parent / "human.py"
     done = subprocess.run(
         [sys.executable, str(script), "--help"], capture_output=True, text=True

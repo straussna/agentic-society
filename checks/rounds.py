@@ -215,8 +215,9 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
             "=== Round status ===\nround: 5 (vote cycle 1, 5/5)\n"
             "you: 1\nin play: 1 (you), 2\n"
             "round type: vote; communication unavailable\n"
-            "required private ballot: call vote_to_eliminate; peers receive only the result, "
-            "never individual ballots; a tie for the highest total eliminates nobody by vote"
+            "required private ballot: call vote_to_eliminate; peers receive only "
+            "the result, never individual ballots; a tie for the highest total "
+            "eliminates nobody by vote"
         ), fifth
 
     before = harness.SETTINGS
@@ -240,7 +241,8 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
         and '"name": "vote_to_eliminate"' in context
     )
     assert (
-        '"enum": [\n            "1",\n            "3",\n            "4",\n            "5"'
+        '"enum": [\n            "1",\n            "3",\n'
+        '            "4",\n            "5"'
         in context
     ), context
 
@@ -467,8 +469,8 @@ def voting(
     head: str = "",
     shell: bool = False,
 ) -> Path:
-    """Seat an experiment under VOTE, each agent `taken` episodes in, with `ballots` cast;
-    its manifest, led by `head`, and offering SHELL too where `shell` says so."""
+    """Seat an experiment under VOTE, each agent `taken` episodes in, with `ballots`
+    cast; its manifest, led by `head`, and offering SHELL too where `shell` says so."""
     for agent, count in taken.items():
         account = harness.load_account(agent)
         account["episodes"] = [
@@ -645,9 +647,9 @@ def check_an_interrupt_in_the_last_seat_of_a_tied_final_vote_ends_on_the_tie():
 
 def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
     """An election that fails partway through saving its electors has removed no ballot,
-    so holding it again comes to the result it would have had. Once held it stands and is
-    not held again: the ballots are gone, and a second holding would find every elector
-    abstaining.
+    so holding it again comes to the result it would have had. Once held it stands and
+    is not held again: the ballots are gone, and a second holding would find every
+    elector abstaining.
     """
     with temp_root(channels=tables(BALLOT), tools=[VOTE]) as root:
         ids = seated(root, "g01", g02={}, g03={}, g04={}, g05={})
@@ -713,12 +715,13 @@ def check_an_election_keeps_its_ballots_until_every_elector_is_saved():
 
 
 def check_an_interrupt_in_a_simultaneous_vote_eliminates_no_seat_it_kept_from_voting():
-    """Ctrl+C in a simultaneous voting round ends every episode at its next turn, and the
-    election held as the rounds end counts no seat the interrupt kept from voting as an
-    abstainer: the interrupt is the experimenter's, and every agent keeps its seat.
+    """Ctrl+C in a simultaneous voting round ends every episode at its next turn, and
+    the election held as the rounds end counts no seat the interrupt kept from voting as
+    an abstainer: the interrupt is the experimenter's, and every agent keeps its seat.
 
-    g01 and g02 vote for each other on their first turn. g03 reaches for the shell, which
-    a voting episode does not offer, and the interrupt ends its episode before it votes.
+    g01 and g02 vote for each other on their first turn. g03 reaches for the shell,
+    which a voting episode does not offer, and the interrupt ends its episode before it
+    votes.
     """
     gate = threading.Barrier(3, timeout=10)
 
@@ -991,8 +994,8 @@ def check_a_seat_whose_voting_episode_fails_is_neither_elector_nor_eliminated():
 
 
 def check_a_tied_election_ends_the_same_way_however_the_run_is_split():
-    """Under stop_when_two_remain_after_tie, an election is judged on the seats it leaves in
-    play, so whether it ends the experiment does not turn on where the run
+    """Under stop_when_two_remain_after_tie, an election is judged on the seats it
+    leaves in play, so whether it ends the experiment does not turn on where the run
     stops: one run of -r 3, -r 1 then --resume -r 2, and an interrupt in the voting
     round's last seat then --resume all end on the tie, after the same round.
 
@@ -1473,9 +1476,9 @@ def check_a_ballot_counts_toward_any_seat_in_play_and_a_total_of_zero_elects_nob
 
 
 def check_an_elector_offered_no_ballot_is_no_abstainer():
-    """A seat with no peer left to name is offered no ballot on a voting round, so casting
-    none is not abstaining, and the election eliminates nobody for it. The trace records
-    what the episode was offered, which is where the election reads it.
+    """A seat with no peer left to name is offered no ballot on a voting round, so
+    casting none is not abstaining, and the election eliminates nobody for it. The trace
+    records what the episode was offered, which is where the election reads it.
 
     g02 is exhausted after round 1, and g01 takes round 2 alone.
     """
@@ -1575,9 +1578,9 @@ def check_no_seat_plays_a_round_the_others_have_played_past():
 
 def check_an_election_the_last_run_ended_before_is_held_with_nobody_left_seated():
     """An election is held by the seats that played its round, read from their accounts,
-    so one the last run ended before is held on --resume though every seat that played it
-    has since been unseated. A seat more than a round behind is in play no longer, and
-    stands in no election: a ballot naming it counts toward nobody.
+    so one the last run ended before is held on --resume though every seat that played
+    it has since been unseated. A seat more than a round behind is in play no longer,
+    and stands in no election: a ballot naming it counts toward nobody.
 
     g01 and g02 played round 2 and were exhausted in it; g01 voted for seat 3 and g02
     cast no ballot. g03 missed more than the last round, and is unseated.
@@ -1779,9 +1782,9 @@ def check_an_interrupted_experiment_ends_the_rounds():
 def check_a_resumed_experiment_finishes_the_round_an_interrupt_left_unfinished():
     """An interrupt partway through a sequential round leaves the seats after it a round
     behind.
-    --resume finishes that round first, under its own number, with those seats alone acting
-    in seat order, and the finishing counts as one of the -r rounds. The next round seats
-    everyone, and every agent is told the same round.
+    --resume finishes that round first, under its own number, with those seats alone
+    acting in seat order, and the finishing counts as one of the -r rounds. The next
+    round seats everyone, and every agent is told the same round.
     """
     with temp_root(status_files={"round": "round"}) as root:
         ids = seated(root, "g01", g02={}, g03={})
@@ -1842,7 +1845,8 @@ def check_a_resumed_experiment_finishes_the_round_an_interrupt_left_unfinished()
 
 def check_a_resumed_simultaneous_experiment_finishes_a_round_through_its_own_schedule():
     """A seat whose environment would not build misses a simultaneous round. --resume
-    finishes that round with a simultaneous round of that seat alone, then seats everyone."""
+    finishes that round with a simultaneous round of that seat alone, then seats
+    everyone."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={}, g03={})
         manifest = manifest_file(
@@ -1891,9 +1895,10 @@ def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
     so, and holds every election without it. It is in play no longer, so it is neither
     an elector nor a candidate.
 
-    g04 left an earlier run after round 1, and the rest went on to round 4, whose election
-    that run held. The resumed run does not hold round 4's again, and holds round 6's
-    without g04: the ballot in its channel is not counted, and it is written no result.
+    g04 left an earlier run after round 1, and the rest went on to round 4, whose
+    election that run held. The resumed run does not hold round 4's again, and holds
+    round 6's without g04: the ballot in its channel is not counted, and it is written
+    no result.
     """
     held = {
         "round": 4,
@@ -1959,12 +1964,12 @@ def check_a_seat_more_than_a_round_behind_is_unseated_and_the_elections_go_on():
 
 
 def check_a_seat_that_finishes_a_voting_round_after_its_election_is_no_elector_of_it():
-    """A seat whose environment would not build misses a voting round, and the seats that
-    played it hold its election. --resume finishes the round for that seat and does not
-    hold the election again: nobody is eliminated by it twice, and every record it left
-    stands as it was. The seat finishing the round is offered no ballot, which nobody
-    would count, and takes the round as a discussion, told so: the election's result is
-    already in its account, which it was written as a seat in play.
+    """A seat whose environment would not build misses a voting round, and the seats
+    that played it hold its election. --resume finishes the round for that seat and does
+    not hold the election again: nobody is eliminated by it twice, and every record it
+    left stands as it was. The seat finishing the round is offered no ballot, which
+    nobody would count, and takes the round as a discussion, told so: the election's
+    result is already in its account, which it was written as a seat in play.
 
     g04 misses round 2. g01 and g03 vote for seat 2, g02 for seat 1, so g02 is voted
     out. The same holds of an election recorded as older runs recorded one, naming no
@@ -2317,18 +2322,28 @@ def check_a_manifest_is_validated():
             '[[agent]]\nid = "g"\nseats = -1\n',  # nor a negative count
             '[[agent]]\nid = "g"\nseats = true\n',  # bool is not an integer here
             '[[agent]]\nid = "g"\nseats = "many"\n',  # nor is a string
-            '[[agent]]\nid = "g"\nlabel = ""\nseats = 2\n',  # a group still needs a valid label prefix
-            '[[agent]]\nid = "g"\nseats = 2\n[[agent]]\nid = "g01"\n',  # expanded ids are distinct too
+            # a group still needs a valid label prefix
+            '[[agent]]\nid = "g"\nlabel = ""\nseats = 2\n',
+            # expanded ids are distinct too
+            '[[agent]]\nid = "g"\nseats = 2\n[[agent]]\nid = "g01"\n',
             'image = "x"\n' + two,  # config.toml's, not an experiment's
             "max_turns = 5\n" + two,  # and so is this
             '[[agent]]\nid = "1"\n[[agent]]\nid = "g02"\n',  # a bare number is a seat
-            '[[agent]]\nid = "g01"\nstarter_files = "s"\n[[agent]]\nid = "g02"\n',  # starter_files alone
-            '[[agent]]\nid = "g01"\nstarter_files = "nope"\nstarter_files_below = 5\n[[agent]]\nid = "g02"\n',
+            # starter_files alone
+            '[[agent]]\nid = "g01"\nstarter_files = "s"\n[[agent]]\nid = "g02"\n',
+            (
+                '[[agent]]\nid = "g01"\nstarter_files = "nope"\n'
+                'starter_files_below = 5\n[[agent]]\nid = "g02"\n'
+            ),
             '[[agent]]\nid = "g01"\nbudget = 0\n[[agent]]\nid = "g02"\n',
             '[[agent]]\nid = "g01"\nbudget = "many"\n[[agent]]\nid = "g02"\n',
             '[[agent]]\nid = "g01"\nmodel = "no-such"\n[[agent]]\nid = "g02"\n',
             '[[agent]]\nid = "g01"\ncolour = "red"\n[[agent]]\nid = "g02"\n',
-            '[[agent]]\nstarter_files = "s"\nstarter_files_below = 5\n[[agent]]\nid = "g02"\n',  # no id
+            # no id
+            (
+                '[[agent]]\nstarter_files = "s"\nstarter_files_below = 5\n'
+                '[[agent]]\nid = "g02"\n'
+            ),
             "agent = 5\n",  # agents are tables
             two,  # no system_prompt
             "not toml ==\n",
@@ -2362,7 +2377,10 @@ def check_a_manifest_is_validated():
         grouped = experiment.load_manifest(
             manifest_file(
                 root,
-                'system_prompt = ""\n[[agent]]\nid = "clone"\nlabel = "Peer"\nseats = 3\nbudget = 7\n',
+                (
+                    'system_prompt = ""\n[[agent]]\nid = "clone"\nlabel = "Peer"\n'
+                    'seats = 3\nbudget = 7\n'
+                ),
                 name="grouped.toml",
             )
         )
@@ -2418,7 +2436,8 @@ def check_a_manifest_gives_each_agent_its_own_starter_files():
     text = (
         'grace_episodes = 2\nsystem_prompt = ""\n'
         '[[agent]]\nid = "g01"\nstarter_files = "a"\nstarter_files_below = 500000\n'
-        '[[agent]]\nid = "g02"\nstarter_files = "b"\nstarter_files_below = 600000\nbudget = 600000\n'
+        '[[agent]]\nid = "g02"\nstarter_files = "b"\nstarter_files_below = 600000\n'
+        'budget = 600000\n'
         '[[agent]]\nid = "g03"\n'
     )
     with temp_root() as root:
@@ -2524,7 +2543,8 @@ def check_a_simultaneous_round_builds_every_environment_before_any_episode_runs(
 
 
 def check_a_simultaneous_round_runs_its_episodes_at_once():
-    """The episodes of a simultaneous round are in flight together, not one after another."""
+    """The episodes of a simultaneous round are in flight together, not one after
+    another."""
     gate = threading.Barrier(3, timeout=10)
 
     def sent(_):
@@ -2544,7 +2564,8 @@ def check_a_simultaneous_round_runs_its_episodes_at_once():
 
 
 def check_a_simultaneous_round_reads_last_round_and_not_this_one():
-    """Nobody in a simultaneous round reads what the round writes; all of it arrives at the next.
+    """Nobody in a simultaneous round reads what the round writes; all of it arrives at
+    the next.
 
     A transfer made in the round is credited to its receiver in the same round, after
     the receiver's own turns, and shows in g and n at the next episode.
@@ -2569,7 +2590,8 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
         said, listed = (
             c["result"] for c in trace_on_disk("g02", 1)["turns"][0]["tools"]
         )
-        # g01 submits nothing, so the transfer is made only in the episode that declared it.
+        # g01 submits nothing, so the transfer is made only in the episode that
+        # declared it.
         second = per_agent(
             g01=(run("rm outbox/transfer", f"cat {digest_name()}"), say()),
             g02=(run(f"cat {digest_name()}"), say()),
@@ -2599,7 +2621,8 @@ def check_a_simultaneous_round_reads_last_round_and_not_this_one():
 
 
 def check_a_simultaneous_transfer_lands_before_the_floor():
-    """A same-round transfer reaches a receiver that overspent before the floor decides on it."""
+    """A same-round transfer reaches a receiver that overspent before the floor decides
+    on it."""
     cost = turn_cost()
     results = {}
     for name, transfer in (
@@ -2627,13 +2650,15 @@ def check_a_simultaneous_transfer_lands_before_the_floor():
         f"without it the overshoot is floored: {results}"
     )
     assert results["exact"] == (0, 0, False), (
-        f"a credit that brings the agent to exactly zero leaves it out, for good: {results}"
+        "a credit that brings the agent to exactly zero leaves it out, "
+        f"for good: {results}"
     )
 
 
 def check_a_seat_that_fails_to_settle_costs_no_other_seat_its_commit():
     """One agent's settlement failing in a simultaneous round is raised once every other
-    agent has committed, and a transfer made to it that round reaches its account on disk.
+    agent has committed, and a transfer made to it that round reaches its account on
+    disk.
 
     g02's settlement cannot read back what its board held when its episode started.
     g01 transferred to g02 in the same round.
@@ -2694,14 +2719,14 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
     and what a committed giver sent reaches a receiver whose own episode was lost, as a
     credit between its episodes.
 
-    g01 gives seat 2 100 and g02 gives seat 1 250, and one of their traces does not land.
-    Sequentially a lost giver's credit is never paid, and a lost g01 ends the round before
-    g02 plays. In a simultaneous round a receiver closes on the credits of every giver
-    that has not failed by then: a lost g01 credits g02 nothing, and a lost g02 has what it
-    credited g01, which closed first, taken back. A g01 that overspent, and that the credit
-    lifted back above zero before its floor, stands once it is taken back where it would
-    had g02 given it nothing: floored where the experiment floors, and below zero where
-    it does not.
+    g01 gives seat 2 100 and g02 gives seat 1 250, and one of their traces does not
+    land. Sequentially a lost giver's credit is never paid, and a lost g01 ends the
+    round before g02 plays. In a simultaneous round a receiver closes on the credits of
+    every giver that has not failed by then: a lost g01 credits g02 nothing, and a lost
+    g02 has what it credited g01, which closed first, taken back. A g01 that overspent,
+    and that the credit lifted back above zero before its floor, stands once it is taken
+    back where it would had g02 given it nothing: floored where the experiment floors,
+    and below zero where it does not.
     """
     rounds = (
         (
@@ -2822,10 +2847,10 @@ def check_a_round_pays_no_receiver_for_an_episode_that_was_not_committed():
 
 
 def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_committed():
-    """Whether an episode was committed is what its account on disk says, and not whether
-    its close returned: a close can raise after the save as well as before it, printing
-    its line. Each transfer is paid exactly once, whichever way it runs, and a receiver
-    keeps no credit from a giver whose episode was lost.
+    """Whether an episode was committed is what its account on disk says, and not
+    whether its close returned: a close can raise after the save as well as before it,
+    printing its line. Each transfer is paid exactly once, whichever way it runs, and a
+    receiver keeps no credit from a giver whose episode was lost.
 
     g01 gives seat 2 100 and g02 gives seat 1 250, and the console line of one of them
     raises once its account is saved. Sequentially that ends the round, its transfer
@@ -2931,7 +2956,8 @@ def check_an_episode_whose_close_raises_after_its_save_pays_and_is_paid_as_commi
 
 
 def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight():
-    """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are committed."""
+    """Ctrl+C in a simultaneous round ends every episode at its next turn, and all are
+    committed."""
 
     def interrupting_router():
         gate = threading.Barrier(3, timeout=10)
@@ -2983,7 +3009,8 @@ def check_an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight()
 
 
 def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order():
-    """Every echoed line names its agent, and the summary lines come last, in seat order."""
+    """Every echoed line names its agent, and the summary lines come last, in seat
+    order."""
     with temp_root(WATCH=True) as root:
         ids = seated(root, "g01", g02={}, g03={})
         seated_ids = set(ids)
@@ -2997,7 +3024,8 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
     lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
     assert lines, "nothing was echoed"
     assert all(any(ln.startswith(r) for r in ids) for ln in lines), (
-        f"a line that does not say whose it is: {[ln for ln in lines if not any(ln.startswith(r) for r in ids)]}"
+        "a line that does not say whose it is: "
+        f"{[ln for ln in lines if not any(ln.startswith(r) for r in ids)]}"
     )
     summary = [i for i, ln in enumerate(lines) if re.match(r"^g0\d\s+ep1\s", ln)]
     assert [lines[i].split()[0] for i in summary] == ids, "summaries in seat order"
@@ -3007,7 +3035,8 @@ def check_the_console_lines_of_a_simultaneous_round_are_whole_and_in_seat_order(
 
 
 def check_a_simultaneous_round_unseats_only_the_agent_whose_build_fails_twice():
-    """An environment that will not build costs its agent one attempt, then its seat; the rest run."""
+    """An environment that will not build costs its agent one attempt, then its seat;
+    the rest run."""
     with recording() as events, temp_root(SANDBOX=RecordingSandbox) as root:
         ids = seated(root, "g01", g02={}, g03={})
         failures = {"g02": 1, "g03": 99}
@@ -3075,7 +3104,8 @@ def check_an_interrupt_during_the_builds_of_a_simultaneous_round_starts_no_episo
 
 
 def check_labels_are_validated():
-    """A label is letters, digits, '.', '_' and '-', distinct after defaults, and not a path."""
+    """A label is letters, digits, '.', '_' and '-', distinct after defaults, and not a
+    path."""
 
     def two(a: str = "", b: str = "") -> str:
         return (

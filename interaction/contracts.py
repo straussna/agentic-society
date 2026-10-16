@@ -130,7 +130,8 @@ class Submission:
         )
 
     def same_as(self, other: "Submission") -> bool:
-        """Whether `other` is this submission sent again: the same id, action and calls."""
+        """Whether `other` is this submission sent again: the same id, action and
+        calls."""
         return (self.submission_id, self.action, self.tool_calls) == (
             other.submission_id,
             other.action,

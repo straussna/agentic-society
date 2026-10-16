@@ -57,7 +57,8 @@ def check_manifest_relative_starter_documents_include_empty_files():
 
 
 def check_starter_files_land_when_the_balance_falls():
-    """The starter files are absent above the threshold, and in the initial observation listing below it.
+    """The starter files are absent above the threshold, and in the initial observation
+    listing below it.
 
     The listing is the agent's whole environment at episode start, so starter files that
     are not in it are starter files the agent was not given.
@@ -86,7 +87,8 @@ def check_starter_files_land_when_the_balance_falls():
 
 
 def check_the_starter_files_threshold_is_a_balance_not_an_episode():
-    """Two agents on the same threshold receive the starter files at different starts, at the same balance.
+    """Two agents on the same threshold receive the starter files at different starts,
+    at the same balance.
 
     An episode number does not mean the same thing twice, an episode's cost
     varying by orders of magnitude, so what the starter files land on is the balance
@@ -155,7 +157,8 @@ def check_starter_files_are_not_the_agents():
         "the agent's own file stays the agent's"
     )
     assert [f["path"] for f in t["files"] if not f["planted"]] == ["memory/NOTES.md"], (
-        "everything the agent did not invent is out of what analyze.py counts as its own"
+        "everything the agent did not invent is out of what analyze.py counts as its "
+        "own"
     )
     assert not [f for f in t["files"] if f["channel"] != "memory"], (
         "an agent on its own has a board and nothing on it"
@@ -163,7 +166,8 @@ def check_starter_files_are_not_the_agents():
 
 
 def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
-    """A starter-files path the agent already wrote stops the agent instead of clobbering it."""
+    """A starter-files path the agent already wrote stops the agent instead of
+    clobbering it."""
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
     with temp_root(
@@ -269,7 +273,8 @@ def check_a_fork_carries_the_starter_files_settings_it_had():
 
 
 def check_starter_files_config_is_validated():
-    """starter_files and starter_files_below are set together, and starter_files must name a real directory."""
+    """starter_files and starter_files_below are set together, and starter_files must
+    name a real directory."""
     with rooted(HostSandbox) as root:
         plant(root, "ok")
 
@@ -390,7 +395,8 @@ def check_a_fork_rebuilds_every_tree_the_agent_wrote():
         assert (harness.mirror("f", "mailbox") / "transfer").read_text(
             encoding="utf-8"
         ) == "2 50\n", (
-            "the resolved episode state is rebuilt exactly; the next episode clears the transfer"
+            "the resolved episode state is rebuilt exactly; the next episode clears "
+            "the transfer"
         )
         # And nothing that belonged to the neighbour: its board, and the message
         # it addressed to this agent, are both rebuilt from it at the next episode.
@@ -513,7 +519,8 @@ def check_fork_rejects_what_it_cannot_rebuild():
 
 
 def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
-    """A record outside every tree the agent writes stops the fork before anything is written.
+    """A record outside every tree the agent writes stops the fork before anything is
+    written.
 
     Otherwise the records ahead of it would sit in the new id's mirrors, and the
     corrected fork under the same id would be rejected as an agent that exists.
@@ -671,8 +678,9 @@ def check_a_fork_from_before_its_starter_files_takes_the_manifests_wherever_it_s
 
 
 def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its_seats():
-    """A branch forks every seat, so every seat of its first episode is held by a new id;
-    each is a fork of the agent the parent's trace seated there, and none is drift.
+    """A branch forks every seat, so every seat of its first episode is held by a new
+    id; each is a fork of the agent the parent's trace seated there, and none is
+    drift.
 
     What the branch changed is: its seats run under another experiment and manifest
     from there on, so their episodes are another arm and the record says where.

@@ -1,4 +1,5 @@
-"""The suite itself: which containers the sweep may take, and what the docs say of it."""
+"""The suite itself: which containers the sweep may take, and what the docs say of
+it."""
 
 from __future__ import annotations
 
@@ -59,7 +60,8 @@ def check_the_docs_state_the_suite_size():
     claude = (root / "CLAUDE.md").read_text(encoding="utf-8")
     stated = {int(n) for n in re.findall(r"\b(\d+) checks\b", readme + claude)}
     assert stated == {len(table)}, (
-        f"the docs say {sorted(stated)} checks; there are {len(table)}, {docker} of them needing Docker"
+        f"the docs say {sorted(stated)} checks; there are {len(table)}, "
+        f"{docker} of them needing Docker"
     )
     lanes = re.findall(r"runs (\d+) of (\d+)", claude)
     assert lanes, "CLAUDE.md says how many checks --no-docker still runs"
@@ -68,7 +70,8 @@ def check_the_docs_state_the_suite_size():
             f"CLAUDE.md says {total} checks; there are {len(table)}"
         )
         assert int(total) - int(host) == docker, (
-            f"CLAUDE.md says {int(total) - int(host)} need Docker; {docker} open a container"
+            f"CLAUDE.md says {int(total) - int(host)} need Docker; "
+            f"{docker} open a container"
         )
 
 
@@ -91,7 +94,8 @@ def check_every_harness_global_a_check_moves_is_restored():
     setting is a field of harness.SETTINGS, moved by amend().
     """
     probe = ast.parse(
-        "harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\nsetattr(harness, 'd', 4)\nharness.e == 5\n"
+        "harness.a, (harness.b, x) = 1, (2, 3)\nharness.c += 1\n"
+        "setattr(harness, 'd', 4)\nharness.e == 5\n"
     )
     assert sorted(assigned_on(probe, "harness")) == ["a", "b", "c", "d"], (
         "the scan reads every form an assignment takes, and a comparison is none"

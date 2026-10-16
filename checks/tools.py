@@ -1050,9 +1050,10 @@ def check_a_vote_round_withholds_communication_tools_and_records_one_ballot():
 
 
 def check_a_ballots_episode_runs_no_command_it_did_not_offer():
-    """A ballot's episode withholds the shell, so a bash call there is answered as a tool
-    that is not there and runs nothing, whatever the table offers on other episodes. The
-    transcript and the page show it as the call it made, and not as the shell restarted."""
+    """A ballot's episode withholds the shell, so a bash call there is answered as a
+    tool that is not there and runs nothing, whatever the table offers on other
+    episodes. The transcript and the page show it as the call it made, and not as the
+    shell restarted."""
     ballot = {
         "name": "ballot",
         "writer": "self",

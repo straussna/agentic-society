@@ -35,7 +35,8 @@ from checks.lanes import (
 
 
 def check_system_is_pinned():
-    """Invariant 2: the harness ships no words, pinned at that, and the tool carries none either.
+    """Invariant 2: the harness ships no words, pinned at that, and the tool carries
+    none either.
 
     What the harness says it computes from the accounts and rewrites when those move.
     A fixed line is a constant and constants are the experimenter's, so the shipped
@@ -128,9 +129,9 @@ def check_config_is_validated():
 
     with tempfile.TemporaryDirectory(prefix="mtr-cfg-") as tmp:
         f = Path(tmp) / "config.toml"
-        # config.toml holds the process parameters and rejects everything else by name:
-        # an unknown key, a wrong type, a value out of range, a key that became a channel
-        # field, and every setting an experiment owns.
+        # config.toml holds the process parameters and rejects everything else by
+        # name: an unknown key, a wrong type, a value out of range, a key that became
+        # a channel field, and every setting an experiment owns.
         for bad in (
             "turn_cpa = 5",
             'system = "hi"',
@@ -371,7 +372,8 @@ def check_balance_grows_within_an_episode():
 
 
 def check_live_balance_can_be_turned_off():
-    """live_balance off leaves n fixed for the whole episode; the turns arrive at the next episode.
+    """live_balance off leaves n fixed for the whole episode; the turns arrive at the
+    next episode.
 
     The balance history is per-turn under either regime, and provenance says which it
     was.
@@ -638,7 +640,8 @@ def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix
 
 
 def check_the_shipped_prompt_is_pinned_against_a_declaration():
-    """Invariant 2: a declared prompt is what an agent is told, and the pin holds the default.
+    """Invariant 2: a declared prompt is what an agent is told, and the pin holds the
+    default.
 
     The system_prompt in force is what the harness says and SYSTEM is what it ships.
     A declaration moves the first and never the second, so start() still rejects a

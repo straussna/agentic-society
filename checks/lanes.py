@@ -292,7 +292,8 @@ def leaked_containers() -> str:
 
 
 def manifest_file(root: Path, text: str, name: str = "c.toml") -> Path:
-    """Write an experiment manifest under a temporary root, for the manifest checks to use."""
+    """Write an experiment manifest under a temporary root, for the manifest checks to
+    use."""
     head = text.split("[[agent]]", 1)[0]
     prefix = ""
     if not re.search(r"(?m)^provider\s*=", head):
@@ -390,7 +391,8 @@ def channel_toml(declared: list[dict], status_files: dict | None = None) -> str:
 
 
 def shared(root: Path, name: str = "brief", path: str = "shared", **files: str) -> Path:
-    """Plant an experimenter channel's files under a temporary root and declare the channel.
+    """Plant an experimenter channel's files under a temporary root and declare the
+    channel.
 
     Inside a root's block, since pinned() puts the table back when the block ends.
     """
@@ -452,7 +454,8 @@ def pinned():
 
 
 def amend(**fields) -> None:
-    """Move settings for the rest of a pinned() block: amend(max_turns=1, command_timeout=2).
+    """Move settings for the rest of a pinned() block:
+    amend(max_turns=1, command_timeout=2).
 
     Straight into the settings in force, and not through config.toml or a manifest,
     so a value neither file could give stands."""
@@ -653,12 +656,14 @@ def elements_of(s: dict) -> int:
 
 
 def without_listing_drift(x):
-    """The same value with what an `ls -la` listing takes from outside the episode flattened.
+    """The same value with what an `ls -la` listing takes from outside the episode
+    flattened.
 
     A listing renders its times to the minute, so two environments built either side
     of one differ there. Its `..` entry is the directory the environment sits in, which
     in the local lane is the host's shared temp directory, whose link count moves as
-    concurrent checks add and remove siblings. Neither is something an episode can reach.
+    concurrent checks add and remove siblings. Neither is something an episode can
+    reach.
     """
     if isinstance(x, str):
         x = re.sub(r"[A-Z][a-z]{2} [ \d]?\d \d{2}:\d{2}", "<mtime>", x)
@@ -685,7 +690,8 @@ def differs(a, b) -> str:
 
 
 def plant(root: Path, name: str = "s", **files: str) -> Path:
-    """Write a starter-files tree under a temporary root, for the starter-files checks to use."""
+    """Write a starter-files tree under a temporary root, for the starter-files checks
+    to use."""
     d = root / "files" / name
     for rel, text in (files or {"m1": "alpha\n", "d/m2": "beta\n"}).items():
         (d / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -694,7 +700,8 @@ def plant(root: Path, name: str = "s", **files: str) -> Path:
 
 
 def lay_out(**agents: dict[str, str]) -> list[str]:
-    """Lay out an experiment's directories under the root in force, for the experiment checks to use.
+    """Lay out an experiment's directories under the root in force, for the experiment
+    checks to use.
 
     "group/" goes on that agent's board, "outbox/" in its outbox where only the
     seat it names reads it, and anything else in its memory.
@@ -775,7 +782,8 @@ def exhaust(agent: str) -> None:
 
 def unfinished() -> None:
     """Take away the first episode's trace, and its commit from the account, leaving the
-    raw log a running one leaves and the account as it stood when the episode started."""
+    raw log a running one leaves and the account as it stood when the episode
+    started."""
     harness.trace_path("t", 1).unlink()
     account = ground_truth()
     opening = account["episodes"][0]["balance_from"]
@@ -815,8 +823,8 @@ def fake_experiment(
     agents: tuple[str, ...] = ("g01", "g02", "g03"),
     **trace_fields,
 ) -> dict:
-    """An experiment written straight to disk: one trace per episode taken, one account per
-    seat, which lists every episode it took as committed.
+    """An experiment written straight to disk: one trace per episode taken, one account
+    per seat, which lists every episode it took as committed.
 
     `acted` is the episodes in the order they started, each `(agent, "hh:mm")` or
     `(agent, "hh:mm", {fields})` for a trace with more in it; `trace_fields` go
@@ -914,7 +922,8 @@ def rejected(
     because: str = "accepted what should have been rejected",
     code: int | None = None,
 ) -> None:
-    """Run `call`, which must exit naming every word given, and with `code` where one is given."""
+    """Run `call`, which must exit naming every word given, and with `code` where one is
+    given."""
     try:
         call()
     except SystemExit as e:

@@ -31,7 +31,8 @@ from checks.lanes import (
 
 
 def check_product_controls_are_declared_and_validated():
-    """Identifiers, cost boundaries, reveals, and quality tiers survive manifest loading."""
+    """Identifiers, cost boundaries, reveals, and quality tiers survive manifest
+    loading."""
     text = (
         'experiment_id = "pilot-7"\nsystem_prompt = ""\n'
         "[cost]\nmaximum = 1000\nreserved_completion = 100\nwarning = 700\n"
@@ -313,8 +314,8 @@ def check_a_branch_rejects_a_boundary_it_cannot_fork():
 
 
 def check_a_branch_that_fails_partway_can_be_made_again():
-    """A branch that fails partway moves the agents it forked, and anything else it wrote,
-    under archive/, so the same branch can then be made.
+    """A branch that fails partway moves the agents it forked, and anything else it
+    wrote, under archive/, so the same branch can then be made.
 
     It fails once forking its second seat, before anything else is written, and once
     writing its lineage, with its manifest and its record's directory already in place.
@@ -392,11 +393,11 @@ def check_a_branch_that_fails_partway_can_be_made_again():
 def check_branch_totals_are_each_ledger_field_as_it_stood_as_the_round_ended():
     """Every running total of a branch sums the episodes up to the one it forks at: what
     was sent, rebated, debited, floored and taken by each channel, and what was received
-    inside an episode or, from a peer settling outside it, between two. Past that episode
-    the balance history is the round's until what the account received comes to what the
-    ledger had paid it by the round's end, and holds every credit taken back, with the
-    floor that answers one: a credit past that is a later round's. A balance history
-    that cannot hold what the ledger paid has no branch totals."""
+    inside an episode or, from a peer settling outside it, between two. Past that
+    episode the balance history is the round's until what the account received comes to
+    what the ledger had paid it by the round's end, and holds every credit taken back,
+    with the floor that answers one: a credit past that is a later round's. A balance
+    history that cannot hold what the ledger paid has no branch totals."""
     first = {
         "episode": 1,
         "spent": 100,
@@ -518,9 +519,9 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
 
     Sequentially, g01 gives seat 2 250 before g02's episode, and g02 gives seat 1 100
     after g01's; in round 2 each gives the other again. In a simultaneous round, g02
-    closes on 250 from g03 and 40 from g01, and neither giver's trace lands: g01's credit
-    never reaches g02, and g03's is taken back. g01 and g03 finish the round, g01 giving
-    seat 2 30, which reaches g02 after its own episode, and a round 2 follows.
+    closes on 250 from g03 and 40 from g01, and neither giver's trace lands: g01's
+    credit never reaches g02, and g03's is taken back. g01 and g03 finish the round, g01
+    giving seat 2 30, which reaches g02 after its own episode, and a round 2 follows.
     """
     sequential = fake(
         run("echo '2 250' > outbox/transfer"),
@@ -645,13 +646,14 @@ def check_a_branch_carries_each_seats_ledger_as_it_stood_at_the_round():
 
 
 def check_a_branch_carries_the_elections_its_round_had_held_and_no_later_one():
-    """Each fork carries the last election and the elimination its seat's account held as
-    the round ended. Forked at a voting round whose election was held, every seat carries
-    that election, and the branch run with --resume does not hold it again. Forked at the
-    round before a later election, no seat carries that one or what it eliminated.
+    """Each fork carries the last election and the elimination its seat's account held
+    as the round ended. Forked at a voting round whose election was held, every seat
+    carries that election, and the branch run with --resume does not hold it again.
+    Forked at the round before a later election, no seat carries that one or what it
+    eliminated.
 
-    Seat 3 is voted out at round 2's election. Seat 2 abstains at round 4's, whose record
-    takes the place of round 2's in the accounts of the seats in play.
+    Seat 3 is voted out at round 2's election. Seat 2 abstains at round 4's, whose
+    record takes the place of round 2's in the accounts of the seats in play.
     """
     ballot = {
         "name": "ballot",
@@ -761,8 +763,8 @@ def check_a_branch_holds_no_election_again_that_a_later_one_replaced():
 
     g03's environment will not build in round 2, whose election g01 and g02 tie. g03
     finishes the round on --resume, and round 4's election, tied too, takes the place of
-    round 2's as every seat's last. Held again at the branch, round 2's would take seat 3
-    for an elector, and put it out for casting no ballot.
+    round 2's as every seat's last. Held again at the branch, round 2's would take
+    seat 3 for an elector, and put it out for casting no ballot.
     """
     ballot = {
         "name": "ballot",
@@ -863,16 +865,17 @@ def check_a_branch_holds_no_election_again_that_a_later_one_replaced():
 
 
 def check_the_cost_ceiling_ends_the_rounds_and_the_records_say_why():
-    """No round starts once the autonomous spend and the reserve reach the ceiling, and the
-    progress and outcome records name the ceiling as what ended the rounds. A run that
-    ends with one agent left under stop_when_one_remains names it the winner, and one
-    that reaches the ceiling as one agent is left ends on the ceiling."""
+    """No round starts once the autonomous spend and the reserve reach the ceiling, and
+    the progress and outcome records name the ceiling as what ended the rounds. A run
+    that ends with one agent left under stop_when_one_remains names it the winner, and
+    one that reaches the ceiling as one agent is left ends on the ceiling."""
     cost = turn_cost()
     agents = '[[agent]]\nid = "p1"\n[[agent]]\nid = "p2"\n'
     with temp_root() as root:
         manifest = manifest_file(
             root,
-            f'experiment_id = "capped"\nsystem_prompt = ""\n[cost]\nmaximum = {2 * cost + 1}\n'
+            'experiment_id = "capped"\nsystem_prompt = ""\n[cost]\n'
+            f'maximum = {2 * cost + 1}\n'
             + agents,
         )
         harness.start = lambda config=None, **kw: fake()

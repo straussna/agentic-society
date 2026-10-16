@@ -273,10 +273,10 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
 
 
 def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
-    """A transfer reaches its receiver once the giver's account has saved the episode, and
-    not before. An episode whose trace does not land, or whose account does not save, has
-    no debit, spend or record to show for it, and pays its receiver nothing either, so no
-    receiver holds a credit that no giver's record accounts for.
+    """A transfer reaches its receiver once the giver's account has saved the episode,
+    and not before. An episode whose trace does not land, or whose account does not
+    save, has no debit, spend or record to show for it, and pays its receiver nothing
+    either, so no receiver holds a credit that no giver's record accounts for.
 
     t declares 100 for seat 2, which is other's.
     """
@@ -327,11 +327,11 @@ def check_a_transfer_pays_no_receiver_from_an_episode_that_was_not_committed():
 
 
 def check_a_trace_its_account_never_listed_is_no_episode_to_any_reader():
-    """A commit that stops between writing the trace and saving the account leaves a trace
-    the account does not list. Every reader of the traces stops at the episodes the account
-    lists: the analysis and the page read no episode there, and the page shows its
-    episode number as one not yet committed, as the next episode with that number will
-    overwrite it.
+    """A commit that stops between writing the trace and saving the account leaves a
+    trace the account does not list. Every reader of the traces stops at the episodes
+    the account lists: the analysis and the page read no episode there, and the page
+    shows its episode number as one not yet committed, as the next episode with that
+    number will overwrite it.
     """
     with temp_root():
         episode_once(say())
@@ -421,7 +421,8 @@ def check_a_second_signal_is_the_default_again():
             handler(signal.SIGINT, None)
         assert harness.INTERRUPTING, "the first signal sets the flag and raises nothing"
         assert signal.getsignal(signal.SIGINT) is signal.default_int_handler, (
-            "the second must be the interpreter's own, or an experimenter who will not wait is stuck"
+            "the second must be the interpreter's own, or an experimenter who will not "
+            "wait is stuck"
         )
         assert "stopping" in buf.getvalue().lower(), buf.getvalue()
 
@@ -448,7 +449,8 @@ def check_the_children_are_in_their_own_process_group():
 
     source = inspect.getsource(harness)
     assert 'subprocess.run(["docker"' not in source, (
-        "every docker command goes through harness.docker, which is where DETACHED is applied"
+        "every docker command goes through harness.docker, which is where DETACHED is "
+        "applied"
     )
     assert "**DETACHED" in inspect.getsource(harness.docker), inspect.getsource(
         harness.docker
@@ -494,7 +496,8 @@ def check_no_tool_call_on_turn_one():
 
 
 def check_stop_reasons():
-    """end_turn, refusal, context_threshold, and max_turns each fire on the right condition."""
+    """end_turn, refusal, context_threshold, and max_turns each fire on the right
+    condition."""
     with temp_root():
         t = episode_once(*DEFAULT)
         assert t["stop"] == "end_turn", t["stop"]
@@ -562,7 +565,8 @@ def check_reasoning_reaches_the_record():
 
 
 def check_reaching_for_balance_is_not_reading_it():
-    """touched_balance is a command naming n; read_balance is n's contents in a result."""
+    """touched_balance is a command naming n; read_balance is n's contents in a
+    result."""
     with temp_root():
         missed = episode_once(run("cat n"), say())  # wrong path: fails
         hit = episode_once(run("cat n1"), say())  # right path: succeeds
@@ -716,7 +720,8 @@ def check_watch_is_quiet_and_display_only():
         l for l in shown.splitlines() if l.strip() and not l.startswith("created agent")
     ]
     assert lines and all(l.startswith("t") for l in lines), (
-        f"every line names the agent it came from: {[l for l in lines if not l.startswith('t')]}"
+        "every line names the agent it came from: "
+        f"{[l for l in lines if not l.startswith('t')]}"
     )
     assert any(l.startswith("t| ") for l in lines), "the watched lines carry the prefix"
     assert any(l.startswith("t ") and "end_turn" in l for l in lines), (

@@ -20,7 +20,8 @@ from .store import (
 
 def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
     print(
-        f"\n{request.label} · {request.agent} · episode {request.episode} · turn {request.turn}"
+        f"\n{request.label} · {request.agent} · episode {request.episode} "
+        f"· turn {request.turn}"
     )
     supplied = request.input
     if supplied["input_type"] == "initial_observation":
@@ -46,7 +47,8 @@ def describe(request: InteractionRequest, draft: list[dict[str, Any]]) -> None:
         print(f"  {tool.name} — {tool.description}")
         print(f"    {', '.join(fields) if fields else 'JSON object'}")
     print(
-        f"\nDraft: {json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}"
+        "\nDraft: "
+        f"{json.dumps(draft, ensure_ascii=False, indent=2) if draft else 'empty'}"
     )
 
 
@@ -56,7 +58,8 @@ def waiting(
     """The request pending for `agent` and its draft.
 
     A pending pointer or request that does not read is reported and reads as none; a
-    draft that does not read is reported and starts empty, since the next save replaces it.
+    draft that does not read is reported and starts empty, since the next save replaces
+    it.
     """
     try:
         request = store.current(agent)
@@ -80,7 +83,8 @@ def run(agent: str, root: Path) -> int:
     else:
         print(f"No pending interaction for {agent}.")
     print(
-        "\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, submit, done, refresh, quit"
+        "\nCommands: tools, call <tool-name> <JSON-object>, draft, remove <number>, "
+        "submit, done, refresh, quit"
     )
     while True:
         try:

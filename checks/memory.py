@@ -52,7 +52,8 @@ def source_trace(agent: str, episode: int, body: str) -> None:
 
 
 def check_memory_from_copies_only_behavioral_memory_into_a_fresh_agent():
-    """The declared memory crosses exactly; account history and transient channels do not."""
+    """The declared memory crosses exactly; account history and transient channels do
+    not."""
     with rooted(HostSandbox, tools=offers("write_memory:memory")):
         body = "A complete inherited memory.\nUnicode: →\n"
         source_trace("old", 7, body)
@@ -187,11 +188,13 @@ def check_harness_run_as_a_file_runs_its_cli_in_the_module_experiment_imports():
 
 
 def check_memory_from_is_strict_agent_grammar():
-    """A source and positive episode are required, and a new seat cannot be its own source."""
+    """A source and positive episode are required, and a new seat cannot be its own
+    source."""
     with rooted(HostSandbox) as root:
         good = manifest_file(
             root,
-            'system_prompt = ""\n[[agent]]\nid = "new"\nmemory_from = { agent = "old", episode = 7 }\n',
+            'system_prompt = ""\n[[agent]]\nid = "new"\n'
+            'memory_from = { agent = "old", episode = 7 }\n',
         )
         loaded = experiment.load_manifest(good)
         assert loaded["agents"][0]["memory_from"] == {"agent": "old", "episode": 7}

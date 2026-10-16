@@ -299,7 +299,8 @@ def check_a_giver_funded_transfer_debits_the_giver():
 
 
 def check_unfunded_transfers_move_nothing_and_say_so():
-    """Under funded_by "none" a declaration is recorded, moves no account, and costs no share."""
+    """Under funded_by "none" a declaration is recorded, moves no account, and costs no
+    share."""
     with temp_root(channels=tables(transfer={"funded_by": "none"})) as root:
         seated(root, other={})
         t = episode_once(run("echo '2 400' > outbox/transfer"), say())
@@ -408,13 +409,15 @@ def check_a_transfer_reaches_the_ledger_within_the_round():
     """An agent acting later in a round reads the transfer an agent before it made.
 
     Transfers settle at an episode's end and g is built at each episode start, so
-    sequential settlement decides who acts on this round's ledger and who on last round's.
+    sequential settlement decides who acts on this round's ledger and who on last
+    round's.
     """
     with temp_root(channels=FULL_REBATE) as root:
         seated(root, other={})
         with quiet():
             harness.run_once("t", fake(run("echo '2 250' > outbox/transfer"), say()))
-        # The next agent to start builds its environment now, and the transfer is already in it.
+        # The next agent to start builds its environment now, and the transfer is
+        # already in it.
         later, _ = harness.render_status_files("other", harness.load_account("other"))
         assert later[ledger_name()] == "1 2 250\n", later[ledger_name()]
 

@@ -147,7 +147,8 @@ def check_a_channel_table_is_validated():
             (
                 one(agent_view="shelf"),
                 [
-                    "agent_view must be one of ['paths', 'memory', 'mailbox', 'board', 'transfer'], got 'shelf'"
+                    "agent_view must be one of ['paths', 'memory', 'mailbox', 'board', "
+                    "'transfer'], got 'shelf'"
                 ],
             ),
             (
@@ -540,7 +541,8 @@ def check_a_second_board_channel_takes_its_own_silence_penalty():
 
 
 def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
-    """Without a schema channel nothing is parsed, nothing moves, and no ledger is planted."""
+    """Without a schema channel nothing is parsed, nothing moves, and no ledger is
+    planted."""
     table = [c for c in tables() if c["name"] != "transfer"]
     with temp_root(channels=table) as root:
         seated(root, other={})
@@ -923,7 +925,9 @@ def check_an_experimenter_channels_sha256_reaches_provenance():
         rejected(
             lambda: episode_once(run("ls"), say()),
             "not one experiment",
-            because="an experimenter channel changed under the agent and the episode ran",
+            because=(
+                "an experimenter channel changed under the agent and the episode ran"
+            ),
         )
     assert t["provenance"]["source_sha256"] == source_sha256, t["provenance"][
         "source_sha256"
@@ -937,7 +941,8 @@ def check_an_experimenter_channels_sha256_reaches_provenance():
 
 
 def check_an_experimenter_channel_can_stand_in_front_of_every_episode():
-    """A constant the experimenter declares can be quoted in full at every episode start.
+    """A constant the experimenter declares can be quoted in full at every episode
+    start.
 
     Standing text is what an experimenter channel is for, so restated stands on one.
     measured does not: nothing is owed to a channel the agent cannot write, and a

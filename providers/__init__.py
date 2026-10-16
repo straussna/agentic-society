@@ -60,14 +60,16 @@ def model_spec(provider: str, model: str) -> ModelSpec:
         )
     if model not in CATALOGS[provider]:
         raise ProviderConfigurationError(
-            f"unknown {provider} model {model!r}; choose one of {list(CATALOGS[provider])}",
+            f"unknown {provider} model {model!r}; "
+            f"choose one of {list(CATALOGS[provider])}",
             provider=provider,
         )
     return CATALOGS[provider][model]
 
 
 def provenance(provider: str, model: str) -> dict[str, Any]:
-    """The trace's provider record: the name, what the adapter declares, and the model."""
+    """The trace's provider record: the name, what the adapter declares, and the
+    model."""
     spec = model_spec(provider, model)
     return {
         "name": provider,

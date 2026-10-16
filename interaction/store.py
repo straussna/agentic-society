@@ -93,7 +93,8 @@ class InteractionStore:
         raise UnreadableRecord(f"{path} is not a readable JSON object")
 
     def _load(self, path: Path, record: Callable[[dict[str, Any]], T]) -> T | None:
-        """The file at `path` as `record` reads it, or None when there is no file there."""
+        """The file at `path` as `record` reads it, or None when there is no file
+        there."""
         value = self._read(path)
         if value is None:
             return None
@@ -231,12 +232,13 @@ class InteractionStore:
         self._finish(agent, request_id, "completed")
 
     def submit(self, agent: str, request_id: str, value: dict[str, Any]) -> Submission:
-        """Answer a pending request with the envelope `value`; the first to land wins it.
+        """Answer a pending request with the envelope `value`; the first to land wins
+        it.
 
         An envelope Submission.parse rejects raises InvalidSubmission, a request no
-        longer pending StaleRequest, and any submission but the winner InteractionConflict;
-        the winner sent again is returned. A request, pending pointer or submission that
-        is there and does not read raises UnreadableRecord.
+        longer pending StaleRequest, and any submission but the winner
+        InteractionConflict; the winner sent again is returned. A request, pending
+        pointer or submission that is there and does not read raises UnreadableRecord.
         """
         request = self.request(agent, request_id)
         if request is None:

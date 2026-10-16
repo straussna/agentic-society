@@ -74,13 +74,15 @@ def check_the_view_reads_a_live_episode_from_raw():
         assert all(c["result"] is None for t in v["turns"] for c in t["tools"]), (
             "no command's output is on disk until the trace is"
         )
-        # The agent's environment at episode start is recorded in the trace and nowhere else.
+        # The agent's environment at episode start is recorded in the trace and
+        # nowhere else.
         assert v["observation"]["result"] is None, v["observation"]
 
 
 def check_a_live_episode_under_a_manifest_that_declares_no_tool_opens_without_the_shell():
-    """A manifest that declares no [[tool]] declares no bash, so an episode in flight under
-    the one stamped on its account is shown opening without the shell and still reads."""
+    """A manifest that declares no [[tool]] declares no bash, so an episode in
+    flight under the one stamped on its account is shown opening without the shell
+    and still reads."""
     with temp_root() as root:
         episode_once(*DEFAULT)
         unfinished()
@@ -160,7 +162,8 @@ def check_the_view_costs_a_live_turn_like_the_account():
         )
         gt = ground_truth()
         unfinished()
-        # The account as it stood at episode start: episode 1 started at the initial balance.
+        # The account as it stood at episode start: episode 1 started at the initial
+        # balance.
         account = {
             "provider": gt["provider"],
             "model": gt["model"],
@@ -206,7 +209,8 @@ def check_the_view_reads_only_the_last_attempt_at_an_episode():
 
 
 def check_the_page_fetches_nothing():
-    """The page is self-contained: it names no host, no script and no stylesheet to fetch.
+    """The page is self-contained: it names no host, no script and no stylesheet to
+    fetch.
 
     A page that fetched anything would need a network this project does not
     give it. Fonts are the standing temptation: named in the page and left to
@@ -952,7 +956,8 @@ def check_the_human_history_adds_each_submitted_human_call_once():
             / "g01"
             / f"{cut.request_id}.json"
         ).write_text(
-            '{"submission_id": "s23", "action": "tool_calls", "tool_calls": [{"id": "c0", "na',
+            '{"submission_id": "s23", "action": "tool_calls", '
+            '"tool_calls": [{"id": "c0", "na',
             encoding="utf-8",
         )
         store.publish("g01", "1", 2, 4, "", "observation", HUMAN_OFFERED)
@@ -1623,13 +1628,15 @@ def check_the_view_counts_what_a_seat_spent_and_not_what_it_lost():
         "error": None,
     }, mine["transfer"]
     assert resolved == mine["transfer"], (
-        f"the tile reports the resolved episode, not a mutable outbox mirror: {resolved}"
+        "the tile reports the resolved episode, not a mutable outbox mirror: "
+        f"{resolved}"
     )
     assert gone is None, f"nothing declared and nothing was: {gone}"
 
 
 def check_the_view_builds_its_tabs_from_the_table():
-    """The page's tabs, trees, message log and diffs follow the table the traces record."""
+    """The page's tabs, trees, message log and diffs follow the table the traces
+    record."""
     with temp_root(channels=PERSONA, status_files=PERSONA_FILES) as root:
         seated(root, labels=PERSONA_LABELS, other={})
         episode_once(

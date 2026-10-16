@@ -146,7 +146,8 @@ def seat_of(t: dict) -> str:
 
 
 def labels_of(t: dict) -> dict[str, str]:
-    """Seat -> the label the other agents know it by; the seat itself where none was given."""
+    """Seat -> the label the other agents know it by; the seat itself where none was
+    given."""
     return t["provenance"].get("labels") or {s: s for s in agent_by_seat_of(t)}
 
 
@@ -205,7 +206,8 @@ def mailbox_of(t: dict) -> dict:
 
 
 def addressed_labels(t: dict) -> list[str]:
-    """The peers this episode was sending to: the outbox entries named by a peer's label.
+    """The peers this episode was sending to: the outbox entries named by a peer's
+    label.
 
     A file named by no label reaches nobody and is not counted. In seat order,
     which is the order the environment lists the agents in.
@@ -226,7 +228,8 @@ def addressed_labels(t: dict) -> list[str]:
 
 def is_shell(name: str | None) -> bool:
     """Whether a tool call by this name is the shell's, which runs a command, and
-    not a declared tool's. A call naming no tool is the shell's, as run_tools runs it."""
+    not a declared tool's. A call naming no tool is the shell's, as run_tools runs
+    it."""
     return not name or name == harness.SHELL_SPEC.name
 
 
@@ -296,7 +299,8 @@ def touched_peer(t: dict) -> bool:
 
 
 def touched_starter(t: dict) -> bool:
-    """Whether this episode named a path the agent was given, in a command or a tool call."""
+    """Whether this episode named a path the agent was given, in a command or a tool
+    call."""
     paths = [f["path"] for f in starter_files_of(t)]
     return any(names(s, p) for s in reached(t) for p in paths)
 
@@ -355,7 +359,8 @@ def text_chars(t: dict) -> int:
 
 
 def file_text(t: dict, path: str) -> str | None:
-    """The captured text of one file this episode, or None where it was absent or binary."""
+    """The captured text of one file this episode, or None where it was absent or
+    binary."""
     return next(
         (
             f["text"]
@@ -421,7 +426,8 @@ def identity_lines(ts: list[dict], path: str | None) -> list[str]:
     return [
         report_line(
             "identity file",
-            f"{path}, first present ep{present[0][0]}, changed in {len(moved)} of {len(later)} later episodes",
+            f"{path}, first present ep{present[0][0]}, "
+            f"changed in {len(moved)} of {len(later)} later episodes",
         ),
         report_line(
             "identity lines changed", " ".join(f"ep{s}:{d}" for s, d in present)
@@ -481,7 +487,8 @@ def episode_cols(t: dict) -> dict:
 
 
 def balance_cols(t: dict) -> dict:
-    """The balance file: whether it was named, read, rewritten, and still fits in one read."""
+    """The balance file: whether it was named, read, rewritten, and still fits in one
+    read."""
     return {
         "balance_floor": t["balance_floor"],
         "live_balance_errors": t["live_balance_errors"],
@@ -596,7 +603,8 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
         made = sorted({f["path"] for t in ts for f in agent_files_of(t)})
         out += [
             "=" * 72,
-            f"agent {name}: {len(ts)} episodes, {sum(t['spent'] for t in ts)} micro-dollars, "
+            f"agent {name}: {len(ts)} episodes, "
+            f"{sum(t['spent'] for t in ts)} micro-dollars, "
             f"balance {ts[-1]['balance']}",
             first_line("first reached for n", ts, lambda t: t["touched_balance"]),
             first_line("first actually read n", ts, lambda t: t["read_balance"]),
@@ -785,7 +793,8 @@ def transfer_lines(ts: list[dict]) -> list[str]:
     lines = [
         report_line(
             "gave",
-            f"{sum(t['transfer']['amount'] for t in given)} over {len(given)} episode(s)"
+            f"{sum(t['transfer']['amount'] for t in given)} "
+            f"over {len(given)} episode(s)"
             + (
                 ", to " + ", ".join(sorted({t["transfer"]["label"] for t in given}))
                 if given
@@ -814,7 +823,8 @@ def transfer_lines(ts: list[dict]) -> list[str]:
 
 
 def ledger_lines(ts: list[dict]) -> list[str]:
-    """Every transfer the experiment made, as the last episode of this agent could read it.
+    """Every transfer the experiment made, as the last episode of this agent could read
+    it.
 
     Read off the ledger the agent was shown, not assembled here: what the agents
     were shown is the thing worth reporting.
@@ -942,7 +952,8 @@ def transcript(agents: dict[str, list[dict]]) -> str:
         for t in ts:
             out += [
                 "=" * 72,
-                f"agent {name}  episode {t['episode']}  {t['provider']}/{t['requested_model']}  "
+                f"agent {name}  episode {t['episode']}  "
+                f"{t['provider']}/{t['requested_model']}  "
                 f"stop={t['stop']}  spent={t['spent']}",
                 f"balance at start: {t['balance_before']}",
                 "",
