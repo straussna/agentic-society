@@ -113,7 +113,7 @@ def check_a_tool_only_observation_uses_agent_view_names_not_backing_paths():
     channels = tables(
         memory={"pushed": True, "restated": True, "agent_view": "memory"},
         board={"restated": True, "agent_view": "board"},
-        mailbox={"restated": True, "agent_view": "letters"},
+        mailbox={"restated": True, "agent_view": "mailbox"},
         transfer={"agent_view": "transfer"},
     )
     declared = offers(
@@ -218,7 +218,7 @@ def check_a_tool_only_observation_labels_rounds_and_reconciles_settlement():
     settlement."""
     channels = tables(
         board={"restated": True, "agent_view": "board"},
-        mailbox={"restated": True, "agent_view": "letters"},
+        mailbox={"restated": True, "agent_view": "mailbox"},
         transfer={
             "agent_view": "transfer",
             "funded_by": "giver",

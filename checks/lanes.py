@@ -368,8 +368,8 @@ def ledger_name() -> str:
     return parsed.ledger if parsed else ""
 
 
-def channel_toml(declared: list[dict], harness_files: dict | None = None) -> str:
-    """Render channel tables (and harness file names) as the TOML a config file holds."""
+def channel_toml(declared: list[dict], status_files: dict | None = None) -> str:
+    """Render channel tables (and status file names) as the TOML a config file holds."""
 
     def value(v) -> str:
         if isinstance(v, bool):
@@ -377,10 +377,10 @@ def channel_toml(declared: list[dict], harness_files: dict | None = None) -> str
         return repr(v) if isinstance(v, int) else '"' + v.replace('"', '\\"') + '"'
 
     out = []
-    if harness_files:
+    if status_files:
         out.append(
-            "[harness_files]\n"
-            + "".join(f"{k} = {value(v)}\n" for k, v in harness_files.items())
+            "[status_files]\n"
+            + "".join(f"{k} = {value(v)}\n" for k, v in status_files.items())
         )
     for table in declared:
         out.append(

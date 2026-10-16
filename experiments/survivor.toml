@@ -28,7 +28,7 @@ state; ordinary response text is not delivered to peers.
 
 # --- the environment ----------------------------------------------------------
 
-[harness_files]
+[status_files]
 balance = ""
 digest = "m"
 round = "round"
@@ -58,7 +58,7 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "messages/outbox"
 inbox = "messages/inbox"
-agent_view = "letters"
+agent_view = "mailbox"
 restated = true
 
 [[channel]]

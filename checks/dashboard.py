@@ -471,7 +471,7 @@ def check_grouped_seats_stay_one_experiment_while_accounts_are_prepared():
         "agents": agents,
         "labels": labels,
         "channels": None,
-        "harness_files": None,
+        "status_files": None,
         "tools": [{"name": "vote", "kind": "vote", "channel": "memory", "every": 5}],
     }
     accounts = {
@@ -641,8 +641,8 @@ def check_a_grouping_reads_each_account_once_a_poll():
     assert reads == [path], f"one poll read g01's account {len(reads)} times"
 
 
-def check_a_trace_that_predates_the_harness_file_names_still_groups():
-    """A trace whose provenance names no harness files is read under the code's default
+def check_a_trace_that_predates_the_status_file_names_still_groups():
+    """A trace whose provenance names no status files is read under the code's default
     names, as one naming no channel table is read under the default channels, so its
     experiment still groups and its header still opens instead of failing every poll.
     The names in force are another experiment's, and not the ones it ran under."""
@@ -1416,9 +1416,10 @@ def check_the_view_reads_delivery_off_the_observation():
 
 
 def check_the_view_reads_delivery_off_a_letter_heading():
-    """Under the letters view an inbox item is delivered under either heading a trace
-    can carry for it, "Message from <label>" or "Letter from <label>"."""
-    with temp_root(channels=tables(mailbox={"agent_view": "letters"})) as root:
+    """Under the mailbox view an inbox item is delivered under either heading a trace
+    can carry for it, "Message from <label>" or "Letter from <label>", and a trace
+    that records the view under its other spelling "letters" is read the same."""
+    with temp_root(channels=tables(mailbox={"agent_view": "mailbox"})) as root:
         seated(root, other={})
         episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         with quiet():
@@ -1429,6 +1430,9 @@ def check_the_view_reads_delivery_off_a_letter_heading():
         trace["observation"] = trace["observation"].replace(
             "=== Message from 1 ===", "=== Letter from 1 ==="
         )
+        for recorded in trace["provenance"]["channels"]:
+            if recorded["agent_view"] == "mailbox":
+                recorded["agent_view"] = "letters"
         path.write_text(json.dumps(trace), encoding="utf-8")
         m = view.messages(view.experiment_of("t"))
         ev = next(e for e in m["events"] if e["path"] == "outbox/2")

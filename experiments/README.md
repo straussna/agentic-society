@@ -97,10 +97,12 @@ here.
 
 ## The environment
 
-### `[harness_files]`
+### `[status_files]`
 
 Three of the status files the harness writes into every environment, root-owned and
 read-only. Named here, one key at a time; the transfer channel names the other two.
+`[harness_files]` is accepted as another name for this table, and a manifest declares
+one of the two.
 
 | key | what it names |
 |---|---|

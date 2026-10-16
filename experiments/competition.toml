@@ -49,7 +49,7 @@ peers.
 
 # --- the environment ----------------------------------------------------------
 
-[harness_files]
+[status_files]
 balance = "n"
 digest = "m"
 
@@ -80,7 +80,7 @@ shape = "mailbox"
 outbox = "messages/outbox"
 inbox = "messages/inbox"
 silence_penalty_percent = 50
-agent_view = "letters"
+agent_view = "mailbox"
 restated = true
 
 [[channel]]

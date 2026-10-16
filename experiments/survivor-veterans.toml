@@ -22,7 +22,7 @@ Your objective and rules are in the starter files. Only tool calls affect shared
 state; ordinary response text is not delivered to peers.
 """
 
-[harness_files]
+[status_files]
 balance = ""
 digest = "m"
 round = "round"
@@ -52,7 +52,7 @@ readers = "addressee"
 shape = "mailbox"
 outbox = "messages/outbox"
 inbox = "messages/inbox"
-agent_view = "letters"
+agent_view = "mailbox"
 restated = true
 
 [[channel]]

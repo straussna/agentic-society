@@ -1,4 +1,4 @@
-"""The channel table: validation, the default, declared tables, receipts, harness files."""
+"""Channel tables: validation, the default, declared tables, receipts, status files."""
 
 from __future__ import annotations
 
@@ -36,7 +36,9 @@ def check_a_channel_table_is_validated():
     and the key.
 
     validate_channels is pure: a rejection sets nothing, and a good table comes back
-    as Channel objects in declaration order with the harness files overlaid.
+    as Channel objects in declaration order with the status files overlaid. An
+    agent_view declared as "letters" is held as "mailbox", the view it reads as,
+    whether a manifest declares it or a trace records it.
     """
 
     def one(**fields):
@@ -145,7 +147,7 @@ def check_a_channel_table_is_validated():
             (
                 one(agent_view="shelf"),
                 [
-                    "agent_view must be one of ['paths', 'memory', 'letters', 'board', 'transfer'], got 'shelf'"
+                    "agent_view must be one of ['paths', 'memory', 'mailbox', 'board', 'transfer'], got 'shelf'"
                 ],
             ),
             (
@@ -160,7 +162,11 @@ def check_a_channel_table_is_validated():
                 ),
                 ["agent_view must be one of"],
             ),
-            (one(agent_view="letters"), ["agent_view 'letters' does not describe"]),
+            (one(agent_view="mailbox"), ["agent_view 'mailbox' does not describe"]),
+            (
+                one(agent_view="letters"),
+                ["agent_view 'letters' (read as 'mailbox') does not describe"],
+            ),
             (mailbox(agent_view="board"), ["agent_view 'board' does not describe"]),
             (parsed(agent_view="memory"), ["agent_view 'memory' does not describe"]),
             (parsed(funded_by="loud"), ["funded_by must be one of"]),
@@ -202,7 +208,7 @@ def check_a_channel_table_is_validated():
                 *words,
             )
         for hf, words in (
-            ("n", ["[harness_files] is a table"]),
+            ("n", ["[status_files] is a table"]),
             ({"colour": "n"}, ["unknown key 'colour'"]),
             ({"balance": 3}, ["balance must be str"]),
             ({"balance": "a/b"}, ["balance must be one path segment"]),
@@ -226,6 +232,25 @@ def check_a_channel_table_is_validated():
             "check:",
             "n1",
         )
+
+        # agent_view "letters" reads as "mailbox": the channel holds the view it
+        # reads as, whether a manifest declares it or a trace records it.
+        box = {
+            "name": "x",
+            "writer": "self",
+            "readers": "addressee",
+            "shape": "mailbox",
+            "outbox": "o",
+            "inbox": "i",
+        }
+        held = [
+            harness.validate_channels([box | {"agent_view": view}], None, "check")[0][0]
+            for view in ("letters", "mailbox")
+        ]
+        assert held[0] == held[1] and held[0].agent_view == "mailbox", held
+        as_recorded = held[0].as_table() | {"agent_view": "letters"}
+        recorded = harness.channels_from([as_recorded])
+        assert recorded == held[:1], recorded
 
         # The whole persona table, its brief included, comes back in order.
         brief = {
@@ -676,8 +701,8 @@ def check_a_receipt_is_roots_in_the_container():
     assert "reconciliation:" in results[2], results[2]
 
 
-def check_a_harness_file_makes_its_own_directory_in_the_container():
-    """A harness file declared under a directory nothing else makes is planted there, root's."""
+def check_a_status_file_makes_its_own_directory_in_the_container():
+    """A status file under a directory nothing else makes is planted there, root's."""
     with docker_root(channels=tables(transfer={"receipt": "receipts/last"})) as root:
         seated(root, other={})
         episode_once(run("echo '2 100' > outbox/transfer"), say())
@@ -695,7 +720,7 @@ def check_a_harness_file_makes_its_own_directory_in_the_container():
 def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     """A receipt copied into the outbox leaves the outbox the agent's.
 
-    The harness files are copied in one at a time, so a file planted inside a
+    The status files are copied in one at a time, so a file planted inside a
     directory the agent writes leaves that directory's owner alone, and the
     episode after the receipt lands starts and writes there as before.
     """
@@ -727,8 +752,8 @@ def check_a_receipt_is_planted_in_the_agents_directory_without_taking_it():
     ]
 
 
-def check_harness_files_can_be_renamed():
-    """[harness_files] renames the balance and the digest, or drops the digest altogether."""
+def check_status_files_can_be_renamed():
+    """[status_files] renames the balance and the digest, or writes no digest at all."""
     with temp_root(harness_files={"balance": "bal", "digest": "say"}) as root:
         seated(root, other={})
         t = episode_once(run("cat bal1", "cat say"), say())
@@ -753,7 +778,7 @@ def check_harness_files_can_be_renamed():
     assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
 
 
-def check_a_trace_that_names_no_harness_files_is_read_under_the_defaults():
+def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
     """A trace that predates recorded names ran under the code's, not the ones in force.
 
     A manifest applied in this process replaces the names in force, so reading an old

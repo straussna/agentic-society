@@ -144,6 +144,7 @@ def check_config_is_validated():
             'delivery = "push"',
             'starter_files = "s"',
             channel_toml(tables()),
+            "[status_files]" + chr(10) + 'balance = "n"',
             "[harness_files]" + chr(10) + 'balance = "n"',
         ):
             f.write_text(bad, encoding="utf-8")

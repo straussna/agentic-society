@@ -226,7 +226,7 @@ def check_no_setting_is_given_in_two_places():
                 "reveal",
                 "agent",
                 "channel",
-                "harness_files",
+                "status_files",
                 "tool",
             }
             - manifest_settings

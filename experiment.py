@@ -53,7 +53,7 @@ EXPERIMENT_KEYS = {
     "model",
     "agent",
     "channel",
-    "harness_files",
+    *harness.STATUS_FILES_TABLES,
     "tool",
     "cost",
     "reveal",
@@ -117,8 +117,10 @@ class Manifest(TypedDict):
     `overrides` holds every top-level key that is not the experiment's own: the
     defaults for every seat, applied by start(). `agents` holds one [[agent]] table
     per seat, in seat order, and `labels` maps each seat to what its agent is called.
-    `channels`, `harness_files` and `tools` are the tables as declared, None where
-    the manifest declares none. `sha256` is the sha256 of the file's bytes.
+    `channels`, `status_files` and `tools` are the tables as declared, None where
+    the manifest declares none; `status_files` is the [status_files] table, or the
+    [harness_files] table it is also accepted as. `sha256` is the sha256 of the
+    file's bytes.
     """
 
     schedule: str
@@ -131,7 +133,7 @@ class Manifest(TypedDict):
     agents: list[dict[str, Any]]
     labels: dict[str, str]
     channels: list[dict[str, Any]] | None
-    harness_files: dict[str, Any] | None
+    status_files: dict[str, Any] | None
     tools: list[dict[str, Any]] | None
     sha256: str
 
@@ -185,7 +187,7 @@ def shorthand(ids: list[str], schedule: str = "sequential") -> Manifest:
         ],
         "labels": {str(n): str(n) for n in range(1, len(ids) + 1)},
         "channels": None,
-        "harness_files": None,
+        "status_files": None,
         "tools": None,
         "sha256": "",
     }
@@ -316,7 +318,7 @@ def load_manifest(path: Path) -> Manifest:
         retired=harness.RETIRED,
         elsewhere={t.lower(): harness.NOT_MANIFEST for t in harness.PROCESS},
         expected="schedule, [[agent]] tables, [[channel]] tables, [[tool]] tables, "
-        "[harness_files], and any experiment setting",
+        "[status_files], and any experiment setting",
     )
     schedule = top.get("schedule", "sequential")
     if schedule not in SCHEDULES:
@@ -430,17 +432,27 @@ def load_manifest(path: Path) -> Manifest:
             )
         labels[str(seat)] = label
 
-    tables, harness_files, tool_tables = (
+    named = [t for t in harness.STATUS_FILES_TABLES if t in top]
+    if len(named) > 1:
+        raise SystemExit(
+            f"{path}: [{named[1]}] is another name for [{named[0]}]; "
+            "declare one of them"
+        )
+    tables, status_files, tool_tables = (
         top.get("channel"),
-        top.get("harness_files"),
+        top.get(named[0]) if named else None,
         top.get("tool"),
     )
-    if tables is not None or harness_files is not None or tool_tables is not None:
+    if tables is not None or status_files is not None or tool_tables is not None:
         # A tool is held against the table this manifest declares and not against
         # the one in force, so it is rejected here for the reason start() would
         # reject it later.
         chans = harness.validate_channels(
-            tables, harness_files, str(path), tuple(labels.values())
+            tables,
+            status_files,
+            str(path),
+            tuple(labels.values()),
+            table_name=named[0] if named else "status_files",
         )[0]
         if tool_tables is not None:
             harness.validate_tools(tool_tables, chans, str(path))
@@ -470,7 +482,7 @@ def load_manifest(path: Path) -> Manifest:
         "agents": agents,
         "labels": labels,
         "channels": tables,
-        "harness_files": harness_files,
+        "status_files": status_files,
         "tools": tool_tables,
         "sha256": hashlib.sha256(data).hexdigest(),
     }
@@ -649,11 +661,11 @@ def branch_manifest(manifest: Manifest, entries: list[dict], experiment_id: str)
         lines.extend(
             f"{key} = {toml_value(value)}" for key, value in manifest["reveal"].items()
         )
-    if manifest["harness_files"]:
-        lines.append("\n[harness_files]")
+    if manifest["status_files"]:
+        lines.append("\n[status_files]")
         lines.extend(
             f"{key} = {toml_value(value)}"
-            for key, value in manifest["harness_files"].items()
+            for key, value in manifest["status_files"].items()
         )
     for entry in entries:
         lines.append("\n[[agent]]")
@@ -1875,7 +1887,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides=manifest["overrides"],
         requirements={(e["provider"], e["model"]) for e in manifest["agents"]},
         channel_tables=manifest["channels"],
-        harness_files=manifest["harness_files"],
+        harness_files=manifest["status_files"],
         labels=tuple(manifest["labels"].values()),
         tool_tables=manifest["tools"],
     )

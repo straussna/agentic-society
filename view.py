@@ -388,7 +388,7 @@ def inbox_prefix(mailbox: harness.Channel | None) -> str | None:
     """The prefix used for inbox items in the digest."""
     if mailbox is None:
         return None
-    return "Message from " if mailbox.agent_view == "letters" else f"{mailbox.inbox}/"
+    return "Message from " if mailbox.agent_view == "mailbox" else f"{mailbox.inbox}/"
 
 
 def shell_offered(provenance: Mapping[str, Any]) -> bool:
@@ -561,10 +561,10 @@ def seating_key(agent: str, account: Mapping[str, Any]) -> tuple[str, ...] | Non
 def manifest_environment(
     manifest: experiment.Manifest, path: Path
 ) -> tuple[list[harness.Channel], dict[str, str]]:
-    """A shipped manifest's channel table and harness file names, validated together."""
+    """A shipped manifest's channel table and status file names, validated together."""
     return harness.validate_channels(
         manifest["channels"],
-        manifest["harness_files"],
+        manifest["status_files"],
         str(path),
         tuple(manifest["labels"].values()),
     )
@@ -573,7 +573,7 @@ def manifest_environment(
 def agent_environment(
     last: dict | None, agent: str, account: Mapping[str, Any] | None = None
 ) -> tuple[list[harness.Channel], dict[str, str]]:
-    """The channel table and harness file names an agent runs under.
+    """The channel table and status file names an agent runs under.
 
     `last` is its latest trace and `account` its account, where a caller has read it
     this poll. The stamped manifest's where the manifest is newer than `last` or there
@@ -2075,7 +2075,7 @@ def traced_view(agent: str, index: int, trace: dict, since: int) -> dict:
 def raw_view(agent: str, index: int, since: int) -> dict:
     """An episode in flight, derived from its raw log.
 
-    The table, the harness file names and the delivery are the agent's latest
+    The table, the status file names and the delivery are the agent's latest
     trace's, and the ones in force before it has a trace. The environment at
     episode start is recorded in the trace and nowhere else, so while the
     episode runs it is pending like any other command's output.

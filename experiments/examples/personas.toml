@@ -33,7 +33,7 @@ floor_at_zero = true
 
 # --- the environment ----------------------------------------------------------
 
-[harness_files]
+[status_files]
 balance = ""
 digest = "digest"
 
@@ -56,7 +56,7 @@ outbox = "to"
 inbox = "from"
 restated = true
 measured = true
-agent_view = "letters"
+agent_view = "mailbox"
 
 [[tool]]
 name = "send_message"
