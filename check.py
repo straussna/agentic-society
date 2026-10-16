@@ -87,7 +87,9 @@ def sweep(everyones: bool = False) -> None:
 
 def parser() -> argparse.ArgumentParser:
     """The command line."""
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0], allow_abbrev=False
+    )
     p.add_argument(
         "patterns", nargs="*", help="only checks whose name contains one of these"
     )

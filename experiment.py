@@ -1785,7 +1785,9 @@ def play_round(
 def main(argv: list[str] | None = None) -> int:
     """CLI. Checks the shipped sha256 pins and the endpoint, then runs the rounds."""
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     ap.add_argument(
         "name",

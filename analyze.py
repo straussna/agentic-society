@@ -1289,7 +1289,9 @@ def persona_drift_chart(plt, agents: dict[str, list[dict]], path: str):
 def main(argv: list[str] | None = None) -> int:
     """CLI. Writes the CSV, report, and transcript for one agent or all agents."""
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     ap.add_argument("--agent")
     ap.add_argument(

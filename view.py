@@ -2413,7 +2413,9 @@ def serve(port: int = PORT, focus: str | None = None) -> ViewServer:
 def main(argv: list[str] | None = None) -> int:
     """CLI. Serves the page until interrupted."""
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     ap.add_argument(
         "--port", type=int, default=PORT, help=f"default {PORT}; 0 picks a free one"

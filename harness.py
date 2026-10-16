@@ -7139,7 +7139,9 @@ def main(argv: list[str] | None = None) -> int:
     """CLI. Checks the shipped sha256 pins and the endpoint, then runs the episodes."""
     global WATCH
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     ap.add_argument("--agent")
     ap.add_argument(

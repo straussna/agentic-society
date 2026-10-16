@@ -134,6 +134,22 @@ def check_episodes_flag_is_validated():
                 )
 
 
+def check_a_long_option_is_never_abbreviated():
+    """--at is not --at-episode: a long option is matched whole or not at all."""
+    with temp_root():
+        harness.start = never_start
+        episode_once(say())
+        with quiet() as buf:
+            rejected(
+                lambda: harness.main(
+                    ["--agent", "f", "--fork-from", "t", "--at", "1"]
+                ),
+                code=2,
+                because="--at was taken for --at-episode",
+            )
+    assert "unrecognized arguments: --at 1" in buf.getvalue(), buf.getvalue()
+
+
 def check_print_system_and_print_files_audit_without_starting():
     """The static audits and --fork-from run and stop before start() is reached.
 

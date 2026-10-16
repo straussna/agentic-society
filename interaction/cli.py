@@ -163,7 +163,7 @@ def run(agent: str, root: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--agent", required=True, help="agent identifier to control")
     # harness.interaction_store_root() for this repository, spelled out because the
     # interaction package sits below harness and does not import it.
