@@ -170,7 +170,7 @@ runs one.
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
 | `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished vote round's election the last run did not, and never one it did; a seat more than one round behind the current round is unseated, and is no longer in play. Without it, the previous records and mirrors move under `archive/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
-| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
+| `--branch-from MANIFEST --at-round N --branch-id ID --human-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
 | `harness.py --watch` | Echo the agent's words and account to stdout |
 | `harness.py --fork-from AGENT --at-episode N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
@@ -1055,8 +1055,9 @@ version-5 traces only, and reject a record of any other version, naming the vers
 holds or saying it holds none. The dashboard and `analyze.py` also read version-2
 accounts and version-4 traces, and the dashboard version-1 and version-2 progress and
 outcome records, as history: each under the names the current version gives the
-same values. The dashboard reads a raw log line that names its type under `kind`, and
-an interaction submission that names its type under `action`, the same way.
+same values. The dashboard reads a raw log line that names its type under `kind`, an
+interaction submission that names its type under `action`, and a lineage record that
+names its human seat `takeover_seat`, the same way.
 
 ## 12. Invariants, restated in this vocabulary
 

@@ -338,6 +338,10 @@ OUTCOME_1_FIELDS: dict[str, str | None] = {
 STAGES_1 = {"waiting_player": "waiting_human"}
 END_REASONS_1 = {"all_eliminated": "none_in_play"}
 
+# What a lineage record that names its human seat "takeover_seat" calls that key, and
+# the current name. It reads under the current name whatever version holds it.
+LINEAGE_KEYS = {"takeover_seat": "human_seat"}
+
 
 def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
     """A progress event of any version under the current names of its keys, its stage
@@ -389,6 +393,11 @@ def outcome_as_current(record: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def lineage_as_current(record: dict[str, Any]) -> dict[str, Any]:
+    """A lineage record under the current name of each key; a current one as it is."""
+    return {LINEAGE_KEYS.get(key, key): value for key, value in record.items()}
+
+
 def recorded_progress(base: Path) -> dict[str, Any] | None:
     """progress.json with its history as `events`: the log's, or the list progress.json
     holds itself when there is no log. None when there is no progress.json."""
@@ -404,8 +413,8 @@ def recorded_progress(base: Path) -> dict[str, Any] | None:
 
 def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
     """An experiment's progress, outcome and lineage for display, each None when it is
-    absent or does not read. An earlier version's progress or outcome record is read
-    under the current names."""
+    absent or does not read. An earlier version's progress or outcome record, and a
+    lineage record under earlier names, is read under the current names."""
     try:
         base = directory(runtime_root, experiment_id)
     except ValueError:
@@ -419,8 +428,9 @@ def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
 
     progress = shown(lambda: recorded_progress(base))
     outcome = shown(lambda: read(base / "outcome.json"))
+    lineage = shown(lambda: read(base / "lineage.json"))
     return {
         "progress": progress_as_current(progress) if progress else None,
         "outcome": outcome_as_current(outcome) if outcome else None,
-        "lineage": shown(lambda: read(base / "lineage.json")),
+        "lineage": lineage_as_current(lineage) if lineage else None,
     }

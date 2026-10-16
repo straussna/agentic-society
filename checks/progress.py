@@ -183,6 +183,7 @@ def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
         assert (
             lineage["source_experiment_id"] == "source" and lineage["source_round"] == 1
         )
+        assert lineage["human_seat"] == "2", lineage
         assert len(lineage["traces"]) == 2
         assert all(path.read_bytes() == before for path, before in source_bytes.items())
 

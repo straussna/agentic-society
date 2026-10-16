@@ -1941,6 +1941,7 @@ EARLIER_KEYS = {
     "prefix_tokens",
     "product",
     "active",
+    "takeover_seat",
     "termination_reason",
     "draw",
     "scores",
@@ -2176,6 +2177,18 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             "".join(json.dumps(event) + "\n" for event in (waiting, played, done)),
             encoding="utf-8",
         )
+        (base / "lineage.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "experiment_id": "earlier",
+                    "source_experiment_id": "source",
+                    "source_round": 1,
+                    "takeover_seat": "2",
+                }
+            ),
+            encoding="utf-8",
+        )
 
         for agent in ids:
             account, trace = current[agent]
@@ -2207,6 +2220,8 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         ]
         assert events[1]["seated"] == ["g01"], events
         assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
+        assert not keys_in(records["lineage"]) & EARLIER_KEYS, records
+        assert records["lineage"]["human_seat"] == "2", records
 
         elsewhere = Path(root) / "elsewhere"
         base_2 = progress.directory(elsewhere, "earlier")

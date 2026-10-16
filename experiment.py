@@ -934,7 +934,7 @@ def branch_experiment(
             "source_manifest": str(source),
             "source_manifest_sha256": manifest["sha256"],
             "source_round": at_round,
-            "takeover_seat": human_seat,
+            "human_seat": human_seat,
             "created_agents": new_ids,
             "traces": evidence,
             "branch_manifest": str(output),
@@ -1843,7 +1843,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--branch-id", help="new experiment identity and agent-id prefix")
     ap.add_argument(
-        "--takeover-seat",
+        "--human-seat",
         metavar="SEAT",
         help="seat whose new agent is a human seat (provider human, model interactive)",
     )
@@ -1851,12 +1851,10 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.branch_from is not None:
-        if a.at_round is None or not a.branch_id or not a.takeover_seat:
-            ap.error(
-                "--branch-from requires --at-round, --branch-id and --takeover-seat"
-            )
+        if a.at_round is None or not a.branch_id or not a.human_seat:
+            ap.error("--branch-from requires --at-round, --branch-id and --human-seat")
         output = branch_experiment(
-            a.branch_from, a.at_round, a.branch_id, a.takeover_seat, a.output
+            a.branch_from, a.at_round, a.branch_id, a.human_seat, a.output
         )
         print(f"branch manifest: {output}")
         return 0
