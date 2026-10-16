@@ -890,12 +890,11 @@ def branch_experiment(
             }
             if seat == human_seat:
                 account["provider"], account["model"] = "human", "interactive"
-            quality_tier = (
+            account["quality_tier"] = (
                 "interactive"
                 if seat == human_seat
                 else entry.get("quality_tier", "standard")
             )
-            account["product"] = {"quality_tier": quality_tier}
             harness.save_account(new, account)
             generated = {
                 "id": new,
@@ -904,9 +903,7 @@ def branch_experiment(
                 "model": account["model"],
                 "budget": account["budget"],
                 "system_prompt": account.get("system_prompt", ""),
-                "quality_tier": (account.get("product") or {}).get(
-                    "quality_tier", "standard"
-                ),
+                "quality_tier": account.get("quality_tier", "standard"),
             }
             for key in ("starter_files", "starter_files_below"):
                 if key in account:
@@ -1914,14 +1911,10 @@ def main(argv: list[str] | None = None) -> int:
     # exists must have been created on the same.
     for entry in manifest["agents"]:
         account = harness.load_account(entry["id"], **pinned_settings_of(entry))
-        account["product"] = {
-            "quality_tier": entry.get(
-                "quality_tier",
-                "interactive"
-                if providers.is_human(entry["provider"])
-                else "standard",
-            )
-        }
+        account["quality_tier"] = entry.get(
+            "quality_tier",
+            "interactive" if providers.is_human(entry["provider"]) else "standard",
+        )
         harness.save_account(entry["id"], account)
         inherit_memory(entry, account)
     print(

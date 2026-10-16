@@ -206,7 +206,7 @@ def cost(
             spent += sum(
                 int(episode.get("spent", 0)) for episode in account.get("episodes", [])
             )
-        tiers[agent] = (account.get("product") or {}).get("quality_tier", "standard")
+        tiers[agent] = account.get("quality_tier", "standard")
     maximum = policy.get("maximum")
     reserve = int(policy.get("reserved_completion", 0))
     warning = policy.get("warning")

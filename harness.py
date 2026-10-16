@@ -1815,14 +1815,14 @@ class Account(TypedDict):
     debited: NotRequired[int]
     floored: NotRequired[int]
     penalised: NotRequired[dict[str, int]]  # by channel name
-    # experiment.py's memory, election, branch and product records.
+    # experiment.py's memory, election and branch records, and the seat's quality tier.
     memory_from: NotRequired[dict[str, Any] | None]
     memory_inherited: NotRequired[dict[str, Any]]
     elections: NotRequired[list[Election]]
     last_election: NotRequired[Election]
     eliminated: NotRequired[Elimination]
     branch: NotRequired[dict[str, Any]]
-    product: NotRequired[dict[str, str]]  # quality_tier
+    quality_tier: NotRequired[str]
 
 
 def save_account(agent: str, account: Account) -> None:
@@ -1958,10 +1958,16 @@ def rekeyed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any
 
 def account_as_current(account: Mapping[str, Any]) -> Mapping[str, Any]:
     """A version-2 account in the shape of the current version, its recorded
-    account_version kept; any other account as it is."""
+    account_version kept; any other account as it is.
+
+    The quality tier its product record holds is its quality_tier.
+    """
     if account.get("account_version") != 2:
         return account
     out = rekeyed(account, ACCOUNT_2_KEYS)
+    product = out.pop("product", None)
+    if isinstance(product, dict) and "quality_tier" in product:
+        out["quality_tier"] = product["quality_tier"]
     if "seating" in out:
         out["seating"] = rekeyed(out["seating"], SEATING_2_KEYS)
     out["episodes"] = [

@@ -1040,11 +1040,12 @@ the complete native response under `native_response`, is written before its
 
 `account_version` is 3. An account holds its `budget`, its `balance` and
 `balance_history`, the `seating` (`agent_by_seat`, `labels`, `seat_order`) and the
-`experiment_stamp` experiment.py writes before each episode, the running totals `sent`,
-`received`, `rebated`, `debited`, `floored` and `penalised`, and one record per episode,
-which names its `turn_count`, where its elements sit in the balance history
-(`balance_from`, `balance_to`), what the floor put back (`floored`) and what peers
-credited inside its span (`received_this_episode`). Every election it took part in
+`experiment_stamp` experiment.py writes before each episode, the seat's `quality_tier`
+experiment.py records, the running totals `sent`, `received`, `rebated`, `debited`,
+`floored` and `penalised`, and one record per episode, which names its `turn_count`,
+where its elements sit in the balance history (`balance_from`, `balance_to`), what the
+floor put back (`floored`) and what peers credited inside its span
+(`received_this_episode`). Every election it took part in
 records its `tally`, whether more than one candidate held the top vote (`tied`), and
 the `candidates_left`.
 

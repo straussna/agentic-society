@@ -76,13 +76,13 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
                 "provider": "anthropic",
                 "balance": 70,
                 "episodes": [{"episode": 1, "spent": 30}],
-                "product": {"quality_tier": "premium"},
+                "quality_tier": "premium",
             },
             "human": {
                 "provider": "human",
                 "balance": 90,
                 "episodes": [{"episode": 1, "spent": 999}],
-                "product": {"quality_tier": "interactive"},
+                "quality_tier": "interactive",
             },
         }
         for agent, account in accounts.items():

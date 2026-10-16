@@ -1939,6 +1939,7 @@ EARLIER_KEYS = {
     "price_valid_through",
     "price_replacement",
     "prefix_tokens",
+    "product",
     "termination_reason",
     "draw",
     "scores",
@@ -1956,7 +1957,8 @@ def keys_in(value) -> set[str]:
 
 
 def earlier_account(account: dict) -> dict:
-    """An account as a version-2 harness wrote it: the same values under its names."""
+    """An account as a version-2 harness wrote it: the same values under its names,
+    its quality tier in a product record."""
     episode_names = {
         "turn_count": "turns",
         "balance_from": "series_from",
@@ -1975,6 +1977,7 @@ def earlier_account(account: dict) -> dict:
     }
     out = {names.get(k, k): v for k, v in account.items()}
     out["account_version"] = 2
+    out["product"] = {"quality_tier": out.pop("quality_tier")}
     seating = {"agent_by_seat": "seen", "seat_order": "presentation"}
     out["peers"] = {seating.get(k, k): v for k, v in out["peers"].items()}
     out["episodes"] = [
@@ -2115,6 +2118,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             account["seating"]["seat_order"] = list(account["seating"]["agent_by_seat"])
             account["experiment_stamp"] = {"experiment_id": "earlier", "schedule": ""}
             account["floored"] = 0
+            account["quality_tier"] = "standard"
             account["elections"], account["last_election"] = [election], election
             account["starter_files_landed"] = {
                 "name": "s",
