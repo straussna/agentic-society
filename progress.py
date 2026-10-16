@@ -321,10 +321,15 @@ def revealed(
 
 # What an earlier progress event or outcome record calls a key, a field, a stage or an
 # end reason that the current version names otherwise, and the current name; None for
-# an outcome field the current version does not keep. A version-1 or version-2 event
-# names its stage "phase"; the rest are version 1's alone, and a version-2 outcome
-# holds the current fields.
-EVENT_1_KEYS = {"phase": "stage", "termination_reason": "end_reason"}
+# an outcome field the current version does not keep. An event that names its stage
+# "phase" or a round's seated agents "active" reads under the current names whatever
+# version holds it; the rest are version 1's alone, and a version-2 outcome holds the
+# current fields.
+EVENT_1_KEYS = {
+    "phase": "stage",
+    "termination_reason": "end_reason",
+    "active": "seated",
+}
 OUTCOME_1_FIELDS: dict[str, str | None] = {
     "termination_reason": "end_reason",
     "draw": "tie",

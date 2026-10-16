@@ -1202,7 +1202,7 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
                 event["stage"],
                 event["round"],
                 event.get("agents")
-                or event.get("active")
+                or event.get("seated")
                 or event.get("end_reason"),
             )
             for event in progress.records(root, "seats")["progress"]["events"]

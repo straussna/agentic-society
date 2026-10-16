@@ -1940,6 +1940,7 @@ EARLIER_KEYS = {
     "price_replacement",
     "prefix_tokens",
     "product",
+    "active",
     "termination_reason",
     "draw",
     "scores",
@@ -2164,6 +2165,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             encoding="utf-8",
         )
         waiting = {"at": "t", "phase": "waiting_player", "round": 1}
+        played = {"at": "t", "phase": "round_completed", "round": 1, "active": ["g01"]}
         done = {"at": "t", "phase": "completed", "round": 1}
         done["termination_reason"] = "all_eliminated"
         (base / "progress.json").write_text(
@@ -2171,7 +2173,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             encoding="utf-8",
         )
         (base / "progress.jsonl").write_text(
-            "".join(json.dumps(event) + "\n" for event in (waiting, done)),
+            "".join(json.dumps(event) + "\n" for event in (waiting, played, done)),
             encoding="utf-8",
         )
 
@@ -2198,7 +2200,12 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         assert outcome["reveal"] == {"at_completion": ["tie", "winners"]}, outcome
         assert not keys_in(records["progress"]) & EARLIER_KEYS, records
         events = records["progress"]["events"]
-        assert [event["stage"] for event in events] == ["waiting_human", "completed"]
+        assert [event["stage"] for event in events] == [
+            "waiting_human",
+            "round_completed",
+            "completed",
+        ]
+        assert events[1]["seated"] == ["g01"], events
         assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
 
         elsewhere = Path(root) / "elsewhere"

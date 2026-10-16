@@ -1995,7 +1995,7 @@ def main(argv: list[str] | None = None) -> int:
             log_stage(
                 "round_completed",
                 round,
-                {"active": [agent for agent in agents if agent in seated]},
+                {"seated": [agent for agent in agents if agent in seated]},
             )
             if ended is not None:
                 break
