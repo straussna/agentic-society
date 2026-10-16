@@ -67,7 +67,7 @@ class HumanSession:
             raise KeyboardInterrupt from error
         calls = submission.tool_calls
         stop: StopReason = (
-            "tool_use" if submission.action == "tool_calls" else "end_turn"
+            "tool_use" if submission.submission_type == "tool_calls" else "end_turn"
         )
         native = {
             "id": submission.submission_id,

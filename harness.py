@@ -1847,14 +1847,14 @@ class Account(TypedDict):
     debited: NotRequired[int]
     floored: NotRequired[int]
     penalised: NotRequired[dict[str, int]]  # by channel name
-    # experiment.py's memory, election, branch and product records.
+    # experiment.py's memory, election and branch records, and the seat's quality tier.
     memory_from: NotRequired[dict[str, Any] | None]
     memory_inherited: NotRequired[dict[str, Any]]
     elections: NotRequired[list[Election]]
     last_election: NotRequired[Election]
     eliminated: NotRequired[Elimination]
     branch: NotRequired[dict[str, Any]]
-    product: NotRequired[dict[str, str]]  # quality_tier
+    quality_tier: NotRequired[str]
 
 
 def save_account(agent: str, account: Account) -> None:
@@ -1964,13 +1964,21 @@ TRACE_4_KEYS = {
     "series_after": "balance_after",
     "remaining": "balance",
     "forgiven": "floored",
+    "provenance_drift": "config_drift",
+    "state_saved": "trees_mirrored",
 }
 PROVENANCE_4_KEYS = {
     "peers": "seating",
     "presentation_order": "seat_order",
     "message_delivery": "message_lifetime",
+    "harness_files": "status_files",
+}
+MODEL_SPEC_4_KEYS = {
+    "price_valid_through": "rate_valid_through",
+    "price_replacement": "rate_replacement",
 }
 TURN_4_KEYS = {"thinking": "reasoning"}
+USAGE_4_KEYS = {"prefix_tokens": "input_tokens"}
 CHARGE_4_KEYS = {"kind": "token_class"}
 REFUSAL_4_KEYS = {"kind": "refusal_type"}
 FILE_4_KEYS = {"ours": "planted"}
@@ -1983,10 +1991,16 @@ def rekeyed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any
 
 def account_as_current(account: Mapping[str, Any]) -> Mapping[str, Any]:
     """A version-2 account in the shape of the current version, its recorded
-    account_version kept; any other account as it is."""
+    account_version kept; any other account as it is.
+
+    The quality tier its product record holds is its quality_tier.
+    """
     if account.get("account_version") != 2:
         return account
     out = rekeyed(account, ACCOUNT_2_KEYS)
+    product = out.pop("product", None)
+    if isinstance(product, dict) and "quality_tier" in product:
+        out["quality_tier"] = product["quality_tier"]
     if "seating" in out:
         out["seating"] = rekeyed(out["seating"], SEATING_2_KEYS)
     out["episodes"] = [
@@ -2018,10 +2032,18 @@ def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
     out = rekeyed(trace, TRACE_4_KEYS)
     provenance = rekeyed(out.get("provenance") or {}, PROVENANCE_4_KEYS)
     provenance.pop("shell_tool", None)
+    provider = provenance.get("provider")
+    if isinstance(provider, dict) and isinstance(provider.get("model_spec"), dict):
+        provenance["provider"] = {
+            **provider,
+            "model_spec": rekeyed(provider["model_spec"], MODEL_SPEC_4_KEYS),
+        }
     out["provenance"] = provenance
     turns = []
     for turn in out.get("turns") or []:
         turn = rekeyed(turn, TURN_4_KEYS)
+        if isinstance(turn.get("usage"), dict):
+            turn["usage"] = rekeyed(turn["usage"], USAGE_4_KEYS)
         turn["charges"] = [
             rekeyed(charge, CHARGE_4_KEYS) for charge in turn.get("charges") or []
         ]
@@ -5044,7 +5066,7 @@ def log_raw(path: Path | None, turn: int, raw_response: providers.RawResponse) -
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         line = {
-            "kind": "native_response",
+            "line_type": "raw_response",
             "turn": turn,
             "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "provider": raw_response.provider,
@@ -5063,7 +5085,7 @@ def log_normalized(path: Path | None, turn: int, response: NormalizedResponse) -
         return
     try:
         line = {
-            "kind": "normalized_response",
+            "line_type": "normalized_response",
             "turn": turn,
             "provider": response.provider,
             "response": response.as_dict(),
@@ -5390,11 +5412,11 @@ def run_turns(
             watch(
                 f"\n--- turn {turn_number}   spent {centi // 100:,}/{opening_balance:,}"
                 f"   balance {turn['balance']:,}   context "
-                f"{response.usage.prefix_tokens:,}/{limit:,}"
+                f"{response.usage.input_tokens:,}/{limit:,}"
             )
             if turn["text"]:
                 watch_text(turn["text"])
-            at_limit = response.usage.prefix_tokens >= limit
+            at_limit = response.usage.input_tokens >= limit
 
             if stop_reason == "max_tokens":
                 # A turn cut off mid-JSON carries no whole tool call, so the
@@ -5914,7 +5936,7 @@ def provenance(
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
-        "harness_files": dict(s.status_files),
+        "status_files": dict(s.status_files),
         # Invariant 9 for what the agent can do: the tools offered, bash among them
         # where it is declared, whole and by sha256, so two agents offered
         # different tools are different arms. What each one says of itself the
@@ -6154,7 +6176,7 @@ class Episode:
     shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
-    saved: bool = False
+    trees_mirrored: bool = False
     # What peers settling in the same round credited to this account before it
     # closed. Zero for an episode run on its own or sequentially, where a credit
     # lands on disk between the receiver's episodes.
@@ -6383,7 +6405,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
         shell.close()
         # Before the reap: the container holds the only copy of whatever the
         # agent wrote.
-        ep.saved = sandbox.mirror_trees(ep.instances)
+        ep.trees_mirrored = sandbox.mirror_trees(ep.instances)
         sandbox.close()
     return out
 
@@ -6568,7 +6590,7 @@ def trace_of(
         "resolved_model": out.get("resolved_model"),
         "system_sha256": ep.provenance["system_sha256"],
         "provenance": ep.provenance,
-        "provenance_drift": ep.config_drift,
+        "config_drift": ep.config_drift,
         # The tools the episode's model calls carried, by name, the shell among them
         # where it was: what an election reads to tell a seat offered no ballot.
         "offered": [spec.name for spec in episode_specs(ep.bound)],
@@ -6576,8 +6598,7 @@ def trace_of(
         # Written outside every channel and moved into memory, so the work
         # survives and the agent will not find it where it left it.
         "misplaced": ep.misplaced,
-        # false means files[] is last episode's, not this one's
-        "state_saved": ep.saved,
+        "trees_mirrored": ep.trees_mirrored,  # false: files[] is the previous episode's
         "touched_balance": any(ref.search(c) for c in out["commands"])
         if ref
         else False,
@@ -6958,10 +6979,10 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
     own records count. A binary, a file stored only in part, or one whose text
     did not decode as UTF-8 stops the fork, and says why.
     """
-    if not trace["state_saved"]:
+    if not trace["trees_mirrored"]:
         print(
-            f"{parent} episode {episode} did not mirror its files back, so files[] "
-            f"is the episode before it, not this one; fork an episode that saved",
+            f"{parent} episode {episode} did not mirror its trees back, so files[] "
+            "is the episode before it, not this one; fork an episode that did",
             file=sys.stderr,
         )
         return None

@@ -654,7 +654,7 @@ def check_a_trace_that_predates_the_status_file_names_still_groups():
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
-        del trace["provenance"]["harness_files"]
+        del trace["provenance"]["status_files"]
         path.write_text(json.dumps(trace), encoding="utf-8")
         names = [exp["experiment_id"] for exp in view.experiments()]
         exp = view.experiment_by_id("g")
@@ -897,7 +897,7 @@ def answered(
         request.request_id,
         {
             "submission_id": f"s{episode}{turn}",
-            "action": "tool_calls",
+            "submission_type": "tool_calls",
             "tool_calls": [
                 {"id": f"c{i}", "name": name, "input": value}
                 for i, (name, value) in enumerate(calls)
@@ -956,7 +956,7 @@ def check_the_human_history_adds_each_submitted_human_call_once():
             / "g01"
             / f"{cut.request_id}.json"
         ).write_text(
-            '{"submission_id": "s23", "action": "tool_calls", '
+            '{"submission_id": "s23", "submission_type": "tool_calls", '
             '"tool_calls": [{"id": "c0", "na',
             encoding="utf-8",
         )
@@ -1939,6 +1939,15 @@ EARLIER_KEYS = {
     "thinking",
     "role",
     "ours",
+    "harness_files",
+    "provenance_drift",
+    "state_saved",
+    "price_valid_through",
+    "price_replacement",
+    "prefix_tokens",
+    "product",
+    "active",
+    "takeover_seat",
     "termination_reason",
     "draw",
     "scores",
@@ -1956,7 +1965,8 @@ def keys_in(value) -> set[str]:
 
 
 def earlier_account(account: dict) -> dict:
-    """An account as a version-2 harness wrote it: the same values under its names."""
+    """An account as a version-2 harness wrote it: the same values under its names,
+    its quality tier in a product record."""
     episode_names = {
         "turn_count": "turns",
         "balance_from": "series_from",
@@ -1975,6 +1985,7 @@ def earlier_account(account: dict) -> dict:
     }
     out = {names.get(k, k): v for k, v in account.items()}
     out["account_version"] = 2
+    out["product"] = {"quality_tier": out.pop("quality_tier")}
     seating = {"agent_by_seat": "seen", "seat_order": "presentation"}
     out["peers"] = {seating.get(k, k): v for k, v in out["peers"].items()}
     out["episodes"] = [
@@ -1994,13 +2005,16 @@ def earlier_account(account: dict) -> dict:
 
 
 def earlier_trace(trace: dict) -> dict:
-    """A trace as a version-4 harness wrote it: the same values under its names, with
-    the provenance's shell_tool and each file record's role and ours."""
+    """A trace as a version-4 harness wrote it: the same values under its names, its
+    provider's model spec among them, with the provenance's shell_tool and each file
+    record's role and ours."""
     names = {
         "balance_before": "series_before",
         "balance_after": "series_after",
         "balance": "remaining",
         "floored": "forgiven",
+        "config_drift": "provenance_drift",
+        "trees_mirrored": "state_saved",
     }
     out = {names.get(k, k): v for k, v in trace.items()}
     out["trace_version"] = 4
@@ -2008,6 +2022,7 @@ def earlier_trace(trace: dict) -> dict:
         "seating": "peers",
         "seat_order": "presentation_order",
         "message_lifetime": "message_delivery",
+        "status_files": "harness_files",
     }
     out["provenance"] = {
         provenance.get(k, k): v for k, v in out["provenance"].items()
@@ -2015,9 +2030,22 @@ def earlier_trace(trace: dict) -> dict:
     out["provenance"]["shell_tool"] = any(
         t["kind"] == "bash" for t in out["provenance"]["tools"]
     )
+    spec = {
+        "rate_valid_through": "price_valid_through",
+        "rate_replacement": "price_replacement",
+    }
+    provider = out["provenance"]["provider"]
+    out["provenance"]["provider"] = {
+        **provider,
+        "model_spec": {spec.get(k, k): v for k, v in provider["model_spec"].items()},
+    }
     turns = []
     for turn in out["turns"]:
         turn = {("thinking" if k == "reasoning" else k): v for k, v in turn.items()}
+        turn["usage"] = {
+            ("prefix_tokens" if k == "input_tokens" else k): v
+            for k, v in turn["usage"].items()
+        }
         turn["charges"] = [
             {("kind" if k == "token_class" else k): v for k, v in charge.items()}
             for charge in turn["charges"]
@@ -2044,12 +2072,38 @@ def earlier_trace(trace: dict) -> dict:
     return out
 
 
+def earlier_raw_line(line: dict) -> dict:
+    """A raw log line as a harness that typed its lines under `kind` wrote it: the
+    same values under its names, its normalized response's among them."""
+    out = {("kind" if k == "line_type" else k): v for k, v in line.items()}
+    if out["kind"] == "raw_response":
+        out["kind"] = "native_response"
+    if "response" in out:
+        response = dict(out["response"])
+        response["usage"] = {
+            ("prefix_tokens" if k == "input_tokens" else k): v
+            for k, v in response["usage"].items()
+        }
+        response["charges"] = [
+            {("kind" if k == "token_class" else k): v for k, v in charge.items()}
+            for charge in response["charges"]
+        ]
+        if response["refusal"]:
+            response["refusal"] = {
+                ("kind" if k == "refusal_type" else k): v
+                for k, v in response["refusal"].items()
+            }
+        out["response"] = response
+    return out
+
+
 def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
     """A version-2 account, version-4 traces, version-1 experiment records and a
     version-2 progress log read in the dashboard, through every route the page asks, and
     in analyze.py as the current versions hold the same values, every key under its
     current name, and so does a version-2 log a resumed run carries on; --resume and
-    --fork-from reject the account and name the version it holds."""
+    --fork-from reject the account and name the version it holds. A raw log whose
+    lines are typed under `kind` reads as the same lines typed under `line_type`."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         with quiet():
@@ -2072,6 +2126,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             account["seating"]["seat_order"] = list(account["seating"]["agent_by_seat"])
             account["experiment_stamp"] = {"experiment_id": "earlier", "schedule": ""}
             account["floored"] = 0
+            account["quality_tier"] = "standard"
             account["elections"], account["last_election"] = [election], election
             account["starter_files_landed"] = {
                 "name": "s",
@@ -2117,6 +2172,7 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             encoding="utf-8",
         )
         waiting = {"at": "t", "phase": "waiting_player", "round": 1}
+        played = {"at": "t", "phase": "round_completed", "round": 1, "active": ["g01"]}
         done = {"at": "t", "phase": "completed", "round": 1}
         done["termination_reason"] = "all_eliminated"
         (base / "progress.json").write_text(
@@ -2124,7 +2180,19 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
             encoding="utf-8",
         )
         (base / "progress.jsonl").write_text(
-            "".join(json.dumps(event) + "\n" for event in (waiting, done)),
+            "".join(json.dumps(event) + "\n" for event in (waiting, played, done)),
+            encoding="utf-8",
+        )
+        (base / "lineage.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "experiment_id": "earlier",
+                    "source_experiment_id": "source",
+                    "source_round": 1,
+                    "takeover_seat": "2",
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -2151,8 +2219,15 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         assert outcome["reveal"] == {"at_completion": ["tie", "winners"]}, outcome
         assert not keys_in(records["progress"]) & EARLIER_KEYS, records
         events = records["progress"]["events"]
-        assert [event["stage"] for event in events] == ["waiting_human", "completed"]
+        assert [event["stage"] for event in events] == [
+            "waiting_human",
+            "round_completed",
+            "completed",
+        ]
+        assert events[1]["seated"] == ["g01"], events
         assert records["progress"]["latest"]["end_reason"] == "none_in_play", records
+        assert not keys_in(records["lineage"]) & EARLIER_KEYS, records
+        assert records["lineage"]["human_seat"] == "2", records
 
         elsewhere = Path(root) / "elsewhere"
         base_2 = progress.directory(elsewhere, "earlier")
@@ -2227,3 +2302,13 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         assert all(harness.account_path(agent).exists() for agent in ids), (
             "a rejected resume leaves the records where they are"
         )
+
+        lines = view.raw_lines(harness.raw_path("g01", 1))
+        assert any(
+            line.get("response", {}).get("refusal") for line in lines
+        ), "the log holds a refusal to translate"
+        harness.raw_path("g01", 2).write_text(
+            "".join(json.dumps(earlier_raw_line(line)) + "\n" for line in lines),
+            encoding="utf-8",
+        )
+        assert view.raw_lines(harness.raw_path("g01", 2)) == lines

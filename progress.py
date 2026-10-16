@@ -208,7 +208,7 @@ def cost(
             spent += sum(
                 int(episode.get("spent", 0)) for episode in account.get("episodes", [])
             )
-        tiers[agent] = (account.get("product") or {}).get("quality_tier", "standard")
+        tiers[agent] = account.get("quality_tier", "standard")
     maximum = policy.get("maximum")
     reserve = int(policy.get("reserved_completion", 0))
     warning = policy.get("warning")
@@ -323,10 +323,15 @@ def revealed(
 
 # What an earlier progress event or outcome record calls a key, a field, a stage or an
 # end reason that the current version names otherwise, and the current name; None for
-# an outcome field the current version does not keep. A version-1 or version-2 event
-# names its stage "phase"; the rest are version 1's alone, and a version-2 outcome
-# holds the current fields.
-EVENT_1_KEYS = {"phase": "stage", "termination_reason": "end_reason"}
+# an outcome field the current version does not keep. An event that names its stage
+# "phase" or a round's seated agents "active" reads under the current names whatever
+# version holds it; the rest are version 1's alone, and a version-2 outcome holds the
+# current fields.
+EVENT_1_KEYS = {
+    "phase": "stage",
+    "termination_reason": "end_reason",
+    "active": "seated",
+}
 OUTCOME_1_FIELDS: dict[str, str | None] = {
     "termination_reason": "end_reason",
     "draw": "tie",
@@ -334,6 +339,10 @@ OUTCOME_1_FIELDS: dict[str, str | None] = {
 }
 STAGES_1 = {"waiting_player": "waiting_human"}
 END_REASONS_1 = {"all_eliminated": "none_in_play"}
+
+# What a lineage record that names its human seat "takeover_seat" calls that key, and
+# the current name. It reads under the current name whatever version holds it.
+LINEAGE_KEYS = {"takeover_seat": "human_seat"}
 
 
 def event_as_current(event: dict[str, Any]) -> dict[str, Any]:
@@ -386,6 +395,11 @@ def outcome_as_current(record: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def lineage_as_current(record: dict[str, Any]) -> dict[str, Any]:
+    """A lineage record under the current name of each key; a current one as it is."""
+    return {LINEAGE_KEYS.get(key, key): value for key, value in record.items()}
+
+
 def recorded_progress(base: Path) -> dict[str, Any] | None:
     """progress.json with its history as `events`: the log's, or the list progress.json
     holds itself when there is no log. None when there is no progress.json."""
@@ -401,8 +415,8 @@ def recorded_progress(base: Path) -> dict[str, Any] | None:
 
 def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
     """An experiment's progress, outcome and lineage for display, each None when it is
-    absent or does not read. An earlier version's progress or outcome record is read
-    under the current names."""
+    absent or does not read. An earlier version's progress or outcome record, and a
+    lineage record under earlier names, is read under the current names."""
     try:
         base = directory(runtime_root, experiment_id)
     except ValueError:
@@ -416,8 +430,9 @@ def records(runtime_root: Path, experiment_id: str) -> dict[str, Any]:
 
     progress = shown(lambda: recorded_progress(base))
     outcome = shown(lambda: read(base / "outcome.json"))
+    lineage = shown(lambda: read(base / "lineage.json"))
     return {
         "progress": progress_as_current(progress) if progress else None,
         "outcome": outcome_as_current(outcome) if outcome else None,
-        "lineage": shown(lambda: read(base / "lineage.json")),
+        "lineage": lineage_as_current(lineage) if lineage else None,
     }

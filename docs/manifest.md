@@ -170,7 +170,7 @@ runs one.
 | `--provider P --model M` | Given together, override every seat's provider and model; under `--resume` both must match the accounts |
 | `--resume` | Continue existing compatible accounts, finishing first a round the last run left unfinished and holding a finished vote round's election the last run did not, and never one it did; a seat more than one round behind the current round is unseated, and is no longer in play. Without it, the previous records and mirrors move under `archive/` and a fresh run starts |
 | `-c PATH` | The config file; default `config.toml` beside `harness.py` |
-| `--branch-from MANIFEST --at-round N --branch-id ID --takeover-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
+| `--branch-from MANIFEST --at-round N --branch-id ID --human-seat SEAT [--output PATH]` | Write a branch manifest from a completed round, each seat's new agent standing where its seat stood as that round ended and SEAT's on the human provider, and stop |
 | `harness.py --episodes N` | Up to N episodes for one agent, default 1 |
 | `harness.py --watch` | Echo the agent's words and account to stdout |
 | `harness.py --fork-from AGENT --at-episode N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
@@ -743,9 +743,10 @@ episode. It names an agent outside this experiment and a positive episode
 number. The source and target must declare the same `write_memory` tool names. Each
 source `memory.md` is copied byte for byte into the corresponding target tool's channel
 before episode 1. No balance, episode count, elimination, peer roster, message, public
-post, ballot, trace or provider session is inherited. The source trace must have saved
-its state and must contain every copied memory as complete UTF-8 text. The account and
-each later trace record the source episode and the copied files' sha256s.
+post, ballot, trace or provider session is inherited. The source episode must have
+mirrored its trees back (`trees_mirrored`), and its trace must contain every copied
+memory as complete UTF-8 text. The account and each later trace record the source
+episode and the copied files' sha256s.
 
 This is set at creation rather than by a fork: it preserves only the memory an agent
 can read while every other part of the agent starts fresh. It is rejected if the
@@ -994,11 +995,11 @@ Every episode's provenance stamps: the harness's sha256, the experiment identity
 cost ceiling, the system prompt in force whole and by sha256, the image and its id, the
 rates, every setting of section 3, the starter files' name and sha256, each experimenter
 channel's source sha256, the `seating` (each seat's agent), `labels` and `seat_order`,
-the schedule, the manifest's sha256, the status files' names, the channel table in force,
-whole and by sha256, and the tool table in force, whole and by sha256, each tool's
-declared description among its fields and `bash` among them where the episode offers
-the shell, and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
-their receiver's next episode.
+the schedule, the manifest's sha256, the status files' names (`status_files`), the
+channel table in force, whole and by sha256, and the tool table in force, whole and by
+sha256, each tool's declared description among its fields and `bash` among them where
+the episode offers the shell, and `message_lifetime = "episode"` for schema-free mailbox
+messages that expire after their receiver's next episode.
 Two agents offered different tools - or the same tools described differently - are in
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness's sha256, the channel table and the seating.
@@ -1026,19 +1027,25 @@ the shell was: an election reads it to tell a seat that cast no ballot from one 
 offered none.
 `trace_version` is 5. The trace names `provider`, `requested_model`, and
 `resolved_model`, and the episode's `balance_before` and `balance_after`, its `balance`
-as it closed, and what the floor put back as `floored`. Every turn carries canonical
-`usage`, itemized `charges`, each naming its `token_class`, the model's `reasoning` apart
-from its `text`, a `refusal` naming its `refusal_type` where the model declined, canonical
-and native stop reasons, and the provider provenance. Raw logs write the provider and
-complete native response before their canonical normalized event.
+as it closed, and what the floor put back as `floored`. `config_drift` lists each
+provenance field that differs from the previous episode's, and `trees_mirrored` says
+whether the episode's trees were mirrored back; where they were not, `files` holds the
+previous episode's. Every turn carries canonical `usage` (its `input_tokens` the whole
+prompt, cached tokens included), itemized `charges`, each naming its `token_class`, the
+model's `reasoning` apart from its `text`, a `refusal` naming its `refusal_type` where
+the model declined, canonical and native stop reasons, and the provider provenance. A
+raw log line names its `line_type`: each turn's `raw_response` line, the provider and
+the complete native response under `native_response`, is written before its
+`normalized_response` line, the canonical response.
 
 `account_version` is 3. An account holds its `budget`, its `balance` and
 `balance_history`, the `seating` (`agent_by_seat`, `labels`, `seat_order`) and the
-`experiment_stamp` experiment.py writes before each episode, the running totals `sent`,
-`received`, `rebated`, `debited`, `floored` and `penalised`, and one record per episode,
-which names its `turn_count`, where its elements sit in the balance history
-(`balance_from`, `balance_to`), what the floor put back (`floored`) and what peers
-credited inside its span (`received_this_episode`). Every election it took part in
+`experiment_stamp` experiment.py writes before each episode, the seat's `quality_tier`
+experiment.py records, the running totals `sent`, `received`, `rebated`, `debited`,
+`floored` and `penalised`, and one record per episode, which names its `turn_count`,
+where its elements sit in the balance history (`balance_from`, `balance_to`), what the
+floor put back (`floored`) and what peers credited inside its span
+(`received_this_episode`). Every election it took part in
 records its `tally`, whether more than one candidate held the top vote (`tied`), and
 the `candidates_left`.
 
@@ -1048,7 +1055,9 @@ version-5 traces only, and reject a record of any other version, naming the vers
 holds or saying it holds none. The dashboard and `analyze.py` also read version-2
 accounts and version-4 traces, and the dashboard version-1 and version-2 progress and
 outcome records, as history: each under the names the current version gives the
-same values.
+same values. The dashboard reads a raw log line that names its type under `kind`, an
+interaction submission that names its type under `action`, and a lineage record that
+names its human seat `takeover_seat`, the same way.
 
 ## 12. Invariants, restated in this vocabulary
 

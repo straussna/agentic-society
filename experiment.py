@@ -542,10 +542,10 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
         raise SystemExit(
             f"agent {agent}: memory_from source {source!r} episode {episode} has {why}"
         )
-    if not trace.get("state_saved"):
+    if not trace.get("trees_mirrored"):
         raise SystemExit(
             f"agent {agent}: memory_from source {source!r} episode {episode} "
-            "did not save its state"
+            "did not mirror its trees back"
         )
 
     source_tools = {
@@ -888,12 +888,11 @@ def branch_experiment(
             }
             if seat == human_seat:
                 account["provider"], account["model"] = "human", "interactive"
-            quality_tier = (
+            account["quality_tier"] = (
                 "interactive"
                 if seat == human_seat
                 else entry.get("quality_tier", "standard")
             )
-            account["product"] = {"quality_tier": quality_tier}
             harness.save_account(new, account)
             generated = {
                 "id": new,
@@ -902,9 +901,7 @@ def branch_experiment(
                 "model": account["model"],
                 "budget": account["budget"],
                 "system_prompt": account.get("system_prompt", ""),
-                "quality_tier": (account.get("product") or {}).get(
-                    "quality_tier", "standard"
-                ),
+                "quality_tier": account.get("quality_tier", "standard"),
             }
             # A fork of an episode before its source's starter files landed holds no
             # starter settings, so its entry gives it the ones its source pinned.
@@ -937,7 +934,7 @@ def branch_experiment(
             "source_manifest": str(source),
             "source_manifest_sha256": manifest["sha256"],
             "source_round": at_round,
-            "takeover_seat": human_seat,
+            "human_seat": human_seat,
             "created_agents": new_ids,
             "traces": evidence,
             "branch_manifest": str(output),
@@ -1853,7 +1850,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--branch-id", help="new experiment identity and agent-id prefix")
     ap.add_argument(
-        "--takeover-seat",
+        "--human-seat",
         metavar="SEAT",
         help="seat whose new agent is a human seat (provider human, model interactive)",
     )
@@ -1861,12 +1858,10 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.branch_from is not None:
-        if a.at_round is None or not a.branch_id or not a.takeover_seat:
-            ap.error(
-                "--branch-from requires --at-round, --branch-id and --takeover-seat"
-            )
+        if a.at_round is None or not a.branch_id or not a.human_seat:
+            ap.error("--branch-from requires --at-round, --branch-id and --human-seat")
         output = branch_experiment(
-            a.branch_from, a.at_round, a.branch_id, a.takeover_seat, a.output
+            a.branch_from, a.at_round, a.branch_id, a.human_seat, a.output
         )
         print(f"branch manifest: {output}")
         return 0
@@ -1923,14 +1918,10 @@ def main(argv: list[str] | None = None) -> int:
         account = harness.load_account(
             entry["id"], **pinned_settings_of(entry, manifest["overrides"])
         )
-        account["product"] = {
-            "quality_tier": entry.get(
-                "quality_tier",
-                "interactive"
-                if providers.is_human(entry["provider"])
-                else "standard",
-            )
-        }
+        account["quality_tier"] = entry.get(
+            "quality_tier",
+            "interactive" if providers.is_human(entry["provider"]) else "standard",
+        )
         harness.save_account(entry["id"], account)
         inherit_memory(entry, account)
     print(
@@ -2012,7 +2003,7 @@ def main(argv: list[str] | None = None) -> int:
             log_stage(
                 "round_completed",
                 round,
-                {"active": [agent for agent in agents if agent in seated]},
+                {"seated": [agent for agent in agents if agent in seated]},
             )
             if ended is not None:
                 break

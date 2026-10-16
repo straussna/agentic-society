@@ -285,13 +285,45 @@ def latest_attempt(lines: list[dict]) -> list[dict]:
         i
         for i, line in enumerate(lines)
         if line.get("turn") == 1
-        and line.get("kind", "native_response") == "native_response"
+        and line.get("line_type", "raw_response") == "raw_response"
     ]
     return lines[starts[-1] :] if starts else lines
 
 
+# The name a raw log line that types itself under `kind` gives its type key, and the
+# type it gives its native response line, each with its current name. The dashboard
+# reads such a line through raw_line_as_current.
+RAW_LINE_KEYS = {"kind": "line_type"}
+RAW_LINE_TYPES = {"native_response": "raw_response"}
+
+
+def raw_line_as_current(line: Any) -> Any:
+    """A raw log line that types itself under `kind` in the shape of the current
+    ones; any other line as it is."""
+    if not isinstance(line, dict) or "kind" not in line:
+        return line
+    out = harness.rekeyed(line, RAW_LINE_KEYS)
+    out["line_type"] = RAW_LINE_TYPES.get(out["line_type"], out["line_type"])
+    response = out.get("response")
+    if isinstance(response, dict):
+        response = dict(response)
+        if isinstance(response.get("usage"), dict):
+            response["usage"] = harness.rekeyed(response["usage"], harness.USAGE_4_KEYS)
+        if isinstance(response.get("charges"), list):
+            response["charges"] = [
+                harness.rekeyed(charge, harness.CHARGE_4_KEYS)
+                for charge in response["charges"]
+            ]
+        if isinstance(response.get("refusal"), dict):
+            response["refusal"] = harness.rekeyed(
+                response["refusal"], harness.REFUSAL_4_KEYS
+            )
+        out["response"] = response
+    return out
+
+
 def raw_lines(path: Path) -> list[dict]:
-    """Every whole response in an episode's raw log.
+    """Every whole response in an episode's raw log, each line in the current shape.
 
     log_raw appends while the episode runs, so a trailing fragment is dropped
     and the next poll picks it up whole.
@@ -305,7 +337,7 @@ def raw_lines(path: Path) -> list[dict]:
         if not line.strip():
             continue
         try:
-            out.append(json.loads(line.decode("utf-8")))
+            out.append(raw_line_as_current(json.loads(line.decode("utf-8"))))
         except ValueError, UnicodeDecodeError:
             continue
     return out
@@ -417,7 +449,7 @@ def from_trace(t: dict) -> list[dict]:
         {
             "turn": turn.get("turn"),
             "micros": turn.get("micros"),
-            "prefix": (turn.get("usage") or {}).get("prefix_tokens"),
+            "input_tokens": (turn.get("usage") or {}).get("input_tokens"),
             "balance": turn.get("balance"),
             "stop_reason": turn.get("stop_reason"),
             "refusal": turn.get("refusal"),
@@ -456,7 +488,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
     opening = account.get("balance", 0)
     centi, seen, out = 0, set(), []
     for line in lines:
-        if line.get("kind") != "normalized_response":
+        if line.get("line_type") != "normalized_response":
             continue
         data = line.get("response") or {}
         rid = data.get("id") or f"anon-{line.get('turn')}"
@@ -477,7 +509,7 @@ def from_raw(lines: list[dict], account: Mapping[str, Any]) -> list[dict]:
                 "turn": line.get("turn"),
                 "received": line.get("received"),
                 "micros": previous - balance,
-                "prefix": u.get("prefix_tokens", 0),
+                "input_tokens": u.get("input_tokens", 0),
                 "balance": balance,
                 "stop_reason": data.get("stop_reason"),
                 "refusal": data.get("refusal"),
@@ -1057,7 +1089,7 @@ def seat_row(
         # the console line uses.
         "silent": silent(last),
         "refused": sum(len(analyze.refused_turns_of(t)) for t in ts),
-        "config_drift": (last or {}).get("provenance_drift") or [],
+        "config_drift": (last or {}).get("config_drift") or [],
         # Everything that moved the balance without being a turn. Read off the
         # account, not summed from the traces: these are cumulative there, and
         # an agent can be credited between its own starts.
@@ -1384,7 +1416,7 @@ def messages(exp: dict, since: int = 0) -> dict:
         for row in [r for r in rows if r["agent"] == agent]:
             # An episode whose files were never mirrored back carries the
             # previous episode's, so it says nothing about what moved.
-            if not row["trace"].get("state_saved"):
+            if not row["trace"].get("trees_mirrored"):
                 continue
             now = outbox_of(row["trace"])
             episodic = row["trace"]["provenance"].get("message_lifetime") == "episode"
@@ -1457,7 +1489,7 @@ def human_history(exp: dict, agent: str) -> dict:
     board = []
     if post_channel:
         for row in rows:
-            if not row["trace"].get("state_saved"):
+            if not row["trace"].get("trees_mirrored"):
                 continue
             seat = row["seat"]
             account = account_of(row["agent"])
@@ -1699,7 +1731,7 @@ def historical_listing(
     row: dict | None, ch: harness.Channel, channel: str, label: str
 ) -> list[dict]:
     """The files this seat owned when its episode in a round committed."""
-    if row is None or not row["trace"].get("state_saved"):
+    if row is None or not row["trace"].get("trees_mirrored"):
         return []
     prefix = ch.path_for(label).strip("/")
     out = []
@@ -1773,7 +1805,7 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
                     "committed": row["episode"] if row else None,
                     "running_episode": None,
                     "live_age": None,
-                    "saved": bool(row and row["trace"].get("state_saved")),
+                    "trees_mirrored": bool(row and row["trace"].get("trees_mirrored")),
                     "files": historical_listing(row, ch, channel, label),
                 }
             )
@@ -1955,7 +1987,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "channels": analyze.channel_records(t),
             "floored": t.get("floored") or 0,
             "provenance": t["provenance"],
-            "config_drift": t.get("provenance_drift") or [],
+            "config_drift": t.get("config_drift") or [],
             "stopped_by_run": t["stop"] in harness.STOPS_THE_AGENT,
             "live": False,
         }
@@ -2207,6 +2239,13 @@ class View(http.server.BaseHTTPRequestHandler):
             self.send_json({"error": f"{type(e).__name__}: {e}"}, status=500)
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            length = -1
+        # A body within the limit is read whole before any answer: a socket closed
+        # on unread bytes is reset, and the reset can reach the client first.
+        body = self.rfile.read(length) if 0 <= length <= MAX_INTERACTION_BODY else None
         url = urllib.parse.urlsplit(self.path)
         parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         if len(parts) != 4 or parts[:2] != ["api", "interaction"]:
@@ -2224,14 +2263,10 @@ class View(http.server.BaseHTTPRequestHandler):
             return self.send_json(
                 {"error": "Content-Type must be application/json"}, status=415
             )
-        try:
-            length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            length = -1
-        if length < 0 or length > MAX_INTERACTION_BODY:
+        if body is None:
             return self.send_json({"error": "request body size rejected"}, status=413)
         try:
-            payload = json.loads(self.rfile.read(length))
+            payload = json.loads(body)
             if not isinstance(payload, dict):
                 raise ValueError("body is not an object")
             result = self.interaction_store().submit(parts[2], parts[3], payload)

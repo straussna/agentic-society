@@ -78,13 +78,13 @@ def check_experiment_records_hold_cost_progress_and_outcome_from_accounts_and_tr
                 "provider": "anthropic",
                 "balance": 70,
                 "episodes": [{"episode": 1, "spent": 30}],
-                "product": {"quality_tier": "premium"},
+                "quality_tier": "premium",
             },
             "human": {
                 "provider": "human",
                 "balance": 90,
                 "episodes": [{"episode": 1, "spent": 999}],
-                "product": {"quality_tier": "interactive"},
+                "quality_tier": "interactive",
             },
         }
         for agent, account in accounts.items():
@@ -185,6 +185,7 @@ def check_an_experiment_branch_is_new_lineage_and_leaves_sources_unchanged():
         assert (
             lineage["source_experiment_id"] == "source" and lineage["source_round"] == 1
         )
+        assert lineage["human_seat"] == "2", lineage
         assert len(lineage["traces"]) == 2
         assert all(path.read_bytes() == before for path, before in source_bytes.items())
 
@@ -1246,7 +1247,7 @@ def check_a_run_records_each_stage_its_rounds_reach_and_no_round_it_did_not_play
                 event["stage"],
                 event["round"],
                 event.get("agents")
-                or event.get("active")
+                or event.get("seated")
                 or event.get("end_reason"),
             )
             for event in progress.records(root, "seats")["progress"]["events"]

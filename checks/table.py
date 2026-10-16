@@ -452,7 +452,7 @@ def check_a_declared_table_reshapes_the_environment():
         "noticeboard",
         "letters",
     ]
-    assert prov["harness_files"] == PERSONA_FILES and prov["labels"] == PERSONA_LABELS
+    assert prov["status_files"] == PERSONA_FILES and prov["labels"] == PERSONA_LABELS
     assert prov["channels_sha256"] == harness.channels_sha256(
         harness.channels_from(prov["channels"])
     )
@@ -766,7 +766,7 @@ def check_status_files_can_be_renamed():
     assert "=== bal1 ===" in t["observation"] and "=== bal2 ===" in t["observation"]
     assert " m\n" not in t["observation"] and "n1" not in t["observation"]
     assert t["touched_balance"] and t["read_balance"]
-    assert t["provenance"]["harness_files"] == {"balance": "bal", "digest": "say"}
+    assert t["provenance"]["status_files"] == {"balance": "bal", "digest": "say"}
 
     with temp_root(status_files={"digest": ""}) as root:
         seated(root, other={"group/post": "theirs\n"})
@@ -778,7 +778,7 @@ def check_status_files_can_be_renamed():
     assert t["turns"][0]["tools"][0]["result"] == "theirs\n", (
         "the environment is all still there"
     )
-    assert t["provenance"]["harness_files"] == {"balance": "n", "digest": ""}
+    assert t["provenance"]["status_files"] == {"balance": "n", "digest": ""}
 
 
 def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
@@ -792,7 +792,7 @@ def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
         harness.apply_channels(None, {"balance": "bal", "digest": "say"}, "check")
         in_force = dict(harness.SETTINGS.status_files)
         old = analyze.status_files_of({"provenance": {}})
-        recorded = analyze.status_files_of({"provenance": {"harness_files": in_force}})
+        recorded = analyze.status_files_of({"provenance": {"status_files": in_force}})
         default = dict(harness.DEFAULT_STATUS_FILES)
     assert in_force == {"balance": "bal", "digest": "say"}, in_force
     assert old == default == {"balance": "n", "digest": "m"}, (old, default)
@@ -855,7 +855,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
     assert not t["touched_balance"] and not t["read_balance"], (
         "no balance to touch or read"
     )
-    assert t["provenance"]["harness_files"] == {"balance": "", "digest": "digest"}
+    assert t["provenance"]["status_files"] == {"balance": "", "digest": "digest"}
     # The accounting itself is untouched: the balance history still grew by the turns
     # charged.
     assert account["balance_history"], "the balance is still kept, just not shown"

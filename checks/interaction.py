@@ -55,7 +55,7 @@ def submission(request, body="hello"):
         "version": 1,
         "request_id": request.request_id,
         "submission_id": "human-call-1",
-        "action": "tool_calls",
+        "submission_type": "tool_calls",
         "tool_calls": [{"id": "call-1", "name": "remember", "input": {"body": body}}],
     }
 
@@ -65,7 +65,7 @@ def end_submission(request):
         "version": 1,
         "request_id": request.request_id,
         "submission_id": "human-end-1",
-        "action": "end_turn",
+        "submission_type": "end_turn",
         "tool_calls": [],
     }
 
@@ -200,8 +200,13 @@ def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pend
             "no submission_id": {k: v for k, v in good.items() if k != "submission_id"},
             "an empty submission_id": {**good, "submission_id": ""},
             "a submission_id that is not text": {**good, "submission_id": 1},
-            "no action": {k: v for k, v in good.items() if k != "action"},
-            "an action other than tool_calls or end_turn": {**good, "action": "wait"},
+            "no submission_type": {
+                k: v for k, v in good.items() if k != "submission_type"
+            },
+            "a submission_type other than tool_calls or end_turn": {
+                **good,
+                "submission_type": "wait",
+            },
             "tool_calls that are not a list": {**good, "tool_calls": {}},
             "a call that is not an object": {**good, "tool_calls": ["remember"]},
             "a call without an id": calling(name="remember", input={"body": "x"}),
@@ -216,7 +221,7 @@ def check_malformed_submission_envelopes_are_rejected_and_the_request_stays_pend
             "a call to a tool not offered": calling(
                 id="call-1", name="forget", input={}
             ),
-            "end_turn with a call": {**good, "action": "end_turn"},
+            "end_turn with a call": {**good, "submission_type": "end_turn"},
             "tool_calls without a call": {**good, "tool_calls": []},
         }
         for case, value in malformed.items():
@@ -322,7 +327,7 @@ def check_one_submission_sent_twice_at_once_returns_the_winner_to_both():
         assert got["first"] == got["again"], "both copies return the one that won"
 
 
-def check_the_winners_submission_id_on_other_calls_or_another_action_is_a_conflict():
+def check_the_winners_submission_id_on_other_calls_or_submission_type_is_a_conflict():
     """Only the winner sent again gets the winner back: a client that reused its id on
     a different turn would otherwise be told it won while its own calls were dropped."""
     with temp_root() as root:
@@ -331,7 +336,7 @@ def check_the_winners_submission_id_on_other_calls_or_another_action_is_a_confli
         won = store.submit("a", request.request_id, submission(request))
         reused = {
             "other calls": submission(request, "other"),
-            "another action": {
+            "another submission type": {
                 **end_submission(request),
                 "submission_id": won.submission_id,
             },
@@ -529,7 +534,7 @@ def check_history_pairs_each_answered_request_with_its_submission_in_turn_order(
         assert all(r.request_id == s.request_id for r, s in history), (
             "each with its own submission"
         )
-        assert [s.action for _, s in history] == ["tool_calls", "end_turn"] * 3
+        assert [s.submission_type for _, s in history] == ["tool_calls", "end_turn"] * 3
         assert [s.tool_calls[0].input for _, s in history if s.tool_calls] == [
             {"body": f"{episode}.1"} for episode in (1, 2, 3)
         ]
@@ -538,6 +543,23 @@ def check_history_pairs_each_answered_request_with_its_submission_in_turn_order(
             InteractionError,
             lambda: store.history("../a"),
             "an agent name walked out of the store",
+        )
+
+
+def check_history_reads_a_submission_typed_under_action():
+    """A submission file that names its type under `action` reads as the same
+    submission under `submission_type`, so the history still holds its turn."""
+    with temp_root() as root:
+        store = InteractionStore(root / "interaction_store")
+        request = answered(store, 1, 1)
+        current = store.history("a")
+        path = submission_file(root, "a", request.request_id)
+        written = json.loads(path.read_text(encoding="utf-8"))
+        written["action"] = written.pop("submission_type")
+        path.write_text(json.dumps(written), encoding="utf-8")
+        assert len(current) == 1 and store.history("a") == current, (
+            store.history("a"),
+            current,
         )
 
 
@@ -649,7 +671,7 @@ def check_human_cli_rejects_what_it_cannot_send_and_ends_a_turn_without_calls():
             "the removed call left the draft"
         )
         ended = store.wait(request, lambda: False, 0)
-        assert ended.action == "end_turn" and ended.tool_calls == (), ended
+        assert ended.submission_type == "end_turn" and ended.tool_calls == (), ended
 
 
 def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
@@ -698,7 +720,7 @@ def check_human_cli_follows_a_newer_request_and_reports_a_turn_it_lost():
             "unreadable:",
         )
         second = store.wait(turns["second"], lambda: False, 0)
-        assert second.action == "end_turn", (
+        assert second.submission_type == "end_turn", (
             "the turn that moved on took the terminal's answer"
         )
         third = store.wait(turns["third"], lambda: False, 0)
@@ -748,7 +770,7 @@ def check_human_cli_reports_a_pointer_or_draft_that_does_not_read_and_keeps_goin
             "submitted end_turn",
         )
         ended = store.wait(turns["second"], lambda: False, 0)
-        assert ended.action == "end_turn", (
+        assert ended.submission_type == "end_turn", (
             "the request after the broken files took the answer"
         )
 
@@ -1058,7 +1080,7 @@ def check_view_interaction_route_answers_each_rejection_with_its_own_status():
                     to(answer, submission(pending, "other")),
                     409,
                 ),
-                "the winner's submission_id on another action": (
+                "the winner's submission_id on another submission type": (
                     to(
                         answer,
                         {

@@ -178,7 +178,7 @@ def check_the_report_names_what_the_traces_hold():
     )
     assert "+changed" in spoken, "and so is what happened to the starter file"
 
-    assert {"episodes.csv", "report.txt", "transcript.txt"} <= written, written
+    assert {"episodes.csv", "report.txt", "trace.txt"} <= written, written
     assert text in buf.getvalue(), buf.getvalue()
     # The starter file the agent overwrote in its first episode.
     assert analyze.report_line("first changed a starter", 1) in text, text
@@ -367,7 +367,7 @@ def check_a_tool_call_is_shown_one_way_in_the_transcript_and_on_the_page():
     ]
     logged = [
         {
-            "kind": "normalized_response",
+            "line_type": "normalized_response",
             "turn": 1,
             "response": {"id": "r", "tool_calls": calls, "charges": []},
         }

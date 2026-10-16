@@ -266,7 +266,7 @@ def check_an_account_never_lists_an_episode_whose_trace_did_not_land():
     assert t["episode"] == 1, (
         "the next episode takes the episode number the lost one never claimed"
     )
-    turns = [line["turn"] for line in raw if line["kind"] == "native_response"]
+    turns = [line["turn"] for line in raw if line["line_type"] == "raw_response"]
     assert turns == [1, 2, 1], (
         f"the raw log holds both attempts at the episode, lost first: {turns}"
     )
@@ -384,7 +384,7 @@ def check_an_interrupt_ends_the_episode_at_the_turn_boundary():
             f"the turn in flight must finish: {len(t['turns'])}"
         )
         assert t["commands"][-1] == "echo two", t["commands"]
-        assert t["spent"] > 0 and t["state_saved"], t
+        assert t["spent"] > 0 and t["trees_mirrored"], t
         account = ground_truth()
         assert account["budget"] - account["balance"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
@@ -673,7 +673,7 @@ def check_provenance_is_recorded():
                 "labels",
                 "channels",
                 "channels_sha256",
-                "harness_files",
+                "status_files",
                 "source_sha256",
                 "delivery",
             ):
@@ -683,7 +683,7 @@ def check_provenance_is_recorded():
             )
             assert prov["provider"]["name"] == "anthropic", "the adapter is recorded"
             assert first["resolved_model"], "the dated snapshot behind the alias"
-            assert first["provenance_drift"] == [], (
+            assert first["config_drift"] == [], (
                 "nothing to differ from on episode one"
             )
 
@@ -691,7 +691,7 @@ def check_provenance_is_recorded():
             # same balance history mean different things, so the drift is recorded.
             amend(context_fraction=0.5)
             second = harness.run_once("t", fake(*DEFAULT))
-    assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), (
+    assert any(d.startswith("context_fraction:") for d in second["config_drift"]), (
         "a provider-affecting change between episodes must be recorded"
     )
 
@@ -786,7 +786,7 @@ def check_run_once_is_build_then_run_then_commit():
                 "built means a sandbox is up"
             )
             out = harness.run_episode(ep, fake(*script))
-            assert ep.saved, "run_episode mirrors the environment back"
+            assert ep.trees_mirrored, "run_episode mirrors the environment back"
             t2 = harness.close_episode(ep, out, harness.settle_episode(ep, out))
         m2, o2 = ground_truth(), ground_truth("other")
 
@@ -930,15 +930,15 @@ def check_every_response_is_logged_raw():
         log = harness.records_dir("t") / "raw" / f"episode-{t['episode']:04d}.jsonl"
         lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
 
-    assert [x["kind"] for x in lines] == [
-        "native_response",
+    assert [x["line_type"] for x in lines] == [
+        "raw_response",
         "normalized_response",
     ] * 2, lines
     assert all(
-        x["native_response"]["id"] for x in lines if x["kind"] == "native_response"
+        x["native_response"]["id"] for x in lines if x["line_type"] == "raw_response"
     )
     assert all(x["provider"] == "anthropic" for x in lines)
-    refused = [x for x in lines if x["kind"] == "normalized_response"][-1]
+    refused = [x for x in lines if x["line_type"] == "normalized_response"][-1]
     assert refused["response"]["refusal"]["details"]["category"] == "cyber", refused
 
 

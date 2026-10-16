@@ -586,7 +586,7 @@ def check_what_the_agent_leaves_survives_the_container():
             ),
             say(),
         )  # a non-default mode
-        assert first["state_saved"], "the mirror must be written"
+        assert first["trees_mirrored"], "the mirror must be written"
         assert {f["path"] for f in first["files"]} == {
             "memory/keep.txt",
             "memory/gone.txt",
@@ -1099,7 +1099,7 @@ def check_an_interrupted_episode_still_mirrors_and_reaps():
                     2, run("echo one"), run("echo kept > memory/keep.txt"), say()
                 ),
             )
-        assert t["stop"] == "interrupted" and t["state_saved"], t
+        assert t["stop"] == "interrupted" and t["trees_mirrored"], t
         kept = harness.mirror("t", "memory") / "keep.txt"
         assert kept.is_file() and kept.read_text(encoding="utf-8").strip() == "kept", (
             "the teardown after an interrupt still mirrors the agent's tree back"

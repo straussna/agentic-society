@@ -60,7 +60,7 @@ manifest it is next run under. The manifest a branch generates gives each such f
 starter files its source agent pinned.
 
 `live_balance` changes what the agent could have observed, so it is recorded in every episode's
-provenance and a change to it between episodes shows up in `provenance_drift`. Episodes either side of
+provenance and a change to it between episodes shows up in `config_drift`. Episodes either side of
 such a change are separate arms.
 
 The system prompt is not a `config.toml` key: every manifest declares `system_prompt`, and
@@ -75,13 +75,14 @@ items forward itself, and requests encrypted reasoning state. Both receive the s
 strict function tools in the same order.
 
 **A turn's spend is computed from canonical usage and itemized charges.** The provider normalizes
-prefix, uncached input, cache reads, cache writes, output and the reasoning subset. It
-also emits charge entries in centi-micro-dollars. The harness sums those entries and
-retains the fractional carry; a repeated response id is recorded but its spend counted once.
+input tokens (the whole prompt, cached tokens included), uncached input, cache reads, cache
+writes, output and the reasoning subset. It also emits charge entries in centi-micro-dollars.
+The harness sums those entries and retains the fractional carry; a repeated response id is
+recorded but its spend counted once.
 
 Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, with
-its provider name, before provider-owned normalization is run. A second event records the
-canonical response.
+its provider name, as a line whose `line_type` is `raw_response`, before provider-owned
+normalization is run. A second line, `normalized_response`, records the canonical response.
 Writing it can never end an episode: a failure there is swallowed, because a lost log line
 is cheaper than a lost harness.
 

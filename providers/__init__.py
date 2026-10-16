@@ -85,12 +85,12 @@ def lapsed_rates(
     lapsed = []
     for provider, model in sorted(set(requirements)):
         spec = model_spec(provider, model)
-        if spec.price_valid_through and today > dt.date.fromisoformat(
-            spec.price_valid_through
+        if spec.rate_valid_through and today > dt.date.fromisoformat(
+            spec.rate_valid_through
         ):
             lapsed.append(
-                f"{provider}/{model}: rates expired after {spec.price_valid_through}. "
-                f"{spec.price_replacement or 'Update the provider catalog.'}"
+                f"{provider}/{model}: rates expired after {spec.rate_valid_through}. "
+                f"{spec.rate_replacement or 'Update the provider catalog.'}"
             )
     return lapsed
 
