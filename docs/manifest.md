@@ -743,9 +743,10 @@ episode. It names an agent outside this experiment and a positive episode
 number. The source and target must declare the same `write_memory` tool names. Each
 source `memory.md` is copied byte for byte into the corresponding target tool's channel
 before episode 1. No balance, episode count, elimination, peer roster, message, public
-post, ballot, trace or provider session is inherited. The source trace must have saved
-its state and must contain every copied memory as complete UTF-8 text. The account and
-each later trace record the source episode and the copied files' sha256s.
+post, ballot, trace or provider session is inherited. The source episode must have
+mirrored its trees back (`trees_mirrored`), and its trace must contain every copied
+memory as complete UTF-8 text. The account and each later trace record the source
+episode and the copied files' sha256s.
 
 This is set at creation rather than by a fork: it preserves only the memory an agent
 can read while every other part of the agent starts fresh. It is rejected if the
@@ -994,11 +995,11 @@ Every episode's provenance stamps: the harness's sha256, the experiment identity
 cost ceiling, the system prompt in force whole and by sha256, the image and its id, the
 rates, every setting of section 3, the starter files' name and sha256, each experimenter
 channel's source sha256, the `seating` (each seat's agent), `labels` and `seat_order`,
-the schedule, the manifest's sha256, the status files' names, the channel table in force,
-whole and by sha256, and the tool table in force, whole and by sha256, each tool's
-declared description among its fields and `bash` among them where the episode offers
-the shell, and `message_lifetime = "episode"` for schema-free mailbox messages that expire after
-their receiver's next episode.
+the schedule, the manifest's sha256, the status files' names (`status_files`), the
+channel table in force, whole and by sha256, and the tool table in force, whole and by
+sha256, each tool's declared description among its fields and `bash` among them where
+the episode offers the shell, and `message_lifetime = "episode"` for schema-free mailbox
+messages that expire after their receiver's next episode.
 Two agents offered different tools - or the same tools described differently - are in
 different arms. Where a tool declares no description, what it said of itself follows from
 the harness's sha256, the channel table and the seating.
@@ -1026,10 +1027,13 @@ the shell was: an election reads it to tell a seat that cast no ballot from one 
 offered none.
 `trace_version` is 5. The trace names `provider`, `requested_model`, and
 `resolved_model`, and the episode's `balance_before` and `balance_after`, its `balance`
-as it closed, and what the floor put back as `floored`. Every turn carries canonical
-`usage`, itemized `charges`, each naming its `token_class`, the model's `reasoning` apart
-from its `text`, a `refusal` naming its `refusal_type` where the model declined, canonical
-and native stop reasons, and the provider provenance. Raw logs write the provider and
+as it closed, and what the floor put back as `floored`. `config_drift` lists each
+provenance field that differs from the previous episode's, and `trees_mirrored` says
+whether the episode's trees were mirrored back; where they were not, `files` holds the
+previous episode's. Every turn carries canonical `usage`, itemized `charges`, each
+naming its `token_class`, the model's `reasoning` apart from its `text`, a `refusal`
+naming its `refusal_type` where the model declined, canonical and native stop reasons,
+and the provider provenance. Raw logs write the provider and
 complete native response before their canonical normalized event.
 
 `account_version` is 3. An account holds its `budget`, its `balance` and

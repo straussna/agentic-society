@@ -1931,11 +1931,14 @@ TRACE_4_KEYS = {
     "series_after": "balance_after",
     "remaining": "balance",
     "forgiven": "floored",
+    "provenance_drift": "config_drift",
+    "state_saved": "trees_mirrored",
 }
 PROVENANCE_4_KEYS = {
     "peers": "seating",
     "presentation_order": "seat_order",
     "message_delivery": "message_lifetime",
+    "harness_files": "status_files",
 }
 TURN_4_KEYS = {"thinking": "reasoning"}
 CHARGE_4_KEYS = {"kind": "token_class"}
@@ -5818,7 +5821,7 @@ def provenance(
         # names: the environment an episode opened on, stated.
         "channels": [c.as_table() for c in table],
         "channels_sha256": channels_sha256(table),
-        "harness_files": dict(s.status_files),
+        "status_files": dict(s.status_files),
         # Invariant 9 for what the agent can do: the tools offered, bash among them
         # where it is declared, whole and by sha256, so two agents offered
         # different tools are different arms. What each one says of itself the
@@ -6056,7 +6059,7 @@ class Episode:
     shell: Shell | None = None
     missing: list[str] = dataclasses.field(default_factory=list)
     misplaced: list[str] = dataclasses.field(default_factory=list)
-    saved: bool = False
+    trees_mirrored: bool = False
     # What peers settling in the same round credited to this account before it
     # closed. Zero for an episode run on its own or sequentially, where a credit
     # lands on disk between the receiver's episodes.
@@ -6284,7 +6287,7 @@ def run_episode(ep: Episode, router: ProviderRouter) -> dict:
         shell.close()
         # Before the reap: the container holds the only copy of whatever the
         # agent wrote.
-        ep.saved = sandbox.mirror_trees(ep.instances)
+        ep.trees_mirrored = sandbox.mirror_trees(ep.instances)
         sandbox.close()
     return out
 
@@ -6469,7 +6472,7 @@ def trace_of(
         "resolved_model": out.get("resolved_model"),
         "system_sha256": ep.provenance["system_sha256"],
         "provenance": ep.provenance,
-        "provenance_drift": ep.config_drift,
+        "config_drift": ep.config_drift,
         # The tools the episode's model calls carried, by name, the shell among them
         # where it was: what an election reads to tell a seat offered no ballot.
         "offered": [spec.name for spec in episode_specs(ep.bound)],
@@ -6477,7 +6480,7 @@ def trace_of(
         # Written outside every channel and moved into memory, so the work
         # survives and the agent will not find it where it left it.
         "misplaced": ep.misplaced,
-        "state_saved": ep.saved,  # false means files[] is last episode's, not this one's
+        "trees_mirrored": ep.trees_mirrored,  # false: files[] is the previous episode's
         "touched_balance": any(ref.search(c) for c in out["commands"])
         if ref
         else False,
@@ -6850,10 +6853,10 @@ def rebuildable(trace: dict, parent: str, episode: int) -> list[dict] | None:
     own records count. A binary, a file stored only in part, or one whose text
     did not decode as UTF-8 stops the fork, and says why.
     """
-    if not trace["state_saved"]:
+    if not trace["trees_mirrored"]:
         print(
-            f"{parent} episode {episode} did not mirror its files back, so files[] "
-            f"is the episode before it, not this one; fork an episode that saved",
+            f"{parent} episode {episode} did not mirror its trees back, so files[] "
+            "is the episode before it, not this one; fork an episode that did",
             file=sys.stderr,
         )
         return None

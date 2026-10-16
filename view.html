@@ -1260,8 +1260,8 @@ function renderTree(channel) {
   const stamp = (c) => {
     if (d.static) return `the manifest's source`;
     if (historical && c.committed == null) return `did not act in round ${d.history.selected}`;
-    if (historical && c.saved) return `end of round ${d.history.selected} · ep${c.committed}`;
-    if (historical) return `ep${c.committed} · state was not saved`;
+    if (historical && c.trees_mirrored) return `end of round ${d.history.selected} · ep${c.committed}`;
+    if (historical) return `ep${c.committed} · its trees were not mirrored back`;
     const seat = c.seat == null ? "" : `${esc(c.agent)} · `;
     const live = c.running_episode == null ? "" : running(c) ? " · an episode is running" : " · an episode never finished";
     return `${seat}as of ep${c.committed}${live}`;

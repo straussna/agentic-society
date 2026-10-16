@@ -368,7 +368,7 @@ def check_an_interrupt_ends_the_episode_at_the_turn_boundary():
             f"the turn in flight must finish: {len(t['turns'])}"
         )
         assert t["commands"][-1] == "echo two", t["commands"]
-        assert t["spent"] > 0 and t["state_saved"], t
+        assert t["spent"] > 0 and t["trees_mirrored"], t
         account = ground_truth()
         assert account["budget"] - account["balance"] == t["spent"]
         assert len(account["episodes"]) == 1, "the episode must appear in the record"
@@ -653,7 +653,7 @@ def check_provenance_is_recorded():
                 "labels",
                 "channels",
                 "channels_sha256",
-                "harness_files",
+                "status_files",
                 "source_sha256",
                 "delivery",
             ):
@@ -663,7 +663,7 @@ def check_provenance_is_recorded():
             )
             assert prov["provider"]["name"] == "anthropic", "the adapter is recorded"
             assert first["resolved_model"], "the dated snapshot behind the alias"
-            assert first["provenance_drift"] == [], (
+            assert first["config_drift"] == [], (
                 "nothing to differ from on episode one"
             )
 
@@ -671,7 +671,7 @@ def check_provenance_is_recorded():
             # same balance history mean different things, so the drift is recorded.
             amend(context_fraction=0.5)
             second = harness.run_once("t", fake(*DEFAULT))
-    assert any(d.startswith("context_fraction:") for d in second["provenance_drift"]), (
+    assert any(d.startswith("context_fraction:") for d in second["config_drift"]), (
         "a provider-affecting change between episodes must be recorded"
     )
 
@@ -765,7 +765,7 @@ def check_run_once_is_build_then_run_then_commit():
                 "built means a sandbox is up"
             )
             out = harness.run_episode(ep, fake(*script))
-            assert ep.saved, "run_episode mirrors the environment back"
+            assert ep.trees_mirrored, "run_episode mirrors the environment back"
             t2 = harness.close_episode(ep, out, harness.settle_episode(ep, out))
         m2, o2 = ground_truth(), ground_truth("other")
 

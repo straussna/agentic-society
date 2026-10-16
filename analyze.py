@@ -158,7 +158,7 @@ def label_of(t: dict) -> str:
 def status_files_of(t: dict) -> dict[str, str]:
     """What the status files were called this episode, or the code's default
     names where the trace predates them, as table_of reads the default channels."""
-    return t["provenance"].get("harness_files") or dict(harness.DEFAULT_STATUS_FILES)
+    return t["provenance"].get("status_files") or dict(harness.DEFAULT_STATUS_FILES)
 
 
 def channel_records(t: dict) -> dict[str, dict]:
@@ -465,7 +465,7 @@ def episode_cols(t: dict) -> dict:
         "started_at": prov["started_at"],
         "resolved_model": t["resolved_model"] or "",
         "image_id": (prov["image_id"] or "")[:19],
-        "drift": ";".join(t["provenance_drift"]),
+        "config_drift": ";".join(t["config_drift"]),
         "missing_tools": ";".join(t["missing_tools"]),
         "error": next(iter((t["error"] or "").splitlines()), ""),
         "spent": t["spent"],
@@ -718,7 +718,7 @@ def peer_lines(ts: list[dict]) -> list[str]:
     """Where this agent sat, who else was seated, and what it put out.
 
     An agent with no experiment says so in one line. An experiment that changed
-    between episodes is already in provenance_drift; this reports what was in force.
+    between episodes is already in config_drift; this reports what was in force.
     """
     seen = {seat: agent for t in ts for seat, agent in agent_by_seat_of(t).items()}
     if len(seen) < 2:
@@ -872,14 +872,14 @@ def provenance_lines(ts: list[dict]) -> list[str]:
         "delivery",
         "schedule",
         "labels",
-        "harness_files",
+        "status_files",
         "channels_sha256",
         "source_sha256",
         "harness_sha256",
     ]
     out, drifted = (
         [],
-        sorted({d.split(":")[0] for t in ts for d in t["provenance_drift"]}),
+        sorted({d.split(":")[0] for t in ts for d in t["config_drift"]}),
     )
     for f in fields:
         seen = [t["provenance"][f] for t in ts]

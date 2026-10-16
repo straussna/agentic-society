@@ -650,7 +650,7 @@ def check_a_trace_that_predates_the_status_file_names_still_groups():
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
-        del trace["provenance"]["harness_files"]
+        del trace["provenance"]["status_files"]
         path.write_text(json.dumps(trace), encoding="utf-8")
         names = [exp["experiment_id"] for exp in view.experiments()]
         exp = view.experiment_by_id("g")
@@ -1932,6 +1932,9 @@ EARLIER_KEYS = {
     "thinking",
     "role",
     "ours",
+    "harness_files",
+    "provenance_drift",
+    "state_saved",
     "termination_reason",
     "draw",
     "scores",
@@ -1994,6 +1997,8 @@ def earlier_trace(trace: dict) -> dict:
         "balance_after": "series_after",
         "balance": "remaining",
         "floored": "forgiven",
+        "config_drift": "provenance_drift",
+        "trees_mirrored": "state_saved",
     }
     out = {names.get(k, k): v for k, v in trace.items()}
     out["trace_version"] = 4
@@ -2001,6 +2006,7 @@ def earlier_trace(trace: dict) -> dict:
         "seating": "peers",
         "seat_order": "presentation_order",
         "message_lifetime": "message_delivery",
+        "status_files": "harness_files",
     }
     out["provenance"] = {
         provenance.get(k, k): v for k, v in out["provenance"].items()

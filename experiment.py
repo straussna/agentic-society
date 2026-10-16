@@ -546,9 +546,10 @@ def inherit_memory(entry: dict, account: harness.Account) -> None:
         raise SystemExit(
             f"agent {agent}: memory_from source {source!r} episode {episode} has {why}"
         )
-    if not trace.get("state_saved"):
+    if not trace.get("trees_mirrored"):
         raise SystemExit(
-            f"agent {agent}: memory_from source {source!r} episode {episode} did not save its state"
+            f"agent {agent}: memory_from source {source!r} episode {episode} "
+            "did not mirror its trees back"
         )
 
     source_tools = {

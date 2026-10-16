@@ -1055,7 +1055,7 @@ def seat_row(
         # the console line uses.
         "silent": silent(last),
         "refused": sum(len(analyze.refused_turns_of(t)) for t in ts),
-        "config_drift": (last or {}).get("provenance_drift") or [],
+        "config_drift": (last or {}).get("config_drift") or [],
         # Everything that moved the balance without being a turn. Read off the
         # account, not summed from the traces: these are cumulative there, and
         # an agent can be credited between its own starts.
@@ -1382,7 +1382,7 @@ def messages(exp: dict, since: int = 0) -> dict:
         for row in [r for r in rows if r["agent"] == agent]:
             # An episode whose files were never mirrored back carries the
             # previous episode's, so it says nothing about what moved.
-            if not row["trace"].get("state_saved"):
+            if not row["trace"].get("trees_mirrored"):
                 continue
             now = outbox_of(row["trace"])
             episodic = row["trace"]["provenance"].get("message_lifetime") == "episode"
@@ -1455,7 +1455,7 @@ def human_history(exp: dict, agent: str) -> dict:
     board = []
     if post_channel:
         for row in rows:
-            if not row["trace"].get("state_saved"):
+            if not row["trace"].get("trees_mirrored"):
                 continue
             seat = row["seat"]
             account = account_of(row["agent"])
@@ -1696,7 +1696,7 @@ def historical_listing(
     row: dict | None, ch: harness.Channel, channel: str, label: str
 ) -> list[dict]:
     """The files this seat owned when its episode in a round committed."""
-    if row is None or not row["trace"].get("state_saved"):
+    if row is None or not row["trace"].get("trees_mirrored"):
         return []
     prefix = ch.path_for(label).strip("/")
     out = []
@@ -1770,7 +1770,7 @@ def tree_view(exp: dict, channel: str, round_at: int | None = None) -> dict | No
                     "committed": row["episode"] if row else None,
                     "running_episode": None,
                     "live_age": None,
-                    "saved": bool(row and row["trace"].get("state_saved")),
+                    "trees_mirrored": bool(row and row["trace"].get("trees_mirrored")),
                     "files": historical_listing(row, ch, channel, label),
                 }
             )
@@ -1952,7 +1952,7 @@ def agent_view(agent: str, exp: dict | None) -> dict:
             "channels": analyze.channel_records(t),
             "floored": t.get("floored") or 0,
             "provenance": t["provenance"],
-            "config_drift": t.get("provenance_drift") or [],
+            "config_drift": t.get("config_drift") or [],
             "stopped_by_run": t["stop"] in harness.STOPS_THE_AGENT,
             "live": False,
         }

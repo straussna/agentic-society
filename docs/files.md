@@ -58,7 +58,7 @@ starter files and the settings they landed on; a fork from before carries neithe
 manifest it is next run under.
 
 `live_balance` changes what the agent could have observed, so it is recorded in every episode's
-provenance and a change to it between episodes shows up in `provenance_drift`. Episodes either side of
+provenance and a change to it between episodes shows up in `config_drift`. Episodes either side of
 such a change are separate arms.
 
 The system prompt is not a `config.toml` key: every manifest declares `system_prompt`, and

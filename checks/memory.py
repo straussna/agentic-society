@@ -27,7 +27,7 @@ def source_trace(agent: str, episode: int, body: str) -> None:
         "trace_version": harness.TRACE_VERSION,
         "agent": agent,
         "episode": episode,
-        "state_saved": True,
+        "trees_mirrored": True,
         "provenance": {
             "channels": [channel.as_table() for channel in harness.channels()],
             "tools": [tool.as_table() for tool in harness.tools()],
@@ -97,9 +97,9 @@ def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
     """Every memory_from that cannot give the exact recorded memory is rejected, and
     leaves the new agent's memory as it found it and nothing recorded as inherited: a
     changed source on an agent that already has one, a missing trace, another trace
-    version, an episode that did not save its state, unmatched write_memory tools, two
-    memories for one tool, a text copy that is not the file, and a memory already there
-    that differs.
+    version, an episode that did not mirror its trees back, unmatched write_memory
+    tools, two memories for one tool, a text copy that is not the file, and a memory
+    already there that differs.
     """
     body = "A complete inherited memory.\n"
 
@@ -131,7 +131,9 @@ def check_memory_from_rejects_any_source_it_cannot_copy_exactly():
         f"a version-{harness.TRACE_VERSION - 1} trace": rewritten(
             lambda t: t.update(trace_version=harness.TRACE_VERSION - 1)
         ),
-        "did not save its state": rewritten(lambda t: t.update(state_saved=False)),
+        "did not mirror its trees back": rewritten(
+            lambda t: t.update(trees_mirrored=False)
+        ),
         "matching write_memory tools": rewritten(
             lambda t: t["provenance"].update(tools=[])
         ),

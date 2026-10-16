@@ -212,7 +212,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
             "the starter files that landed are the pinned ones"
         )
         assert not (harness.mirror("t", "memory") / "m9").exists()
-        assert second["provenance_drift"] == [], "nothing about this agent changed"
+        assert second["config_drift"] == [], "nothing about this agent changed"
 
         # Asking the agent to be something it was not created as is rejected.
         rejected(
@@ -434,7 +434,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
             t = {
                 "trace_version": harness.TRACE_VERSION,
                 "episode": 1,
-                "state_saved": True,
+                "trees_mirrored": True,
                 "balance_after": [10, 9],
                 "files": [
                     {
@@ -473,7 +473,7 @@ def check_fork_rejects_what_it_cannot_rebuild():
             ("binary", binary),
             ("truncated", big),
             ("lossy", lossy),
-            ("unmirrored", trace(state_saved=False)),
+            ("unmirrored", trace(trees_mirrored=False)),
         ]:
             harness.trace_path("p", 1).write_text(json.dumps(bad), encoding="utf-8")
             with quiet():
@@ -549,7 +549,7 @@ def check_a_fork_that_meets_a_stray_leaves_the_new_id_free():
         trace = {
             "trace_version": harness.TRACE_VERSION,
             "episode": 1,
-            "state_saved": True,
+            "trees_mirrored": True,
             "balance_after": [10, 9],
             "files": [mine, {**mine, "path": "elsewhere/b.txt"}],
         }
@@ -596,14 +596,14 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
             blind = harness.run_once("f", fake(say()))
     assert first["episode"] == 2, first["episode"]
     # The fork's own id in its seat is no drift: a new id is what a fork is.
-    assert first["provenance_drift"] == ["context_fraction: 0.85 -> 0.5"], first[
-        "provenance_drift"
+    assert first["config_drift"] == ["context_fraction: 0.85 -> 0.5"], first[
+        "config_drift"
     ]
-    assert later["provenance_drift"] == [], (
+    assert later["config_drift"] == [], (
         "its own trace after that, and nothing moved"
     )
-    assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind[
-        "provenance_drift"
+    assert blind["episode"] == 4 and blind["config_drift"] == [], blind[
+        "config_drift"
     ]
 
 
@@ -642,7 +642,7 @@ def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its
     assert t["provenance"]["seating"] == {"1": "br-01", "2": "br-02"}, t["provenance"][
         "seating"
     ]
-    assert t["provenance_drift"] == [
+    assert t["config_drift"] == [
         f"experiment_id: {was['experiment_id']!r} -> 'br'",
         f"manifest_sha256: {was['manifest_sha256']!r} -> {branch['sha256']!r}",
-    ], t["provenance_drift"]
+    ], t["config_drift"]

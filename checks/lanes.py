@@ -834,11 +834,11 @@ def fake_experiment(
             "turns": [],
             "balance": 0,
             "files": [],
-            "state_saved": True,
+            "trees_mirrored": True,
             "provenance": {
                 "started_at": f"2026-01-01T{at}:00Z",
                 "seating": seats,
-                "harness_files": dict(harness.SETTINGS.status_files),
+                "status_files": dict(harness.SETTINGS.status_files),
                 "message_lifetime": "episode",
             },
             **trace_fields,

@@ -874,8 +874,8 @@ def check_the_tools_offered_reach_provenance():
             harness.run_once("t", fake(say()))
         second = trace_on_disk("t", 2)
         assert second["provenance"]["tools_sha256"] != first["tools_sha256"]
-        assert any(line.startswith("tools") for line in second["provenance_drift"]), (
-            second["provenance_drift"]
+        assert any(line.startswith("tools") for line in second["config_drift"]), (
+            second["config_drift"]
         )
 
     # A trace from before the tool table reads as the bare arm.
@@ -1169,7 +1169,7 @@ def check_the_audit_opens_on_the_memory_an_agent_inherits():
                     "trace_version": harness.TRACE_VERSION,
                     "agent": "old",
                     "episode": 7,
-                    "state_saved": True,
+                    "trees_mirrored": True,
                     "provenance": {
                         "channels": [c.as_table() for c in harness.channels()],
                         "tools": [t.as_table() for t in harness.tools()],
