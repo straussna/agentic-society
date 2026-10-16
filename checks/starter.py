@@ -9,13 +9,14 @@ import json
 import experiment
 import harness
 
-from checks.fake import fake, run, say
+from checks.fake import DEFAULT, fake, run, say
 from checks.lanes import (
     HostSandbox,
     amend,
     episode_once,
     files_by_path,
     ground_truth,
+    manifest_file,
     pinned,
     plant,
     quiet,
@@ -605,6 +606,68 @@ def check_a_forks_first_episode_is_held_against_the_episode_it_was_forked_at():
     assert blind["episode"] == 4 and blind["provenance_drift"] == [], blind[
         "provenance_drift"
     ]
+
+
+def check_a_fork_from_before_its_starter_files_takes_the_manifests_wherever_it_sets_them():
+    """A fork of an episode before its parent's starter files landed holds none, pins
+    the ones its manifest gives it, on the [[agent]] table or at the top level, and
+    lands them at their threshold; from then on they are pinned. A fork that carries
+    its parent's starter files is held to them."""
+    settings = 'starter_files = "other"\nstarter_files_below = 500000\n'
+    manifests = {
+        "fa": 'system_prompt = ""\n[[agent]]\nid = "fa"\n' + settings,
+        "fb": 'system_prompt = ""\n' + settings + '[[agent]]\nid = "fb"\n',
+    }
+
+    def start(config=None, overrides=None, requirements=(), **kw):
+        harness.apply_config(overrides or {}, "manifest")
+        return fake(*DEFAULT)
+
+    pinned_at = {"starter_files": "s", "starter_files_below": 499_000}
+    with temp_root(budget=500_000, **pinned_at) as root:
+        plant(root)
+        plant(root, "other", m9="nine\n")
+        with quiet():
+            harness.run_once("t", fake(say()))
+            harness.run_once("t", fake(say()))
+            for fork in (*manifests, "after"):
+                assert harness.fork("t", 2 if fork == "after" else 1, fork) == 0
+        assert ground_truth()["starter_files_landed"]["episode"] == 2
+        harness.start = start
+        for fork, text in manifests.items():
+            assert "starter_files" not in ground_truth(fork)
+            p = manifest_file(root, text, f"{fork}.toml")
+            alone = ["--agent", fork, "--manifest", str(p), "--resume"]
+            with quiet():
+                assert harness.main(alone) == 0
+            account = ground_truth(fork)
+            pair = (account["starter_files"], account["starter_files_below"])
+            assert pair == ("other", 500000), account
+            assert account["starter_files_landed"]["name"] == "other"
+            assert account["starter_files_landed"]["episode"] == 2
+            assert (harness.mirror(fork, "memory") / "m9").exists()
+            assert trace_on_disk(fork, 2)["provenance"]["starter_files"] == "other"
+            q = manifest_file(root, text.replace('"other"', '"s"'), f"{fork}-s.toml")
+            with quiet():
+                rejected(
+                    lambda: harness.main(
+                        ["--agent", fork, "--manifest", str(q), "--resume"]
+                    ),
+                    fork,
+                    "starter_files",
+                    because="a fork's starter files moved once it had pinned them",
+                )
+        after = manifests["fa"].replace('"fa"', '"after"')
+        p = manifest_file(root, after, "after.toml")
+        with quiet():
+            rejected(
+                lambda: harness.main(
+                    ["--agent", "after", "--manifest", str(p), "--resume"]
+                ),
+                "after",
+                "starter_files",
+                because="a fork that carries its parent's starter files took others",
+            )
 
 
 def check_a_branchs_first_episode_reports_the_branch_and_not_the_ids_it_gave_its_seats():

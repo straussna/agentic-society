@@ -81,7 +81,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 deny every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 346 of 372.
+down. `--no-docker` runs 349 of 375.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -96,9 +96,10 @@ leave each other alone and no run of `check.py` can touch a live experiment.
 A plain run does not collect what a run killed outright leaves behind; `--sweep-all`
 does, and is the only mode that reaches a container this process did not make.
 
-Some checks are wall-clock sensitive by design: anything setting `command_timeout`.
-Every check that holds one thread on another for up to 10 seconds, on a barrier or
-an event, also fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
+Some checks are wall-clock sensitive by design: `hostile_output_survives` (a 4MB
+flood against a deadline) and anything setting `command_timeout`. Every check that
+holds one thread on another for up to 10 seconds, on a barrier or an event, also
+fails under contention: `a_simultaneous_round_runs_its_episodes_at_once`,
 `an_interrupt_in_a_simultaneous_round_commits_every_episode_in_flight`,
 `an_interrupt_in_a_simultaneous_vote_eliminates_no_seat_it_kept_from_voting`,
 `a_round_writes_each_stage_as_it_reaches_it`,

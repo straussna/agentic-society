@@ -2371,21 +2371,21 @@ def check_a_manifest_is_validated():
     assert m["overrides"] == want, "everything else is an experiment default"
     assert [e["id"] for e in m["agents"]] == ["g01", "g02"]
     assert m["sha256"] == expected_sha
-    assert experiment.pinned_settings_of(m["agents"][0]) == {
+    assert experiment.pinned_settings_of(m["agents"][0], m["overrides"]) == {
         "provider": "anthropic",
         "model": "claude-sonnet-5",
         "budget": None,
         "starter_files": "s",
         "starter_files_below": 400000,
-        "system_prompt": None,
+        "system_prompt": "",
     }
-    assert experiment.pinned_settings_of(m["agents"][1]) == {
+    assert experiment.pinned_settings_of(m["agents"][1], m["overrides"]) == {
         "provider": "anthropic",
         "model": other_model,
         "budget": 7,
         "starter_files": None,
         "starter_files_below": None,
-        "system_prompt": None,
+        "system_prompt": "",
     }
     short = experiment.shorthand(["a", "b"])
     assert set(m) == set(short) == experiment.Manifest.__required_keys__, (
@@ -3185,8 +3185,9 @@ def check_a_manifest_declares_what_the_harness_says():
     Every manifest declares one, at the top level or on each seat: what an agent is
     told is stated and never inherited, and "" is the declaration that says nothing.
     The experiment's own is what a seat is told unless the seat declares its own, and
-    the prompt is pinned like the other four settings: an agent asked to run on a
-    different one is rejected, episodes either side of it not being one experiment.
+    the prompt is one of the six pinned settings: an agent asked to run on a different
+    one, its seat's or the experiment's, is rejected, episodes either side of it not
+    being one experiment.
     """
     mine, ours = "You are workshop 1.", "You are one of several workshops."
     text = (
@@ -3237,15 +3238,18 @@ def check_a_manifest_declares_what_the_harness_says():
                 "system_prompt",
                 because="an agent was re-created on a different system prompt",
             )
-        # The experiment's default is read at creation like every other setting, so a
-        # seat that took it keeps what it was told and a later manifest does not resay it.
+        # The experiment's default is pinned in the account of each seat that took it,
+        # so a manifest that moves it is rejected and the seat keeps what it was told.
         p.write_text(
             original.replace(ours, ours + " Again."), encoding="utf-8", newline="\n"
         )
         with quiet():
-            assert (
-                experiment.main(["--manifest", str(p), "--rounds", "1", "--resume"])
-                == 0
+            rejected(
+                lambda: experiment.main(
+                    ["--manifest", str(p), "--rounds", "1", "--resume"]
+                ),
+                "system_prompt",
+                because="a seat was resumed on a moved experiment prompt",
             )
         kept = ground_truth("g02")["system_prompt"]
     assert code == 0, buf.getvalue()
@@ -3266,3 +3270,55 @@ def check_a_manifest_declares_what_the_harness_says():
             == t["system_sha256"]
             == harness.system_sha256(want)
         )
+
+
+def check_a_top_level_pinned_setting_that_moves_is_rejected_on_resume():
+    """A pinned setting given at the top level holds an existing agent as one given on
+    its [[agent]] table does: the same manifest resumes it, and one that moves is
+    rejected by both drivers, naming the agent and the setting, before anything runs."""
+    top = {
+        "system_prompt": '"A"',
+        "budget": "500000",
+        "starter_files": '"a"',
+        "starter_files_below": "400000",
+    }
+    moved = {
+        "system_prompt": '"B"',
+        "budget": "600000",
+        "starter_files": '"b"',
+        "starter_files_below": "300000",
+        "model": '"claude-opus-5"',
+    }
+
+    def text(**change: str) -> str:
+        settings = {**top, **change}
+        return "".join(f"{k} = {v}\n" for k, v in settings.items()) + (
+            '[[agent]]\nid = "g01"\n'
+        )
+
+    def start(config=None, overrides=None, requirements=(), **kw):
+        harness.apply_config(overrides or {}, "manifest")
+        return fake(*DEFAULT)
+
+    with temp_root() as root:
+        plant(root, "a")
+        plant(root, "b", m1="bravo\n")
+        harness.start = start
+        p = manifest_file(root, text())
+        alone = ["--agent", "g01", "--manifest", str(p), "--resume"]
+        with quiet():
+            assert experiment.main(["--manifest", str(p)]) == 0
+            assert experiment.main(["--manifest", str(p), "--resume"]) == 0
+            assert harness.main(alone) == 0
+        before = ground_truth("g01")
+        assert len(before["episodes"]) == 3, "the manifest it was created on resumes it"
+        for key, value in moved.items():
+            p = manifest_file(root, text(**{key: value}), f"{key}.toml")
+            alone = ["--agent", "g01", "--manifest", str(p), "--resume"]
+            for drive in (
+                lambda: experiment.main(["--manifest", str(p), "--resume"]),
+                lambda: harness.main(alone),
+            ):
+                with quiet():
+                    rejected(drive, "g01", key, because=f"a moved top-level {key} ran")
+            assert ground_truth("g01") == before, f"nothing ran under the moved {key}"

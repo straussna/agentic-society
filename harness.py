@@ -2020,7 +2020,8 @@ def load_account(
     uses from then on. Provider and model are always explicit; other omitted settings
     use the experiment's settings. A setting given for an existing agent must match what
     it was created on. An account that holds no provider, no model, or no setting it is
-    given is rejected by the key it lacks.
+    given is rejected by the key it lacks, except a fork of an episode before its
+    parent's starter files landed, which pins the starter files it is given.
     """
     s = SETTINGS
     given = {
@@ -2102,6 +2103,26 @@ def load_account(
         providers.model_spec(account["provider"], account["model"])
     except providers.ProviderConfigurationError as error:
         raise SystemExit(f"agent {agent}: {error}; start a fresh agent id") from None
+    # A fork of an episode before its parent's starter files landed holds no starter
+    # settings, and pins the ones the manifest it is next run under gives it.
+    if (
+        "forked_from" in account
+        and "starter_files" not in account
+        and "starter_files_below" not in account
+        and starter_files is not None
+    ):
+        validate_settings(
+            "account",
+            provider=None,
+            model=None,
+            budget=None,
+            starter_files=starter_files,
+            starter_files_below=starter_files_below,
+            who=agent,
+        )
+        account["starter_files"] = starter_files
+        account["starter_files_below"] = starter_files_below
+        save_account(agent, account)
     for setting, key in PINNED_SETTINGS.items():
         if given[setting] is None:
             continue
@@ -7040,7 +7061,7 @@ def print_context(
         with contextlib.redirect_stdout(io.StringIO()):
             for entry in agents:
                 account = load_account(
-                    entry["id"], **experiment.pinned_settings_of(entry)
+                    entry["id"], **experiment.pinned_settings_of(entry, m["overrides"])
                 )
                 experiment.inherit_memory(entry, account)
                 experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
@@ -7271,7 +7292,9 @@ def main(argv: list[str] | None = None) -> int:
     catch_signals()
     if not a.resume:
         archive_agents([a.agent], FRESH_START)
-    account = load_account(a.agent, **experiment.pinned_settings_of(entry))
+    account = load_account(
+        a.agent, **experiment.pinned_settings_of(entry, m["overrides"])
+    )
     experiment.inherit_memory(entry, account)
     seat = experiment.preparers(ids, experiment.stamp_of(m), m["labels"], m["schedule"])
     return run_episodes(a.agent, router, a.episodes, seat(a.agent))
