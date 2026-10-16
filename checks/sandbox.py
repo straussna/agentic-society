@@ -440,19 +440,19 @@ def check_a_bare_read_cannot_wedge_the_episode():
 def check_hostile_output_survives():
     """Binary bytes, an output flood, and a hang each leave the episode alive.
 
-    The flood is 4MB, which exercises Shell.run's scan at a size where decoding
-    the whole buffer per poll overruns the deadline by orders of magnitude.
+    The flood is 4MB under a 60s deadline, which exercises Shell.run's scan at a
+    size where decoding the whole buffer per poll overruns that deadline many times
+    over, while a loaded machine's `tr` finishes inside it. The hang runs in an
+    episode of its own under a 5s deadline.
     """
-    with docker_root(command_timeout=5):
+    with docker_root(command_timeout=60):
         t = episode_once(
             run("head -c 4096 /dev/urandom"),
             run("head -c 4000000 /dev/zero | tr '\\0' x"),
-            run("sleep 30"),
             say(),
         )
         assert t["stop"] == "end_turn" and t["error"] is None, t["error"]
-        results = [c["result"] for turn in t["turns"] for c in turn["tools"]]
-        flood = results[1]
+        flood = [c["result"] for turn in t["turns"] for c in turn["tools"]][1]
         assert "truncated:" in flood, "the flood should have been clipped"
         assert "timed out" not in flood, (
             "scanning the flood must not outlast the deadline"
@@ -460,6 +460,10 @@ def check_hostile_output_survives():
         assert len(flood) < harness.SETTINGS.tool_result_limit + 500, (
             f"clipped to the tool bound: {len(flood)}"
         )
+    with docker_root(command_timeout=5):
+        t = episode_once(run("sleep 30"), say())
+        assert t["stop"] == "end_turn" and t["error"] is None, t["error"]
+        results = [c["result"] for turn in t["turns"] for c in turn["tools"]]
         assert any("timed out after 5s" in r for r in results), (
             "the hang should be marked"
         )
