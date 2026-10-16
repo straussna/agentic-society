@@ -289,10 +289,9 @@ def latest_attempt(lines: list[dict]) -> list[dict]:
     return lines[starts[-1] :] if starts else lines
 
 
-# The names a raw log line that types itself under `kind` gives its type key, the type
-# of its native response line, and the keys of its normalized response's usage,
-# charges and refusal, each with its current name. The dashboard reads such a line,
-# which sits beside a version-4 trace, through raw_line_as_current.
+# The name a raw log line that types itself under `kind` gives its type key, and the
+# type it gives its native response line, each with its current name. The dashboard
+# reads such a line through raw_line_as_current.
 RAW_LINE_KEYS = {"kind": "line_type"}
 RAW_LINE_TYPES = {"native_response": "raw_response"}
 

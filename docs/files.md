@@ -74,9 +74,9 @@ strict function tools in the same order.
 
 **A turn's spend is computed from canonical usage and itemized charges.** The provider normalizes
 input tokens (the whole prompt, cached tokens included), uncached input, cache reads, cache
-writes, output and the reasoning subset. It
-also emits charge entries in centi-micro-dollars. The harness sums those entries and
-retains the fractional carry; a repeated response id is recorded but its spend counted once.
+writes, output and the reasoning subset. It also emits charge entries in centi-micro-dollars.
+The harness sums those entries and retains the fractional carry; a repeated response id is
+recorded but its spend counted once.
 
 Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, with
 its provider name, as a line whose `line_type` is `raw_response`, before provider-owned
