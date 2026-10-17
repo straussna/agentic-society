@@ -14,7 +14,19 @@ from typing import Any, Literal, Protocol, runtime_checkable
 StopReason = Literal["end_turn", "tool_use", "max_tokens", "refusal", "other"]
 
 # How a provider failure is classified; retryable_api is the one a retry can cure.
-FailureCategory = Literal["authentication", "retryable_api", "permanent_api", "adapter"]
+# configuration, unreadable_response and unclassified are HARNESS_FAULTS: the API did
+# not fail, so the episode ends as harness_error.
+FailureCategory = Literal[
+    "authentication",
+    "retryable_api",
+    "permanent_api",
+    "configuration",
+    "unreadable_response",
+    "unclassified",
+]
+HARNESS_FAULTS: frozenset[str] = frozenset(
+    {"configuration", "unreadable_response", "unclassified"}
+)
 
 # Exception classes, by name, of a model call that got no answer: a dropped connection
 # or a timeout. They carry no status code. A name anywhere in an exception's MRO
@@ -187,7 +199,7 @@ class ProviderError(RuntimeError):
 
 class ProviderConfigurationError(ProviderError):
     def __init__(self, message: str, *, provider: str):
-        super().__init__(message, category="adapter", provider=provider)
+        super().__init__(message, category="configuration", provider=provider)
 
 
 def classify_error(
@@ -198,7 +210,7 @@ def classify_error(
     401 and 403, or a class named for authentication or a denied permission, are
     authentication; 408, 409, 429 and 5xx are worth retrying, and any other status
     is permanent. With no status, a class named in RETRYABLE is a model call that got
-    no answer, and is retried; anything else is the adapter's. A rejected key - 401,
+    no answer, and is retried; anything else is unclassified. A rejected key - 401,
     or a class named for authentication - says where `key_variable` goes, when one
     is given. A denied permission does not: the key was accepted, and is not
     allowed what was asked.
@@ -215,7 +227,7 @@ def classify_error(
     elif any(cls.__name__ in RETRYABLE for cls in type(error).__mro__):
         category = "retryable_api"
     else:
-        category = "adapter"
+        category = "unclassified"
     message = f"{name}: {error}"
     if key_variable and (status == 401 or "Authentication" in name):
         message = f"{message} {where_key_goes(key_variable)}"

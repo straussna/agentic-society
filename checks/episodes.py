@@ -1026,14 +1026,24 @@ def check_a_stuck_agent_stops_itself():
 def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_commits():
     """What is not the API failing is harness_error, and the spend before it is settled.
 
-    An adapter that cannot read what the API sent and an exception from anywhere
-    else are both on this side of the line. Neither is retried, the error names its
-    type, and only the adapter's carries the provider's classification.
+    A provider failure classified configuration, unreadable_response or unclassified
+    and an exception from anywhere else are all on this side of the line. None is
+    retried, the error names its type, and only a provider failure carries the
+    provider's classification, which a trace recording the category adapter reads
+    as unclassified.
     """
+    assert providers.HARNESS_FAULTS == {
+        "configuration",
+        "unreadable_response",
+        "unclassified",
+    }
     faults = (
-        (
-            providers.ProviderError("bad", category="adapter", provider="anthropic"),
-            "ProviderError",
+        *(
+            (
+                providers.ProviderError("bad", category=category, provider="anthropic"),
+                "ProviderError",
+            )
+            for category in sorted(providers.HARNESS_FAULTS)
         ),
         (ValueError("bad"), "ValueError"),
     )
@@ -1052,11 +1062,17 @@ def check_an_adapter_fault_or_a_harness_bug_ends_as_harness_error_and_still_comm
         ), "the turn before the fault was charged and reached the balance history"
         if kind == "ProviderError":
             assert t["provider_error"] == {
-                "category": "adapter",
+                "category": fault.category,
                 "provider": "anthropic",
                 "message": "bad",
                 "status_code": None,
                 "native_type": None,
             }, t["provider_error"]
+            earlier = {**t["provider_error"], "category": "adapter"}
+            old = {**t, "provider_error": earlier}
+            assert harness.trace_as_current(old)["provider_error"] == {
+                **t["provider_error"],
+                "category": "unclassified",
+            }
         else:
             assert "provider_error" not in t, t["provider_error"]

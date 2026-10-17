@@ -1982,6 +1982,9 @@ USAGE_4_KEYS = {"prefix_tokens": "input_tokens"}
 CHARGE_4_KEYS = {"kind": "token_class"}
 REFUSAL_4_KEYS = {"kind": "refusal_type"}
 FILE_4_KEYS = {"ours": "planted"}
+# The provider_error categories a trace of any version holds under other names, each
+# with its current name.
+FAILURE_CATEGORIES = {"adapter": "unclassified"}
 
 
 def rekeyed(record: Mapping[str, Any], keys: Mapping[str, str]) -> dict[str, Any]:
@@ -2020,13 +2023,18 @@ def account_as_current(account: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def trace_as_current(trace: Mapping[str, Any]) -> Mapping[str, Any]:
-    """A version-4 trace in the shape of the current version, its recorded
-    trace_version kept; any other trace as it is.
+    """A trace in the shape of the current version, its recorded trace_version kept.
 
-    shell_tool goes from the provenance, whose tool table says the same: whether it
-    declares bash. A file record's role goes, its author and starter flag saying
-    what it says, and ours is planted.
+    A provider_error category FAILURE_CATEGORIES names reads as its current name, in
+    a trace of any version. A version-4 trace is rekeyed: shell_tool goes from the
+    provenance, whose tool table says the same: whether it declares bash. A file
+    record's role goes, its author and starter flag saying what it says, and ours is
+    planted.
     """
+    error = trace.get("provider_error")
+    if isinstance(error, dict) and error.get("category") in FAILURE_CATEGORIES:
+        error = {**error, "category": FAILURE_CATEGORIES[error["category"]]}
+        trace = {**trace, "provider_error": error}
     if trace.get("trace_version") != 4:
         return trace
     out = rekeyed(trace, TRACE_4_KEYS)
@@ -5460,7 +5468,8 @@ def run_turns(
     except Exception as e:
         out["stop"] = (
             "api_error"
-            if isinstance(e, ProviderError) and e.category != "adapter"
+            if isinstance(e, ProviderError)
+            and e.category not in providers.HARNESS_FAULTS
             else "harness_error"
         )
         out["error"] = f"{type(e).__name__}: {e}"

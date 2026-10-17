@@ -10,6 +10,7 @@ from typing import Any
 from .anthropic import AnthropicProvider
 from .base import (
     Charge,
+    HARNESS_FAULTS,
     FailureCategory,
     ModelProvider,
     ModelSession,
@@ -135,6 +136,7 @@ class DirectProviderRouter:
 __all__ = [
     "Charge",
     "DirectProviderRouter",
+    "HARNESS_FAULTS",
     "FailureCategory",
     "ModelProvider",
     "ModelSession",

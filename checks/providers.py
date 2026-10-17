@@ -421,7 +421,8 @@ def check_unknown_providers_and_models_are_rejected():
     ):
         try:
             providers.model_spec(provider, model)
-        except providers.ProviderConfigurationError:
+        except providers.ProviderConfigurationError as error:
+            assert error.category == "configuration", error.as_dict()
             continue
         raise AssertionError(f"accepted {provider}/{model}")
 
@@ -706,7 +707,7 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
     """A model call that got no answer is retried like a 429, whichever adapter sent it.
 
     The SDKs raise APIConnectionError and APITimeoutError with no status code. Read
-    by status alone they are the adapter's fault, and one dropped connection ends a
+    by status alone they are unclassified, and one dropped connection ends a
     spending episode as harness_error on its first attempt.
     """
     cases = (
@@ -721,8 +722,8 @@ def check_both_adapters_classify_a_failure_alike_and_retry_a_lost_connection():
         (APIStatusError(401), "authentication"),
         (APIStatusError(403), "authentication"),
         (AuthenticationError(), "authentication"),
-        (APIError("unreadable"), "adapter"),
-        (ValueError("unreadable"), "adapter"),
+        (APIError("unreadable"), "unclassified"),
+        (ValueError("unreadable"), "unclassified"),
         (statusless("AuthenticationError"), "authentication"),
         (statusless("PermissionDeniedError"), "authentication"),
     )
@@ -786,7 +787,7 @@ def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
 
     A refusal part is a refusal, a response cut at max_output_tokens is max_tokens,
     one neither completed nor cut there is other, and function arguments that are
-    not a JSON object are the adapter's failure and never a tool call.
+    not a JSON object are an unreadable response and never a tool call.
     """
 
     def response(output, status="completed", incomplete=None):
@@ -861,8 +862,9 @@ def check_openai_normalize_names_a_refusal_a_truncation_and_an_unknown_stop():
         try:
             normalize_openai(response([call]), "gpt-5.6-terra")
         except providers.ProviderError as error:
-            assert (error.provider, error.category) == ("openai", "adapter"), (
-                error.as_dict()
-            )
+            assert (error.provider, error.category) == (
+                "openai",
+                "unreadable_response",
+            ), error.as_dict()
         else:
             raise AssertionError(f"arguments {arguments!r} became a tool call")

@@ -106,14 +106,14 @@ def normalize(native: Any, requested_model: str) -> NormalizedResponse:
             except (json.JSONDecodeError, TypeError, ValueError) as error:
                 raise ProviderError(
                     f"invalid function arguments: {error}",
-                    category="adapter",
+                    category="unreadable_response",
                     provider="openai",
                     native_type=type(error).__name__,
                 ) from error
             if not isinstance(parsed, dict):
                 raise ProviderError(
                     "function arguments are not a JSON object",
-                    category="adapter",
+                    category="unreadable_response",
                     provider="openai",
                 )
             calls.append(

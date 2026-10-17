@@ -33,7 +33,7 @@ def load(agent_id: str | None) -> dict[str, list[dict]]:
     the current trace shape.
 
     A trace past the episodes its account lists is no episode of the agent's, as
-    harness.committed_traces reads it. A version-4 trace is read through
+    harness.committed_traces reads it. A current or version-4 trace is read through
     harness.trace_as_current; a trace of any other version stops the load, named.
     """
     agents = {}

@@ -118,7 +118,7 @@ _TRACE_LOCK = threading.Lock()
 
 
 def load_trace(path: Path) -> dict | None:
-    """One trace, parsed once, in the current trace shape: a version-4 trace is read
+    """One trace, parsed once, in the current trace shape: every trace is read
     through harness.trace_as_current.
 
     A trace is written whole when its episode ends and never touched again, so
