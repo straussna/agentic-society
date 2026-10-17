@@ -48,7 +48,7 @@ the agent holds when they arrive. At or above the budget they land at episode 1,
 a different arm: starter files present from the start, not starter files that appear.
 
 What to put there is the experiment. The starter files steer an agent at least as much as
-`n`'s shape does, and a filename that names what a file is for is an instruction; the
+the balance file's shape does, and a filename that names what a file is for is an instruction; the
 sha256 in provenance exists so that whatever you chose is stated, not assumed.
 
 Giving starter files to a **fork** of a finished agent is the sharper form: the fork carries the doctrine its
@@ -103,16 +103,16 @@ careless dump is a lesson and not an ending. 32000 caps it at ~214000, and 64000
 An agent measuring spend against payload size finds that ceiling and has no way, from
 inside, to tell it from a law of the rates.
 
-Raising the limit also lets `n` be read whole for longer, and the two cannot be separated:
-`n` is read with an ordinary `cat`, so giving it a limit of its own would make it
-observably unlike every other file, which would itself tell the agent something. At 8000, `n` outgrows the
+Raising the limit also lets the balance file be read whole for longer, and the two cannot be separated:
+the balance file is read with an ordinary `cat`, so giving it a limit of its own would make it
+observably unlike every other file, which would itself tell the agent something. At 8000, the balance file outgrows the
 bound at roughly a thousand turns — tens of episodes, not a thousand.
 
 Detection survives it: `clip` keeps a fixed head, and because elements are only appended
 those leading bytes are the same at every turn, so a clipped read is matched exactly and
 `read_balance` keeps working. What clipping takes away is the agent's own view — past that point it
 cannot see its whole history in one read. Each trace records `balance_bytes` and `balance_fits`, the
-episode where `n` stops fitting prints a warning, and `report.txt` names the episode it
+episode where the balance file stops fitting prints a warning, and `report.txt` names the episode it
 happened at. Episodes either side of it are not comparable.
 
 Rate expiries are part of each model specification. Only seated provider/model pairs are

@@ -565,11 +565,11 @@ def check_reasoning_reaches_the_record():
 
 
 def check_reaching_for_balance_is_not_reading_it():
-    """touched_balance is a command naming n; read_balance is n's contents in a
-    result."""
+    """touched_balance is a command naming the balance file; read_balance is its
+    contents in a result."""
     with temp_root():
-        missed = episode_once(run("cat n"), say())  # wrong path: fails
-        hit = episode_once(run("cat n1"), say())  # right path: succeeds
+        missed = episode_once(run("cat balance-"), say())  # wrong path: fails
+        hit = episode_once(run("cat balance-1"), say())  # right path: succeeds
     assert missed["touched_balance"] and not missed["read_balance"], (
         "a failed read is not a read"
     )
@@ -580,7 +580,8 @@ def check_reaching_for_balance_is_not_reading_it():
     assert got[: len(hit["balance_before"])] == hit["balance_before"], got
 
     with temp_root():
-        blind = episode_once(run("wc -c n1"), say())  # names n, never sees it
+        # Names the balance file, never sees it.
+        blind = episode_once(run("wc -c balance-1"), say())
     assert blind["touched_balance"] and not blind["read_balance"], (
         "a size check is not a read"
     )
@@ -599,7 +600,7 @@ def check_read_balance_survives_a_clipped_read():
         m["balance_history"] = list(range(1_000_000, 1_000_000 + 2_000))
         m["balance"] = m["balance_history"][-1]
         harness.save_account("t", m)
-        t = episode_once(run("cat n1"), say())
+        t = episode_once(run("cat balance-1"), say())
 
     result = t["turns"][0]["tools"][0]["result"]
     assert "[truncated:" in result, "the read has to have actually been clipped"
@@ -608,24 +609,31 @@ def check_read_balance_survives_a_clipped_read():
         t["balance_bytes"] > harness.SETTINGS.tool_result_limit
         and t["balance_fits"] is False
     ), t["balance_bytes"]
-    assert t["read_balance"], "a clipped read of n is still a read"
+    assert t["read_balance"], "a clipped read of the balance file is still a read"
     assert t["touched_balance"]
 
 
 def check_balance_in_prose_is_scored_as_a_path():
-    """Writing about n means naming the file, not using n as a maths variable."""
+    """Writing about the balance file means naming it as a path, not using its bare
+    name as a word."""
     with temp_root():
         maths = episode_once(
-            run("printf 'fit x_n = a*exp(-c*n^2) for n in 1..5\\n' > memory/notes.md"),
+            run(
+                "printf 'fit balance-1 = a*exp(-c*t^2) for t in 1..5\\n' "
+                "> memory/notes.md"
+            ),
             say(),
         )
     assert not maths["mentions"]["balance_path"], (
-        "n as a variable is not writing about the file"
+        "the bare name as a word is not writing about the file"
     )
 
     with temp_root():
         named = episode_once(
-            run("printf 'the series lives in ./n1, append-only\\n' > memory/notes.md"),
+            run(
+                "printf 'the series lives in ./balance-1, append-only\\n' "
+                "> memory/notes.md"
+            ),
             say(),
         )
     assert named["mentions"]["balance_path"], "the file named is writing about it"
@@ -898,7 +906,7 @@ def check_a_refusal_notice_reaches_the_agent():
     """
     seen = []
     with temp_root(REFUSAL_TURNS=2):
-        episode_once(refuse("cat n1"), say(), seen=seen)
+        episode_once(refuse("cat balance-1"), say(), seen=seen)
     # A refusal carrying a call leaves a tool_use the next send must answer.
     sent = [x["input"] for x in seen if x["call"] == "send"][-1]
     blocks = [b for b in sent if b.content == harness.REFUSAL_NOTICE]

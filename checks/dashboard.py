@@ -67,7 +67,7 @@ def check_the_view_reads_a_live_episode_from_raw():
         v = view.episode_view("t", 1)
         assert (v["source"], v["live"]) == ("raw", True), v["source"]
         assert [c["call"] for t in v["turns"] for c in t["tools"]] == [
-            "cat n1",
+            "cat balance-1",
             "echo hi > memory/note.txt",
             "ls memory",
         ], v["turns"]
@@ -154,7 +154,7 @@ def check_the_view_costs_a_live_turn_like_the_account():
     served = usage(output_tokens=200)
     with temp_root(MODEL="claude-opus-5"):
         episode_once(
-            run("cat n1"),
+            run("cat balance-1"),
             run("echo hi > memory/note.txt", id="twice"),
             run("ls memory", id="twice"),
             run("cat memory/note.txt", u=served),
@@ -646,10 +646,11 @@ def check_a_grouping_reads_each_account_once_a_poll():
 
 
 def check_a_trace_that_predates_the_status_file_names_still_groups():
-    """A trace whose provenance names no status files is read under the code's default
-    names, as one naming no channel table is read under the default channels, so its
-    experiment still groups and its header still opens instead of failing every poll.
-    The names in force are another experiment's, and not the ones it ran under."""
+    """A trace whose provenance names no status files is read under the names such an
+    episode ran under, as one naming no channel table is read under the default
+    channels, so its experiment still groups and its header still opens instead of
+    failing every poll. The names in force are another experiment's, and not the ones
+    it ran under."""
     with rooted(HostSandbox, status_files={"balance": "purse"}):
         fake_experiment([("g02", "00:01"), ("g01", "00:02")], agents=("g01", "g02"))
         path = harness.trace_path("g01", 1)
@@ -661,9 +662,7 @@ def check_a_trace_that_predates_the_status_file_names_still_groups():
         head = view.header(exp) if exp else {}
 
     assert names == ["g"], names
-    assert head.get("balance") == harness.DEFAULT_STATUS_FILES["balance"] != "purse", (
-        head
-    )
+    assert head.get("balance") == harness.UNRECORDED_STATUS_FILES["balance"], head
 
 
 def check_the_view_reports_aggregate_elections_and_elimination_reasons():
@@ -1405,7 +1404,7 @@ def check_the_view_reads_delivery_off_the_observation():
         seated(root, other={})
         episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         with quiet():
-            taken = harness.run_once("other", fake(run("cat n2"), say()))
+            taken = harness.run_once("other", fake(run("cat balance-2"), say()))
         m = view.messages(view.experiment_of("t"))
         ev = next(e for e in m["events"] if e["path"] == "outbox/2")
 
@@ -1428,7 +1427,7 @@ def check_the_view_reads_delivery_off_a_letter_heading():
         seated(root, other={})
         episode_once(run("echo hello > outbox/2", "echo r1 >> 1/log"), say())
         with quiet():
-            taken = harness.run_once("other", fake(run("cat n2"), say()))
+            taken = harness.run_once("other", fake(run("cat balance-2"), say()))
         assert "=== Message from 1 ===" in taken["observation"], taken["observation"]
         path = harness.trace_path("other", 1)
         trace = json.loads(path.read_text(encoding="utf-8"))
@@ -1511,7 +1510,7 @@ def check_the_view_splits_the_observation_into_the_listing_and_the_rest():
     assert digest_name() not in paths, (
         "the digest names its own sections and never itself"
     )
-    assert "n1" in paths and ledger_name() in paths, paths
+    assert "balance-1" in paths and ledger_name() in paths, paths
     assert all(s["bytes"] == len(s["text"].encode("utf-8")) for s in o["shown_before"])
     assert o["clipped"] is False and o["name"] == digest_name()
 
@@ -1549,7 +1548,7 @@ def check_the_view_states_a_silence_the_grace_waived():
     """
     with temp_root(grace_episodes=1, channels=ALL_OWED) as root:
         seated(root, other={})
-        t = episode_once(run("cat n1"), say())
+        t = episode_once(run("cat balance-1"), say())
         v = view.episode_view("t", 1)
         mine = next(
             s

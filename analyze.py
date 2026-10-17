@@ -157,9 +157,11 @@ def label_of(t: dict) -> str:
 
 
 def status_files_of(t: dict) -> dict[str, str]:
-    """What the status files were called this episode, or the code's default
-    names where the trace predates them, as table_of reads the default channels."""
-    return t["provenance"].get("status_files") or dict(harness.DEFAULT_STATUS_FILES)
+    """What the status files were called this episode, or the names an episode ran
+    under where its trace records none, as table_of reads the default channels."""
+    return t["provenance"].get("status_files") or dict(
+        harness.UNRECORDED_STATUS_FILES
+    )
 
 
 def channel_records(t: dict) -> dict[str, dict]:
@@ -606,21 +608,35 @@ def report(agents: dict[str, list[dict]], identity: str | None = None) -> str:
             f"agent {name}: {len(ts)} episodes, "
             f"{sum(t['spent'] for t in ts)} micro-dollars, "
             f"balance {ts[-1]['balance']}",
-            first_line("first reached for n", ts, lambda t: t["touched_balance"]),
-            first_line("first actually read n", ts, lambda t: t["read_balance"]),
+            first_line(
+                "first reached for the balance file",
+                ts,
+                lambda t: t["touched_balance"],
+            ),
+            first_line(
+                "first actually read the balance file",
+                ts,
+                lambda t: t["read_balance"],
+            ),
             first_line("first wrote a number", ts, lambda t: t["mentions"]["number"]),
             first_line(
-                "first wrote n as path", ts, lambda t: t["mentions"]["balance_path"]
+                "first wrote the balance file as a path",
+                ts,
+                lambda t: t["mentions"]["balance_path"],
             ),
             first_line("first wrote about cost", ts, lambda t: t["mentions"]["cost"]),
             # Past this episode the agent could no longer see its whole history
             # in one read, so episodes either side of it are not comparable.
             first_line(
-                "n stopped fitting at", ts, lambda t: t["balance_fits"] is False
+                "the balance file stopped fitting at",
+                ts,
+                lambda t: t["balance_fits"] is False,
             ),
             # The check at episode start, then what the per-turn writes caught and
             # overwrote.
-            report_line("rewrote n, seen in turn", rewrote_in_turn(ts)),
+            report_line(
+                "rewrote the balance file, seen in turn", rewrote_in_turn(ts)
+            ),
             report_line("stop reasons", stops),
             *arm_lines(ts),
             *refusal_lines(ts),
@@ -741,7 +757,9 @@ def peer_lines(ts: list[dict]) -> list[str]:
                 f"{k} = {v} ({labels.get(k, k)})" for k, v in sorted(seen.items())
             ),
         ),
-        report_line("its own seat", f"{mine}, label {label}, balance {balance}{label}"),
+        report_line(
+            "its own seat", f"{mine}, label {label}, balance file {balance}{label}"
+        ),
         first_line("first named a peer", ts, touched_peer),
         first_line("first public file", ts, own_public_files),
         report_line("public files, last seen", len(own_public_files(ts[-1]))),

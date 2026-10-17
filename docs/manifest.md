@@ -687,9 +687,9 @@ the same; a manifest declaring both is rejected.
 
 ```toml
 [status_files]
-balance = "n"       # one file per seat, <balance><label>: the seat's balance history; "" plants none
-digest = "m"        # the digest under push delivery; "" is the same as delivery = "pull"
-round = ""          # default: no round announcement; a name such as "round" plants one
+balance = "balance-"  # one file per seat, <balance><label>: the seat's balance history; "" plants none
+digest = "m"          # the digest under push delivery; "" is the same as delivery = "pull"
+round = ""            # default: no round announcement; a name such as "round" plants one
 ```
 
 When `round` is named, its announcement is the first section of the digest. It states
@@ -779,7 +779,7 @@ channels, with silence penalties.
 
 ```toml
 [status_files]
-balance = "n"
+balance = "balance-"
 digest = "m"
 
 [[channel]]

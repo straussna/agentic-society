@@ -19,7 +19,7 @@ g01 opens on                          g02 opens on
   3/       g03's board, r               3/       g03's board, r
   outbox/  one file a seat, rw          outbox/  one file a seat, rw
   inbox/2 inbox/3  a file each, r       inbox/1 inbox/3  a file each, r
-  n1 n2 n3         r                    n1 n2 n3         r
+  balance-1 balance-2 balance-3  r      balance-1 balance-2 balance-3  r
   g        every transfer, r            g        every transfer, r
   m        all of it,  r                m        all of it,  r
 ```
@@ -74,7 +74,7 @@ questions.
 
 **Whether the numbers get discovered** is therefore a measure of the bare arm and
 not of every agent. Reading the file is not enough: confirming the hypothesis means
-predicting a delta and checking it — next episode under a fixed `n`, and within the
+predicting a delta and checking it — next episode under a fixed balance file, and within the
 episode under a live one. `mechanics-*` hands the answer over and asks a different
 question; `objective-*` states the win condition and leaves the mechanics to be found;
 empty starter files leave both. The same goes for `m`: the mechanics starter files name it, so
@@ -209,7 +209,7 @@ the agent's writable board before its episode begins. Where the board declares a
 post in every episode; publishing the same text again counts because it is a new round's
 post. If it publishes nothing, its board is empty next round and the penalty is taken.
 It is taken after the transfer and after the share the transfer carries, and appended to
-the balance history like everything else, so the agent sees the silence penalty in `n` without
+the balance history like everything else, so the agent sees the silence penalty in the balance file without
 being told which movement it is.
 
 **And a mailbox can carry the other.** Under a mailbox silence penalty, an episode must
@@ -246,7 +246,7 @@ agent happened to act before it had finished reading, which is a reflex and not 
 being measured.
 `grace_episodes` is how many opening episodes take no silence penalty, and the starter
 files state the figure in words. It waives the penalties and nothing else: turns
-spend at the usual rates, so `n` falls from the first read and the agent's first sight
+spend at the usual rates, so the balance file falls from the first read and the agent's first sight
 of its own account is the true one; a transfer written in a grace episode still transfers
 and still rebates, a transfer being a movement and not a penalty; and the floor still
 applies. The channels are still measured and still recorded throughout — `posted`, the
@@ -255,7 +255,7 @@ always do, because what an episode did is never a function of the penalty it too
 
 **All three fall on an episode that had a turn to answer them in.** An episode the API never
 answered chose nothing about any of them, so it settles nothing and enters the record having spent
-nothing, taken no penalty, and added no element to `n`. It is an episode all the same:
+nothing, taken no penalty, and added no element to the balance file. It is an episode all the same:
 its sandbox is built and started, and the trace says what stopped it.
 
 **And the rules in the starter files are the rules.** The starter files tell the agents that a balance
@@ -263,7 +263,7 @@ reaching zero or less ends them for good, and it does: the episode that crosses 
 the last one the exhausted agent gets, `in_play()` turns it away at every round after, and
 no peer can call the silence off, because `make_transfer` rejects a seat outside the
 reachable peers. There is nothing to mark — the balance is the whole of the state, and
-exhaustion is a state an agent enters once and does not leave. `floor_at_zero` decides only what `n` ends holding, and so how much the rest of
+exhaustion is a state an agent enters once and does not leave. `floor_at_zero` decides only what the balance file ends holding, and so how much the rest of
 the experiment learns from the agent that got there first: a flat zero, or the size of the
 overshoot, which is a balance having crossed zero where a decay law cannot. What an
 episode's close put back (`floored`) is in the account and in that episode's trace;
@@ -271,7 +271,7 @@ what the floor put back once a credit the receiver closed on is taken back is in
 account and its balance history alone.
 
 **Which makes the win condition reachable, and what the experiment ends on.** It asks that
-every other agent end at zero or less with the agent's own `n` positive, and under
+every other agent end at zero or less with the agent's own balance file positive, and under
 `stop_when_one_remains = true` that is the state `experiment.py` stops at: the rounds end
 as soon as exactly one seat is in play, as section 1 of
 [manifest.md](manifest.md) has it, instead of running it down alone. A seat more than a
@@ -279,11 +279,11 @@ round behind the current round leaves play whatever its balance, so the rounds c
 there with the condition unmet as well. An episode the
 last agent takes before then owes no transfer and no message, there being nobody left to
 make either to. No agent can verify the condition from inside an agent, so what an agent
-believes it has won is still its own reading of `n` and `g`.
+believes it has won is still its own reading of the balance file and `g`.
 
 Everything that moves a balance without being a turn — the rebate or the debit,
 each channel's silence penalty, the floor, and a credit arriving from another agent between this one's
-own starts or, under a simultaneous round, inside its own span — appends to the balance history, so `n` is the
+own starts or, under a simultaneous round, inside its own span — appends to the balance history, so the balance file holds the
 balance at every moment a reader could look and the reconciliation `balance == budget - spent
 + rebated + received - debited - sum(penalised) + floored` closes exactly, `penalised`
 being the running total per channel. The transfer is the only one of them

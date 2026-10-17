@@ -153,12 +153,17 @@ def check_a_tool_only_observation_uses_agent_view_names_not_backing_paths():
     ):
         assert f"=== {heading} ===" in observation, (heading, observation)
     for path in (
-        "memory/", "outbox/", "inbox/", "=== n1 ===", "=== n2 ===", "=== g ==="
+        "memory/",
+        "outbox/",
+        "inbox/",
+        "=== balance-1 ===",
+        "=== balance-2 ===",
+        "=== g ===",
     ):
         assert path not in observation, (path, observation)
     session = next(item for item in seen if item["call"] == "session")
     descriptions = "\n".join(tool["description"] for tool in session["tools"])
-    assert "outbox/transfer" not in descriptions and " n1" not in descriptions, (
+    assert "outbox/transfer" not in descriptions and " balance-1" not in descriptions, (
         descriptions
     )
     body_descriptions = [

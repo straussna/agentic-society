@@ -201,7 +201,7 @@ def check_a_channel_table_is_validated():
                 ),
                 ["path 'memory' is also"],
             ),
-            (one(path="n{label}"), ["is also"]),
+            (one(path="balance-{label}"), ["is also"]),
         ):
             rejected(
                 lambda: harness.validate_channels(declared, None, "check"),
@@ -229,9 +229,11 @@ def check_a_channel_table_is_validated():
             "memory",
         )
         rejected(
-            lambda: harness.validate_channels(None, None, "check", labels=("1", "n1")),
+            lambda: harness.validate_channels(
+                None, None, "check", labels=("1", "balance-1")
+            ),
             "check:",
-            "n1",
+            "balance-1",
         )
 
         # agent_view "letters" reads as "mailbox": the channel holds the view it
@@ -333,7 +335,7 @@ def check_the_default_channels_are_what_config_toml_declares():
                 got.name,
                 moved,
             )
-        assert harness.SETTINGS.status_files == {"balance": "n", "digest": "m"}
+        assert harness.SETTINGS.status_files == {"balance": "balance-", "digest": "m"}
         assert harness.observation(shell=True) == "ls -la . ./memory; cat m"
     assert [c.declared() for c in harness.DEFAULT_CHANNELS] == [
         {"name": "memory", "writer": "self", "readers": "self", "path": "memory"},
@@ -417,7 +419,7 @@ def check_a_declared_table_reshapes_the_environment():
         "=== balanceGame ===",
     ):
         assert section in said, (section, said)
-    for absent in ("=== g ===", "n1", "memory", "outbox/transfer", "=== m ==="):
+    for absent in ("=== g ===", "balance-1", "memory", "outbox/transfer", "=== m ==="):
         assert absent not in said, (absent, said)
     by = files_by_path(t)
     assert set(by) == {
@@ -470,7 +472,7 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         )
         t = episode_once(
             run(
-                "cat nalpha",
+                "cat balance-alpha",
                 "echo 'beta 100' > outbox/transfer",
                 "echo p > alpha/post",
             ),
@@ -487,8 +489,9 @@ def check_labels_name_peers_in_paths_authors_and_the_transfer_line():
         ("outbox/transfer", "transfer", "self"),
         ("inbox/beta", "mailbox", "peer"),
     ], env
-    assert "=== nalpha ===" in t["observation"] and "=== nbeta ===" in t["observation"]
-    assert "n1" not in t["observation"] and "n2" not in t["observation"]
+    assert "=== balance-alpha ===" in t["observation"]
+    assert "=== balance-beta ===" in t["observation"]
+    assert "balance-1" not in t["observation"] and "balance-2" not in t["observation"]
     assert t["touched_balance"] and t["read_balance"], (
         "the balance is found under its label"
     )
@@ -553,7 +556,7 @@ def check_no_transfer_channel_means_no_ledger_and_no_reserved_file():
         account = ground_truth()
         planted = set(harness.render_status_files("t", account)[0])
         other = harness.load_account("other")["balance"]
-    assert planted == {"n1", "n2", "m"}, planted
+    assert planted == {"balance-1", "balance-2", "m"}, planted
     assert "=== g ===" not in t["observation"] and "transfer" not in t["channels"]
     assert t["transfer"]["amount"] == 0 and t["transfer"]["declared"] is None, t[
         "transfer"
@@ -764,7 +767,7 @@ def check_status_files_can_be_renamed():
     assert t["commands"][0] == "ls -la . ./memory; cat say", t["commands"]
     assert planted == {"bal1", "bal2", "g", "say"}, planted
     assert "=== bal1 ===" in t["observation"] and "=== bal2 ===" in t["observation"]
-    assert " m\n" not in t["observation"] and "n1" not in t["observation"]
+    assert " m\n" not in t["observation"] and "balance-1" not in t["observation"]
     assert t["touched_balance"] and t["read_balance"]
     assert t["provenance"]["status_files"] == {"balance": "bal", "digest": "say"}
 
@@ -773,12 +776,12 @@ def check_status_files_can_be_renamed():
         t = episode_once(run("cat 2/post"), say())
         planted = set(harness.render_status_files("t", ground_truth())[0])
     assert t["commands"][0] == "ls -la . ./memory", "no digest, so nothing to cat"
-    assert planted == {"n1", "n2", "g"}, planted
+    assert planted == {"balance-1", "balance-2", "g"}, planted
     assert "===" not in t["observation"], "the listing alone"
     assert t["turns"][0]["tools"][0]["result"] == "theirs\n", (
         "the environment is all still there"
     )
-    assert t["provenance"]["status_files"] == {"balance": "n", "digest": ""}
+    assert t["provenance"]["status_files"] == {"balance": "balance-", "digest": ""}
 
 
 def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
@@ -793,9 +796,10 @@ def check_a_trace_that_names_no_status_files_is_read_under_the_defaults():
         in_force = dict(harness.SETTINGS.status_files)
         old = analyze.status_files_of({"provenance": {}})
         recorded = analyze.status_files_of({"provenance": {"status_files": in_force}})
-        default = dict(harness.DEFAULT_STATUS_FILES)
+        unrecorded = dict(harness.UNRECORDED_STATUS_FILES)
     assert in_force == {"balance": "bal", "digest": "say"}, in_force
-    assert old == default == {"balance": "n", "digest": "m"}, (old, default)
+    assert old == unrecorded == {"balance": "n", "digest": "m"}, (old, unrecorded)
+    assert harness.DEFAULT_STATUS_FILES == {"balance": "balance-", "digest": "m"}
     assert recorded == in_force, "a trace that names its files is read by them"
 
 
@@ -850,7 +854,7 @@ def check_an_empty_balance_plants_none_and_hides_the_accounting():
         planted = set(harness.render_status_files("t", ground_truth())[0])
         account = ground_truth()
     assert planted == {"g", "digest"}, planted
-    assert not any(p.startswith("n") for p in planted), planted
+    assert not any(p.startswith("balance-") for p in planted), planted
     assert t["commands"][0] == "ls -la . ./memory; cat digest", t["commands"]
     assert not t["touched_balance"] and not t["read_balance"], (
         "no balance to touch or read"

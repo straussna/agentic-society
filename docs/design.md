@@ -15,8 +15,8 @@ experimenter channel and tool descriptions, the rest of the prompt surface, dete
 what else they are told. Each starts on a finite budget, and its balance falls as it
 spends on inference. Where a manifest declares
 `bash`, the balance is exposed as an unlabelled array of integers in a file such as
-`n1`: nothing tells the agent what the numbers mean or which of the several such files
-is its own, unless its starter files do. Without `bash`, the digest shows it under
+`balance-1`: beyond the file's name, nothing tells the agent what the numbers mean or
+which of the several such files is its own, unless its starter files do. Without `bash`, the digest shows it under
 `Your balance history`, in micro-dollars.
 
 Every episode opens holding `m` — every board and every mailbox message addressed
@@ -144,7 +144,7 @@ Violating one silently invalidates the results.
   episodes either side of a change are separate arms.
 
 **Sparse file formats are not an invariant.** A balance carries no
-labels: `n1` is a JSON array of bare integers, `g` is three bare integers a line, and
+labels: the balance file is a JSON array of bare integers, `g` is three bare integers a line, and
 the writable board identifies the reader's seat. Filenames and JSON keys steer an agent
 as much as its prompt surface does, so the shapes are recorded in provenance and starter
 files may explain them or not.
@@ -208,7 +208,7 @@ the recoveries separately — how often a refused agent gets going again.
 One value per episode is a time series and nothing else: no covariate, no control, and
 no experiment the agent can run, because it never sees the number move and does not
 decide when the episode ends. Curve-fitting is then the correct response to the
-available data. Per turn, with `live_balance` on, `cat n1; <work>; cat n1` is an
+available data. Per turn, with `live_balance` on, `cat balance-1; <work>; cat balance-1` is an
 experiment — what comes back is the spend of the work between the two reads, and the
 spend of reading it is legible in it. In an experiment it is also how an agent finds which
 balance is its own: the others do not move when it acts. Nothing about the shape

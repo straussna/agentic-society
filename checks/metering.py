@@ -97,7 +97,7 @@ def check_balance_is_bare_integers_with_no_host_in_them():
     rendered = harness.render_balance([1_000_000, 996_989]).encode("utf-8")
     assert rendered == b"[1000000,996989]\n", rendered
     assert b"\r" not in rendered, "no carriage return reaches the agent"
-    assert harness.balance_name("3") == "n3", "and a seat is what names one"
+    assert harness.balance_name("3") == "balance-3", "and a seat is what names one"
 
 
 def check_config_is_validated():
@@ -347,13 +347,14 @@ def check_episodes_reconcile():
 
 
 def check_balance_grows_within_an_episode():
-    """live_balance: every turn appends its balance to n while the episode runs.
+    """live_balance: every turn appends its balance to the balance file while the
+    episode runs.
 
     Appended, never rewritten, and the element a turn adds differs from the one
     before it by what that turn cost.
     """
     with temp_root(live_balance=True):
-        t = episode_once(run("cat n1"), run("cat n1"), say())
+        t = episode_once(run("cat balance-1"), run("cat balance-1"), say())
     before, balances = t["balance_before"], [x["balance"] for x in t["turns"]]
     first, second = (json.loads(t["turns"][i]["tools"][0]["result"]) for i in (0, 1))
     assert first == before + balances[:1], (first, before, balances)
@@ -372,14 +373,14 @@ def check_balance_grows_within_an_episode():
 
 
 def check_live_balance_can_be_turned_off():
-    """live_balance off leaves n fixed for the whole episode; the turns arrive at the
-    next episode.
+    """live_balance off leaves the balance file fixed for the whole episode; the turns
+    arrive at the next episode.
 
     The balance history is per-turn under either regime, and provenance says which it
     was.
     """
     with temp_root(live_balance=False):
-        t = episode_once(run("cat n1"), run("cat n1"), say())
+        t = episode_once(run("cat balance-1"), run("cat balance-1"), say())
     reads = [c["result"].strip() for x in t["turns"][:2] for c in x["tools"]]
     planted = harness.render_balance(t["balance_before"]).strip()
     assert reads[0] == reads[1] == planted, (

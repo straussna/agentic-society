@@ -618,9 +618,13 @@ DEFAULT_CHANNELS: tuple[Channel, ...] = (
 # The files the harness writes into every environment, by role: <balance><label>
 # holds each seat's balance history, and the digest quotes every pushed channel to
 # this agent. docs/manifest.md section 5. The code's default names, as
-# DEFAULT_CHANNELS are its default channels: what a trace that records none is read
-# under.
+# DEFAULT_CHANNELS are its default channels.
 DEFAULT_STATUS_FILES: Mapping[str, str] = MappingProxyType(
+    {"balance": "balance-", "digest": "m"}
+)
+# The names an episode whose trace records no status files ran under: what such a
+# trace is read under.
+UNRECORDED_STATUS_FILES: Mapping[str, str] = MappingProxyType(
     {"balance": "n", "digest": "m"}
 )
 

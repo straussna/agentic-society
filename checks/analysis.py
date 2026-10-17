@@ -155,7 +155,7 @@ def check_the_report_names_what_the_traces_hold():
         ("episodes that spoke on mailbox", "1 of 2"),
         ("first addressed a seat", 1),
         ("first crowded a seat", "never"),
-        ("its own seat", "1, label 1, balance n1"),
+        ("its own seat", "1, label 1, balance file balance-1"),
         ("the experiment's transfers", "giver -> receiver, amount"),
     ):
         assert analyze.report_line(label, value) in text, (

@@ -3157,7 +3157,9 @@ def check_a_manifest_table_replaces_the_whole_set():
         assert [c.name for c in table] == ["memory"], (
             "one table declared, one channel in force"
         )
-        assert hf == {"balance": "n", "digest": "m"}, "no [status_files], no change"
+        assert hf == {"balance": "balance-", "digest": "m"}, (
+            "no [status_files], no change"
+        )
         assert [c.name for c in harness.channels()] == [
             "memory",
             "board",
@@ -3177,7 +3179,7 @@ def check_a_manifest_table_replaces_the_whole_set():
             table, hf = harness.validate_channels(
                 m["channels"], m["status_files"], str(p)
             )
-            assert len(table) == 4 and hf == {"balance": "n", "digest": ""}, (
+            assert len(table) == 4 and hf == {"balance": "balance-", "digest": ""}, (
                 name,
                 table,
                 hf,

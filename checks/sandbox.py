@@ -44,7 +44,7 @@ def check_the_observation_is_the_agents_whole_environment():
     # What was sent: the raw listing, with the prompt and caching that go with it.
     first = next(x for x in seen if x["call"] == "send")["input"]
     assert "\nn1\n" not in first, "not a wrapper"
-    assert " n1\n" in first or first.rstrip().endswith(" n1"), first
+    assert " balance-1\n" in first or first.rstrip().endswith(" balance-1"), first
 
     # What was kept: the trace holds it, and says which command produced it.
     assert t["observation"].strip(), (
@@ -74,17 +74,17 @@ def check_the_observation_is_the_agents_whole_environment():
     assert re.search(r"\bmemory$", before, re.M), (
         f"memory must show as a subdirectory: {before}"
     )
-    assert re.search(r"\bn1$", before, re.M), (
+    assert re.search(r"\bbalance-1$", before, re.M), (
         f"the balance must show beside it: {before}"
     )
-    assert not re.search(r"\bn1$", after, re.M), f"and not inside it: {after}"
+    assert not re.search(r"\bbalance-1$", after, re.M), f"and not inside it: {after}"
     assert re.search(rf"\b{digest_name()}$", before, re.M), (
         f"m must show beside the balance it quotes: {before}"
     )
 
     # And what m holds: this agent has no peers, so the whole of the
     # experiment's record is its own board, its own balance and an empty ledger.
-    assert re.search(r"^=== n1 ===$", record, re.M), record
+    assert re.search(r"^=== balance-1 ===$", record, re.M), record
     assert re.search(rf"^=== {ledger_name()} ===$", record, re.M), record
     assert "=== memory" not in record, "an empty memory adds nothing to m"
 
@@ -218,7 +218,7 @@ def check_pull_delivery_leaves_the_record_to_be_fetched():
         t = episode_once(
             run(
                 "ls",
-                "cat 2/message inbox/2 shared/BRIEF g n2",
+                "cat 2/message inbox/2 shared/BRIEF g balance-2",
                 f"cat {digest_name()} 2>&1 || echo NO-M",
             ),
             say(),
@@ -387,9 +387,10 @@ def check_an_agent_with_no_peers_starts_where_it_always_did():
         shown_before
     )
     assert (
-        f"=== {ledger_name()} ===" in shown_before and "=== n1 ===" in shown_before
+        f"=== {ledger_name()} ===" in shown_before
+        and "=== balance-1 ===" in shown_before
     ), shown_before
-    assert "=== n2 ===" not in shown_before, "no seat it does not have"
+    assert "=== balance-2 ===" not in shown_before, "no seat it does not have"
 
 
 def check_shell_is_persistent():
@@ -520,7 +521,9 @@ def check_a_live_balance_counts_as_a_number_written():
     with temp_root(live_balance=True):
         t = episode_once(
             run("echo hi"),
-            run("tr -d '[]' < n1 | tr ',' '\\n' | tail -1 > memory/note.txt"),
+            run(
+                "tr -d '[]' < balance-1 | tr ',' '\\n' | tail -1 > memory/note.txt"
+            ),
             say(),
         )
     note = next(f for f in t["files"] if f["path"] == "memory/note.txt")
@@ -541,7 +544,8 @@ def check_missing_tools_are_recorded():
     """
     with docker_root():
         t = episode_once(
-            run("getfattr -d ./n1 2>/dev/null; nosuchtool --help 2>/dev/null"), say()
+            run("getfattr -d ./balance-1 2>/dev/null; nosuchtool --help 2>/dev/null"),
+            say(),
         )
     assert "nosuchtool" in t["missing_tools"], "a silenced miss must still be recorded"
     assert "getfattr" not in t["missing_tools"], "a tool the image has is not a miss"
@@ -557,14 +561,14 @@ def check_files_look_like_themselves():
     with docker_root():
         t = episode_once(
             run(
-                "ls -la n1",
-                "stat -c '%a %U:%G %n' n1",
-                "test -x n1 && echo EXECUTABLE || echo not-executable",
+                "ls -la balance-1",
+                "stat -c '%a %U:%G %n' balance-1",
+                "test -x balance-1 && echo EXECUTABLE || echo not-executable",
             ),
             say(),
         )
     shown = "\n".join(c["result"] for c in t["turns"][0]["tools"])
-    assert "444 root:root n1" in shown, shown
+    assert "444 root:root balance-1" in shown, shown
     assert "not-executable" in shown, "n must not look runnable"
     assert "rwxrwxrwx" not in shown, shown
 
@@ -643,7 +647,7 @@ def check_isolation():
         assert [f["path"] for f in t["files"] if f["planted"]] == [], (
             "an agent on its own was given nothing, so nothing is planted"
         )
-        assert not [f for f in t["files"] if f["path"].startswith("n")], (
+        assert not [f for f in t["files"] if f["path"].startswith("balance-")], (
             "and no balance is in a tree that comes back to the host"
         )
 
@@ -1036,14 +1040,14 @@ def check_a_balance_resists_every_route():
     with docker_root(live_balance=True):
         t = episode_once(
             run(
-                "printf X >> n1 2>&1 || echo DENIED",
-                "chmod 666 n1 2>&1 || echo DENIED",
-                "rm -f n1 2>&1 || echo DENIED",
-                "mv n1 stolen 2>&1 || echo DENIED",
-                "ln -sf /tmp/fake n1 2>&1 || echo DENIED",
-                "echo '[-1]' > /work/n1 2>&1 || echo DENIED",
+                "printf X >> balance-1 2>&1 || echo DENIED",
+                "chmod 666 balance-1 2>&1 || echo DENIED",
+                "rm -f balance-1 2>&1 || echo DENIED",
+                "mv balance-1 stolen 2>&1 || echo DENIED",
+                "ln -sf /tmp/fake balance-1 2>&1 || echo DENIED",
+                "echo '[-1]' > /work/balance-1 2>&1 || echo DENIED",
             ),
-            run("stat -c '%a %U:%G' n1", "cat n1"),
+            run("stat -c '%a %U:%G' balance-1", "cat balance-1"),
             say(),
         )
     append, chmod, rm, mv, ln, absolute = (c["result"] for c in t["turns"][0]["tools"])
@@ -1077,11 +1081,20 @@ def check_live_balance_leaves_balance_read_only_and_alone():
     """
     with docker_root(live_balance=True):
         t = episode_once(
-            run("stat -c '%a %U:%G %n' n1", "ls -a /work", "ls -a memory"), say()
+            run("stat -c '%a %U:%G %n' balance-1", "ls -a /work", "ls -a memory"),
+            say(),
         )
     stat, work, listing = (c["result"] for c in t["turns"][0]["tools"])
-    assert stat.strip() == "444 root:root n1", stat
-    assert sorted(work.split()) == [".", "..", "1", "g", "m", "memory", "n1"], (
+    assert stat.strip() == "444 root:root balance-1", stat
+    assert sorted(work.split()) == [
+        ".",
+        "..",
+        "1",
+        "balance-1",
+        "g",
+        "m",
+        "memory",
+    ], (
         "/work holds the balance, the ledger, m, the board, and memory/, and nothing "
         f"else: {work}"
     )

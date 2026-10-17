@@ -134,7 +134,7 @@ def check_a_transfer_moves_both_accounts_and_both_balance_histories():
         assert giver["rebated"] == 400
         # Both balances move where their owner can read them, and nowhere else.
         assert receiver["balance_history"][-1] == receiver["balance"], (
-            "n is the balance, always"
+            "the balance file holds the balance, always"
         )
         assert giver["balance_history"][-1] == giver["balance"]
         assert giver["balance"] == giver["budget"] - t["spent"] + 400, (
@@ -443,7 +443,7 @@ def check_a_negative_balance_is_floored_to_zero():
     )
     assert t["floored"] == t["spent"] - account["budget"], t["floored"]
     assert account["balance"] == 0 and account["balance_history"][-1] == 0, (
-        "the balance rests at zero, and n says so"
+        "the balance rests at zero, and the balance file says so"
     )
     assert account["floored"] == t["floored"]
     # Off by default: without it the agent ends holding the negative, as it always has.

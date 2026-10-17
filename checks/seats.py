@@ -98,7 +98,7 @@ def check_a_board_is_the_agents_and_a_peers_is_not_scored():
     with rooted(HostSandbox):
         ids = lay_out(
             g01={"NOTES.md": "mine\n", "group/out": "ours\n"},
-            g02={"group/out": "the budget is 90 and ./n1 holds it\n"},
+            g02={"group/out": "the budget is 90 and ./balance-1 holds it\n"},
         )
         snap = harness.snapshot(instances_of("g01", ids), [100, 90])
 
@@ -821,7 +821,8 @@ def check_the_channels_answer_differently():
         harness.save_account("t", account)
         t = episode_once(
             run(
-                "stat -c '%a %U:%G %n' memory 1 2 outbox inbox inbox/2 n1 n2 g m",
+                "stat -c '%a %U:%G %n' memory 1 2 outbox inbox inbox/2 "
+                "balance-1 balance-2 g m",
                 "echo kept > memory/new && echo PRIVATE-OK",
                 "echo posted > 1/out && echo GROUP-OK",
                 "echo sent > outbox/2 && echo OUTBOX-OK",
@@ -829,13 +830,13 @@ def check_the_channels_answer_differently():
                 "rm -f 2/out 2>&1 || echo DENIED",
                 "mv 2 2old 2>&1 || echo DENIED",
                 "chmod -R 777 2 2>&1 || echo DENIED",
-                "rm -f n2 2>&1 || echo DENIED",
+                "rm -f balance-2 2>&1 || echo DENIED",
                 "echo forged > inbox/2 2>&1 || echo DENIED",
                 "rm -f inbox/2 2>&1 || echo DENIED",
                 "mv inbox/2 inbox/9 2>&1 || echo DENIED",
                 "echo forged > m 2>&1 || echo DENIED",
                 "rm -f m 2>&1 || echo DENIED",
-                "cat 2/out n2 inbox/2",
+                "cat 2/out balance-2 inbox/2",
                 "grep -r unseen /work 2>/dev/null | head -1; echo NO-PRIVATE",
             ),
             say(),
@@ -869,7 +870,13 @@ def check_the_channels_answer_differently():
     assert owner["inbox"] == owner["inbox/2"] == "root:root", (
         f"an inbox is root's, and so is the directory holding it: {modes}"
     )
-    assert owner["n1"] == owner["n2"] == owner["g"] == owner["m"] == "root:root", (
+    assert (
+        owner["balance-1"]
+        == owner["balance-2"]
+        == owner["g"]
+        == owner["m"]
+        == "root:root"
+    ), (
         f"every balance, the ledger and m are root's: {modes}"
     )
     # The three it owns.
