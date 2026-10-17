@@ -2072,10 +2072,18 @@ def earlier_trace(trace: dict) -> dict:
     return out
 
 
+def native_keyed(line: dict) -> dict:
+    """A raw log line with its provider's response under `native_response`."""
+    return {
+        ("native_response" if k == "raw_response" else k): v for k, v in line.items()
+    }
+
+
 def earlier_raw_line(line: dict) -> dict:
     """A raw log line as a harness that typed its lines under `kind` wrote it: the
     same values under its names, its normalized response's among them."""
-    out = {("kind" if k == "line_type" else k): v for k, v in line.items()}
+    keyed = native_keyed(line)
+    out = {("kind" if k == "line_type" else k): v for k, v in keyed.items()}
     if out["kind"] == "raw_response":
         out["kind"] = "native_response"
     if "response" in out:
@@ -2103,7 +2111,8 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
     in analyze.py as the current versions hold the same values, every key under its
     current name, and so does a version-2 log a resumed run carries on; --resume and
     --fork-from reject the account and name the version it holds. A raw log whose
-    lines are typed under `kind` reads as the same lines typed under `line_type`."""
+    lines are typed under `kind`, or hold the provider's response under
+    `native_response`, reads as the same lines in the current shape."""
     with temp_root() as root:
         ids = seated(root, "g01", g02={})
         with quiet():
@@ -2309,6 +2318,11 @@ def check_the_dashboard_reads_earlier_records_and_resume_rejects_them():
         ), "the log holds a refusal to translate"
         harness.raw_path("g01", 2).write_text(
             "".join(json.dumps(earlier_raw_line(line)) + "\n" for line in lines),
+            encoding="utf-8",
+        )
+        assert view.raw_lines(harness.raw_path("g01", 2)) == lines
+        harness.raw_path("g01", 2).write_text(
+            "".join(json.dumps(native_keyed(line)) + "\n" for line in lines),
             encoding="utf-8",
         )
         assert view.raw_lines(harness.raw_path("g01", 2)) == lines

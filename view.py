@@ -290,20 +290,21 @@ def latest_attempt(lines: list[dict]) -> list[dict]:
     return lines[starts[-1] :] if starts else lines
 
 
-# The name a raw log line that types itself under `kind` gives its type key, and the
-# type it gives its native response line, each with its current name. The dashboard
+# The names a raw log line can give its type key and its provider's response, and the
+# type it can give its raw response line, each with its current name. The dashboard
 # reads such a line through raw_line_as_current.
-RAW_LINE_KEYS = {"kind": "line_type"}
+RAW_LINE_KEYS = {"kind": "line_type", "native_response": "raw_response"}
 RAW_LINE_TYPES = {"native_response": "raw_response"}
 
 
 def raw_line_as_current(line: Any) -> Any:
-    """A raw log line that types itself under `kind` in the shape of the current
+    """A raw log line holding a key RAW_LINE_KEYS names in the shape of the current
     ones; any other line as it is."""
-    if not isinstance(line, dict) or "kind" not in line:
+    if not isinstance(line, dict) or not RAW_LINE_KEYS.keys() & line.keys():
         return line
     out = harness.rekeyed(line, RAW_LINE_KEYS)
-    out["line_type"] = RAW_LINE_TYPES.get(out["line_type"], out["line_type"])
+    if "line_type" in out:
+        out["line_type"] = RAW_LINE_TYPES.get(out["line_type"], out["line_type"])
     response = out.get("response")
     if isinstance(response, dict):
         response = dict(response)

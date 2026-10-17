@@ -81,8 +81,9 @@ The harness sums those entries and retains the fractional carry; a repeated resp
 recorded but its spend counted once.
 
 Every response is also appended verbatim to `records/<agent>/raw/episode-NNNN.jsonl`, with
-its provider name, as a line whose `line_type` is `raw_response`, before provider-owned
-normalization is run. A second line, `normalized_response`, records the canonical response.
+its provider name, as a line whose `line_type` is `raw_response` and which holds the
+response under `raw_response`, before provider-owned normalization is run. A second line,
+`normalized_response`, records the canonical response.
 Writing it can never end an episode: a failure there is swallowed, because a lost log line
 is cheaper than a lost harness.
 

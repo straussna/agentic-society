@@ -5078,7 +5078,7 @@ def log_raw(path: Path | None, turn: int, raw_response: providers.RawResponse) -
             "turn": turn,
             "received": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "provider": raw_response.provider,
-            "native_response": raw_response.native,
+            "raw_response": raw_response.native,
         }
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, default=str) + "\n")

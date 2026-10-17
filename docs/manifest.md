@@ -1035,7 +1035,7 @@ prompt, cached tokens included), itemized `charges`, each naming its `token_clas
 model's `reasoning` apart from its `text`, a `refusal` naming its `refusal_type` where
 the model declined, canonical and native stop reasons, and the provider provenance. A
 raw log line names its `line_type`: each turn's `raw_response` line, the provider and
-the complete native response under `native_response`, is written before its
+the complete native response under `raw_response`, is written before its
 `normalized_response` line, the canonical response.
 
 `account_version` is 3. An account holds its `budget`, its `balance` and

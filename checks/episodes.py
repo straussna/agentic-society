@@ -935,7 +935,7 @@ def check_every_response_is_logged_raw():
         "normalized_response",
     ] * 2, lines
     assert all(
-        x["native_response"]["id"] for x in lines if x["line_type"] == "raw_response"
+        x["raw_response"]["id"] for x in lines if x["line_type"] == "raw_response"
     )
     assert all(x["provider"] == "anthropic" for x in lines)
     refused = [x for x in lines if x["line_type"] == "normalized_response"][-1]
