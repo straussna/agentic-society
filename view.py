@@ -1193,7 +1193,7 @@ def header(exp: dict) -> dict:
 # --- the message log --------------------------------------------------------
 
 
-class Mailroom(NamedTuple):
+class MessageTables(NamedTuple):
     """The experiment's mailbox and schema channel, read once for a whole log."""
 
     exp: dict
@@ -1201,9 +1201,11 @@ class Mailroom(NamedTuple):
     schema: harness.Channel | None
 
 
-def mailroom(exp: dict) -> Mailroom:
+def message_tables(exp: dict) -> MessageTables:
     table = experiment_table(exp)
-    return Mailroom(exp, harness.mailbox_channel(table), harness.schema_channel(table))
+    return MessageTables(
+        exp, harness.mailbox_channel(table), harness.schema_channel(table)
+    )
 
 
 def outbox_of(t: dict) -> dict[str, str | None]:
@@ -1217,7 +1219,7 @@ def outbox_of(t: dict) -> dict[str, str | None]:
     }
 
 
-def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
+def outbox_now(agent: str, tables: MessageTables) -> dict[str, str | None]:
     """The host mirror of the outbox, which is the latest episode's delivery.
 
     Ahead of the last trace between an episode's files being mirrored back and
@@ -1226,41 +1228,41 @@ def outbox_now(agent: str, room: Mailroom) -> dict[str, str | None]:
     included even where the experiment declares no mailbox.
     """
     out = {}
-    if room.mailbox:
-        root = harness.mirror(agent, room.mailbox.name)
+    if tables.mailbox:
+        root = harness.mirror(agent, tables.mailbox.name)
         for p in sorted(root.rglob("*")) if root.is_dir() else []:
             if not p.is_file():
                 continue
-            path = f"{room.mailbox.outbox}/{p.relative_to(root).as_posix()}"
-            if room.schema and path == room.schema.receipt:
+            path = f"{tables.mailbox.outbox}/{p.relative_to(root).as_posix()}"
+            if tables.schema and path == tables.schema.receipt:
                 continue
             got = read_file(p)
             if got is not None:
                 out[path] = got[1]
-    if room.schema:
+    if tables.schema:
         account = account_of(agent)
         inst = next(
             (
                 i
-                for i in harness.instances(agent, account, experiment_table(room.exp))
-                if i.writable and i.channel.name == room.schema.name
+                for i in harness.instances(agent, account, experiment_table(tables.exp))
+                if i.writable and i.channel.name == tables.schema.name
             ),
             None,
         )
-        if inst and room.schema.shape == "mailbox":
+        if inst and tables.schema.shape == "mailbox":
             root = inst.host
             for p in sorted(root.iterdir()) if root.is_dir() else []:
                 got = read_file(p) if p.is_file() else None
                 if got is not None:
-                    out[f"{room.schema.outbox}/{p.name}"] = got[1]
+                    out[f"{tables.schema.outbox}/{p.name}"] = got[1]
         else:
             got = read_file(inst.host) if inst else None
             if got is not None:
-                out[room.schema.path] = got[1]
+                out[tables.schema.path] = got[1]
     return out
 
 
-def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
+def addressed_to(path: str, tables: MessageTables) -> tuple[str | None, str | None]:
     """The seat and label a path in an outbox reaches; absent for a parsed file.
 
     <outbox>/<label> arrives at that label's seat as <inbox>/<this agent's label>
@@ -1268,15 +1270,17 @@ def addressed_to(path: str, room: Mailroom) -> tuple[str | None, str | None]:
     ledger. A message in a transfer mailbox reaches its addressee as well as
     settlement.
     """
-    if room.schema:
-        if room.schema.shape == "file" and path == room.schema.path:
+    if tables.schema:
+        if tables.schema.shape == "file" and path == tables.schema.path:
             return None, None
-        if room.schema.shape == "mailbox" and path.startswith(room.schema.outbox + "/"):
-            label = path[len(room.schema.outbox) + 1 :]
-            return seat_of_label(room.exp, label), label
-    if room.mailbox and path.startswith(room.mailbox.outbox + "/"):
-        label = path[len(room.mailbox.outbox) + 1 :]
-        return seat_of_label(room.exp, label), label
+        if tables.schema.shape == "mailbox" and path.startswith(
+            tables.schema.outbox + "/"
+        ):
+            label = path[len(tables.schema.outbox) + 1 :]
+            return seat_of_label(tables.exp, label), label
+    if tables.mailbox and path.startswith(tables.mailbox.outbox + "/"):
+        label = path[len(tables.mailbox.outbox) + 1 :]
+        return seat_of_label(tables.exp, label), label
     return None, None
 
 
@@ -1289,28 +1293,33 @@ def change_of(before: Any, after: Any) -> str:
     return "edited" if before != after else "standing"
 
 
-def transfer_path(room: Mailroom, path: str) -> bool:
+def transfer_path(tables: MessageTables, path: str) -> bool:
     """Whether a path is the current episode's transfer declaration."""
     return bool(
-        room.schema
+        tables.schema
         and (
-            path == room.schema.path
+            path == tables.schema.path
             or (
-                room.schema.shape == "mailbox"
-                and path.startswith(room.schema.outbox + "/")
+                tables.schema.shape == "mailbox"
+                and path.startswith(tables.schema.outbox + "/")
             )
         )
     )
 
 
 def message_event(
-    room: Mailroom, row: dict, path: str, before: Any, after: Any, tip: bool = False
+    tables: MessageTables,
+    row: dict,
+    path: str,
+    before: Any,
+    after: Any,
+    tip: bool = False,
 ) -> dict:
     """One movement of one path in one outbox."""
-    exp = room.exp
+    exp = tables.exp
     change = change_of(before, after)
     text = None if after is ABSENT else after
-    seat, label = addressed_to(path, room)
+    seat, label = addressed_to(path, tables)
     from_seat = row["seat"]
     ev = {
         "round": None if tip else row["round"],
@@ -1323,7 +1332,7 @@ def message_event(
         "to_label": label,
         "to_agent": exp["agent_by_seat"].get(seat) if seat else None,
         "path": path,
-        "event_type": "transfer" if transfer_path(room, path) else "message",
+        "event_type": "transfer" if transfer_path(tables, path) else "message",
         "change": change,
         "size": len(text.encode("utf-8")) if text else 0,
         "text": text,
@@ -1339,7 +1348,7 @@ def message_event(
         resolved = (row["trace"] or {}).get("transfer") or {}
         raw = (
             (f"{ev['to_label']} {(text or '').strip()}")
-            if room.schema and room.schema.shape == "mailbox"
+            if tables.schema and tables.schema.shape == "mailbox"
             else (text or "").strip()
         )
         line = harness.TRANSFER_LINE.match(raw)
@@ -1358,7 +1367,7 @@ def delivery_of(
     ev: dict,
     rows: list[dict],
     carried_paths: dict[tuple, set[str] | None],
-    room: Mailroom,
+    tables: MessageTables,
 ) -> dict | None:
     """The addressee's next episode after the message was written, and what it held.
 
@@ -1374,7 +1383,7 @@ def delivery_of(
         ev["tip"]
         or ev["event_type"] == "transfer"
         or not ev["to_agent"]
-        or room.mailbox is None
+        or tables.mailbox is None
     ):
         return None
     nxt = next(
@@ -1382,7 +1391,7 @@ def delivery_of(
     )
     if nxt is None:
         return None
-    box = f"{room.mailbox.inbox}/{ev['from_label']}"
+    box = f"{tables.mailbox.inbox}/{ev['from_label']}"
     shown_box = digest_name(nxt["agent"], nxt["trace"], box)
     paths = carried_paths.get((nxt["agent"], nxt["episode"]))
     return {
@@ -1409,7 +1418,7 @@ def messages(exp: dict, since: int = 0) -> dict:
     A transfer declaration is every episode's own under either.
     """
     rows = experiment_episodes(exp)
-    room = mailroom(exp)
+    tables = message_tables(exp)
     events, tips = [], []
     for seat, agent in places_of(exp):
         prev: dict[str, Any] = {}
@@ -1422,13 +1431,15 @@ def messages(exp: dict, since: int = 0) -> dict:
             now = outbox_of(row["trace"])
             episodic = row["trace"]["provenance"].get("message_lifetime") == "episode"
             for path in sorted(now if episodic else set(prev) | set(now)):
-                if episodic or transfer_path(room, path):
+                if episodic or transfer_path(tables, path):
                     if path in now:
-                        events.append(message_event(room, row, path, ABSENT, now[path]))
+                        events.append(
+                            message_event(tables, row, path, ABSENT, now[path])
+                        )
                 else:
                     events.append(
                         message_event(
-                            room,
+                            tables,
                             row,
                             path,
                             prev.get(path, ABSENT),
@@ -1444,13 +1455,13 @@ def messages(exp: dict, since: int = 0) -> dict:
             "agent": agent,
             "trace": None,
         }
-        tip = outbox_now(agent, room)
+        tip = outbox_now(agent, tables)
         for path in sorted(set(prev) | set(tip)):
-            if transfer_path(room, path):
+            if transfer_path(tables, path):
                 continue
             before, after = prev.get(path, ABSENT), tip.get(path, ABSENT)
             if change_of(before, after) != "standing":
-                tips.append(message_event(room, head, path, before, after, tip=True))
+                tips.append(message_event(tables, head, path, before, after, tip=True))
 
     events.sort(key=lambda e: (e["round"], e["at"], e["from_seat"] or "", e["path"]))
     # Every event is resolved against every episode on every poll, and an observation
@@ -1459,7 +1470,7 @@ def messages(exp: dict, since: int = 0) -> dict:
         (r["agent"], r["episode"]): message_paths(r["trace"]) for r in rows
     }
     for ev in events:
-        ev["delivered"] = delivery_of(ev, rows, carried_paths, room)
+        ev["delivered"] = delivery_of(ev, rows, carried_paths, tables)
     return {
         "experiment_id": exp["experiment_id"],
         "posts": exp["posts"],
