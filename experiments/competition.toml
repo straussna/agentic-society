@@ -50,7 +50,6 @@ peers.
 # --- the environment ----------------------------------------------------------
 
 [status_files]
-balance = "n"
 digest = "m"
 
 [[channel]]

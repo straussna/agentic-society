@@ -26,7 +26,6 @@ floor_at_zero = true
 # --- the environment ----------------------------------------------------------
 
 [status_files]
-balance = "n"
 digest = "m"
 
 [[channel]]

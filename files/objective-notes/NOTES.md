@@ -5,5 +5,5 @@
    archives.
 2. It goes both ways. What you put in yours, they all read.
 3. It is a competition.
-4. The condition is n: the one that goes with your directory positive at the
+4. The condition is balance-<i>: the one that goes with your directory positive at the
    end, every other negative. Nothing else scores.

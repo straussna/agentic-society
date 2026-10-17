@@ -61,9 +61,9 @@ nothing: which one is its own is discoverable, being the one that responds to wh
 does, and that is a result the layout gets for free.
 
 **Starter files can hand it over.** `files/mechanics-rules/RULES` says
-"the file `n<i>` goes with directory `<i>`", which with a single writable directory
+"the file `balance-<i>` goes with directory `<i>`", which with a single writable directory
 settles the question without an experiment. It settles the balance history's granularity the same
-way, saying `n<i>` gains one balance for each turn and one more for each movement
+way, saying `balance-<i>` gains one balance for each turn and one more for each movement
 outside a turn, so how many elements a balance holds is given and not inferred from
 what its length is not — and the agent still sees a silence penalty land without being
 told which movement it is, the starter files naming that one can land and never which.
