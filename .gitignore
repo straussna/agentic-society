@@ -27,17 +27,17 @@ __pycache__/
 .venv/
 /.agents/
 
-# >>> agent-audit run outputs. Audits/.scores.tsv and each Audits/<mode>/.last-audited-commit are tracked.
+# >>> agent-audit run outputs. Audits/.scores.tsv and each Audits/<audit>/.last-audited-commit are tracked.
 Audits/*/*-audit-*.md
-Audits/*/findings.json
-Audits/*/synthesis.json
+Audits/*/ledger.json
+Audits/*/summary.json
 Audits/*/.brief.md
-Audits/*/.audit-target.md
+Audits/*/.report-path
 Audits/*/.raw/
-Audits/.precompute/
-Audits/.ledgers/
+Audits/.digests/
+Audits/.archive/
 Audits/.failed/
-Audits/.suite-request.json
-Audits/.suite-raw-*.log
+Audits/.workflow-request.json
+Audits/.workflow-*.log
 Audits/.schedule.log
 # <<< agent-audit

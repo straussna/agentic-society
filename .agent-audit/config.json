@@ -6,7 +6,7 @@
   "packs": [
     "python"
   ],
-  "modes": [
+  "audits": [
     {
       "id": "patterns"
     },
