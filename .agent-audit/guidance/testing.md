@@ -1,3 +1,0 @@
-# Test attribution
-
-The suite is the `check_*` functions across checks/<topic>.py. check.py discovers and runs them in a process pool, and pytest collects the same functions through pyproject.toml and the root conftest.py, which sets up a run as check.py does. checks/fake.py is the fake API, and checks/lanes.py holds the fixtures and the local and container lanes. Container checks skip when Docker is down. Settings are fields of `harness.SETTINGS`, which checks move with `amend()` or `temp_root(<field>=...)` inside `pinned()`, and `pinned()` restores `SETTINGS` and the other seams in `checks/lanes.py` SEAMS. Coverage comes from `check.py --no-docker -j 1`, so lines that only the container-lane checks reach read as uncovered.

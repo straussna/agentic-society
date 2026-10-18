@@ -1,4 +1,0 @@
-# Declared invariants
-
-The nine invariants are the README table, and docs/design.md states each in full; harness.py enforces them, and findings cite the invariant number. The anthropic and openai SDKs are imported inside providers/anthropic.py and providers/openai.py; each adapter rejects a `*_BASE_URL` and checks its API key before it builds a client and again in `preflight`. Sandbox containers run with `--network none`, and view.py's http.server serves an observational dashboard on 127.0.0.1 whose one write is the origin- and token-checked human-seat submission route into interaction_store/. check.py removes only containers that carry its own pid.
-analyze.py reads traces under records/ and writes its analysis to records/<agent>/analysis/; matplotlib is its optional dependency. The scope's Dockerfile and config.toml are not Python, so no precompute measures them; read them directly for the image and the process parameters.
