@@ -588,8 +588,9 @@ def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix
     """The adapter itself carries the refusal rule and the long-context rates.
 
     A refusal that emitted nothing is not charged, and says why from its stop details;
-    one that emitted a tool call is charged. A prefix past 200k tokens on a 1M-window
-    model rates input at twice and output at one and a half times the base rate.
+    one that emitted a tool call is charged. A 1M-window model rates its whole window
+    at base rates. Haiku 5.5 rates a prompt past 100k tokens, cache reads included, at
+    five times every base rate.
     """
 
     def response(stop, content, **tokens):
@@ -625,19 +626,33 @@ def check_anthropic_charges_a_refusal_by_what_it_emitted_and_rates_a_long_prefix
         acted.charges
     )
 
-    at = normalize_anthropic(
-        response("end_turn", [], input_tokens=200_000, output_tokens=100),
+    long = normalize_anthropic(
+        response("end_turn", [], input_tokens=900_000, output_tokens=100),
         "claude-opus-5",
     )
-    past = normalize_anthropic(
-        response("end_turn", [], input_tokens=250_000, output_tokens=100),
-        "claude-opus-5",
-    )
-    base = {c.token_class: c.centi_micros for c in at.charges}
-    assert base["output"] == 100 * 2500, "the threshold is base"
-    rated = {c.token_class: c.centi_micros for c in past.charges}
-    assert rated["output"] == 100 * 2500 * 3 // 2, rated
-    assert rated["uncached_input"] == 250_000 * 500 * 2, rated
+    rated = {c.token_class: c.centi_micros for c in long.charges}
+    assert rated["uncached_input"] == 900_000 * 500, rated
+    assert rated["output"] == 100 * 2500, rated
+
+    def haiku(cached):
+        native = response(
+            "end_turn",
+            [],
+            input_tokens=50_000,
+            cache_read_input_tokens=cached,
+            output_tokens=100,
+        )
+        return {
+            c.token_class: c.centi_micros
+            for c in normalize_anthropic(native, "claude-haiku-5-5").charges
+        }
+
+    at = haiku(50_000)
+    assert at["uncached_input"] == 50_000 * 10 and at["output"] == 100 * 50, at
+    past = haiku(50_001)
+    assert past["uncached_input"] == 50_000 * 10 * 5, past
+    assert past["cache_read"] == 50_001 * 1 * 5, past
+    assert past["output"] == 100 * 50 * 5, past
 
 
 def check_the_shipped_prompt_is_pinned_against_a_declaration():

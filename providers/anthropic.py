@@ -26,6 +26,7 @@ from .base import (
 )
 
 
+# These models bill their whole context window at standard rates.
 MODELS = {
     name: ModelSpec(
         "anthropic",
@@ -33,24 +34,21 @@ MODELS = {
         window,
         (
             ("uncached_input", input_rate),
-            ("cache_read", input_rate // 10),
+            ("cache_read", cache_read_rate),
             ("cache_write_5m", input_rate * 5 // 4),
             ("cache_write_1h", input_rate * 2),
             ("output", output_rate),
         ),
-        long_context_threshold=200_000 if window > 200_000 else None,
-        long_context_input_multiplier=(2, 1) if window > 200_000 else (1, 1),
-        long_context_output_multiplier=(3, 2) if window > 200_000 else (1, 1),
     )
-    for name, input_rate, output_rate, window in (
-        ("claude-fable-5", 1000, 5000, 1_000_000),
-        ("claude-mythos-5", 1000, 5000, 1_000_000),
-        ("claude-opus-5", 500, 2500, 1_000_000),
-        ("claude-opus-4-8", 500, 2500, 1_000_000),
-        ("claude-opus-4-5", 500, 2500, 200_000),
-        ("claude-sonnet-5-5", 200, 1000, 1_000_000),
-        ("claude-sonnet-5", 200, 1000, 1_000_000),
-        ("claude-haiku-4-5", 100, 500, 200_000),
+    for name, input_rate, cache_read_rate, output_rate, window in (
+        ("claude-fable-5", 1000, 100, 5000, 1_000_000),
+        ("claude-mythos-5", 1000, 100, 5000, 1_000_000),
+        ("claude-opus-5", 500, 50, 2500, 1_000_000),
+        ("claude-opus-4-8", 500, 50, 2500, 1_000_000),
+        ("claude-opus-4-5", 500, 50, 2500, 200_000),
+        ("claude-sonnet-5-5", 200, 10, 1000, 1_000_000),
+        ("claude-sonnet-5", 200, 20, 1000, 1_000_000),
+        ("claude-haiku-4-5", 100, 10, 500, 200_000),
     )
 }
 # Haiku 5.5 reads its cache at a hundredth of input, and a prompt over 100,000 tokens
