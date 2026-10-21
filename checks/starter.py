@@ -63,10 +63,10 @@ def check_starter_files_land_when_the_balance_falls():
     The listing is the agent's whole environment at episode start, so starter files that
     are not in it are starter files the agent was not given.
     """
-    # A say() episode spends 1750, so this is above episode 1's balance and below
+    # A say() episode spends 700, so this is above episode 1's balance and below
     # episode 2's: the starter files land at the second episode and not the first.
     with temp_root(
-        budget=500_000, starter_files="s", starter_files_below=499_000
+        budget=500_000, starter_files="s", starter_files_below=499_500
     ) as root:
         plant(root)
         before = episode_once(say())
@@ -83,7 +83,7 @@ def check_starter_files_land_when_the_balance_falls():
     )
     assert after["provenance"]["starter_files"] == "s"
     assert after["provenance"]["starter_files_sha256"], "the sha256 goes in provenance"
-    assert after["provenance"]["starter_files_below"] == 499_000
+    assert after["provenance"]["starter_files_below"] == 499_500
 
 
 def check_the_starter_files_threshold_is_a_balance_not_an_episode():
@@ -171,7 +171,7 @@ def check_starter_files_that_would_overwrite_the_agents_work_are_rejected():
     # Below episode 1's balance and above episode 2's, so the agent gets an episode to
     # make the file before the starter files arrive wanting the same name.
     with temp_root(
-        budget=500_000, starter_files="s", starter_files_below=499_000
+        budget=500_000, starter_files="s", starter_files_below=499_500
     ) as root:
         plant(root)
         episode_once(run("echo mine > memory/m1"), say())
@@ -194,7 +194,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
     settings adopts the config at its next episode.
     """
     with temp_root(
-        budget=500_000, starter_files="s", starter_files_below=499_000
+        budget=500_000, starter_files="s", starter_files_below=499_500
     ) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
@@ -202,7 +202,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         account = ground_truth()
         assert (account["starter_files"], account["starter_files_below"]) == (
             "s",
-            499_000,
+            499_500,
         )
         assert first["provenance"]["starter_files"] == "s"
 
@@ -211,7 +211,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         second = episode_once(say())
         assert (
             second["provenance"]["starter_files"] == "s"
-            and second["provenance"]["starter_files_below"] == 499_000
+            and second["provenance"]["starter_files_below"] == 499_500
         )
         assert ground_truth()["starter_files_landed"]["name"] == "s", (
             "the starter files that landed are the pinned ones"
@@ -226,7 +226,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
             because="an agent was re-created with different pinned settings",
         )
         assert (
-            harness.load_account("t", starter_files="s", starter_files_below=499_000)[
+            harness.load_account("t", starter_files="s", starter_files_below=499_500)[
                 "starter_files"
             ]
             == "s"
@@ -237,7 +237,7 @@ def check_an_agent_keeps_the_starter_files_it_was_created_with():
         m = ground_truth()
         del m["starter_files"], m["starter_files_below"]
         harness.save_account("t", m)
-        amend(starter_files="s", starter_files_below=499_000)
+        amend(starter_files="s", starter_files_below=499_500)
         episode_once(say())
         assert ground_truth()["starter_files"] == "s"
 
@@ -249,7 +249,7 @@ def check_a_fork_carries_the_starter_files_settings_it_had():
     run under.
     """
     with temp_root(
-        budget=500_000, starter_files="s", starter_files_below=499_000
+        budget=500_000, starter_files="s", starter_files_below=499_500
     ) as root:
         plant(root)
         plant(root, "other", m9="nine\n")
@@ -630,7 +630,7 @@ def check_a_fork_from_before_its_starter_files_takes_the_manifests_wherever_it_s
         harness.apply_config(overrides or {}, "manifest")
         return fake(*DEFAULT)
 
-    pinned_at = {"starter_files": "s", "starter_files_below": 499_000}
+    pinned_at = {"starter_files": "s", "starter_files_below": 499_500}
     with temp_root(budget=500_000, **pinned_at) as root:
         plant(root)
         plant(root, "other", m9="nine\n")

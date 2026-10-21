@@ -199,7 +199,7 @@ def check_a_branch_from_before_the_starter_files_landed_gives_its_agents_the_sou
         harness.apply_config(overrides or {}, "manifest")
         return fake(*DEFAULT)
 
-    pinned = {"starter_files": "s", "starter_files_below": 499_000}
+    pinned = {"starter_files": "s", "starter_files_below": 499_500}
     with temp_root(budget=500_000, **pinned) as root:
         plant(root)
         source = manifest_file(

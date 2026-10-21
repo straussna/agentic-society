@@ -173,7 +173,7 @@ agent in flight, and a manifest may set them per agent. An account missing its
   `https://api.anthropic.com` included — so "this agent did not go through some other
   endpoint" is checkable instead of a matter of reading the string carefully.
 - Check the rates in the provider catalogs against the providers' published rates before
-  an experiment you intend to publish. `claude-sonnet-5` is entered at $3/$15. A model
+  an experiment you intend to publish. `claude-sonnet-5` and `claude-sonnet-5-5` are entered at $2/$10. A model
   specification can carry a rate-expiry date, after which the provider router rejects a
   start with that seated model; a rate without one is checked by hand. Each episode's
   trace records the rates it applied, so a rate change between episodes is visible in
