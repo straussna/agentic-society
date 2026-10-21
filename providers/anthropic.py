@@ -53,6 +53,23 @@ MODELS = {
         ("claude-haiku-4-5", 100, 500, 200_000),
     )
 }
+# Haiku 5.5 reads its cache at a hundredth of input, and a prompt over 100,000 tokens
+# pays five times every rate. Its 5-minute cache write, 12.5 centi-micros, rounds up.
+MODELS["claude-haiku-5-5"] = ModelSpec(
+    "anthropic",
+    "claude-haiku-5-5",
+    1_000_000,
+    (
+        ("uncached_input", 10),
+        ("cache_read", 1),
+        ("cache_write_5m", 13),
+        ("cache_write_1h", 20),
+        ("output", 50),
+    ),
+    long_context_threshold=100_000,
+    long_context_input_multiplier=(5, 1),
+    long_context_output_multiplier=(5, 1),
+)
 
 
 # The native stop reasons with a canonical namesake; any other is "other".
