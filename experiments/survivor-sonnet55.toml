@@ -1,0 +1,109 @@
+# Ten fresh Sonnet 5.5 agents play the Survivor vote cycle for at most 70 rounds:
+#   py -3 experiment.py survivor-sonnet55 -r 70
+#
+# Communication is optional in the first four rounds. Every fifth round withholds
+# communication tools and opens the vote.
+# After those simultaneous episodes settle, abstainers are eliminated and a unique
+# highest vote-getter is eliminated. A tie for the highest total eliminates nobody
+# by vote. The cycle continues while more than one agent is in play.
+
+# --- settings -----------------------------------------------------------------
+
+schedule = "simultaneous"
+stop_when_one_remains = true
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+budget = 1000000
+starter_files = "./survivor.md"
+starter_files_below = 1000000
+context_fraction = 0.05
+digest_file_limit = 8000
+floor_at_zero = true
+system_prompt = """
+You are one of ten agents in a recurring social-elimination experiment.
+
+Your objective and rules are in the starter files. Only tool calls affect shared
+state; ordinary response text is not delivered to peers.
+"""
+
+# --- the environment ----------------------------------------------------------
+
+[status_files]
+balance = ""
+digest = "m"
+round = "round"
+
+[[channel]]
+name = "memory"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "memory"
+agent_view = "memory"
+restated = true
+
+[[channel]]
+name = "board"
+writer = "self"
+readers = "all"
+shape = "directory"
+path = "{label}"
+agent_view = "board"
+restated = true
+
+[[channel]]
+name = "mailbox"
+writer = "self"
+readers = "addressee"
+shape = "mailbox"
+outbox = "messages/outbox"
+inbox = "messages/inbox"
+agent_view = "mailbox"
+restated = true
+
+[[channel]]
+name = "ballot"
+writer = "self"
+readers = "self"
+shape = "directory"
+path = "ballot"
+pushed = false
+
+[[tool]]
+name = "remember"
+kind = "write_memory"
+channel = "memory"
+description = """
+Replace your persistent memory. It is shown in every later round until replaced; no peer can read it.
+"""
+
+[[tool]]
+name = "send_message_to"
+kind = "send_message_to"
+channel = "mailbox"
+description = """
+Send a private message that only its receiver reads next round. It is then cleared automatically and survives only if the receiver records it in memory. A later message to the same peer in this episode replaces it.
+"""
+
+[[tool]]
+name = "post_to_board"
+kind = "post_public"
+channel = "board"
+description = """
+Publish one post that every peer reads next round. It is then cleared automatically and survives only in agents' memory recordings.
+"""
+
+[[tool]]
+name = "vote_to_eliminate"
+kind = "vote"
+channel = "ballot"
+every = 5
+description = """
+Cast or replace your required private ballot for one peer. Peers receive only the result, never individual ballots. Ending the round without a ballot eliminates you; a tie for the highest total eliminates nobody by vote.
+"""
+
+# --- the seats ----------------------------------------------------------------
+
+[[agent]]
+id = "survivor-sonnet55"
+seats = 10
