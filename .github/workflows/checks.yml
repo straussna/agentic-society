@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fast:
-    name: no-docker lane
+  checks:
+    name: all checks, in containers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -26,28 +26,25 @@ jobs:
           cache: pip
       # The suite imports nothing outside the standard library. This step is
       # here to check the declared dependencies still resolve on a clean box.
-      - run: pip install -r requirements.txt
-      # No key, nothing spent: the suite runs against a fake API.
-      - run: python check.py --no-docker
-      # The same checks under pytest, the runner coverage tools drive.
-      - run: pip install pytest
-      - run: python -m pytest checks
-
-  full:
-    name: all checks, in containers
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - run: pip install -r requirements.txt pytest
+      - uses: docker/setup-buildx-action@v4
+      # Layers come from the Actions cache, so the image is rebuilt only when
+      # the Dockerfile changes.
+      - uses: docker/build-push-action@v7
         with:
-          python-version: '3.14'
-          cache: pip
-      - run: pip install -r requirements.txt
-      - run: docker build -t metered-agent:latest .
+          context: .
+          tags: metered-agent:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       # Without the image the container checks skip and the run still passes
       # with only the host lane proved.
       - run: docker image inspect metered-agent:latest > /dev/null
-      # -j 2: the wall-clock-sensitive checks CLAUDE.md names fail under
-      # contention, and this lane adds containers to it.
+      # No key, nothing spent: the suite runs against a fake API. Every check
+      # runs, the host lane's and the container lane's. -j 2: the
+      # wall-clock-sensitive checks CLAUDE.md names fail under contention, and
+      # the containers add to it.
       - run: python check.py -j 2
+      # pytest collects the same checks; collecting them proves the wiring
+      # without running them a second time.
+      - run: python -m pytest checks --collect-only -q
