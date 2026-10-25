@@ -2404,8 +2404,9 @@ def penalise(account: Account, ch: Channel) -> int:
 # by sha256 in every episode (invariant 9).
 def files_dir(name: str) -> Path:
     """Where starter files or an experimenter channel's source lives.
-    Committed, unlike mirrors/ and records/."""
-    return SETTINGS.root / "files" / name
+    Committed, unlike mirrors/ and records/. A name that climbs out of files/ with
+    ../ resolves lexically, whether or not files/ exists."""
+    return Path(os.path.normpath(SETTINGS.root / "files" / name))
 
 
 def files_listing(name: str) -> list[tuple[str, bytes]]:

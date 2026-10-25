@@ -171,7 +171,8 @@ def check_no_setting_is_given_in_two_places():
 
     settings = {t.lower() for t in harness.SETTING_KEYS}
     fields = {f.name for f in dataclasses.fields(harness.Settings)}
-    assert settings == fields - {"root", "channels", "status_files", "tools"}, (
+    paths = {"root", "data"}
+    assert settings == fields - paths - {"channels", "status_files", "tools"}, (
         f"a setting is the field of its lowercased name: {sorted(settings ^ fields)}"
     )
     held = fields | {
