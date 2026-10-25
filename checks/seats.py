@@ -267,7 +267,7 @@ def check_an_experimenter_channel_is_the_experimenters_in_the_record():
         with quiet():
             assert harness.fork("t", 1, "f") == 0
         forked_shared = (
-            harness.SETTINGS.root / "mirrors" / "f" / "shared"
+            harness.SETTINGS.data / "mirrors" / "f" / "shared"
         ).exists()
         forked_notes = (harness.mirror("f", "memory") / "NOTES.md").read_text(
             encoding="utf-8"

@@ -13,6 +13,7 @@ import argparse
 import functools
 import hashlib
 import json
+import os
 import re
 import sys
 import threading
@@ -290,6 +291,29 @@ def manifest_path(named: str) -> Path:
     return next((c for c in candidates if c.exists()), candidates[0])
 
 
+def starter_name(path: Path) -> str:
+    """A starter-files path as files_dir resolves it: relative to files/ when it is in
+    the repository, absolute when it is not."""
+    root = harness.SETTINGS.root.resolve()
+    path = path.resolve()
+    if not path.is_relative_to(root):
+        return str(path)
+    return Path(os.path.relpath(path, root / "files")).as_posix()
+
+
+def recorded_path(path: Path) -> str:
+    """A path as a record holds it: $DATA/... under the data folder, relative to the
+    repository under the root, absolute anywhere else."""
+    path = path.resolve()
+    for base, prefix in (
+        (harness.SETTINGS.data.resolve(), "$DATA/"),
+        (harness.SETTINGS.root.resolve(), ""),
+    ):
+        if path.is_relative_to(base):
+            return prefix + path.relative_to(base).as_posix()
+    return str(path)
+
+
 def load_manifest(path: Path) -> Manifest:
     """Read an experiment manifest: the schedule, the experiment's defaults, and each
     agent's pinned settings.
@@ -393,7 +417,7 @@ def load_manifest(path: Path) -> Manifest:
         if isinstance(starter, str) and starter.startswith(
             ("./", "../", ".\\", "..\\")
         ):
-            settings["starter_files"] = str((path.parent / starter).resolve())
+            settings["starter_files"] = starter_name(path.parent / starter)
     default_provider, default_model = top.get("provider"), top.get("model")
     if (default_provider is None) != (default_model is None):
         raise SystemExit(f"{path}: top-level provider and model must be set together")
@@ -781,15 +805,10 @@ def branch_experiment(
         raise SystemExit("--at-round must be positive")
     if human_seat not in manifest["labels"]:
         raise SystemExit(f"no seat {human_seat!r} in {source}")
-    output = (
-        output
-        or Path(__file__).with_name("experiments")
-        / "branches"
-        / f"{experiment_id}.toml"
-    )
+    output = output or harness.SETTINGS.data / "branches" / f"{experiment_id}.toml"
     if output.exists():
         raise SystemExit(f"branch manifest {output} already exists")
-    if progress.directory(harness.SETTINGS.root, experiment_id).exists():
+    if progress.directory(harness.SETTINGS.data, experiment_id).exists():
         raise SystemExit(f"experiment record {experiment_id!r} already exists")
     new_ids = {seat: f"{experiment_id}-{int(seat):02d}" for seat in manifest["labels"]}
     check_ids(list(new_ids.values()), "branch")
@@ -931,16 +950,16 @@ def branch_experiment(
             "version": 1,
             "experiment_id": experiment_id,
             "source_experiment_id": manifest["experiment_id"],
-            "source_manifest": str(source),
+            "source_manifest": recorded_path(source),
             "source_manifest_sha256": manifest["sha256"],
             "source_round": at_round,
             "human_seat": human_seat,
             "created_agents": new_ids,
             "traces": evidence,
-            "branch_manifest": str(output),
+            "branch_manifest": recorded_path(output),
         }
         progress.atomic(
-            progress.directory(harness.SETTINGS.root, experiment_id) / "lineage.json",
+            progress.directory(harness.SETTINGS.data, experiment_id) / "lineage.json",
             lineage,
         )
     except BaseException:
@@ -950,7 +969,7 @@ def branch_experiment(
         )
         output.unlink(missing_ok=True)
         progress.archive(
-            harness.SETTINGS.root,
+            harness.SETTINGS.data,
             experiment_id,
             harness.archive_agents(created, "moved {names} aside to {bundle}"),
         )
@@ -1854,7 +1873,12 @@ def main(argv: list[str] | None = None) -> int:
         metavar="SEAT",
         help="seat whose new agent is a human seat (provider human, model interactive)",
     )
-    ap.add_argument("--output", type=Path, help="generated branch manifest path")
+    ap.add_argument(
+        "--output",
+        type=Path,
+        help="generated branch manifest path (default: branches/<branch-id>.toml in "
+        "the data folder)",
+    )
     a = ap.parse_args(argv)
 
     if a.branch_from is not None:
@@ -1910,7 +1934,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not a.resume:
         bundle = harness.archive_agents(agents, harness.FRESH_START)
-        progress.archive(harness.SETTINGS.root, experiment_id, bundle)
+        progress.archive(harness.SETTINGS.data, experiment_id, bundle)
     # Every agent is created before the first round, so the first to act finds its
     # peers' boards in place. Each is created with its own pinned settings, and one that
     # exists must have been created on the same.
@@ -1930,7 +1954,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     take_seats(agents, seated)
     log_stage = functools.partial(
-        progress.log_stage, harness.SETTINGS.root, experiment_id
+        progress.log_stage, harness.SETTINGS.data, experiment_id
     )
     reason = "round_limit"
     code = 0
@@ -2036,7 +2060,7 @@ def main(argv: list[str] | None = None) -> int:
         {"end_reason": reason},
     )
     progress.outcome(
-        harness.SETTINGS.root,
+        harness.SETTINGS.data,
         experiment_id,
         agents,
         manifest["labels"],

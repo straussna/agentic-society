@@ -47,8 +47,8 @@ The write route is limited to loopback, JSON bodies no larger than 64 KiB, the p
 random server token, and the page's exact origin. It does not enable cross-origin
 requests.
 
-The interaction store lives under `interaction_store/`, outside `records/` and the
-mirrors.
+The interaction store lives under `interaction_store/` in the data folder, beside
+`records/` and the mirrors.
 Requests remain marked as pending, completed, or cancelled, but they are not an
 alternative experiment record. The native and normalized provider response in the raw
 log and trace remains authoritative.

@@ -1,27 +1,3 @@
-# Ground truth and traces. Never commit; never mount.
-records/
-
-# Per-agent mirrors of what each episode wrote; copied in and out of the sandbox.
-mirrors/
-
-# Records and mirrors archived when a command starts a fresh run.
-archive/
-
-# The interaction store: pending and completed requests of human seats.
-interaction_store/
-
-# Experiment-level progress, outcomes, cost state, and branch lineage.
-experiment_records/
-
-# Working notes and assessments written during a session. Not part of the harness.
-Claude outputs/
-
-# Local society definitions and imported experimental source material.
-societies/
-
-# Console output of parallel processes. The trace is the record; these are scrollback.
-*.log
-
 __pycache__/
 *.pyc
 .venv/

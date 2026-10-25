@@ -1149,7 +1149,7 @@ def header(exp: dict) -> dict:
     # The records sit under the experiment_id the accounts are stamped with, which a
     # second experiment arriving at a taken id is not keyed by.
     records = progress.records(
-        harness.SETTINGS.root, stamp.get("experiment_id") or exp["experiment_id"]
+        harness.SETTINGS.data, stamp.get("experiment_id") or exp["experiment_id"]
     )
     cost = progress.cost(
         exp["seats"], account_of, stamp.get("cost") or {}, providers.is_human
@@ -2309,7 +2309,7 @@ class View(http.server.BaseHTTPRequestHandler):
                     "focus": self.view_server.focus,
                     "poll": POLL_MS,
                     "stale": STALE_AFTER,
-                    "root": str(harness.SETTINGS.root),
+                    "root": str(harness.SETTINGS.data),
                 }
             )
         if parts == ["api", "interaction"]:

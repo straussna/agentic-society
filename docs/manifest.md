@@ -78,6 +78,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
 | **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[status_files]` table, and a ledger and a receipt, named on the transfer channel |
 | **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
+| **Data folder** | `<DATA_ROOT>\agentic-society\`, from the `DATA_ROOT` environment variable or `C:\data` (`~/data` off Windows) when it is unset: where every record, mirror, archive, the interaction store and generated branch manifests live, outside the repository. `records/`, `mirrors/` and the other run paths this page names are relative to it, and a record naming a path under it writes `$DATA/...` |
 | **Mirror** | The host's copy of one tree an agent writes, one per channel under `mirrors/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
 | **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[status_files] digest = ""` writes none |
 | **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
@@ -176,7 +177,7 @@ runs one.
 | `harness.py --fork-from AGENT --at-episode N` | Rebuild AGENT as it stood at episode N under the `--agent` id, and stop |
 | `harness.py --print-system`, `--print-context`, `--print-files NAME` | Print the shipped and declared text, the initial observation, or a `files/` listing; start no episode |
 
-Each experiment writes under `experiment_records/<experiment_id>/`: the progress log,
+Each experiment writes under `experiment_records/<experiment_id>/` in the data folder: the progress log,
 `progress.jsonl`, one line per stage each round reaches as it reaches it, the last naming
 the round the rounds ended at, so its rounds never go back; `progress.json`, the latest of
 those; `outcome.json`; and, for a branch, `lineage.json`. `progress.json` and

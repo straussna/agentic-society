@@ -525,7 +525,7 @@ def check_start_rejects_a_missing_key_before_any_client_is_built():
             tempfile.TemporaryDirectory() as folder,
             quiet() as out,
         ):
-            amend(root=Path(folder))
+            amend(root=Path(folder), data=Path(folder))
             before = harness.SETTINGS
             try:
                 harness.start(
@@ -553,7 +553,7 @@ def check_start_rejects_a_missing_key_before_any_client_is_built():
         tempfile.TemporaryDirectory() as folder,
         quiet(),
     ):
-        amend(root=Path(folder))
+        amend(root=Path(folder), data=Path(folder))
         (Path(folder) / "config.toml").write_text("max_turns = 300\n", encoding="utf-8")
         router = harness.start(
             overrides={"system_prompt": "said", "grace_episodes": 1},

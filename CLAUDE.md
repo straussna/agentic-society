@@ -2,7 +2,7 @@
 
 `docs/manifest.md` defines every term this repo uses: harness, experimenter, agent, seat,
 label, episode, turn, round, experiment, environment, channel, board, mailbox,
-schema, starter files, status files, digest, account, trace.
+schema, starter files, status files, digest, account, trace, data folder.
 
 # Running check.py
 
@@ -120,7 +120,7 @@ reaped. An experiment ends every remaining round, and every agent keeps its seat
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
 the round the interrupt landed in before the next begins, as
 `& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
-command without `--resume` moves what the interrupted run left under `archive/` and starts
+command without `--resume` moves what the interrupted run left under the data folder's `archive/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
 

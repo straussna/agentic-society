@@ -81,6 +81,7 @@ from typing import (
     get_args,
 )
 
+import datapath
 import progress
 import providers
 from providers import (
@@ -1406,7 +1407,8 @@ def apply_tools(tables: list[dict] | None, chans: list[Channel], source: str) ->
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Settings:
     """Everything a run is configured with: the settings, the channel and tool tables,
-    the status files' names, and the directory every path resolves against.
+    the status files' names, the directory the repository's files resolve against,
+    and the directory its untracked data lives in.
 
     Frozen, and replaced whole: config.toml, a manifest and a check each make a new one
     of the one before. A setting's field is its lowercased name, so a config key, a
@@ -1419,9 +1421,12 @@ class Settings:
     moves root after, as print_context does.
     """
 
-    # Where records/, mirrors/, interaction_store/, archive/, files/ and config.toml
-    # are: this file's directory, until a check points it at a throwaway one.
+    # Where files/, experiments/ and config.toml are: this file's directory, until a
+    # check points it at a throwaway one.
     root: Path = Path(__file__).resolve().parent
+    # Where records/, mirrors/, interaction_store/, experiment_records/, archive/ and
+    # branches/ are: datapath.data_root(), until a check points it at a throwaway one.
+    data: Path = datapath.data_root()
 
     # config.toml's half: PROCESS.
     # The sandbox image the container is started from.
@@ -1623,13 +1628,13 @@ TRANSFER_LINE = re.compile(r"^(?P<label>\S+) (?P<amount>\d+)$")
 def records_root() -> Path:
     """Where every agent's ground truth lives. Invariant 4: never reaches the
     container."""
-    return SETTINGS.root / "records"
+    return SETTINGS.data / "records"
 
 
 def interaction_store_root() -> Path:
     """Where a human seat's requests wait on a person: the human provider publishes
     them there, and view.py and human.py write the submissions."""
-    return SETTINGS.root / "interaction_store"
+    return SETTINGS.data / "interaction_store"
 
 
 def records_dir(agent: str) -> Path:
@@ -1646,7 +1651,8 @@ FRESH_START = (
 
 
 def archive_agents(agents: Iterable[str], notice: str) -> Path | None:
-    """Move existing records and mirrors into one preserved run bundle under archive/.
+    """Move existing records and mirrors into one preserved run bundle under the data
+    folder's archive/.
 
     `notice` is the line that says why, printed with {names} and {bundle} filled in
     where anything was moved.
@@ -1661,7 +1667,7 @@ def archive_agents(agents: Iterable[str], notice: str) -> Path | None:
     if not sources:
         return None
 
-    archive = SETTINGS.root / "archive"
+    archive = SETTINGS.data / "archive"
     archive.mkdir(parents=True, exist_ok=True)
     moment = time.time_ns()
     stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(moment / 1_000_000_000))
@@ -1741,7 +1747,7 @@ def committed_traces(agent: str, account: Mapping[str, Any]) -> list[Path]:
 
 def mirror_dir(agent: str) -> Path:
     """Where the host mirrors of every channel one agent writes are kept."""
-    return SETTINGS.root / "mirrors" / agent
+    return SETTINGS.data / "mirrors" / agent
 
 
 def mirror(agent: str, name: str) -> Path:
@@ -7123,11 +7129,12 @@ def print_context(
 ) -> int:
     """Render the complete context of fresh agents' first discussion and vote episodes.
 
-    Uses a temporary root, so starter files and synthetic accounts can be composed by
-    the same functions that build an episode without touching records, mirrors,
-    containers or providers. A shell experiment's opening listing depends on the
-    container and is therefore shown as its command beside the rendered digest. The
-    manifest's settings are in force only while it composes, under that root.
+    Uses one temporary directory as root and data folder, so starter files and
+    synthetic accounts can be composed by the same functions that build an episode
+    without touching records, mirrors, containers or providers. A shell experiment's
+    opening listing depends on the container and is therefore shown as its command
+    beside the rendered digest. The manifest's settings are in force only while it
+    composes, under that directory.
     """
     # Deferred for the same reason as print_system(): experiment imports this module.
     import experiment
@@ -7144,7 +7151,7 @@ def print_context(
         s, m["channels"], m["status_files"], str(manifest), tuple(m["labels"].values())
     )
     s = with_tools(s, m["tools"], list(s.channels), str(manifest))
-    source_root = s.root
+    source_root, source_data = s.root, s.data
 
     def stage_source(name: str, audit_root: Path) -> None:
         if not name or Path(name).is_absolute():
@@ -7161,7 +7168,7 @@ def print_context(
     print(f"manifest: {manifest}")
     with (
         tempfile.TemporaryDirectory(prefix="agent-context-") as temporary,
-        using(dataclasses.replace(s, root=Path(temporary))),
+        using(dataclasses.replace(s, root=Path(temporary), data=Path(temporary))),
     ):
         audit_root = Path(temporary)
         sources = [c.source for c in s.channels if c.writer == "experimenter"]
@@ -7170,10 +7177,10 @@ def print_context(
             stage_source(name, audit_root)
         for entry in agents:
             if inherited := entry.get("memory_from"):
-                # Where inherit_memory reads it under this root, from the same place
-                # under the root the source agent ran in.
+                # Where inherit_memory reads it under this data folder, from the same
+                # place under the data folder the source agent ran in.
                 destination = trace_path(inherited["agent"], inherited["episode"])
-                source = source_root / destination.relative_to(audit_root)
+                source = source_data / destination.relative_to(audit_root)
                 if source.is_file():
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, destination)

@@ -110,8 +110,9 @@ Every flag, and what each config parameter buys, is in
 
 Every file and directory, and what each one holds, is the Layout section of
 [docs/operating.md](docs/operating.md). `mirrors/`, `records/`,
-`experiment_records/`, `interaction_store/` and `archive/` are gitignored; deeper detail
-lives in each file's docstrings.
+`experiment_records/`, `interaction_store/`, `archive/` and `branches/` live outside the
+repository, in the data folder `<DATA_ROOT>\agentic-society\` that `datapath.py` resolves;
+deeper detail lives in each file's docstrings.
 
 ## Reading the code
 

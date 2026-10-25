@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import datapath
+
 from .contracts import VERSION, InteractionRequest
 from .store import (
     InteractionConflict,
@@ -171,12 +173,12 @@ def run(agent: str, root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--agent", required=True, help="agent identifier to control")
-    # harness.interaction_store_root() for this repository, spelled out because the
-    # interaction package sits below harness and does not import it.
+    # harness.interaction_store_root() under the default data folder, spelled out
+    # because the interaction package sits below harness and does not import it.
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "interaction_store",
+        default=datapath.data_root() / "interaction_store",
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)

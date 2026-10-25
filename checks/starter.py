@@ -31,7 +31,8 @@ from checks.lanes import (
 
 
 def check_manifest_relative_starter_documents_include_empty_files():
-    """A manifest resolves top-level and per-seat starter files beside itself."""
+    """A manifest resolves top-level and per-seat starter files beside itself, and
+    records them relative to files/, where files_dir finds them."""
     with temp_root() as root:
         folder = root / "experiments"
         folder.mkdir()
@@ -47,7 +48,7 @@ def check_manifest_relative_starter_documents_include_empty_files():
             encoding="utf-8",
         )
         loaded = experiment.load_manifest(manifest)
-        source = str(doc.resolve())
+        source = "../experiments/placeholder.md"
         assert loaded["overrides"]["starter_files"] == source
         assert loaded["agents"][0]["starter_files"] == source
         assert harness.files_listing(source) == [("placeholder.md", b"")]

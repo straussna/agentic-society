@@ -1191,8 +1191,8 @@ def check_the_view_handler_answers_only_for_the_server_serve_builds():
 
 
 def check_the_human_cli_answers_the_store_the_harness_publishes_to():
-    """With no --root the terminal reads the repository's interaction_store/, the one
-    the harness publishes to under its own root. The interaction package does not import
+    """With no --root the terminal reads interaction_store/ under the default data
+    folder, the one the harness publishes to. The interaction package does not import
     harness, so it spells that path itself, and the two are held alike here."""
     ran = []
     original = cli.run

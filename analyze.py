@@ -3,7 +3,7 @@
     .venv/Scripts/python.exe analyze.py [--agent live01]
 
 Writes episodes.csv, report.txt, trace.txt, and charts/ to
-records/<agent>/analysis/. Charts need matplotlib; the rest is written anyway.
+records/<agent>/analysis/ in the data folder. Charts need matplotlib; the rest is written anyway.
 """
 
 from __future__ import annotations

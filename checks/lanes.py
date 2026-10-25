@@ -425,9 +425,9 @@ SEAMS = {
     "catch_signals",
 }
 
-# What a check may amend: every setting, and the root. The tables are
+# What a check may amend: every setting, the root and the data folder. The tables are
 # apply_channels' and apply_tools', which hold them to their rules.
-TUNED = {t.lower() for t in harness.SETTING_KEYS} | {"root"}
+TUNED = {t.lower() for t in harness.SETTING_KEYS} | {"root", "data"}
 
 # How many pinned() blocks are open: amend() moves a setting only inside one.
 _depth = 0
@@ -466,7 +466,8 @@ def amend(**fields) -> None:
 
 @contextlib.contextmanager
 def rooted(sandbox, channels=None, status_files=None, tools=None, **overrides):
-    """Point harness at a throwaway directory, with episodes running in `sandbox`.
+    """Point harness's root and data folder at one throwaway directory, with episodes
+    running in `sandbox`.
 
     `overrides` amend a setting (max_turns=1, command_timeout=2) or move a seam
     (SANDBOX=RecordingSandbox, start=capture) for the duration, and pinned() puts
@@ -475,7 +476,7 @@ def rooted(sandbox, channels=None, status_files=None, tools=None, **overrides):
     """
     provider = overrides.pop("PROVIDER", "anthropic")
     model = overrides.pop("MODEL", "claude-sonnet-5")
-    fields = {k: v for k, v in overrides.items() if k in TUNED - {"root"}}
+    fields = {k: v for k, v in overrides.items() if k in TUNED - {"root", "data"}}
     seams = {k: v for k, v in overrides.items() if k not in fields}
     unknown = set(seams) - (SEAMS - {"SETTINGS"})
     assert not unknown, f"a root cannot restore {sorted(unknown)}"
@@ -487,7 +488,7 @@ def rooted(sandbox, channels=None, status_files=None, tools=None, **overrides):
     ):
         # Before the tables: a tool table is rejected or not by the delivery and the
         # digest in force.
-        amend(root=Path(d), **fields)
+        amend(root=Path(d), data=Path(d), **fields)
         harness.SANDBOX = sandbox
         load_account = harness.load_account
 

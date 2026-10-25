@@ -103,7 +103,7 @@ def check_every_viewer_sees_the_same_seat_order():
 def check_the_competition_delivers_its_complete_mechanics_in_its_starter_files():
     """The shipped competition's per-file bound carries its full agent contract."""
     manifest = experiment.load_manifest(experiment.manifest_path("competition"))
-    starter = Path(manifest["overrides"]["starter_files"])
+    starter = harness.files_dir(manifest["overrides"]["starter_files"])
     text = starter.read_text(encoding="utf-8")
     plain = " ".join(text.split())
     assert manifest["overrides"]["digest_file_limit"] >= len(text), (
@@ -153,7 +153,9 @@ def check_the_survivor_manifest_hides_budget_and_declares_five_round_voting():
     """The shipped survivor arm carries its rules without exposing accounting."""
     path = experiment.manifest_path("survivor")
     manifest = experiment.load_manifest(path)
-    starter = Path(manifest["overrides"]["starter_files"]).read_text(encoding="utf-8")
+    starter = harness.files_dir(manifest["overrides"]["starter_files"]).read_text(
+        encoding="utf-8"
+    )
     vote = next(tool for tool in manifest["tools"] if tool["kind"] == "vote")
     surface = "\n".join(
         [
