@@ -34,7 +34,9 @@ docs/                    the manifest grammar, the design, operation, experiment
 README.md                the overview
 CLAUDE.md, AGENTS.md     the agent guide; AGENTS.md is a byte-for-byte copy of CLAUDE.md
 LICENSE                  the licence
-.github/workflows/       continuous integration
+ci/suites.yml            the CI suites and their tiers; ci/run.ps1 runs them
+.github/workflows/       continuous integration: ci.yml calls reusable-ci.yml
+.github/actions/         the CI gate and setup
 .editorconfig            file formatting
 .gitattributes           Git line endings
 .gitignore               what stays out of the repository

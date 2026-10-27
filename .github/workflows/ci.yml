@@ -1,0 +1,39 @@
+name: ci
+
+# Pushes to main and pull requests run the quick tier (every check that needs no container, and
+# pytest's collection of them); the nightly dispatcher in claude-config runs the full tier, which
+# adds every check in its container against the built image, through workflow_dispatch. Suites whose
+# inputs already have a passed run are skipped; a manual run with force set runs them again.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: quick or full
+        type: choice
+        options: [full, quick]
+        default: full
+      force:
+        description: Also run suites whose inputs already have a passed run
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ inputs.tier || 'quick' }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/reusable-ci.yml
+    with:
+      tier: ${{ inputs.tier || 'quick' }}
+      force: ${{ inputs.force || false }}
+      python-version: '3.14'
+      timeout-minutes: 30

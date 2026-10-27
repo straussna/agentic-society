@@ -1,0 +1,32 @@
+name: ci-gate
+description: Picks the suites in ci/suites.yml whose inputs have no passed CI run yet.
+
+inputs:
+  tier:
+    description: quick or full
+    required: true
+  force:
+    description: true also picks suites whose inputs already have a passed run
+    default: 'false'
+
+outputs:
+  suites:
+    description: Comma-separated suite names to run; empty when nothing is left
+    value: ${{ steps.gate.outputs.suites }}
+  record:
+    description: Cache key that records every picked suite as passed; the workflow keeps the pairs of the suites that passed
+    value: ${{ steps.gate.outputs.record }}
+  keys:
+    description: Every suite's key, as name.key pairs
+    value: ${{ steps.gate.outputs.keys }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TIER: ${{ inputs.tier }}
+        FORCE: ${{ inputs.force }}
+      run: pwsh -NoProfile -File "$env:GITHUB_ACTION_PATH/Gate.ps1" -Tier $env:TIER -Force $env:FORCE

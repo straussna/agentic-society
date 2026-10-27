@@ -1,0 +1,29 @@
+# Suites CI and ci/run.ps1 run. The checks read the docs and starter files as well as the code, so
+# every suite takes every tracked file as input. Each runs the repository's .venv interpreter when
+# there is one and `python` otherwise. Nothing calls a real API: the checks run against a fake one.
+suites:
+  - name: checks
+    tier: quick
+    inputs: ['**/*']
+    run: >-
+      & ($(foreach ($p in '.venv/Scripts/python.exe', '.venv/bin/python') { if (Test-Path $p) { $p } }) ?? 'python')
+      check.py --no-docker
+
+  - name: collect
+    tier: quick
+    inputs: ['**/*']
+    run: >-
+      & ($(foreach ($p in '.venv/Scripts/python.exe', '.venv/bin/python') { if (Test-Path $p) { $p } }) ?? 'python')
+      -m pytest checks --collect-only -q
+
+  # Every check, the host lane's and the container lane's, against the metered-agent:latest image.
+  # Without the image the container checks skip, so the suite fails first. -j 2: the wall-clock
+  # sensitive checks CLAUDE.md names fail under contention, and the containers add to it.
+  - name: containers
+    tier: full
+    inputs: ['**/*']
+    run: >-
+      docker image inspect metered-agent:latest *> $null;
+      if ($LASTEXITCODE) { 'metered-agent:latest is not built'; exit 1 };
+      & ($(foreach ($p in '.venv/Scripts/python.exe', '.venv/bin/python') { if (Test-Path $p) { $p } }) ?? 'python')
+      check.py -j 2

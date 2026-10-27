@@ -86,6 +86,23 @@ down. `--no-docker` runs 350 of 376.
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
 
+## CI
+
+CI follows the shared standard in claude-config's `docs/ci-standard.md`. `ci/suites.yml`
+holds three suites: `checks` (`check.py --no-docker`) and `collect` (pytest's
+collection of the same checks) on the quick tier, which runs on push to `main` and on
+pull requests, and `containers` (`check.py -j 2` against `metered-agent:latest`, which
+fails when the image is not built) on the full tier, which claude-config's nightly
+dispatcher runs. `.github/actions/ci-setup` installs `requirements.txt` and, on the full
+tier only, builds the image. The repo is public, so `.github/workflows/reusable-ci.yml`
+and `.github/actions/ci-gate/` are copies of claude-config's, and `ci/run.ps1` is a
+byte-for-byte copy of its template. The same tiers run locally:
+
+```powershell
+& "C:\source\repos\agentic-society\ci\run.ps1" -Tier quick
+& "C:\source\repos\agentic-society\ci\run.ps1" -Tier full
+```
+
 ## Things that will waste your time
 
 Docker Desktop slows down markedly after a few hundred containers. When a full

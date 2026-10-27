@@ -1,4 +1,4 @@
-[![checks](https://github.com/straussna/agentic-society/actions/workflows/checks.yml/badge.svg)](https://github.com/straussna/agentic-society/actions/workflows/checks.yml)
+[![ci](https://github.com/straussna/agentic-society/actions/workflows/ci.yml/badge.svg)](https://github.com/straussna/agentic-society/actions/workflows/ci.yml)
 
 # Metered agents in a declared environment
 
