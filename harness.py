@@ -210,9 +210,8 @@ RETIRED = {
     "shared_files": 'a [[channel]] with writer = "experimenter" and a source',
 }
 
-# Hard ceiling on max_tokens. The harness does not stream, and a non-streaming
-# model call much above this hits the SDK's HTTP timeout.
-MAX_TOKENS_CEILING = 16_000
+# Hard ceiling on max_tokens.
+MAX_TOKENS_CEILING = 64_000
 
 # What config.toml may set the two limits to. A limit is true of every run and no
 # part of an agent's situation: lower, it can end an episode the agent had not
@@ -409,10 +408,7 @@ def overlay(
             f"one call may return"
         )
     if s.max_tokens > MAX_TOKENS_CEILING:
-        reject(
-            f"max_tokens must be at most {MAX_TOKENS_CEILING}; the harness does "
-            f"not stream, and larger values hit the SDK's HTTP timeout mid-episode"
-        )
+        reject(f"max_tokens must be at most {MAX_TOKENS_CEILING}, got {s.max_tokens}")
     return s
 
 

@@ -222,8 +222,11 @@ class AnthropicSession:
         }
         if self.system:
             params["system"] = self.system
+        # Streamed, so a turn of tens of thousands of output tokens stays inside the
+        # SDK's timeouts; the final message is the one a non-streaming call returns.
         try:
-            response = self.client.messages.create(**params)
+            with self.client.messages.stream(**params) as stream:
+                response = stream.get_final_message()
         except Exception as error:
             raise classify_error(error, self.provider) from error
         raw = native_dict(response)

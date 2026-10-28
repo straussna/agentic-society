@@ -56,6 +56,10 @@ class Messages:
         self.sent.append(params)
         return self.response
 
+    def stream(self, **params):
+        self.sent.append(params)
+        return contextlib.nullcontext(NS(get_final_message=lambda: self.response))
+
 
 class Responses(Messages):
     pass
@@ -70,7 +74,7 @@ class Raising:
     def create(self, *args, **params):
         raise self.error
 
-    retrieve = create
+    retrieve = stream = create
 
 
 # Stand-ins for the SDKs' exception classes, named and nested as both SDKs declare

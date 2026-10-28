@@ -156,6 +156,14 @@ def check_config_is_validated():
                     because=f"accepted bad config: {bad}",
                 )
 
+        # max_tokens is accepted above 16000 and up to the ceiling, which is 64000.
+        assert harness.MAX_TOKENS_CEILING == 64_000
+        for good in (16_001, 32_000, harness.MAX_TOKENS_CEILING):
+            f.write_text(f"max_tokens = {good}", encoding="utf-8")
+            with pinned():
+                s, _ = harness.load_config(harness.SETTINGS, f)
+                assert s.max_tokens == good, (good, s.max_tokens)
+
         # A named file that is not there is rejected, not quietly skipped.
         with pinned():
             rejected(

@@ -87,9 +87,8 @@ response under `raw_response`, before provider-owned normalization is run. A sec
 Writing it can never end an episode: a failure there is swallowed, because a lost log line
 is cheaper than a lost harness.
 
-`max_tokens` is capped in code at 16000, because exceeding it produces an agent that looks
-fine and is not: the harness does not stream, and a larger non-streaming model call hits the
-SDK's HTTP timeout mid-episode.
+`max_tokens` is capped in code at 64000. The Anthropic provider streams each model call and
+keeps the final message, so a turn that long stays inside the SDK's timeouts.
 
 **`tool_result_limit` also caps what a call spends.** Tool results reach the agent clipped
 at that many characters, and the clip happens before the result becomes the `tool_result`
