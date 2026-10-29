@@ -92,6 +92,7 @@ $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell
     [Windows.UI.Notifications.ToastNotification]::new($xml))
 '@
 $SuiteScript = @'
+$ProgressPreference = 'SilentlyContinue'
 $global:LASTEXITCODE = 0
 try {
     & ([scriptblock]::Create($env:CI_SUITE_RUN)) *> $env:CI_SUITE_LOG
