@@ -1,8 +1,8 @@
 name: reusable-ci
 
 # Called by each repository's ci.yml. One Ubuntu job: the ci-gate action picks the suites of the
-# tier whose inputs have no passed run, the setups run only when it picked any, ci/run.ps1 runs
-# them, and the keys of the suites that passed are recorded.
+# tier whose inputs have no passed run, the setups run only when it picked any, the shared runner
+# (run.ps1 in the ci-gate action) runs them, and the keys of the suites that passed are recorded.
 on:
   workflow_call:
     inputs:
@@ -112,8 +112,9 @@ jobs:
         env:
           SUITES: ${{ steps.gate.outputs.suites }}
           RECORD: ${{ steps.gate.outputs.record }}
+          RUNNER: ${{ steps.gate.outputs.runner }}
         run: |
-          pwsh -NoProfile -File ci/run.ps1 -Suite $env:SUITES | Tee-Object -Variable results
+          pwsh -NoProfile -File $env:RUNNER -RepoRoot $env:GITHUB_WORKSPACE -Suite $env:SUITES | Tee-Object -Variable results
           $code = $LASTEXITCODE
           $passed = @(foreach ($line in $results) { if ($line -match '^passed (\S+)') { $Matches[1] } })
           $pairs = @($env:RECORD.Substring('ci-done-'.Length) -split '_' | Where-Object { ($_ -split '\.')[0] -in $passed })

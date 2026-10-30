@@ -5,9 +5,10 @@ Picks the suites in ci/suites.yml that a CI run of a tier still has to run.
 
 .DESCRIPTION
 Run by the ci-gate action from the repository root. Reads the manifest, keys each suite by its
-inputs, lists the passed keys recorded in the repository's Actions cache and writes three
+inputs, lists the passed keys recorded in the repository's Actions cache and writes four
 step outputs: `suites` (comma-separated names, empty when nothing is left to run), `record`
-(the cache key that records them all as passed) and `keys` (every suite's key).
+(the cache key that records them all as passed), `keys` (every suite's key) and `runner` (the
+path of the shared CI runner, run.ps1 beside this script).
 
 .PARAMETER Tier
 quick or full.
@@ -64,7 +65,8 @@ try {
         else { 'done at this key' }
         Write-Line 'suite' "$($suite.name) $($keys[$suite.name]): $state"
     }
-    $outputs = @("suites=$($picked -join ',')", "record=$record", "keys=$(($keys.GetEnumerator() | ForEach-Object { "$($_.Key).$($_.Value)" }) -join ',')")
+    $outputs = @("suites=$($picked -join ',')", "record=$record", "keys=$(($keys.GetEnumerator() | ForEach-Object { "$($_.Key).$($_.Value)" }) -join ',')",
+        "runner=$(Join-Path $PSScriptRoot 'run.ps1')")
     if ($env:GITHUB_OUTPUT) { $outputs | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
     else { $outputs | Write-Output }
     if ($env:GITHUB_STEP_SUMMARY) {

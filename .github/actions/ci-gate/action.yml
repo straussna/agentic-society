@@ -19,6 +19,9 @@ outputs:
   keys:
     description: Every suite's key, as name.key pairs
     value: ${{ steps.gate.outputs.keys }}
+  runner:
+    description: Path of the shared CI runner, run.ps1 in this action, which runs the picked suites
+    value: ${{ steps.gate.outputs.runner }}
 
 runs:
   using: composite
