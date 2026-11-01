@@ -555,8 +555,8 @@ def expand_rules(
     if not isinstance(rules, dict):
         reject("rules must be a table")
     harness.check_keys(reject, "rules: ", rules, {k for k, _ in RULES_TYPES}, RULES_TYPES)
-    if "cycle" not in rules:
-        reject("rules: cycle is required: the rounds in each vote cycle")
+    if rules.get("cycle", 0) < 2:
+        reject("rules: cycle is required, at least 2: the rounds in each vote cycle")
     democracy = rules.get("democracy", False)
     if democracy != ("grant_round" in rules):
         reject("rules: grant_round is set exactly when democracy is true")

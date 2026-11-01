@@ -240,7 +240,7 @@ experimenter record; the table is the declarative policy a human-facing display 
 
 | Key | Type, default | Meaning |
 |---|---|---|
-| `cycle` | int, **required** | The vote tool's `every`: rounds in each vote cycle, the last of which is the vote |
+| `cycle` | int ≥ 2, **required** | The vote tool's `every`: rounds in each vote cycle, the last of which is the vote |
 | `democracy` | bool, `false` | Whether a grant round precedes each vote |
 | `grant_round` | int | The grant tool's `at`, below `cycle`; set exactly when `democracy` is true |
 | `vote_open`, `vote_counts` | bool, `false` | The vote tool's `open` and `counts` |

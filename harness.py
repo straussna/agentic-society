@@ -5046,8 +5046,14 @@ def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
 def cadence(tool: Tool) -> str:
     """When a ballot is offered, in words."""
     if not tool.at or tool.at == tool.every:
-        return f"every {tool.every}th round"
+        return f"every {ordinal(tool.every)} round"
     return f"round {tool.at} of every {tool.every}-round cycle"
+
+
+def ordinal(n: int) -> str:
+    """n as an ordinal in digits: 1st, 2nd, 3rd, 4th, 11th, 21st."""
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def describe_vote(b: Bound) -> str:
@@ -5213,7 +5219,12 @@ def rules_text(vote: Tool, grant: Tool | None, seats: int, record: bool) -> str:
             "agent; your final voting-tool call is your ballot."
         )
         + " You may still update your memory.",
-        vote_privacy(vote),
+        vote_privacy(vote)
+        + (
+            " Each candidate's total counts the votes the ballots naming it carried."
+            if grant is not None and vote.counts
+            else ""
+        ),
         "After every agent has acted, ballots are resolved together:",
         "\n".join(
             [

@@ -3768,12 +3768,17 @@ def check_rules_expand_into_the_ballots_and_render_their_rules():
         for words in (harness.grant_privacy(grant), harness.vote_privacy(vote)):
             assert words in said, words
         assert "every grant and every candidate's total" in said
+        assert "the votes the ballots naming it carried" in said
+        assert [harness.ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101)] == [
+            "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"
+        ]
         assert loaded(rules)[2]["overrides"]["starter_files"] == m["overrides"][
             "starter_files"
         ], "the same rules render to the same file"
 
         for rules, edit, says in (
             ("democracy = false", None, "cycle is required"),
+            ("cycle = 1", None, "at least 2"),
             ("cycle = 10\ngrant_round = 5", None, "grant_round is set exactly when"),
             ("cycle = 10\ndemocracy = true", None, "grant_round is set exactly when"),
             ("cycle = 5\nvote_open = 1", None, "vote_open must be bool"),
