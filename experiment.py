@@ -872,6 +872,12 @@ def branch_experiment(
         for record in elections_of(parent)
         if record["round"] <= at_round
     }
+    given = {
+        record["round"]: record
+        for _, _, parent, _ in sources
+        for record in grants_of(parent)
+        if record["round"] <= at_round
+    }
     # Until lineage.json names them, the agents forked here are no branch's: a failure
     # before then moves them, the manifest and the record aside, so the branch can be
     # made again under the same id.
@@ -894,6 +900,14 @@ def branch_experiment(
                 or label in held[round].get("electors", ())
             ]:
                 account["elections"], account["last_election"] = carried, carried[-1]
+            if carried_grants := [
+                given[round]
+                for round in sorted(given)
+                if label in given[round]["held"]
+                or label in given[round]["electors"]
+            ]:
+                account["grants"] = carried_grants
+                account["last_grant"] = carried_grants[-1]
             if (eliminated := parent.get("eliminated")) and eliminated[
                 "round"
             ] <= at_round:
@@ -1490,8 +1504,130 @@ def offered_ballot(agent: str, round: int, vote: dict) -> bool:
     return vote["name"] in trace.get("offered", [vote["name"]])
 
 
+def grants_of(account: harness.Account) -> list[harness.Grant]:
+    """Every grant an account was written into, oldest first."""
+    return account.get("grants") or (
+        [account["last_grant"]] if account.get("last_grant") else []
+    )
+
+
+def resolve_grant(
+    agents: list[str],
+    seated: set[str],
+    labels: dict[str, str],
+    grant: dict,
+    accounts: dict[str, harness.Account],
+    round: int,
+) -> int | None:
+    """Hold the grant of `round`, a grant round, and unseat every agent it eliminates.
+    The round where it stands, held now or by an earlier run, or None where a seated
+    agent has still to finish it.
+
+    A grant is the tool's private, episode-scoped file in the giver's own channel,
+    naming the peer given the giver's vote. Its electors are the agents that played the
+    round, as resolve_vote reads them, and each candidate in play holds the votes it
+    was given; the votes given to an agent the grant eliminates are lost. An elector
+    offered a grant who gave none abstained and is eliminated, and one the
+    experimenter's interrupt ended before it gave one is not. A grant is held once, and
+    every account it is written to is saved before any grant file is removed. Each of
+    those accounts keeps it in `grants` as well as `last_grant`.
+    """
+    finished = all(len(accounts[agent]["episodes"]) == round for agent in seated)
+    label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
+    held = next(
+        (
+            record
+            for account in accounts.values()
+            if (record := account.get("last_grant") or {}).get("round") == round
+        ),
+        None,
+    )
+    if held is None:
+        if not finished:
+            return None
+        electorate = [agent for agent in agents if elector(accounts[agent], round)]
+        candidates = in_play(agents)
+    else:
+        electorate = [
+            agent for agent in agents if label_by_agent[agent] in held["electors"]
+        ]
+        candidates = [
+            agent for agent in agents if label_by_agent[agent] in held["held"]
+        ]
+        if all(
+            max(
+                (accounts[agent].get("last_grant") or {}).get("round", 0),
+                (accounts[agent].get("eliminated") or {}).get("round", 0),
+            )
+            >= round
+            for agent in {*electorate, *candidates}
+        ):
+            return round if finished else None
+
+    agent_by_label = {label: agent for agent, label in label_by_agent.items()}
+    given: dict[str, str] = {}
+    cast: list[Path] = []
+    for agent in electorate:
+        path = harness.mirror(agent, grant["channel"]) / harness.TOOL_KINDS["grant"].file
+        cast.append(path)
+        try:
+            target = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            target = ""
+        if target in agent_by_label and agent_by_label[target] != agent:
+            given[agent] = agent_by_label[target]
+    silent = [
+        agent
+        for agent in electorate
+        if agent not in given and offered_ballot(agent, round, grant)
+    ]
+    interrupted = [
+        agent
+        for agent in silent
+        if accounts[agent]["episodes"][round - 1]["stop"]
+        in harness.STOPS_THE_EXPERIMENT
+    ]
+    abstainers = {agent for agent in silent if agent not in interrupted}
+    votes = {agent: 0 for agent in candidates if agent not in abstainers}
+    for target in given.values():
+        if target in votes:
+            votes[target] += 1
+    result: harness.Grant = {
+        "round": round,
+        "held": {label_by_agent[agent]: votes[agent] for agent in votes},
+        "electors": [label_by_agent[agent] for agent in electorate],
+        "abstainers": [
+            label_by_agent[agent] for agent in electorate if agent in abstainers
+        ],
+        "interrupted": [label_by_agent[agent] for agent in interrupted],
+    }
+    for agent in agents:
+        if agent not in electorate and agent not in candidates:
+            continue
+        account = accounts[agent]
+        account["grants"] = [
+            *(record for record in grants_of(account) if record["round"] < round),
+            result,
+        ]
+        account["last_grant"] = result
+        if agent in abstainers:
+            reason = f"gave no vote in round {round}"
+            account["eliminated"] = {"round": round, "reason": reason, "votes": 0}
+        harness.save_account(agent, account)
+        if agent in abstainers:
+            seated.discard(agent)
+            print(f"{agent}: eliminated after round {round}: {reason}")
+    for path in cast:
+        path.unlink(missing_ok=True)
+    return round if finished else None
+
+
 def resolve_vote(
-    agents: list[str], seated: set[str], labels: dict[str, str], vote: dict | None
+    agents: list[str],
+    seated: set[str],
+    labels: dict[str, str],
+    vote: dict | None,
+    grant: dict | None = None,
 ) -> int | None:
     """Hold the election of the current round, where it is a voting round, and unseat
     every eliminated agent. The round where its election stands, held now or by an
@@ -1513,6 +1649,10 @@ def resolve_vote(
     eliminated by the vote, since where the interrupt landed would otherwise decide who.
     The highest total, above zero and held by one candidate alone, is voted out.
 
+    Where the experiment declares a grant, its round is resolve_grant's, and a ballot
+    carries the votes its elector holds from the cycle's grant: an elector holding
+    none was offered no ballot, and does not abstain.
+
     An election is held once. Once any account records it, its candidates and electors
     are the ones it names, so a seat that took the round's episode after it was held has
     no vote in it, and it is held again, by them, only where one of them lacks the
@@ -1525,7 +1665,11 @@ def resolve_vote(
         return None
     accounts = {agent: harness.load_account(agent) for agent in agents}
     round = furthest_round(accounts.values())
-    if not round or round % vote["every"]:
+    if not round:
+        return None
+    if grant is not None and harness.Tool(**grant).on(round):
+        return resolve_grant(agents, seated, labels, grant, accounts, round)
+    if not harness.Tool(**vote).on(round):
         return None
     finished = all(len(accounts[agent]["episodes"]) == round for agent in seated)
     label_by_agent = {agent: labels[str(i)] for i, agent in enumerate(agents, 1)}
@@ -1570,10 +1714,20 @@ def resolve_vote(
         if target in agent_by_label and agent_by_label[target] != agent:
             ballots[agent] = agent_by_label[target]
 
+    weight = dict.fromkeys(electorate, 1)
+    if grant is not None:
+        granted = round - harness.Tool(**vote).position + harness.Tool(**grant).position
+        for agent in electorate:
+            last = accounts[agent].get("last_grant") or {}
+            weight[agent] = (
+                last.get("held", {}).get(label_by_agent[agent], 0)
+                if last.get("round") == granted
+                else 0
+            )
     tally = {agent: 0 for agent in candidates}
-    for target in ballots.values():
+    for voter, target in ballots.items():
         if target in tally:
-            tally[target] += 1
+            tally[target] += weight[voter]
     silent = [
         agent
         for agent in electorate
@@ -1750,6 +1904,7 @@ def play_round(
     stop_when_two_remain_after_tie: bool = False,
     log_stage: Progress = unrecorded,
     finishing: set[str] | None = None,
+    grant: dict | None = None,
 ) -> str | None:
     """One round: unseat the agents that cannot act, name the round, run it, resolve its
     election, and say why the rounds end, or None while they go on. What ends them
@@ -1795,7 +1950,7 @@ def play_round(
         print(f"no agent could take an episode in round {round}; the rounds end here")
         return "none_can_act" if in_play(agents) else "none_in_play"
     return concluded(
-        resolve_vote(agents, seated, labels, vote),
+        resolve_vote(agents, seated, labels, vote, grant),
         agents,
         seated,
         labels,
@@ -1927,6 +2082,9 @@ def main(argv: list[str] | None = None) -> int:
     vote = next(
         (tool for tool in manifest["tools"] or [] if tool["kind"] == "vote"), None
     )
+    grant = next(
+        (tool for tool in manifest["tools"] or [] if tool["kind"] == "grant"), None
+    )
     a_round = (
         simultaneous_round
         if manifest["schedule"] == "simultaneous"
@@ -1965,7 +2123,7 @@ def main(argv: list[str] | None = None) -> int:
         # election, and one already held is not held again; an election that ended the
         # experiment ends the rounds before any begins.
         ended = concluded(
-            resolve_vote(agents, seated, manifest["labels"], vote),
+            resolve_vote(agents, seated, manifest["labels"], vote, grant),
             agents,
             seated,
             manifest["labels"],
@@ -2023,6 +2181,7 @@ def main(argv: list[str] | None = None) -> int:
                 manifest["stop_when_two_remain_after_tie"],
                 log_stage,
                 set(finishing) or None,
+                grant,
             )
             log_stage(
                 "round_completed",
@@ -2039,7 +2198,7 @@ def main(argv: list[str] | None = None) -> int:
         # rounds; a voting round every seated agent finished keeps its election, and an
         # election that ends the experiment is what they end on.
         ended = concluded(
-            resolve_vote(agents, seated, manifest["labels"], vote),
+            resolve_vote(agents, seated, manifest["labels"], vote, grant),
             agents,
             seated,
             manifest["labels"],

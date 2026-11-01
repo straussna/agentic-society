@@ -529,7 +529,7 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
 
     A second kind that holds a ballot takes `every` and is held to it as a vote
     is, is named wherever a rejection says who takes it, and counts against the one
-    ballot an experiment declares.
+    vote an experiment declares, as every ballot kind but a grant does.
     """
     chans = list(harness.DEFAULT_CHANNELS)
 
@@ -552,7 +552,7 @@ def check_every_belongs_to_whichever_kind_holds_a_ballot():
                 "check",
             ),
             "check:",
-            "every belongs to kind 'vote' or 'poll'",
+            "every belongs to kind 'vote' or 'grant' or 'poll'",
         )
         rejected(
             lambda: harness.validate_tools(

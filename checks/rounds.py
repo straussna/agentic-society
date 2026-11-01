@@ -3356,3 +3356,169 @@ def check_a_top_level_pinned_setting_that_moves_is_rejected_on_resume():
                 with quiet():
                     rejected(drive, "g01", key, because=f"a moved top-level {key} ran")
             assert ground_truth("g01") == before, f"nothing ran under the moved {key}"
+
+
+GRANT = {"name": "grant", "kind": "grant", "channel": "ballot", "every": 4, "at": 2}
+WEIGHTED = {"name": "vote", "kind": "vote", "channel": "ballot", "every": 4}
+
+
+def played(ids: list[str], round: int) -> None:
+    """Record `round` episodes for every agent in `ids`."""
+    for agent in ids:
+        account = harness.load_account(agent)
+        account["episodes"] = [
+            {"episode": i, "stop": "no_tool_call"} for i in range(1, round + 1)
+        ]
+        harness.save_account(agent, account)
+
+
+def cast(choices: dict[str, str], file: str) -> None:
+    """Write each agent's ballot file, naming the label it chose."""
+    for agent, target in choices.items():
+        path = harness.mirror(agent, "ballot") / file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(target + "\n", encoding="utf-8")
+
+
+def check_a_grant_gives_votes_that_the_cycles_ballots_carry():
+    """The grant round eliminates a seat that gives no vote and records the votes each
+    candidate holds; each seat is told only its own. The cycle's election counts a
+    ballot as the votes its caster holds, and a seat holding none is offered no ballot
+    and is no abstainer."""
+    with temp_root(channels=tables(BALLOT), tools=[GRANT, WEIGHTED]) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={}, g05={})
+        labels = {str(i): str(i) for i in range(1, 6)}
+        seated_ids = set(ids)
+        played(ids, 1)
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) is None
+        played(ids, 2)
+        cast({"g01": "2", "g02": "1", "g03": "2", "g04": "2"}, "grant")
+        with quiet() as output:
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 2
+        assert seated_ids == {"g01", "g02", "g03", "g04"}, seated_ids
+        assert "gave no vote in round 2" in output.getvalue()
+        grant = harness.load_account("g01")["last_grant"]
+        assert grant == {
+            "round": 2,
+            "held": {"1": 1, "2": 3, "3": 0, "4": 0},
+            "electors": ["1", "2", "3", "4", "5"],
+            "abstainers": ["5"],
+            "interrupted": [],
+        }, grant
+        assert not (harness.mirror("g01", "ballot") / "grant").exists()
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 2
+        assert harness.load_account("g02")["grants"] == [grant], "held once"
+
+        played(ids[:4], 2)
+        status = harness.render_round_status(harness.load_account("g02"))
+        assert "votes you hold: 3" in status, status
+        assert "previous grant: abstainers eliminated: 5" in status, status
+        assert "round type: discussion" in status, status
+        assert "1 holds" not in status and "held" not in status, status
+        assert "votes you hold: 0" in harness.render_round_status(
+            harness.load_account("g03")
+        )
+
+        played(ids[:4], 3)
+        voting = harness.render_round_status(harness.load_account("g02"))
+        assert "your ballot carries the 3 votes you hold" in voting, voting
+        voiceless = harness.render_round_status(harness.load_account("g03"))
+        assert "you hold no votes and cast no ballot this round" in voiceless, voiceless
+        instances = harness.instances("g03", harness.load_account("g03"))
+        reach = ["1", "2", "4"]
+        assert [
+            b.tool.kind
+            for b in harness.bind_tools(
+                harness.tools(), harness.channels(), instances, reach, 2
+            )
+        ] == ["grant"]
+        assert [
+            b.tool.kind
+            for b in harness.bind_tools(
+                harness.tools(), harness.channels(), instances, reach, 3
+            )
+        ] == []
+        assert [
+            b.tool.kind
+            for b in harness.bind_tools(
+                harness.tools(), harness.channels(), instances, reach, 4
+            )
+        ] == ["vote"]
+        assert (
+            harness.bind_tools(
+                harness.tools(), harness.channels(), instances, reach, 4, voiceless=True
+            )
+            == []
+        )
+
+        played(ids[:4], 4)
+        for agent in ("g03", "g04"):
+            path = harness.trace_path(agent, 4)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"offered": []}), encoding="utf-8")
+        cast({"g01": "2", "g02": "1"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 4
+        result = harness.load_account("g02")["last_election"]
+        assert result["tally"] == {"1": 3, "2": 1, "3": 0, "4": 0}, result
+        assert result["voted_out"] == "1" and result["abstainers"] == [], result
+        assert seated_ids == {"g02", "g03", "g04"}, seated_ids
+
+
+def check_a_grant_needs_a_later_vote_of_its_cycle():
+    """`at` is a ballot's round within its cycle, and a grant is declared only beside a
+    vote of the same cycle that comes after it."""
+    chans = list(harness.DEFAULT_CHANNELS)
+
+    def tool(kind, **fields):
+        return {"name": kind, "kind": kind, "channel": "memory"} | fields
+
+    table = harness.validate_tools(
+        [tool("grant", every=10, at=5), tool("vote", every=10)], chans, "check"
+    )
+    assert [(t.kind, t.position) for t in table] == [("grant", 5), ("vote", 10)]
+    assert [r for r in range(1, 21) if table[0].on(r)] == [5, 15]
+    assert [r for r in range(1, 21) if table[1].on(r)] == [10, 20]
+    for tables_, says in (
+        ([tool("grant", every=10, at=5)], "a grant needs a vote tool"),
+        ([tool("grant", every=10, at=5), tool("vote", every=5)], "a grant needs"),
+        ([tool("grant", every=10), tool("vote", every=10)], "a grant needs"),
+        ([tool("vote", every=10, at=11)], "at is a round within each cycle"),
+        (
+            [{"name": "r", "kind": "read_path", "channel": "memory", "at": 1}],
+            "at belongs to kind",
+        ),
+    ):
+        rejected(lambda: harness.validate_tools(tables_, chans, "check"), "check:", says)
+
+
+def check_a_seat_given_no_votes_is_offered_no_ballot_and_stays_in_play():
+    """A seat the grant gave no votes takes the vote round with the memory tools
+    alone, its trace records that it was offered no ballot, and the election leaves it
+    in play."""
+    remember = {"name": "remember", "kind": "write_memory", "channel": "memory"}
+    with temp_root(channels=tables(BALLOT), tools=[remember, GRANT, WEIGHTED]) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        labels = {str(i): str(i) for i in range(1, 4)}
+        seated_ids = set(ids)
+        played(ids, 2)
+        cast({"g01": "2", "g02": "1", "g03": "2"}, "grant")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 2
+        played(ids, 3)
+        seen: list[dict] = []
+        with quiet():
+            harness.run_once("g03", fake(say(), seen=seen))
+        offered = next(item["tools"] for item in seen if item.get("call") == "session")
+        assert [tool["name"] for tool in offered] == ["remember"], offered
+        assert trace_on_disk("g03", 4)["offered"] == ["remember"]
+        played(ids[:2], 4)
+        cast({"g01": "2", "g02": "1"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 4
+        result = harness.load_account("g03")["last_election"]
+        assert result["tally"] == {"1": 2, "2": 1, "3": 0}, result
+        assert result["voted_out"] == "1" and result["abstainers"] == [], result
+        assert seated_ids == {"g02", "g03"}, seated_ids

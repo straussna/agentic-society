@@ -1236,19 +1236,31 @@ class Tool:
     kind: str  # a key of TOOL_KINDS
     channel: str = ""  # empty for bash
     description: str = ""  # the experimenter's words; "" takes the harness's
-    every: int = 0  # a ballot: offered on each Nth round
+    every: int = 0  # a ballot: the length of its cycle, in rounds
+    at: int = 0  # a ballot: its round within each cycle; 0 is the cycle's last
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
         if not self.every:
             table.pop("every")
+        if not self.at:
+            table.pop("at")
         return table
+
+    @property
+    def position(self) -> int:
+        """A ballot's round within each cycle, from 1 to `every`."""
+        return self.at or self.every
+
+    def on(self, round: int) -> bool:
+        """Whether a ballot is offered on `round`."""
+        return round % self.every == self.position % self.every
 
 
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-TOOL_KEYS = ("name", "kind", "channel", "description", "every")
+TOOL_KEYS = ("name", "kind", "channel", "description", "every", "at")
 
 TOOL_TYPES = (
     ("name", str),
@@ -1256,6 +1268,7 @@ TOOL_TYPES = (
     ("channel", str),
     ("description", str),
     ("every", int),
+    ("at", int),
 )
 
 
@@ -1311,8 +1324,11 @@ def parse_tool(
             or raw.get("channel")
             or raw.get("description")
             or "every" in raw
+            or "at" in raw
         ):
-            reject("bash requires name = 'bash' and no channel, description or every")
+            reject(
+                "bash requires name = 'bash' and no channel, description, every or at"
+            )
         return Tool("bash", "bash")
     if name == "bash":
         reject("tool bash requires kind = 'bash'")
@@ -1330,18 +1346,26 @@ def parse_tool(
             "is not one"
         )
     every = raw.get("every", 0)
+    at = raw.get("at", 0)
     if spec.ballot:
         if every < 1:
             reject(
                 f"tool {name}: kind {kind!r} requires every to be a positive integer, "
                 f"got {every!r}"
             )
-    elif "every" in raw:
-        reject(
-            f"tool {name}: every belongs to kind "
-            + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot)
-        )
-    return Tool(name, kind, ch.name, raw.get("description", ""), every)
+        if "at" in raw and not 1 <= at <= every:
+            reject(
+                f"tool {name}: at is a round within each cycle of {every}, from 1 to "
+                f"{every}, got {at!r}"
+            )
+    else:
+        for key in ("every", "at"):
+            if key in raw:
+                reject(
+                    f"tool {name}: {key} belongs to kind "
+                    + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot)
+                )
+    return Tool(name, kind, ch.name, raw.get("description", ""), every, at)
 
 
 def validate_tools(
@@ -1360,8 +1384,22 @@ def validate_tools(
     out: list[Tool] = []
     for raw in tables:
         out.append(parse_tool(raw, out, chans, reject))
-    if len([tool for tool in out if TOOL_KINDS[tool.kind].ballot]) > 1:
+    ballots = [tool for tool in out if TOOL_KINDS[tool.kind].ballot]
+    if len([tool for tool in ballots if tool.kind != "grant"]) > 1:
         reject("an experiment declares at most one vote tool")
+    if len([tool for tool in ballots if tool.kind == "grant"]) > 1:
+        reject("an experiment declares at most one grant tool")
+    if grant := next((tool for tool in ballots if tool.kind == "grant"), None):
+        vote = next((tool for tool in ballots if tool.kind == "vote"), None)
+        if (
+            vote is None
+            or vote.every != grant.every
+            or vote.position <= grant.position
+        ):
+            reject(
+                f"tool {grant.name}: a grant needs a vote tool with the same every, "
+                "offered later in each cycle, to spend the votes it gives"
+            )
     return out
 
 
@@ -1785,6 +1823,22 @@ class Election(TypedDict):
     candidates_left: list[str]
 
 
+class Grant(TypedDict):
+    """One grant, as every account it is written to keeps it, each seat by label.
+
+    held: the votes each candidate was given. electors: who played the round it
+    follows. abstainers: electors offered a grant who gave none. interrupted: electors
+    the experimenter's interrupt ended before they gave one. Agents learn none of it
+    but the votes they hold themselves and who it eliminated.
+    """
+
+    round: int
+    held: dict[str, int]
+    electors: list[str]
+    abstainers: list[str]
+    interrupted: list[str]
+
+
 class AccountEpisode(TypedDict):
     """One committed episode, as close_episode lists it in the account.
 
@@ -1858,6 +1912,8 @@ class Account(TypedDict):
     memory_inherited: NotRequired[dict[str, Any]]
     elections: NotRequired[list[Election]]
     last_election: NotRequired[Election]
+    grants: NotRequired[list[Grant]]
+    last_grant: NotRequired[Grant]
     eliminated: NotRequired[Elimination]
     branch: NotRequired[dict[str, Any]]
     quality_tier: NotRequired[str]
@@ -3059,9 +3115,11 @@ def harness_digest_body(name: str, body: str, agent: str, account: Account) -> s
     return body
 
 
-def election_held(agent: str, account: Account, round: int) -> bool:
+def election_held(
+    agent: str, account: Account, round: int, record: str = "last_election"
+) -> bool:
     """Whether the election that follows `round` is held already, as the agent's own
-    account or a peer's records it.
+    account or a peer's records it; with `record` "last_grant", the grant.
 
     Only a seat that takes its round after the seats that played it held its election
     finds one. A ballot it cast would be counted by nobody, so its episode of that
@@ -3077,15 +3135,53 @@ def election_held(agent: str, account: Account, round: int) -> bool:
         ),
     ]
     return any(
-        (record.get("last_election") or {}).get("round", 0) >= round
-        for record in records
+        (held.get(record) or {}).get("round", 0) >= round for held in records
     )
+
+
+def ballot_on(round: int, table: Iterable[Tool] | None = None) -> Tool | None:
+    """The ballot tool offered on `round`, or None where the round offers none."""
+    return next(
+        (
+            tool
+            for tool in (tools() if table is None else table)
+            if TOOL_KINDS[tool.kind].ballot and tool.on(round)
+        ),
+        None,
+    )
+
+
+def ballot_held(agent: str, account: Account, round: int) -> bool:
+    """Whether the ballot `round` offers is resolved already, as election_held reads
+    it: the grant for a grant round, the election for any other ballot."""
+    ballot = ballot_on(round)
+    record = "last_grant" if ballot and ballot.kind == "grant" else "last_election"
+    return election_held(agent, account, round, record)
+
+
+def votes_held(account: Account, round: int) -> int | None:
+    """The votes the agent holds in `round`, given it by its cycle's grant; None
+    where the experiment declares no grant, and every elector casts one vote.
+
+    An agent holds them from the round after the grant to the cycle's election, and
+    holds none before the grant or where the grant gave it none.
+    """
+    grant = next((tool for tool in tools() if tool.kind == "grant"), None)
+    if grant is None:
+        return None
+    granted = (round - 1) // grant.every * grant.every + grant.position
+    last = account.get("last_grant") or {}
+    if round <= granted or last.get("round") != granted:
+        return 0
+    label = seating_of(account["agent"], account).label
+    return last.get("held", {}).get(label, 0)
 
 
 def render_round_status(account: Account) -> str:
     """The authoritative round and round type announced at the start of an episode."""
     round = len(account["episodes"]) + 1
     vote = next((tool for tool in tools() if tool.kind == "vote"), None)
+    grant = next((tool for tool in tools() if tool.kind == "grant"), None)
     seating = seating_of(account["agent"], account)
     seats_in_play = {seating.seat, *reachable(seating)}
     in_play_labels = ", ".join(
@@ -3105,8 +3201,13 @@ def render_round_status(account: Account) -> str:
     else:
         position = (round - 1) % vote.every + 1
         vote_cycle = (round - 1) // vote.every + 1
-        voting = position == vote.every and not election_held(
+        voting = vote.on(round) and not election_held(
             account["agent"], account, round
+        )
+        granting = (
+            grant is not None
+            and grant.on(round)
+            and not election_held(account["agent"], account, round, "last_grant")
         )
         lines = [
             f"round: {round} (vote cycle {vote_cycle}, {position}/{vote.every})",
@@ -3131,13 +3232,44 @@ def render_round_status(account: Account) -> str:
             if abstainers:
                 outcome += f"; abstainers eliminated: {', '.join(abstainers)}"
             lines.append(f"previous vote: {outcome}")
-        if voting:
+        given = account.get("last_grant") or {}
+        if grant is not None and given.get("round") == round - 1:
+            abstainers = given.get("abstainers") or []
+            lines.append(
+                "previous grant: "
+                + (
+                    f"abstainers eliminated: {', '.join(abstainers)}"
+                    if abstainers
+                    else "no agent eliminated"
+                )
+            )
+        held = votes_held(account, round)
+        if held is not None and grant is not None and not grant.on(round) and (
+            (round - grant.position) % vote.every <= vote.position - grant.position
+        ):
+            lines.append(f"votes you hold: {held}")
+        if granting:
+            lines += [
+                "round type: grant; communication unavailable",
+                f"required private grant: call {grant.name} to give your vote to one "
+                f"peer, who spends it in the vote on round {vote.position} of the "
+                "cycle; nobody learns who gave a vote to whom, and each agent learns "
+                "only the votes it holds",
+            ]
+        elif voting and held == 0:
+            lines += [
+                "round type: vote; communication unavailable",
+                "you hold no votes and cast no ballot this round",
+            ]
+        elif voting:
             lines += [
                 "round type: vote; communication unavailable",
                 f"required private ballot: call {vote.name}; peers receive only the "
                 "result, never individual ballots; a tie for the highest total "
                 "eliminates nobody by vote",
             ]
+            if held is not None:
+                lines[-1] += f"; your ballot carries the {held} votes you hold"
         else:
             lines.append("round type: discussion")
     return "\n".join(lines) + "\n"
@@ -4700,14 +4832,70 @@ def write_memory_call(b: Bound, shell: Shell, args: dict) -> str:
     )
 
 
+def cadence(tool: Tool) -> str:
+    """When a ballot is offered, in words."""
+    if not tool.at or tool.at == tool.every:
+        return f"every {tool.every}th round"
+    return f"round {tool.at} of every {tool.every}-round cycle"
+
+
 def describe_vote(b: Bound) -> str:
-    """vote's description: the cadence it is offered on, and what a ballot reveals."""
+    """vote's description: the cadence it is offered on, what a ballot reveals, and
+    what it carries where a grant gives the votes."""
+    granted = any(tool.kind == "grant" for tool in tools())
     return (
-        f"Vote to eliminate one peer. This tool is offered only on every "
-        f"{b.tool.every}th round, when peer communication and the shell are "
-        "unavailable. Your ballot is private: peers receive only the aggregate "
+        f"Vote to eliminate one peer. This tool is offered only on "
+        f"{cadence(b.tool)}, when peer communication and the shell are "
+        "unavailable. "
+        + (
+            "Your ballot carries every vote you were given this cycle. "
+            if granted
+            else ""
+        )
+        + "Your ballot is private: peers receive only the aggregate "
         "result. A later call in the same episode replaces the earlier vote. If "
         "the highest total is tied, nobody is eliminated by the vote."
+    )
+
+
+def describe_grant(b: Bound) -> str:
+    """grant's description: the cadence it is offered on, and what a grant reveals."""
+    return (
+        f"Give your vote to one peer, who spends it in this cycle's elimination vote. "
+        f"This tool is offered only on {cadence(b.tool)}, when peer communication "
+        "and the shell are unavailable. Your grant is private: nobody learns who gave "
+        "a vote to whom, and each agent learns only how many votes it holds. A later "
+        "call in the same episode replaces the earlier grant."
+    )
+
+
+def grant_input_schema(b: Bound) -> dict:
+    """A reachable peer's label."""
+    return inputs(
+        to={
+            "type": "string",
+            "enum": b.reachable_peers,
+            "description": "The label of the peer you give your vote to.",
+        }
+    )
+
+
+def grant_call(b: Bound, shell: Shell, args: dict) -> str:
+    """Record this episode's grant; a later call replaces it."""
+    to = args.get("to")
+    if to not in b.reachable_peers:
+        return "That agent is not an eligible peer. No vote was given."
+    was = read_path_in(shell, b.backing)
+    if isinstance(was, Unanswered):
+        return "Your grant could not be recorded. Nothing changed."
+    declared = f"{to}\n"
+    if was == declared:
+        return f"Your vote is already given to {to}."
+    wrote, _ = write_path_in(shell, b.backing, declared)
+    return (
+        f"Your vote was given to {to}."
+        if wrote >= 0
+        else "Your grant could not be recorded. Nothing changed."
     )
 
 
@@ -4933,6 +5121,19 @@ TOOL_KINDS: dict[str, ToolKind] = {
         ballot=True,
         on_ballot=True,
     ),
+    "grant": ToolKind(
+        "a memory channel",
+        lambda ch: ch.is_memory,
+        describe_grant,
+        grant_input_schema,
+        grant_call,
+        file="grant",
+        expires=True,
+        names_peers=True,
+        needs_peer=True,
+        ballot=True,
+        on_ballot=True,
+    ),
     "transfer": ToolKind(
         "an enabled transfer schema channel",
         lambda ch: ch.schema == "transfer" and ch.funded_by != "none",
@@ -4960,15 +5161,17 @@ def bind_tools(
     reach: Iterable[str] | None = None,
     episode: int | None = None,
     held: bool = False,
+    voiceless: bool = False,
 ) -> list[Bound]:
     """Every declared tool this environment can actually offer, in declaration order.
 
     A tool whose channel this episode did not plant - a mailbox in an agent with
     no peers - is not offered, because an affordance that cannot act is not one.
     A write needs the instance the agent writes, and a message needs a peer to reach.
-    On a vote cadence, only the ballot and memory tools are offered; where
-    `held` says that round's election is held already, no ballot is, and every
-    other tool is offered as on any other episode.
+    On a ballot's cadence, only the ballot and memory tools are offered; where
+    `held` says that round's ballot is resolved already, no ballot is, and every
+    other tool is offered as on any other episode. `voiceless` says the agent holds
+    no votes, so a vote round offers it the memory tools alone.
 
     `reach` is the labels this episode can still reach, which an episode passes
     and a caller inspecting a table outside one leaves as None.
@@ -4978,14 +5181,16 @@ def bind_tools(
     voting = (
         episode is not None
         and not held
-        and any(
-            TOOL_KINDS[tool.kind].ballot and episode % tool.every == 0 for tool in table
-        )
+        and ballot_on(episode, table) is not None
     )
     out: list[Bound] = []
     for t in table:
         kind = TOOL_KINDS[t.kind]
-        if kind.ballot and episode is not None and (held or episode % t.every):
+        if (
+            kind.ballot
+            and episode is not None
+            and (held or not t.on(episode) or (voiceless and t.kind == "vote"))
+        ):
             continue
         if voting and not kind.on_ballot:
             continue
@@ -6323,7 +6528,8 @@ def build_episode(agent: str) -> Episode:
         channel_instances,
         [seating.labels[seat] for seat in reach],
         episode,
-        election_held(agent, account, episode),
+        ballot_held(agent, account, episode),
+        votes_held(account, episode) == 0,
     )
     if not s.bash_declared and not bound:
         raise SystemExit(
@@ -7193,8 +7399,9 @@ def print_context(
                 experiment.preparer(entry["id"], seats, stamp, m["labels"])(account)
                 save_account(entry["id"], account)
 
-        vote = next((tool for tool in s.tools if tool.kind == "vote"), None)
-        episodes = [1] if vote is None or vote.every == 1 else [1, vote.every]
+        episodes = sorted(
+            {1, *(tool.position for tool in s.tools if TOOL_KINDS[tool.kind].ballot)}
+        )
         for entry in agents:
             if selected is not None and entry["id"] != selected:
                 continue
@@ -7238,7 +7445,12 @@ def print_context(
                     for seat in seating_of(entry["id"], view).peers
                 ]
                 bound = bind_tools(
-                    list(s.tools), list(s.channels), channel_instances, reach, episode
+                    list(s.tools),
+                    list(s.channels),
+                    channel_instances,
+                    reach,
+                    episode,
+                    voiceless=votes_held(view, episode) == 0,
                 )
                 specs = episode_specs(bound)
 

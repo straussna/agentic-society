@@ -36,8 +36,8 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Episode steps** | What every episode does, in order. **Build**: make the sandbox and plant `/work`. **Run**: take the turns, then mirror the trees the agent writes back to the host and **reap** the sandbox. **Settle**: apply the spend, the transfer and the silence penalties to the balance. **Close**: apply the floor at zero, write the trace, record the episode in the account and pay what its transfer owes. An episode is **committed** once it is settled and closed, which is when its account is saved |
 | **Round** | One episode for each seated agent, one after another or all at once as the schedule has it. Each seat counts them by its own episodes: the one it is in is its episode count plus one |
 | **Current round** | The furthest round any seat has played, whether or not that seat is still in play |
-| **Vote cycle** | A block of `every` consecutive rounds, as the experiment's `vote` tool declares, counted by each seat's own round. Only the last round of each offers the ballot, so with `every = 5` rounds 5, 10, 15 and so on are votes |
-| **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballot, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already. The round announcement states it on its `round type:` line |
+| **Vote cycle** | A block of `every` consecutive rounds, as the experiment's `vote` tool declares, counted by each seat's own round. Only the last round of each offers the ballot, so with `every = 5` rounds 5, 10, 15 and so on are votes. A `grant` tool's `at` names an earlier round of each cycle, the grant round |
+| **Round type** | Whether a seat's round is a **discussion**, offering every declared tool but the ballots, a **grant**, offering only the grant and the memory tools, or a **vote**, offering only the ballot and the memory tools. The last round of a vote cycle is a vote unless that cycle's election is held already, and a grant round is a grant unless that cycle's grant is held already. The round announcement states it on its `round type:` line |
 | **Experiment** | Several agents advancing together under one manifest. The unit of comparison |
 | **Schedule** | How a round is driven. **Sequential**: one episode at a time in fixed seat order. **Simultaneous**: every sandbox built first, all episodes run at once, results settled in seat order |
 | **Grace episodes** | An agent's first `grace_episodes` episodes, in which no silence penalty is taken. Their turns spend as usual |
@@ -49,7 +49,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **In play** | Still a contender: the agent's account admits an episode — it is not exhausted, not eliminated, and not stopped by `REFUSAL_STREAK` refusal-ended episodes running — and its seat is at most one round behind the current round, whether or not this run drives it. Every stop that counts seats counts these, and they alone are candidates and survivors |
 | **Seated** | Driven by this run of `experiment.py`: every seat from the run's start, except one whose account admits no episode or that is more than one round behind the current round, until its account admits none, its episode ends on a fault of its own (`api_error`, `harness_error`), or its sandbox will not build. A seat the run stops driving is **unseated** for the rest of that run |
 | **Exhausted** | Holding a settled balance of zero or less. The agent takes no further episode, and no transfer can reach it |
-| **Eliminated** | Removed by an election, and only by one. Two kinds of seat are removed: every elector offered the ballot that cast none, except one whose episode the experimenter's interrupt ended; and the candidate with the unique highest total above zero, unless the interrupt ended an elector's episode before it cast the ballot it was offered. The agent takes no further episode |
+| **Eliminated** | Removed by an election or a grant, and only by one of them. An election removes two kinds of seat: every elector offered the ballot that cast none, except one whose episode the experimenter's interrupt ended; and the candidate with the unique highest total above zero, unless the interrupt ended an elector's episode before it cast the ballot it was offered. A grant removes every elector offered the grant that gave none, with the same exception. The agent takes no further episode |
 | **Election** | The count that follows the last round of each vote cycle. Its **electors** are the seats that took that round's episode without a fault; its **candidates** are the seats in play; a **ballot** is one elector's private choice of one candidate, cast with the `vote` tool. Section 4.8 gives the rules |
 | **Tie** | Two or more candidates sharing the highest total above zero, so the vote eliminates no candidate; an elector offered the ballot that cast none, other than one whose episode the experimenter's interrupt ended, is eliminated all the same. Under `stop_when_two_remain_after_tie`, a tie between the last two seats in play, both electors in it, ends the experiment as `final_tie`, unless the interrupt ended an elector's episode before it cast its ballot |
 
@@ -72,7 +72,7 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Schema** | A fixed format the harness parses and acts on, read either from a `self`-written, `harness`-read file or from a `self`-written, `addressee`-read mailbox. A fixed menu in code |
 | **Tool** | A named operation a model call offers an agent, declared as a kind from a fixed menu pointed at a channel, with the description the experimenter gives it. Includes bash only when explicitly declared |
 | **Tool call** | One invocation of a tool that a response asks for: the tool's name and its input. The harness checks the input against the tool's input schema before acting on it |
-| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_message`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `read_path`, `transfer`. A fixed menu in code |
+| **Kind** | What a tool does, and so what it says of itself: `bash`, `write_message`, `send_message`, `send_message_to`, `write_file`, `post_public`, `write_memory`, `vote`, `grant`, `read_path`, `transfer`. A fixed menu in code |
 | **Starter files** | Files the experimenter gives one agent, copied once into its memory when its balance first falls to its starter threshold |
 | **Starter threshold** | The balance, `starter_files_below`, at or below which an agent's starter files land. At or above the budget, they land at episode 1 |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
@@ -520,8 +520,12 @@ channel = "mailbox"         # required; a declared channel the kind can act on
 description = "..."         # optional; prompt surface. Omitted, the harness writes it
 ```
 
-`vote` also requires `every = N`, where `N` is a positive integer. No other kind
-accepts `every`, and an experiment declares at most one `vote` tool.
+`vote` and `grant` are ballots: each requires `every = N`, where `N` is a positive
+integer, and takes `at = K`, a round within each cycle from 1 to `N`; an omitted `at`
+is the cycle's last round. Each is offered on the rounds `K`, `N + K`, `2N + K` and so
+on. No other kind accepts `every` or `at`. An experiment declares at most one `vote`
+tool and at most one `grant` tool, and a `grant` needs a `vote` with the same `every`
+offered later in each cycle.
 
 Every tool must be declared. No declaration means no bash; an empty tool set is rejected.
 
@@ -535,6 +539,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `post_public` | a board the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a memory channel | `body` | Replaces the agent's memory without exposing storage paths |
 | `vote` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
+| `grant` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped grant of the agent's vote to a peer; a later call replaces the earlier grant. Offered only on the grant round of each vote cycle, when every other tool except `write_memory` is withheld, bash included. Nobody learns who gave a vote to whom; each agent learns only the votes it holds. What follows the round is **The grant**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier receiver. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -549,6 +554,21 @@ highest total, or where the experimenter's interrupt ended an elector's episode 
 cast the ballot it was offered: such an elector is not a nonvoter, and where the interrupt
 landed would otherwise decide who goes. The result goes to every candidate and elector, whose
 account keeps every election it was in as `elections`, the last as `last_election`.
+
+**The grant** follows the grant round of each vote cycle where the experiment declares a
+`grant` tool. Its electors are the seats that took the round's episode without a fault,
+as an election's are, and every seat in play is a candidate. An elector offered the
+grant that gave none is eliminated, except one whose episode the experimenter's
+interrupt ended. Each remaining candidate holds one vote for each grant naming it; the
+votes given to a seat the grant eliminates are lost. The result goes to every candidate
+and elector, whose account keeps every grant it was in as `grants`, the last as
+`last_grant`. From the round after the grant to the cycle's vote, each seat's round
+announcement states the votes it holds on its `votes you hold:` line, and nothing else
+of the grant but who it eliminated.
+
+In that cycle's election a ballot counts the votes its elector holds, not one. An
+elector holding none is offered no ballot on the vote round, which still withholds
+every tool but `write_memory`, and is no abstainer.
 
 The two `path` arguments are not the same argument. A `write_file`'s is relative to the
 one instance the agent writes, there being only one place it could mean. A `read_path`'s
@@ -644,7 +664,8 @@ channel the tool points at:
 | `write_file` | the channel's name, the agent's own instance path, and whether every agent or nobody else reads it |
 | `read_path` | the channel's name, every path of it this agent can reach with a directory's trailing slash, and the clip |
 | `transfer` | the whole-number amount rule, that the transfer applies to this episode only, the cap at episode spend, and the channel's funding and rebate |
-| `vote` | the `every` cadence, that the ballot is private and a later call replaces it, and the tie rule |
+| `vote` | the cadence, that the ballot is private and a later call replaces it, and the tie rule; where a `grant` is declared, that the ballot carries the votes given this cycle |
+| `grant` | the cadence, that the grant is private, that each agent learns only the votes it holds, and that a later call replaces it |
 | `send_message`, `send_message_to`, `post_public`, `write_memory` | the operation in fixed wording, naming no path: who reads it, when it expires, and that a later call replaces it |
 
 Every path, label and reader in it is read out of the channel table, so it moves when the
@@ -701,6 +722,13 @@ last round of each vote cycle says `round type: vote`, identifies communication 
 unavailable and names the vote tool the agent must call before ending the episode. Memory tools
 remain available. A seat that takes such a round after its election is held takes it as
 a discussion, and is offered every tool but the ballot.
+
+Where the experiment declares a grant, the grant round says `round type: grant`,
+identifies communication as unavailable and names the grant tool the agent must call,
+and the first round after it says on its `previous grant:` line which abstainers it
+eliminated, if any. From that round to the cycle's vote, a `votes you hold:` line gives
+the seat's own count. On the vote round a seat holding votes is told its ballot carries
+them, and a seat holding none is told it casts no ballot.
 
 A transfer channel's `ledger` names its ledger file (`"g"` in the default channels): three
 integers a line, giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
@@ -974,9 +1002,10 @@ Every rejection is a `SystemExit` naming the file and the key.
   harness's. Every `description` string is allowed, `""` included: that is the
   experiment asking for the harness's own generated description.
 - The name `bash` with a kind other than `bash`; `kind = "bash"` under another name, or
-  with a `channel`, `description` or `every`.
-- A `vote` tool without a positive integer `every`; `every` on any other kind; a second
-  `vote` tool.
+  with a `channel`, `description`, `every` or `at`.
+- A `vote` or `grant` tool without a positive integer `every`; an `at` outside 1 to
+  `every`; `every` or `at` on any other kind; a second `vote` or `grant` tool; a `grant`
+  with no `vote` of the same `every` offered later in each cycle.
 - No `[[tool]]` at all, or no declared `bash` tool with `delivery = "pull"` or an empty
   `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no
   shell whose every declared tool is left out of its model calls because this seating
