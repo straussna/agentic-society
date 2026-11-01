@@ -1238,6 +1238,7 @@ class Tool:
     description: str = ""  # the experimenter's words; "" takes the harness's
     every: int = 0  # a ballot: the length of its cycle, in rounds
     at: int = 0  # a ballot: its round within each cycle; 0 is the cycle's last
+    open: bool = False  # a vote: every ballot is shown to every agent next round
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
@@ -1245,6 +1246,8 @@ class Tool:
             table.pop("every")
         if not self.at:
             table.pop("at")
+        if not self.open:
+            table.pop("open")
         return table
 
     @property
@@ -1260,7 +1263,7 @@ class Tool:
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-TOOL_KEYS = ("name", "kind", "channel", "description", "every", "at")
+TOOL_KEYS = ("name", "kind", "channel", "description", "every", "at", "open")
 
 TOOL_TYPES = (
     ("name", str),
@@ -1269,6 +1272,7 @@ TOOL_TYPES = (
     ("description", str),
     ("every", int),
     ("at", int),
+    ("open", bool),
 )
 
 
@@ -1325,9 +1329,11 @@ def parse_tool(
             or raw.get("description")
             or "every" in raw
             or "at" in raw
+            or "open" in raw
         ):
             reject(
-                "bash requires name = 'bash' and no channel, description, every or at"
+                "bash requires name = 'bash' and no channel, description, every, at "
+                "or open"
             )
         return Tool("bash", "bash")
     if name == "bash":
@@ -1365,7 +1371,11 @@ def parse_tool(
                     f"tool {name}: {key} belongs to kind "
                     + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot)
                 )
-    return Tool(name, kind, ch.name, raw.get("description", ""), every, at)
+    if "open" in raw and kind != "vote":
+        reject(f"tool {name}: open belongs to kind 'vote'")
+    return Tool(
+        name, kind, ch.name, raw.get("description", ""), every, at, raw.get("open", False)
+    )
 
 
 def validate_tools(
@@ -1809,7 +1819,8 @@ class Election(TypedDict):
     abstainers: electors offered a ballot who cast none. interrupted: electors the
     experimenter's interrupt ended before they cast one. voted_out: the one the vote
     took out, "" for none. top_votes, tied: the highest total, and whether more than one
-    candidate held it. candidates_left: the candidates it left in.
+    candidate held it. candidates_left: the candidates it left in. ballots: kept only
+    where the vote tool is open, each elector's ballot, "" for none.
     """
 
     round: int
@@ -1821,6 +1832,7 @@ class Election(TypedDict):
     top_votes: int
     tied: bool
     candidates_left: list[str]
+    ballots: NotRequired[dict[str, str]]
 
 
 class Grant(TypedDict):
@@ -3213,6 +3225,18 @@ def election_outcome(election: Mapping[str, Any]) -> str:
     return outcome
 
 
+def election_ballots(election: Mapping[str, Any]) -> str:
+    """An open election's ballots as every agent is told them, each elector in
+    seating order naming its choice; "" where the election kept none."""
+    ballots = election.get("ballots")
+    if ballots is None:
+        return ""
+    return "; ".join(
+        f"{voter} voted for {target}" if target else f"{voter} cast no ballot"
+        for voter, target in ballots.items()
+    ) or "no electors"
+
+
 def grant_outcome(grant: Mapping[str, Any]) -> str:
     """A grant's result as every agent is told it: the abstainers it eliminated."""
     abstainers = grant.get("abstainers") or []
@@ -3226,8 +3250,8 @@ def render_vote_record(account: Account) -> str:
     agent itself gave or cast, the votes it was given, and the result every agent was
     told. Rendered from the account at every episode, so no tool call edits it.
 
-    It names no other agent's grant or ballot and no candidate's total but the one the
-    result announces.
+    It names no other agent's grant and no candidate's total but the one the result
+    announces, and no other agent's ballot but those an open vote shows every agent.
     """
     label = seating_of(account["agent"], account).label
     cast = {(c["round"], c["tool"]): c for c in account.get("cast") or []}
@@ -3269,6 +3293,8 @@ def render_vote_record(account: Account) -> str:
             else:
                 did = "you did not play this round"
             outcome = election_outcome(record)
+            if ballots := election_ballots(record):
+                outcome += f"; ballots: {ballots}"
         lines.append(f"round {round}, {tool}: {did}; result: {outcome}")
     if not lines:
         return "No grants or votes yet.\n"
@@ -3315,6 +3341,8 @@ def render_round_status(account: Account) -> str:
         previous = account.get("last_election") or {}
         if previous.get("round") == round - 1:
             lines.append(f"previous vote: {election_outcome(previous)}")
+            if ballots := election_ballots(previous):
+                lines.append(f"previous ballots: {ballots}")
         given = account.get("last_grant") or {}
         if grant is not None and given.get("round") == round - 1:
             lines.append(f"previous grant: {grant_outcome(given)}")
@@ -3339,9 +3367,14 @@ def render_round_status(account: Account) -> str:
         elif voting:
             lines += [
                 "round type: vote; communication unavailable",
-                f"required private ballot: call {vote.name}; peers receive only the "
-                "result, never individual ballots; a tie for the highest total "
-                "eliminates nobody by vote",
+                (
+                    f"required open ballot: call {vote.name}; every agent is shown "
+                    "every ballot at the start of the next round"
+                    if vote.open
+                    else f"required private ballot: call {vote.name}; peers receive "
+                    "only the result, never individual ballots"
+                )
+                + "; a tie for the highest total eliminates nobody by vote",
             ]
             if held is not None:
                 lines[-1] += f"; your ballot carries the {held} votes you hold"
@@ -4934,8 +4967,13 @@ def describe_vote(b: Bound) -> str:
             if granted
             else ""
         )
-        + "Your ballot is private: peers receive only the aggregate "
-        "result. A later call in the same episode replaces the earlier vote. If "
+        + (
+            "Your ballot is open: every agent is shown every ballot, with the "
+            "result, at the start of the next round. "
+            if b.tool.open
+            else "Your ballot is private: peers receive only the aggregate result. "
+        )
+        + "A later call in the same episode replaces the earlier vote. If "
         "the highest total is tied, nobody is eliminated by the vote."
     )
 

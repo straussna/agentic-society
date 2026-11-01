@@ -1656,7 +1656,8 @@ def resolve_vote(
 
     The vote tool's cadence defines the vote cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
-    tool call. The result contains aggregate totals, never voter-to-target mappings.
+    tool call. The result contains aggregate totals, and voter-to-target mappings only
+    where the vote tool is open: then it keeps every elector's ballot, "" for none.
 
     The candidates are every agent in play, and a ballot counts toward whichever of
     them it names. The electors are the agents that played the round, read from the
@@ -1794,6 +1795,11 @@ def resolve_vote(
             label_by_agent[agent] for agent in candidates if agent not in eliminated
         ],
     }
+    if harness.Tool(**vote).open:
+        result["ballots"] = {
+            label_by_agent[agent]: label_by_agent.get(ballots.get(agent), "")
+            for agent in electorate
+        }
     for agent in agents:
         if agent not in electorate and agent not in candidates:
             continue

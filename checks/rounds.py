@@ -3538,6 +3538,74 @@ def check_the_vote_record_keeps_each_seats_own_grants_ballots_and_results():
         )
 
 
+OPEN = {**WEIGHTED, "open": True}
+
+
+def check_an_open_vote_shows_every_ballot_at_the_start_of_the_next_round():
+    """An open vote's election keeps each elector's ballot, and the next round's
+    announcement and every later vote record show them to every seat; a closed vote
+    keeps none and its ballot stays private. `open` belongs to the vote alone."""
+    with temp_root(
+        channels=tables(BALLOT),
+        tools=[OPEN],
+        status_files={"round": "round", "record": "record"},
+    ) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={})
+        labels = {str(i): str(i) for i in range(1, 5)}
+        seated_ids = set(ids)
+        assert harness.tools()[0].as_table()["open"] is True
+        played(ids, 3)
+        voting = harness.render_round_status(harness.load_account("g01"))
+        assert "required open ballot" in voting and "never" not in voting, voting
+        played(ids, 4)
+        cast({"g01": "2", "g02": "1", "g03": "2"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, OPEN) == 4
+        election = harness.load_account("g04")["last_election"]
+        assert election["ballots"] == {"1": "2", "2": "1", "3": "2", "4": ""}, election
+        played(["g01", "g02", "g03"], 4)
+        status = harness.render_round_status(harness.load_account("g03"))
+        assert (
+            "previous ballots: 1 voted for 2; 2 voted for 1; 3 voted for 2; "
+            "4 cast no ballot"
+        ) in status, status
+        assert "round: 5" in status, status
+        record = harness.render_vote_record(harness.load_account("g01"))
+        assert record == (
+            "round 4, vote: you voted to eliminate 2; result: 2 eliminated with 2 "
+            "votes; abstainers eliminated: 4; ballots: 1 voted for 2; 2 voted for 1; "
+            "3 voted for 2; 4 cast no ballot\n"
+        ), record
+
+    with temp_root(
+        channels=tables(BALLOT), tools=[WEIGHTED], status_files={"round": "round"}
+    ) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        labels = {str(i): str(i) for i in range(1, 4)}
+        assert "open" not in harness.tools()[0].as_table()
+        played(ids, 3)
+        voting = harness.render_round_status(harness.load_account("g01"))
+        assert "required private ballot" in voting, voting
+        played(ids, 4)
+        cast({"g01": "2", "g02": "1", "g03": "2"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, set(ids), labels, WEIGHTED) == 4
+        assert "ballots" not in harness.load_account("g01")["last_election"]
+        played(["g01", "g03"], 4)
+        status = harness.render_round_status(harness.load_account("g01"))
+        assert "previous vote:" in status and "ballots" not in status, status
+
+    chans = list(harness.DEFAULT_CHANNELS)
+    for table, says in (
+        (
+            {"name": "g", "kind": "grant", "channel": "memory", "every": 4, "open": True},
+            "open belongs to kind 'vote'",
+        ),
+        ({"name": "v", "kind": "vote", "channel": "memory", "every": 4, "open": 1}, "open"),
+    ):
+        rejected(lambda: harness.validate_tools([table], chans, "check"), "check:", says)
+
+
 def check_a_grant_needs_a_later_vote_of_its_cycle():
     """`at` is a ballot's round within its cycle, and a grant is declared only beside a
     vote of the same cycle that comes after it."""

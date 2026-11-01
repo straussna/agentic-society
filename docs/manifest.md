@@ -523,7 +523,10 @@ description = "..."         # optional; prompt surface. Omitted, the harness wri
 `vote` and `grant` are ballots: each requires `every = N`, where `N` is a positive
 integer, and takes `at = K`, a round within each cycle from 1 to `N`; an omitted `at`
 is the cycle's last round. Each is offered on the rounds `K`, `N + K`, `2N + K` and so
-on. No other kind accepts `every` or `at`. An experiment declares at most one `vote`
+on. No other kind accepts `every` or `at`. A `vote` takes `open = true`, which makes its
+ballots public: the election keeps every elector's ballot as `ballots`, and the next
+round's announcement and every later vote record show them to every agent. No other
+kind accepts `open`. An experiment declares at most one `vote`
 tool and at most one `grant` tool, and a `grant` needs a `vote` with the same `every`
 offered later in each cycle.
 
@@ -538,7 +541,7 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a board the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a memory channel | `body` | Replaces the agent's memory without exposing storage paths |
-| `vote` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings; what follows the round is **The election**, below |
+| `vote` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings, unless the tool is `open`; what follows the round is **The election**, below |
 | `grant` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped grant of the agent's vote to a peer; a later call replaces the earlier grant. Offered only on the grant round of each vote cycle, when every other tool except `write_memory` is withheld, bash included. Nobody learns who gave a vote to whom; each agent learns only the votes it holds. What follows the round is **The grant**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier receiver. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
@@ -1022,9 +1025,9 @@ Every rejection is a `SystemExit` naming the file and the key.
   harness's. Every `description` string is allowed, `""` included: that is the
   experiment asking for the harness's own generated description.
 - The name `bash` with a kind other than `bash`; `kind = "bash"` under another name, or
-  with a `channel`, `description`, `every` or `at`.
+  with a `channel`, `description`, `every`, `at` or `open`.
 - A `vote` or `grant` tool without a positive integer `every`; an `at` outside 1 to
-  `every`; `every` or `at` on any other kind; a second `vote` or `grant` tool; a `grant`
+  `every`; `every` or `at` on any other kind; `open` on any kind but `vote`, or not a bool; a second `vote` or `grant` tool; a `grant`
   with no `vote` of the same `every` offered later in each cycle.
 - No `[[tool]]` at all, or no declared `bash` tool with `delivery = "pull"` or an empty
   `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no
