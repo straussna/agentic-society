@@ -214,6 +214,7 @@ describes.
 | `[[tool]]` | tables | The tools offered beside the shell, each pointed at a channel and carrying its description. Section 4.8 |
 | `[cost]` | table | The experiment's cost ceiling on autonomous spend: maximum, reserve, warning, and policy at the ceiling |
 | `[reveal]` | table | Which outcome fields are designated for each audience and reveal point |
+| `[rules]` | table | The vote cycle, the grant round, and what each ballot shows every agent, expanded into the ballot tools and a rendered rules starter file |
 | `[[agent]]` | tables, one or more | Seat definitions, in order; each occupies one seat unless `seats` groups identical agents |
 | `system_prompt` | str, **required** here or on every `[[agent]]` | What is said to every agent on every turn. `""` says nothing |
 | any other key of section 3 | | The default for every seat |
@@ -234,6 +235,27 @@ at most `maximum`; `warning` only marks `warning_reached` in the progress log.
 `survivors`, `tie`, `elimination_order`, `resources`, `end_reason`, and
 `evidence`. The outcome record remains the complete
 experimenter record; the table is the declarative policy a human-facing display uses.
+
+`[rules]` declares an elimination game's ballots in place of `vote` and `grant` tools:
+
+| Key | Type, default | Meaning |
+|---|---|---|
+| `cycle` | int, **required** | The vote tool's `every`: rounds in each vote cycle, the last of which is the vote |
+| `democracy` | bool, `false` | Whether a grant round precedes each vote |
+| `grant_round` | int | The grant tool's `at`, below `cycle`; set exactly when `democracy` is true |
+| `vote_open`, `vote_counts` | bool, `false` | The vote tool's `open` and `counts` |
+| `grant_open`, `grant_counts` | bool, `false` | The grant tool's `open` and `counts`; only under `democracy` |
+
+The table expands into a `vote_to_eliminate` tool and, under `democracy`, a
+`give_vote_to` tool, both on the channel named `ballot` and with no description, so each
+says of itself what section 4.8 generates; they are held to every rule a declared ballot
+tool is. The manifest declares the `ballot` channel and its other tools as `[[tool]]`
+tables, names the `round` and `record` status files, and sets `starter_files_below`. It
+declares no `vote` or `grant` tool and no `starter_files`: its starter files are a
+`rules.md` rendered from the expanded tools, whose sentences on what a ballot and a grant
+reveal are the ones their descriptions use, written once to `files/rules/<sha256 prefix>/`,
+which git ignores. [`experiments/elimination.toml`](../experiments/elimination.toml) is
+the shipped manifest.
 
 Seat order determines identity, the order seats are shown in, and settlement order. Every agent sees
 agents and records in that same order, and every episode records it as

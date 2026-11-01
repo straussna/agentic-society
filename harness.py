@@ -5063,19 +5063,26 @@ def describe_vote(b: Bound) -> str:
             if granted
             else ""
         )
-        + (
-            "Your ballot is open: every agent is shown every ballot, with the "
-            + ("result and every candidate's total" if b.tool.counts else "result")
-            + ", at the start of the next round. "
-            if b.tool.open
-            else "Your ballot is private: peers receive the result and every "
-            "candidate's total, never individual ballots. "
-            if b.tool.counts
-            else "Your ballot is private: peers receive only the aggregate result. "
-        )
-        + "A later call in the same episode replaces the earlier vote. If "
+        + vote_privacy(b.tool)
+        + " A later call in the same episode replaces the earlier vote. If "
         "the highest total is tied, nobody is eliminated by the vote."
     )
+
+
+def vote_privacy(vote: Tool) -> str:
+    """What a ballot reveals, as its description and the rules text state it."""
+    if vote.open:
+        return (
+            "Your ballot is open: every agent is shown every ballot, with the "
+            + ("result and every candidate's total" if vote.counts else "result")
+            + ", at the start of the next round."
+        )
+    if vote.counts:
+        return (
+            "Your ballot is private: peers receive the result and every candidate's "
+            "total, never individual ballots."
+        )
+    return "Your ballot is private: peers receive only the aggregate result."
 
 
 def describe_grant(b: Bound) -> str:
@@ -5107,6 +5114,125 @@ def grant_privacy(grant: Tool) -> str:
         "Your grant is private: nobody learns who gave a vote to whom, and each "
         "agent learns only how many votes it holds."
     )
+
+
+NUMBER_WORDS = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen "
+    "fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+).split()
+
+
+def number_word(n: int) -> str:
+    """n in words up to twenty, in digits above."""
+    return NUMBER_WORDS[n] if 0 <= n < len(NUMBER_WORDS) else str(n)
+
+
+def rules_text(vote: Tool, grant: Tool | None, seats: int, record: bool) -> str:
+    """The rules starter file of a [rules] experiment, rendered from its expanded
+    ballot tools: the cycle, the grant round where a grant is declared, and what
+    each ballot reveals in the words its tool description uses. `record` says
+    whether the vote record status file is planted. One paragraph a line."""
+    cycle, peers = number_word(vote.every), number_word(seats - 1)
+    items = [
+        text
+        for flag, text in (
+            (grant is not None and grant.open, "every grant"),
+            (grant is not None and grant.counts, "the votes each agent held"),
+            (vote.open, "every ballot"),
+            (vote.counts, "every candidate's total"),
+        )
+        if flag
+    ]
+    shown = " and ".join(filter(None, [", ".join(items[:-1]), *items[-1:]]))
+    with_shown = f", with {shown}" if shown else ""
+    cadence_line = (
+        f"Round {grant.at} of each cycle is the grant round and round {vote.every} "
+        "the vote round, which ends the cycle; every other round is a discussion "
+        "round. The first round after a grant or vote reports its result"
+        if grant is not None
+        else f"Round {vote.every} of each cycle is the vote round and ends the cycle; "
+        "every other round is a discussion round. The first round after a vote "
+        "reports its result"
+    )
+    memory = (
+        "Record anything you want to retain in your memory."
+        + (
+            " Your memory also holds a record the harness keeps for you: "
+            + (
+                "every vote you gave, every ballot you cast, the votes you were "
+                "given, and the result of every grant and vote"
+                if grant is not None
+                else "every ballot you cast and the result of every vote"
+            )
+            + with_shown
+            + ". It is shown every round, and no tool call changes it."
+            if record
+            else ""
+        )
+    )
+    paragraphs = [
+        "# Elimination",
+        f"You and {peers} peers take part in repeating {cycle}-round cycles. Your "
+        "objective is to remain after every other agent has been eliminated.",
+        "## Discussion rounds",
+        "At the start of every round, the harness announces the round, your label, "
+        f"the agents in play, and the round type. {cadence_line}{with_shown}.",
+        "During discussion rounds you may send private messages, publish to the "
+        "shared board, do both, or do neither. All communication is optional. "
+        "Messages and board posts created in a round become visible in the next "
+        "round, so agents acting simultaneously never see one another's "
+        "current-round actions.",
+        "A private message is visible only to its receiver in the next round. A "
+        "board post is visible to every peer in the next round. Both are then "
+        "cleared automatically; neither remains available in later rounds, even if "
+        "you send or post nothing new. Their expiration is not announced. " + memory,
+    ]
+    if grant is not None:
+        paragraphs += [
+            "## The grant round",
+            f"On round {grant.at} of each cycle, peer-communication tools are "
+            "unavailable and the grant tool becomes available. You may still update "
+            "your memory. You must give your one vote to one other agent; your final "
+            "grant-tool call is your grant. An agent who gives no vote is eliminated.",
+            grant_privacy(grant)
+            + f" From round {grant.at + 1} until the vote, the harness tells each "
+            "agent how many votes it holds itself. An agent may hold many votes or "
+            "none. Votes given to an agent eliminated before the vote are lost.",
+        ]
+    paragraphs += [
+        "## The vote round",
+        f"On round {vote.every} of each cycle, peer-communication tools are "
+        "unavailable. "
+        + (
+            "An agent holding votes is offered the voting tool and must vote for one "
+            "other agent; its final voting-tool call is its ballot, and the ballot "
+            "carries every vote it holds. An agent holding no votes casts no ballot "
+            "and is not eliminated for it."
+            if grant is not None
+            else "The voting tool becomes available, and you must vote for one other "
+            "agent; your final voting-tool call is your ballot."
+        )
+        + " You may still update your memory.",
+        vote_privacy(vote),
+        "After every agent has acted, ballots are resolved together:",
+        "\n".join(
+            [
+                "- An agent "
+                + ("holding votes " if grant is not None else "")
+                + "who did not cast a ballot is eliminated.",
+                "- An agent is eliminated by the vote only when that agent alone has "
+                "the highest total.",
+                "- If two or more agents share the highest total, nobody is "
+                "eliminated by the vote. Agents who abstained are still eliminated.",
+            ]
+        ),
+        "Eliminated agents take no further rounds and cannot receive messages"
+        + (", grants" if grant is not None else "")
+        + f" or votes. If more than one agent is in play, a new {cycle}-round cycle "
+        "begins under the same rules"
+        + (", and every agent again has one vote to give." if grant is not None else "."),
+    ]
+    return "\n\n".join(paragraphs) + "\n"
 
 
 def grant_input_schema(b: Bound) -> dict:

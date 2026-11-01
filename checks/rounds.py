@@ -3721,6 +3721,90 @@ def check_a_grant_needs_a_later_vote_of_its_cycle():
         rejected(lambda: harness.validate_tools(tables_, chans, "check"), "check:", says)
 
 
+def check_rules_expand_into_the_ballots_and_render_their_rules():
+    """A [rules] table expands into the vote tool and, under democracy, the grant
+    tool, and plants a rules starter file rendered from them that states what each
+    ballot shows in its tool description's words; a table that does not fit is
+    rejected naming the key."""
+    shipped = Path(__file__).resolve().parent.parent / "experiments" / "elimination.toml"
+    text = shipped.read_text(encoding="utf-8")
+    declared = re.search(r"(?ms)^\[rules\]\n.*?\n\n", text)
+    assert declared, "elimination.toml declares a [rules] table"
+
+    def variant(rules: str, edit=lambda t: t) -> str:
+        return edit(text.replace(declared.group(0), "[rules]\n" + rules + "\n\n"))
+
+    with temp_root() as root:
+
+        def loaded(rules: str):
+            m = experiment.load_manifest(manifest_file(root, variant(rules)))
+            chans = harness.validate_channels(
+                m["channels"], m["status_files"], "check", tuple(m["labels"].values())
+            )[0]
+            ballots = [
+                t
+                for t in harness.validate_tools(m["tools"], chans, "check")
+                if t.kind in ("vote", "grant")
+            ]
+            rules_md = harness.files_dir(m["overrides"]["starter_files"]) / "rules.md"
+            return ballots, rules_md.read_text(encoding="utf-8"), m
+
+        ballots, said, m = loaded("cycle = 5")
+        assert [(t.name, t.kind, t.every, t.open, t.counts) for t in ballots] == [
+            ("vote_to_eliminate", "vote", 5, False, False)
+        ]
+        assert m["overrides"]["starter_files"].startswith("rules/")
+        assert harness.vote_privacy(ballots[0]) in said
+        assert "grant" not in said and "five-round cycles" in said
+
+        rules = (
+            "cycle = 10\ndemocracy = true\ngrant_round = 5\ngrant_open = true\n"
+            "vote_counts = true"
+        )
+        ballots, said, m = loaded(rules)
+        vote, grant = (next(t for t in ballots if t.kind == k) for k in ("vote", "grant"))
+        assert (grant.every, grant.at, grant.open, grant.counts) == (10, 5, True, False)
+        assert (vote.every, vote.open, vote.counts) == (10, False, True)
+        for words in (harness.grant_privacy(grant), harness.vote_privacy(vote)):
+            assert words in said, words
+        assert "every grant and every candidate's total" in said
+        assert loaded(rules)[2]["overrides"]["starter_files"] == m["overrides"][
+            "starter_files"
+        ], "the same rules render to the same file"
+
+        for rules, edit, says in (
+            ("democracy = false", None, "cycle is required"),
+            ("cycle = 10\ngrant_round = 5", None, "grant_round is set exactly when"),
+            ("cycle = 10\ndemocracy = true", None, "grant_round is set exactly when"),
+            ("cycle = 5\nvote_open = 1", None, "vote_open must be bool"),
+            ("cycle = 5\ngrant_counts = true", None, "grant_counts belongs to democracy"),
+            ("cycle = 10\ndemocracy = true\ngrant_round = 10", None, "a grant needs"),
+            (
+                "cycle = 5",
+                lambda t: t.replace('record = "record"', 'record = ""'),
+                "name the round and record status files",
+            ),
+            (
+                "cycle = 5",
+                lambda t: t.replace(
+                    "starter_files_below", 'starter_files = "x"\nstarter_files_below'
+                ),
+                "declare none",
+            ),
+            (
+                "cycle = 5",
+                lambda t: t.replace(
+                    "# --- the seats",
+                    '[[tool]]\nname = "v"\nkind = "vote"\nchannel = "ballot"\n'
+                    "every = 5\n\n# --- the seats",
+                ),
+                "[rules] declares the ballots",
+            ),
+        ):
+            p = manifest_file(root, variant(rules, edit or (lambda t: t)), "bad.toml")
+            rejected(lambda: experiment.load_manifest(p), "bad.toml", says)
+
+
 def check_a_seat_given_no_votes_is_offered_no_ballot_and_stays_in_play():
     """A seat the grant gave no votes takes the vote round with the memory tools
     alone, its trace records that it was offered no ballot, and the election leaves it

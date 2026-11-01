@@ -58,6 +58,7 @@ EXPERIMENT_KEYS = {
     "tool",
     "cost",
     "reveal",
+    "rules",
 }
 
 # What a manifest may say about one agent. Everything else an agent is comes from
@@ -100,6 +101,19 @@ MEMORY_FILE = harness.TOOL_KINDS["write_memory"].file
 # paths and file names. The default is the seat number.
 LABEL = re.compile(r"^[A-Za-z0-9._-]+$")
 COST_KEYS = {"maximum", "reserved_completion", "warning", "ceiling_policy"}
+# A [rules] table: the vote cycle, whether a grant round precedes each vote, and
+# what each ballot shows every agent. It expands into the ballot tools below, on
+# the ballot channel, and the rules starter file rendered from them.
+RULES_TYPES = (
+    ("cycle", int),
+    ("democracy", bool),
+    ("grant_round", int),
+    ("vote_open", bool),
+    ("vote_counts", bool),
+    ("grant_open", bool),
+    ("grant_counts", bool),
+)
+RULES_VOTE, RULES_GRANT, RULES_CHANNEL = "vote_to_eliminate", "give_vote_to", "ballot"
 REVEAL_KEYS = {"during_play", "at_elimination", "at_completion", "experimenter_only"}
 OUTCOME_FIELDS = {
     "winners",
@@ -466,6 +480,8 @@ def load_manifest(path: Path) -> Manifest:
             f"{path}: [{named[1]}] is another name for [{named[0]}]; "
             "declare one of them"
         )
+    if "rules" in top:
+        expand_rules(path, top, definitions, top.get(named[0]) if named else None)
     tables, status_files, tool_tables = (
         top.get("channel"),
         top.get(named[0]) if named else None,
@@ -483,7 +499,9 @@ def load_manifest(path: Path) -> Manifest:
             table_name=named[0] if named else "status_files",
         )[0]
         if tool_tables is not None:
-            harness.validate_tools(tool_tables, chans, str(path))
+            declared = harness.validate_tools(tool_tables, chans, str(path))
+            if "rules" in top:
+                top["starter_files"] = write_rules(declared, len(agents), status_files)
 
     # Last, so a manifest with a structural fault is rejected for that fault first.
     if "system_prompt" not in top and not all(
@@ -514,6 +532,87 @@ def load_manifest(path: Path) -> Manifest:
         "tools": tool_tables,
         "sha256": hashlib.sha256(data).hexdigest(),
     }
+
+
+def expand_rules(
+    path: Path,
+    top: dict[str, Any],
+    definitions: list[dict],
+    status_files: dict | None,
+) -> None:
+    """Append the ballot tools a [rules] table declares to the manifest's [[tool]]
+    tables, or reject the table naming the key.
+
+    The vote tool is offered every `cycle` rounds; under `democracy` the grant tool
+    is offered on `grant_round` of each cycle. parse_tool and validate_tools then
+    hold the expanded tools to the rules every ballot tool is held to. The manifest
+    declares the ballot channel, its other tools, the round and record status files
+    and starter_files_below, and no vote or grant tool and no starter_files of its
+    own: the rules starter file is write_rules'.
+    """
+    reject = harness.rejecter(path)
+    rules = top["rules"]
+    if not isinstance(rules, dict):
+        reject("rules must be a table")
+    harness.check_keys(reject, "rules: ", rules, {k for k, _ in RULES_TYPES}, RULES_TYPES)
+    if "cycle" not in rules:
+        reject("rules: cycle is required: the rounds in each vote cycle")
+    democracy = rules.get("democracy", False)
+    if democracy != ("grant_round" in rules):
+        reject("rules: grant_round is set exactly when democracy is true")
+    if not democracy and (held := [k for k in ("grant_open", "grant_counts") if k in rules]):
+        reject(f"rules: {held[0]} belongs to democracy = true")
+    tools = top.get("tool")
+    if not isinstance(tools, list) or not all(isinstance(t, dict) for t in tools):
+        reject("rules: declare the communication and memory tools as [[tool]] tables")
+    if ballots := [t.get("name") for t in tools if t.get("kind") in ("vote", "grant")]:
+        reject(f"rules: tool {ballots[0]!r} is a ballot, and [rules] declares the ballots")
+    if any("starter_files" in s for s in [top, *definitions]):
+        reject("rules: starter_files is the rules file [rules] renders; declare none")
+    if not all((status_files or {}).get(key) for key in ("round", "record")):
+        reject(
+            "rules: name the round and record status files, which announce each "
+            "round type and every result"
+        )
+    tools.append(
+        {
+            "name": RULES_VOTE,
+            "kind": "vote",
+            "channel": RULES_CHANNEL,
+            "every": rules["cycle"],
+            **({"open": True} if rules.get("vote_open") else {}),
+            **({"counts": True} if rules.get("vote_counts") else {}),
+        }
+    )
+    if democracy:
+        tools.append(
+            {
+                "name": RULES_GRANT,
+                "kind": "grant",
+                "channel": RULES_CHANNEL,
+                "every": rules["cycle"],
+                "at": rules["grant_round"],
+                **({"open": True} if rules.get("grant_open") else {}),
+                **({"counts": True} if rules.get("grant_counts") else {}),
+            }
+        )
+
+
+def write_rules(tools: list[harness.Tool], seats: int, status_files: dict) -> str:
+    """Render the rules starter file from a [rules] experiment's expanded ballot
+    tools and write it once to files/rules/<sha256[:12]>/rules.md, which git
+    ignores. Returns its starter_files name."""
+    vote = next(t for t in tools if t.kind == "vote")
+    grant = next((t for t in tools if t.kind == "grant"), None)
+    data = harness.rules_text(vote, grant, seats, bool(status_files.get("record"))).encode(
+        "utf-8"
+    )
+    name = f"rules/{hashlib.sha256(data).hexdigest()[:12]}"
+    target = harness.files_dir(name) / "rules.md"
+    if not target.is_file() or target.read_bytes() != data:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    return name
 
 
 def pinned_settings_of(entry: dict, defaults: Mapping[str, Any]) -> dict[str, Any]:
