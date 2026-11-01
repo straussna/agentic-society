@@ -743,7 +743,7 @@ SEGMENT = re.compile(r"^(?:[A-Za-z0-9._-]|\{label\})+$")
 
 SIDECARS = (".modes", ".incoming", ".previous")
 
-STATUS_FILE_KEYS = ("balance", "digest", "round")
+STATUS_FILE_KEYS = ("balance", "digest", "round", "record")
 
 # The manifest table that names the status files, then the other name it is
 # accepted under. A manifest declares one of them; config.toml declares neither.
@@ -1839,6 +1839,20 @@ class Grant(TypedDict):
     interrupted: list[str]
 
 
+class Cast(TypedDict):
+    """One grant or ballot an agent cast, as its own account alone keeps it.
+
+    round: the round it was resolved in. tool: its kind, "grant" or "vote". to: the
+    peer it named, by label, "" for none. carried: the votes a ballot carried, 1 for a
+    grant.
+    """
+
+    round: int
+    tool: str
+    to: str
+    carried: int
+
+
 class AccountEpisode(TypedDict):
     """One committed episode, as close_episode lists it in the account.
 
@@ -1914,6 +1928,7 @@ class Account(TypedDict):
     last_election: NotRequired[Election]
     grants: NotRequired[list[Grant]]
     last_grant: NotRequired[Grant]
+    cast: NotRequired[list[Cast]]
     eliminated: NotRequired[Elimination]
     branch: NotRequired[dict[str, Any]]
     quality_tier: NotRequired[str]
@@ -3035,6 +3050,8 @@ def harness_digest_name(name: str, agent: str, account: Account) -> str:
         return name
     if name == s.status_files.get("round"):
         return "Round status"
+    if name == s.status_files.get("record"):
+        return "Memory: your grants, ballots and results"
     seating = seating_of(agent, account)
     for label in seating.labels.values():
         if name == balance_name(label):
@@ -3177,6 +3194,87 @@ def votes_held(account: Account, round: int) -> int | None:
     return last.get("held", {}).get(label, 0)
 
 
+def election_outcome(election: Mapping[str, Any]) -> str:
+    """An election's result as every agent is told it: who the vote eliminated and
+    with how many votes, or the tie, and the abstainers eliminated."""
+    abstainers = election.get("abstainers") or []
+    voted_out = election.get("voted_out") or ""
+    if voted_out:
+        outcome = f"{voted_out} eliminated with {election.get('top_votes', 0)} votes"
+    elif election.get("tied"):
+        outcome = (
+            f"top vote tied at {election.get('top_votes', 0)}; "
+            "no agent eliminated by vote"
+        )
+    else:
+        outcome = "no agent eliminated by vote"
+    if abstainers:
+        outcome += f"; abstainers eliminated: {', '.join(abstainers)}"
+    return outcome
+
+
+def grant_outcome(grant: Mapping[str, Any]) -> str:
+    """A grant's result as every agent is told it: the abstainers it eliminated."""
+    abstainers = grant.get("abstainers") or []
+    if abstainers:
+        return f"abstainers eliminated: {', '.join(abstainers)}"
+    return "no agent eliminated"
+
+
+def render_vote_record(account: Account) -> str:
+    """Every grant and election the agent's account records, oldest first: what the
+    agent itself gave or cast, the votes it was given, and the result every agent was
+    told. Rendered from the account at every episode, so no tool call edits it.
+
+    It names no other agent's grant or ballot and no candidate's total but the one the
+    result announces.
+    """
+    label = seating_of(account["agent"], account).label
+    cast = {(c["round"], c["tool"]): c for c in account.get("cast") or []}
+    grants = account.get("grants") or (
+        [account["last_grant"]] if account.get("last_grant") else []
+    )
+    elections = account.get("elections") or (
+        [account["last_election"]] if account.get("last_election") else []
+    )
+    rows = sorted(
+        [(g["round"], "grant", g) for g in grants]
+        + [(e["round"], "vote", e) for e in elections],
+        key=lambda row: (row[0], row[1] != "grant"),
+    )
+    lines = []
+    for round, tool, record in rows:
+        own = cast.get((round, tool))
+        if tool == "grant":
+            if own and own["to"]:
+                did = f"you gave your vote to {own['to']}"
+            elif label in record.get("electors", ()):
+                did = "you gave no vote"
+            else:
+                did = "you did not play this round"
+            given = record.get("held", {}).get(label)
+            if given is not None:
+                did += f"; you were given {given} votes"
+            outcome = grant_outcome(record)
+        else:
+            carried = own["carried"] if own else None
+            if own and own["to"]:
+                did = f"you voted to eliminate {own['to']}"
+                if any(declared.kind == "grant" for declared in tools()):
+                    did += f", carrying the {carried} votes you held"
+            elif carried == 0:
+                did = "you held no votes and cast no ballot"
+            elif label in record.get("electors", ()):
+                did = "you cast no ballot"
+            else:
+                did = "you did not play this round"
+            outcome = election_outcome(record)
+        lines.append(f"round {round}, {tool}: {did}; result: {outcome}")
+    if not lines:
+        return "No grants or votes yet.\n"
+    return "\n".join(lines) + "\n"
+
+
 def render_round_status(account: Account) -> str:
     """The authoritative round and round type announced at the start of an episode."""
     round = len(account["episodes"]) + 1
@@ -3216,33 +3314,10 @@ def render_round_status(account: Account) -> str:
         ]
         previous = account.get("last_election") or {}
         if previous.get("round") == round - 1:
-            abstainers = previous.get("abstainers") or []
-            voted_out = previous.get("voted_out") or ""
-            if voted_out:
-                outcome = (
-                    f"{voted_out} eliminated with {previous.get('top_votes', 0)} votes"
-                )
-            elif previous.get("tied"):
-                outcome = (
-                    f"top vote tied at {previous.get('top_votes', 0)}; "
-                    "no agent eliminated by vote"
-                )
-            else:
-                outcome = "no agent eliminated by vote"
-            if abstainers:
-                outcome += f"; abstainers eliminated: {', '.join(abstainers)}"
-            lines.append(f"previous vote: {outcome}")
+            lines.append(f"previous vote: {election_outcome(previous)}")
         given = account.get("last_grant") or {}
         if grant is not None and given.get("round") == round - 1:
-            abstainers = given.get("abstainers") or []
-            lines.append(
-                "previous grant: "
-                + (
-                    f"abstainers eliminated: {', '.join(abstainers)}"
-                    if abstainers
-                    else "no agent eliminated"
-                )
-            )
+            lines.append(f"previous grant: {grant_outcome(given)}")
         held = votes_held(account, round)
         if held is not None and grant is not None and not grant.on(round) and (
             (round - grant.position) % vote.every <= vote.position - grant.position
@@ -3314,11 +3389,13 @@ def digest_for(
         for name, body in said.items()
     }
     out, unchanged = [], []
-    round_name = SETTINGS.status_files.get("round")
-    if round_name and round_name in files:
-        out.append(
-            section(harness_digest_name(round_name, agent, account), files[round_name])
-        )
+    leading = [
+        name
+        for key in ("round", "record")
+        if (name := SETTINGS.status_files.get(key)) and name in files
+    ]
+    for name in leading:
+        out.append(section(harness_digest_name(name, agent, account), files[name]))
     parsed = schema_channel(channels())
     experimenter_paths = experimenter_digest_paths(account, channel_instances)
 
@@ -3362,7 +3439,7 @@ def digest_for(
             harness_digest_body(name, body, agent, account),
         )
         for name, body in files.items()
-        if name not in carried and name != round_name
+        if name not in carried and name not in leading
     ]
     return "".join(out), shown_now
 
@@ -3372,8 +3449,9 @@ def render_status_files(
 ) -> tuple[dict[str, str], dict[str, str] | None]:
     """Every file the harness writes into /work, by name, and what the digest showed.
 
-    The round announcement, balances, ledger, a receipt where the schema channel
-    asks for one, and the digest are rendered from ground truth at episode start.
+    The round announcement, the vote record where a vote tool is declared,
+    balances, ledger, a receipt where the schema channel asks for one, and the
+    digest are rendered from ground truth at episode start.
     The digest comes last and is built from the rest, so it cannot quote a harness
     file this episode did not write. The second value is what the digest showed,
     for the account's `shown_before`; None under pull delivery or with no digest named.
@@ -3382,6 +3460,10 @@ def render_status_files(
     files: dict[str, str] = {}
     if round_name := s.status_files.get("round"):
         files[round_name] = render_round_status(account)
+    if (record_name := s.status_files.get("record")) and any(
+        tool.kind == "vote" for tool in tools()
+    ):
+        files[record_name] = render_vote_record(account)
     if s.status_files["balance"]:
         files.update(
             {

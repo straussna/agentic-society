@@ -18,6 +18,8 @@ A private message is visible only to its receiver in the next round. A board pos
 visible to every peer in the next round. Both are then cleared automatically; neither
 remains available in later rounds, even if you send or post nothing new. Their expiration
 is not announced. Record anything you want to retain in your memory.
+Your memory also holds a record the harness keeps for you: every ballot you cast
+and the result of every vote. It is shown every round, and no tool call changes it.
 
 ## Vote rounds
 

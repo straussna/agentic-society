@@ -908,6 +908,10 @@ def branch_experiment(
             ]:
                 account["grants"] = carried_grants
                 account["last_grant"] = carried_grants[-1]
+            if cast := [
+                c for c in parent.get("cast") or [] if c["round"] <= at_round
+            ]:
+                account["cast"] = cast
             if (eliminated := parent.get("eliminated")) and eliminated[
                 "round"
             ] <= at_round:
@@ -1504,6 +1508,20 @@ def offered_ballot(agent: str, round: int, vote: dict) -> bool:
     return vote["name"] in trace.get("offered", [vote["name"]])
 
 
+def record_cast(
+    account: harness.Account, round: int, tool: str, to: str | None, carried: int
+) -> None:
+    """Keep in the agent's own account the grant or ballot it cast in `round`, naming
+    `to`, None for none. A record already kept for that round and tool stands."""
+    cast = account.get("cast") or []
+    if any(c["round"] == round and c["tool"] == tool for c in cast):
+        return
+    account["cast"] = [
+        *cast,
+        {"round": round, "tool": tool, "to": to or "", "carried": carried},
+    ]
+
+
 def grants_of(account: harness.Account) -> list[harness.Grant]:
     """Every grant an account was written into, oldest first."""
     return account.get("grants") or (
@@ -1610,6 +1628,8 @@ def resolve_grant(
             result,
         ]
         account["last_grant"] = result
+        if agent in electorate:
+            record_cast(account, round, "grant", label_by_agent.get(given.get(agent)), 1)
         if agent in abstainers:
             reason = f"gave no vote in round {round}"
             account["eliminated"] = {"round": round, "reason": reason, "votes": 0}
@@ -1787,6 +1807,14 @@ def resolve_vote(
             result,
         ]
         account["last_election"] = result
+        if agent in electorate:
+            record_cast(
+                account,
+                round,
+                "vote",
+                label_by_agent.get(ballots.get(agent)),
+                weight[agent],
+            )
         if agent in eliminated:
             total = tally.get(agent, 0)
             reason = (

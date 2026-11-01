@@ -32,6 +32,7 @@ state; ordinary response text is not delivered to peers.
 balance = ""
 digest = "m"
 round = "round"
+record = "record"
 
 [[channel]]
 name = "memory"

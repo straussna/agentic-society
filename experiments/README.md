@@ -101,7 +101,7 @@ here.
 
 ### `[status_files]`
 
-Three of the status files the harness writes into every environment, root-owned and
+Four of the status files the harness writes into every environment, root-owned and
 read-only. Named here, one key at a time; the transfer channel names the other two.
 `[harness_files]` is accepted as another name for this table, and a manifest declares
 one of the two.
@@ -111,6 +111,7 @@ one of the two.
 | `balance` | The file holding the agent's balance history, one integer per movement. `""` writes none, and the agent never sees what it holds or that a balance exists |
 | `digest` | The file quoting, at episode start under push delivery, every channel marked `pushed` and the other status files. `""` is the same as pull delivery: the episode opens on the listing alone |
 | `round` | An optional round announcement. It states the seat's own round, the agent's label, the agent and its reachable peers, and the round type, then summarizes a vote on the next round; `""` writes none |
+| `record` | An optional vote record where a vote tool is declared: the seat's own grants and ballots, the votes it was given and every announced result, one line per grant and election, rewritten from its account at every episode and shown second in the digest as memory no tool call edits; `""` writes none |
 
 ### `[[channel]]`
 

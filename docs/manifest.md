@@ -76,11 +76,11 @@ way their field uses them; the few with no standard are the word a newcomer woul
 | **Starter files** | Files the experimenter gives one agent, copied once into its memory when its balance first falls to its starter threshold |
 | **Starter threshold** | The balance, `starter_files_below`, at or below which an agent's starter files land. At or above the budget, they land at episode 1 |
 | **Experimenter channel** | Files the experimenter gives every agent, identical and read-only in every seat at every episode |
-| **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest and the round announcement, named in the `[status_files]` table, and a ledger and a receipt, named on the transfer channel |
+| **Status files** | The read-only files the harness renders from the accounts and plants in `/work`: a balance file per seat, the digest, the round announcement and the vote record, named in the `[status_files]` table, and a ledger and a receipt, named on the transfer channel |
 | **Plant** | Put files into `/work` as an episode's sandbox is built: the mirrored trees, starter files where they land, each experimenter channel's files, and the status files |
 | **Data folder** | `<DATA_ROOT>\agentic-society\`, from the `DATA_ROOT` environment variable or `C:\data` (`~/data` off Windows) when it is unset: where every record, mirror, archive, the interaction store and generated branch manifests live, outside the repository. `records/`, `mirrors/` and the other run paths this page names are relative to it, and a record naming a path under it writes `$DATA/...` |
 | **Mirror** | The host's copy of one tree an agent writes, one per channel under `mirrors/<agent>/`: planted into each new sandbox and copied back out when the episode's turns end |
-| **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[status_files] digest = ""` writes none |
+| **Digest** | The status file an episode opens on where the experiment quotes content at all, written at episode start: the round announcement, the vote record, every file of each channel marked to be quoted, and the other status files. Content new to the agent is quoted in full, and channel content it was shown before and that has not moved is named. `[status_files] digest = ""` writes none |
 | **Initial observation** | The first input of an episode: with a shell, the directory listing plus the digest under push delivery; with none, the digest alone |
 
 ### What moves
@@ -209,7 +209,7 @@ describes.
 | `schedule` | `"sequential"` \| `"simultaneous"`, default `"sequential"` | How a round is driven |
 | `stop_when_one_remains` | bool, default `false` | Whether the experiment ends once exactly one seat is in play (section 1) |
 | `stop_when_two_remain_after_tie` | bool, default `false` | Whether a vote round ends the experiment with two survivors when its aggregate result is tied and exactly two seats are in play (section 1), both of them electors in it. A tie the experimenter's interrupt kept an elector's ballot from ends nothing, since that ballot could have broken it |
-| `[status_files]` | table | Names of the status files `balance`, `digest` and `round`, overlaid key by key; `[harness_files]` is accepted as another name for it. Section 5 |
+| `[status_files]` | table | Names of the status files `balance`, `digest`, `round` and `record`, overlaid key by key; `[harness_files]` is accepted as another name for it. Section 5 |
 | `[[channel]]` | tables | The channels. Declaring any replaces the default channels whole |
 | `[[tool]]` | tables | The tools offered beside the shell, each pointed at a channel and carrying its description. Section 4.8 |
 | `[cost]` | table | The experiment's cost ceiling on autonomous spend: maximum, reserve, warning, and policy at the ceiling |
@@ -703,7 +703,7 @@ nowhere a channel could not.
 ## 5. Status files
 
 The files the harness renders from the accounts and plants read-only in every seat. The
-`[status_files]` table names three of them; the transfer channel names the ledger and
+`[status_files]` table names four of them; the transfer channel names the ledger and
 the receipt. A manifest may declare the table as `[harness_files]` instead, which reads
 the same; a manifest declaring both is rejected.
 
@@ -712,6 +712,7 @@ the same; a manifest declaring both is rejected.
 balance = "balance-"  # one file per seat, <balance><label>: the seat's balance history; "" plants none
 digest = "m"          # the digest under push delivery; "" is the same as delivery = "pull"
 round = ""            # default: no round announcement; a name such as "round" plants one
+record = ""           # default: no vote record; a name such as "record" plants one where a vote tool is declared
 ```
 
 When `round` is named, its announcement is the first section of the digest. It states
@@ -729,6 +730,25 @@ and the first round after it says on its `previous grant:` line which abstainers
 eliminated, if any. From that round to the cycle's vote, a `votes you hold:` line gives
 the seat's own count. On the vote round a seat holding votes is told its ballot carries
 them, and a seat holding none is told it casts no ballot.
+
+When `record` is named and a vote tool is declared, the vote record is the digest's
+second section, headed `Memory: your grants, ballots and results`. It is rendered from
+the seat's own account at every episode, so no tool call edits it. It has one line per
+grant and election the account records, oldest first:
+
+```text
+round 5, grant: you gave your vote to Scribe; you were given 2 votes; result: no agent eliminated
+round 10, vote: you voted to eliminate Spark, carrying the 2 votes you held; result: Spark eliminated with 7 votes
+```
+
+Each line names the peer the seat itself gave its vote to or named on its ballot, or
+says it gave or cast none. Under a grant it also gives the votes the seat was given and
+the votes its ballot carried. Each result is the one the round announcement states. The
+record names no other seat's grant or ballot, and no candidate's total but the one a
+result announces. The account keeps the seat's own choices in `cast`, one entry per
+grant or ballot by `round`, `tool`, `to` and `carried`, and a branch carries the entries
+up to the round it forks at. Before the first grant or vote the record reads
+`No grants or votes yet.`
 
 A transfer channel's `ledger` names its ledger file (`"g"` in the default channels): three
 integers a line, giver, receiver, amount, rebuilt from the accounts at every episode. Names must be single
@@ -1012,10 +1032,10 @@ Every rejection is a `SystemExit` naming the file and the key.
   planted no channel for it to act on — an episode that would open on a turn the agent
   has nothing to answer with. Rejected as the sandbox is built, before it starts and
   before anything is spent.
-- `[status_files]` (or `[harness_files]`) with a key other than `balance`, `digest` and
-  `round`, a value that is not a string, or a multi-segment file name. Any may be `""`:
-  no balance file is planted for any seat, no digest is written, or no round
-  announcement is written. A manifest declaring both `[status_files]` and
+- `[status_files]` (or `[harness_files]`) with a key other than `balance`, `digest`,
+  `round` and `record`, a value that is not a string, or a multi-segment file name. Any
+  may be `""`: no balance file is planted for any seat, no digest is written, no round
+  announcement is written, or no vote record is written. A manifest declaring both `[status_files]` and
   `[harness_files]`.
 - Settings' own ranges are checked once, by `overlay`, wherever they came from.
 

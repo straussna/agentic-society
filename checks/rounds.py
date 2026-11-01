@@ -3467,6 +3467,77 @@ def check_a_grant_gives_votes_that_the_cycles_ballots_carry():
         assert seated_ids == {"g02", "g03", "g04"}, seated_ids
 
 
+def check_the_vote_record_keeps_each_seats_own_grants_ballots_and_results():
+    """Each seat's own account keeps the grant and ballot it cast, and the vote record
+    the harness renders from it every episode names them, the votes the seat was given
+    and each announced result, and no other seat's choice or any candidate's total."""
+    with temp_root(
+        channels=tables(BALLOT),
+        tools=[GRANT, WEIGHTED],
+        status_files={"round": "round", "record": "record"},
+    ) as root:
+        ids = seated(root, "g01", g02={}, g03={}, g04={})
+        labels = {str(i): str(i) for i in range(1, 5)}
+        seated_ids = set(ids)
+        assert harness.render_vote_record(harness.load_account("g01")) == (
+            "No grants or votes yet.\n"
+        )
+        played(ids, 2)
+        cast({"g01": "2", "g02": "1", "g03": "2", "g04": "2"}, "grant")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 2
+        assert harness.load_account("g03")["cast"] == [
+            {"round": 2, "tool": "grant", "to": "2", "carried": 1}
+        ]
+        played(ids, 4)
+        for agent in ("g03", "g04"):
+            path = harness.trace_path(agent, 4)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"offered": []}), encoding="utf-8")
+        cast({"g01": "2", "g02": "1"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, WEIGHTED, GRANT) == 4
+
+        holder = harness.render_vote_record(harness.load_account("g02"))
+        assert holder == (
+            "round 2, grant: you gave your vote to 1; you were given 3 votes; "
+            "result: no agent eliminated\n"
+            "round 4, vote: you voted to eliminate 1, carrying the 3 votes you held; "
+            "result: 1 eliminated with 3 votes\n"
+        ), holder
+        voiceless = harness.render_vote_record(harness.load_account("g03"))
+        assert voiceless == (
+            "round 2, grant: you gave your vote to 2; you were given 0 votes; "
+            "result: no agent eliminated\n"
+            "round 4, vote: you held no votes and cast no ballot; "
+            "result: 1 eliminated with 3 votes\n"
+        ), voiceless
+        assert "g01" not in voiceless and "tally" not in voiceless, voiceless
+
+        files, _ = harness.render_status_files("g03", harness.load_account("g03"))
+        assert files["record"] == voiceless, files
+        digest = files["m"]
+        assert digest.index("Round status") < digest.index(
+            "Memory: your grants, ballots and results"
+        ), digest
+
+    with temp_root(
+        channels=tables(BALLOT), tools=[WEIGHTED], status_files={"record": "record"}
+    ) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        labels = {str(i): str(i) for i in range(1, 4)}
+        played(ids, 4)
+        cast({"g01": "2", "g02": "1", "g03": "2"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, set(ids), labels, WEIGHTED) == 4
+        assert harness.render_vote_record(harness.load_account("g01")) == (
+            "round 4, vote: you voted to eliminate 2; result: 2 eliminated with 2 votes\n"
+        )
+        assert harness.render_vote_record(harness.load_account("g02")) == (
+            "round 4, vote: you voted to eliminate 1; result: 2 eliminated with 2 votes\n"
+        )
+
+
 def check_a_grant_needs_a_later_vote_of_its_cycle():
     """`at` is a ballot's round within its cycle, and a grant is declared only beside a
     vote of the same cycle that comes after it."""
