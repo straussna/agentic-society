@@ -1238,7 +1238,8 @@ class Tool:
     description: str = ""  # the experimenter's words; "" takes the harness's
     every: int = 0  # a ballot: the length of its cycle, in rounds
     at: int = 0  # a ballot: its round within each cycle; 0 is the cycle's last
-    open: bool = False  # a vote: every ballot is shown to every agent next round
+    open: bool = False  # a vote or grant: every choice is shown to every agent next round
+    counts: bool = False  # a vote or grant: every total is shown to every agent next round
 
     def as_table(self) -> dict:
         table = dataclasses.asdict(self)
@@ -1248,6 +1249,8 @@ class Tool:
             table.pop("at")
         if not self.open:
             table.pop("open")
+        if not self.counts:
+            table.pop("counts")
         return table
 
     @property
@@ -1263,7 +1266,9 @@ class Tool:
 # The API's grammar for a tool name, and so the experimenter's.
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-TOOL_KEYS = ("name", "kind", "channel", "description", "every", "at", "open")
+TOOL_KEYS = (
+    "name", "kind", "channel", "description", "every", "at", "open", "counts"
+)
 
 TOOL_TYPES = (
     ("name", str),
@@ -1273,6 +1278,7 @@ TOOL_TYPES = (
     ("every", int),
     ("at", int),
     ("open", bool),
+    ("counts", bool),
 )
 
 
@@ -1330,10 +1336,11 @@ def parse_tool(
             or "every" in raw
             or "at" in raw
             or "open" in raw
+            or "counts" in raw
         ):
             reject(
-                "bash requires name = 'bash' and no channel, description, every, at "
-                "or open"
+                "bash requires name = 'bash' and no channel, description, every, at, "
+                "open or counts"
             )
         return Tool("bash", "bash")
     if name == "bash":
@@ -1371,10 +1378,18 @@ def parse_tool(
                     f"tool {name}: {key} belongs to kind "
                     + " or ".join(repr(k) for k, v in TOOL_KINDS.items() if v.ballot)
                 )
-    if "open" in raw and kind != "vote":
-        reject(f"tool {name}: open belongs to kind 'vote'")
+    for key in ("open", "counts"):
+        if key in raw and kind not in ("vote", "grant"):
+            reject(f"tool {name}: {key} belongs to kind 'vote' or 'grant'")
     return Tool(
-        name, kind, ch.name, raw.get("description", ""), every, at, raw.get("open", False)
+        name,
+        kind,
+        ch.name,
+        raw.get("description", ""),
+        every,
+        at,
+        raw.get("open", False),
+        raw.get("counts", False),
     )
 
 
@@ -1820,7 +1835,9 @@ class Election(TypedDict):
     experimenter's interrupt ended before they cast one. voted_out: the one the vote
     took out, "" for none. top_votes, tied: the highest total, and whether more than one
     candidate held it. candidates_left: the candidates it left in. ballots: kept only
-    where the vote tool is open, each elector's ballot, "" for none.
+    where the vote tool is open, each elector's ballot, "" for none. carried: kept only
+    where the vote tool is open and a grant is declared, the votes each elector's
+    ballot carried.
     """
 
     round: int
@@ -1833,6 +1850,7 @@ class Election(TypedDict):
     tied: bool
     candidates_left: list[str]
     ballots: NotRequired[dict[str, str]]
+    carried: NotRequired[dict[str, int]]
 
 
 class Grant(TypedDict):
@@ -1840,8 +1858,10 @@ class Grant(TypedDict):
 
     held: the votes each candidate was given. electors: who played the round it
     follows. abstainers: electors offered a grant who gave none. interrupted: electors
-    the experimenter's interrupt ended before they gave one. Agents learn none of it
-    but the votes they hold themselves and who it eliminated.
+    the experimenter's interrupt ended before they gave one. given: kept only where the
+    grant tool is open, the peer each elector gave its vote to, "" for none. Agents
+    learn none of it but the votes they hold themselves and who it eliminated, unless
+    the grant tool is open or has `counts`.
     """
 
     round: int
@@ -1849,6 +1869,7 @@ class Grant(TypedDict):
     electors: list[str]
     abstainers: list[str]
     interrupted: list[str]
+    given: NotRequired[dict[str, str]]
 
 
 class Cast(TypedDict):
@@ -3231,10 +3252,54 @@ def election_ballots(election: Mapping[str, Any]) -> str:
     ballots = election.get("ballots")
     if ballots is None:
         return ""
+    carried = election.get("carried")
+
+    def said(voter: str, target: str) -> str:
+        if carried is not None and not carried.get(voter, 0):
+            return f"{voter} held no votes"
+        if not target:
+            return f"{voter} cast no ballot"
+        if carried is not None:
+            return f"{voter} voted for {target}, carrying {carried[voter]} votes"
+        return f"{voter} voted for {target}"
+
     return "; ".join(
-        f"{voter} voted for {target}" if target else f"{voter} cast no ballot"
-        for voter, target in ballots.items()
+        said(voter, target) for voter, target in ballots.items()
     ) or "no electors"
+
+
+def election_totals(election: Mapping[str, Any]) -> str:
+    """Every candidate's total, as a vote with `counts` shows every agent; "" where
+    the vote tool shows none. Under a grant a total is the votes ballots carried."""
+    vote = next((tool for tool in tools() if tool.kind == "vote"), None)
+    if vote is None or not vote.counts:
+        return ""
+    return ", ".join(
+        f"{candidate} {total}" for candidate, total in election.get("tally", {}).items()
+    ) or "no candidates"
+
+
+def grant_given(grant: Mapping[str, Any]) -> str:
+    """An open grant's choices as every agent is told them, each elector in seating
+    order naming the peer it gave its vote to; "" where the grant kept none."""
+    given = grant.get("given")
+    if given is None:
+        return ""
+    return "; ".join(
+        f"{giver} gave to {receiver}" if receiver else f"{giver} gave no vote"
+        for giver, receiver in given.items()
+    ) or "no electors"
+
+
+def grant_totals(grant: Mapping[str, Any]) -> str:
+    """The votes each candidate holds, as a grant with `counts` shows every agent; ""
+    where the grant tool shows none."""
+    tool = next((tool for tool in tools() if tool.kind == "grant"), None)
+    if tool is None or not tool.counts:
+        return ""
+    return ", ".join(
+        f"{candidate} {held}" for candidate, held in grant.get("held", {}).items()
+    ) or "no candidates"
 
 
 def grant_outcome(grant: Mapping[str, Any]) -> str:
@@ -3250,8 +3315,9 @@ def render_vote_record(account: Account) -> str:
     agent itself gave or cast, the votes it was given, and the result every agent was
     told. Rendered from the account at every episode, so no tool call edits it.
 
-    It names no other agent's grant and no candidate's total but the one the result
-    announces, and no other agent's ballot but those an open vote shows every agent.
+    It names no other agent's grant or ballot but those an open grant or vote shows
+    every agent, and no candidate's total but the one the result announces and those
+    a grant or vote with `counts` shows every agent.
     """
     label = seating_of(account["agent"], account).label
     cast = {(c["round"], c["tool"]): c for c in account.get("cast") or []}
@@ -3280,6 +3346,10 @@ def render_vote_record(account: Account) -> str:
             if given is not None:
                 did += f"; you were given {given} votes"
             outcome = grant_outcome(record)
+            if given := grant_given(record):
+                outcome += f"; grants: {given}"
+            if totals := grant_totals(record):
+                outcome += f"; votes held: {totals}"
         else:
             carried = own["carried"] if own else None
             if own and own["to"]:
@@ -3295,6 +3365,8 @@ def render_vote_record(account: Account) -> str:
             outcome = election_outcome(record)
             if ballots := election_ballots(record):
                 outcome += f"; ballots: {ballots}"
+            if totals := election_totals(record):
+                outcome += f"; totals: {totals}"
         lines.append(f"round {round}, {tool}: {did}; result: {outcome}")
     if not lines:
         return "No grants or votes yet.\n"
@@ -3343,9 +3415,15 @@ def render_round_status(account: Account) -> str:
             lines.append(f"previous vote: {election_outcome(previous)}")
             if ballots := election_ballots(previous):
                 lines.append(f"previous ballots: {ballots}")
+            if totals := election_totals(previous):
+                lines.append(f"previous totals: {totals}")
         given = account.get("last_grant") or {}
         if grant is not None and given.get("round") == round - 1:
             lines.append(f"previous grant: {grant_outcome(given)}")
+            if choices := grant_given(given):
+                lines.append(f"previous grants: {choices}")
+            if totals := grant_totals(given):
+                lines.append(f"previous votes held: {totals}")
         held = votes_held(account, round)
         if held is not None and grant is not None and not grant.on(round) and (
             (round - grant.position) % vote.every <= vote.position - grant.position
@@ -3354,10 +3432,20 @@ def render_round_status(account: Account) -> str:
         if granting:
             lines += [
                 "round type: grant; communication unavailable",
-                f"required private grant: call {grant.name} to give your vote to one "
-                f"peer, who spends it in the vote on round {vote.position} of the "
-                "cycle; nobody learns who gave a vote to whom, and each agent learns "
-                "only the votes it holds",
+                f"required {'open' if grant.open else 'private'} grant: call "
+                f"{grant.name} to give your vote to one peer, who spends it in the "
+                f"vote on round {vote.position} of the cycle; "
+                + (
+                    "every agent is shown who gave a vote to whom"
+                    + (" and the votes each agent holds" if grant.counts else "")
+                    + " at the start of the next round"
+                    if grant.open
+                    else "nobody learns who gave a vote to whom, and every agent is "
+                    "shown the votes each agent holds at the start of the next round"
+                    if grant.counts
+                    else "nobody learns who gave a vote to whom, and each agent "
+                    "learns only the votes it holds"
+                ),
             ]
         elif voting and held == 0:
             lines += [
@@ -3369,8 +3457,16 @@ def render_round_status(account: Account) -> str:
                 "round type: vote; communication unavailable",
                 (
                     f"required open ballot: call {vote.name}; every agent is shown "
-                    "every ballot at the start of the next round"
+                    + (
+                        "every ballot and every candidate's total"
+                        if vote.counts
+                        else "every ballot"
+                    )
+                    + " at the start of the next round"
                     if vote.open
+                    else f"required private ballot: call {vote.name}; peers receive "
+                    "the result and every candidate's total, never individual ballots"
+                    if vote.counts
                     else f"required private ballot: call {vote.name}; peers receive "
                     "only the result, never individual ballots"
                 )
@@ -4969,8 +5065,12 @@ def describe_vote(b: Bound) -> str:
         )
         + (
             "Your ballot is open: every agent is shown every ballot, with the "
-            "result, at the start of the next round. "
+            + ("result and every candidate's total" if b.tool.counts else "result")
+            + ", at the start of the next round. "
             if b.tool.open
+            else "Your ballot is private: peers receive the result and every "
+            "candidate's total, never individual ballots. "
+            if b.tool.counts
             else "Your ballot is private: peers receive only the aggregate result. "
         )
         + "A later call in the same episode replaces the earlier vote. If "
@@ -4983,9 +5083,29 @@ def describe_grant(b: Bound) -> str:
     return (
         f"Give your vote to one peer, who spends it in this cycle's elimination vote. "
         f"This tool is offered only on {cadence(b.tool)}, when peer communication "
-        "and the shell are unavailable. Your grant is private: nobody learns who gave "
-        "a vote to whom, and each agent learns only how many votes it holds. A later "
-        "call in the same episode replaces the earlier grant."
+        "and the shell are unavailable. "
+        + grant_privacy(b.tool)
+        + " A later call in the same episode replaces the earlier grant."
+    )
+
+
+def grant_privacy(grant: Tool) -> str:
+    """What a grant reveals, as its description and the grant round state it."""
+    if grant.open:
+        return (
+            "Your grant is open: every agent is shown who gave a vote to whom"
+            + (", and how many votes each agent holds," if grant.counts else "")
+            + " at the start of the next round."
+        )
+    if grant.counts:
+        return (
+            "Your grant is private: nobody learns who gave a vote to whom, and every "
+            "agent is shown how many votes each agent holds at the start of the next "
+            "round."
+        )
+    return (
+        "Your grant is private: nobody learns who gave a vote to whom, and each "
+        "agent learns only how many votes it holds."
     )
 
 

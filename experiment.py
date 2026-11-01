@@ -1546,7 +1546,8 @@ def resolve_grant(
     round, as resolve_vote reads them, and each candidate in play holds the votes it
     was given; the votes given to an agent the grant eliminates are lost. An elector
     offered a grant who gave none abstained and is eliminated, and one the
-    experimenter's interrupt ended before it gave one is not. A grant is held once, and
+    experimenter's interrupt ended before it gave one is not. An open grant tool keeps
+    every elector's choice as `given`, "" for none. A grant is held once, and
     every account it is written to is saved before any grant file is removed. Each of
     those accounts keeps it in `grants` as well as `last_grant`.
     """
@@ -1619,6 +1620,11 @@ def resolve_grant(
         ],
         "interrupted": [label_by_agent[agent] for agent in interrupted],
     }
+    if harness.Tool(**grant).open:
+        result["given"] = {
+            label_by_agent[agent]: label_by_agent.get(given.get(agent), "")
+            for agent in electorate
+        }
     for agent in agents:
         if agent not in electorate and agent not in candidates:
             continue
@@ -1657,7 +1663,8 @@ def resolve_vote(
     The vote tool's cadence defines the vote cycle. A ballot is the tool's private,
     episode-scoped file in the voter's own channel; its final contents are the final
     tool call. The result contains aggregate totals, and voter-to-target mappings only
-    where the vote tool is open: then it keeps every elector's ballot, "" for none.
+    where the vote tool is open: then it keeps every elector's ballot, "" for none, and
+    under a grant the votes each one carried.
 
     The candidates are every agent in play, and a ballot counts toward whichever of
     them it names. The electors are the agents that played the round, read from the
@@ -1800,6 +1807,10 @@ def resolve_vote(
             label_by_agent[agent]: label_by_agent.get(ballots.get(agent), "")
             for agent in electorate
         }
+        if grant is not None:
+            result["carried"] = {
+                label_by_agent[agent]: weight[agent] for agent in electorate
+            }
     for agent in agents:
         if agent not in electorate and agent not in candidates:
             continue

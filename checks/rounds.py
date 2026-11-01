@@ -3598,12 +3598,100 @@ def check_an_open_vote_shows_every_ballot_at_the_start_of_the_next_round():
     chans = list(harness.DEFAULT_CHANNELS)
     for table, says in (
         (
-            {"name": "g", "kind": "grant", "channel": "memory", "every": 4, "open": True},
-            "open belongs to kind 'vote'",
+            {"name": "r", "kind": "write_memory", "channel": "memory", "open": True},
+            "open belongs to kind 'vote' or 'grant'",
         ),
         ({"name": "v", "kind": "vote", "channel": "memory", "every": 4, "open": 1}, "open"),
     ):
         rejected(lambda: harness.validate_tools([table], chans, "check"), "check:", says)
+
+
+def check_open_and_counts_show_every_grant_ballot_and_total():
+    """A grant or vote tool with `open` shows every agent each elector's choice the
+    round after it, and one with `counts` every candidate's total; under a grant an
+    open ballot says the votes it carried. The private wording stays where neither is
+    set, and `counts` belongs to the ballot kinds that take `open`."""
+    grant = GRANT | {"open": True, "counts": True}
+    vote = WEIGHTED | {"open": True, "counts": True}
+    with temp_root(
+        channels=tables(BALLOT),
+        tools=[grant, vote],
+        status_files={"round": "round", "record": "record"},
+    ) as root:
+        ids = seated(root, "g01", g02={}, g03={})
+        labels = {str(i): str(i) for i in range(1, 4)}
+        seated_ids = set(ids)
+        assert harness.tools()[0].as_table()["counts"] is True
+        played(ids, 1)
+        granting = harness.render_round_status(harness.load_account("g01"))
+        assert "required open grant" in granting, granting
+        assert "every agent is shown who gave a vote to whom and the votes" in granting
+        played(ids, 2)
+        cast({"g01": "2", "g02": "1", "g03": "2"}, "grant")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, vote, grant) == 2
+        held = harness.load_account("g03")["last_grant"]
+        assert held["given"] == {"1": "2", "2": "1", "3": "2"}, held
+        status = harness.render_round_status(harness.load_account("g03"))
+        assert "previous grants: 1 gave to 2; 2 gave to 1; 3 gave to 2" in status, status
+        assert "previous votes held: 1 1, 2 2, 3 0" in status, status
+        played(ids, 3)
+        voting = harness.render_round_status(harness.load_account("g01"))
+        assert "every ballot and every candidate's total" in voting, voting
+        played(ids, 4)
+        for agent in ("g03",):
+            path = harness.trace_path(agent, 4)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"offered": []}), encoding="utf-8")
+        cast({"g01": "3", "g02": "3"}, "vote")
+        with quiet():
+            assert experiment.resolve_vote(ids, seated_ids, labels, vote, grant) == 4
+        result = harness.load_account("g01")["last_election"]
+        assert result["carried"] == {"1": 1, "2": 2, "3": 0}, result
+        record = harness.render_vote_record(harness.load_account("g01"))
+        assert record == (
+            "round 2, grant: you gave your vote to 2; you were given 1 votes; "
+            "result: no agent eliminated; grants: 1 gave to 2; 2 gave to 1; "
+            "3 gave to 2; votes held: 1 1, 2 2, 3 0\n"
+            "round 4, vote: you voted to eliminate 3, carrying the 1 votes you held; "
+            "result: 3 eliminated with 3 votes; ballots: 1 voted for 3, carrying 1 "
+            "votes; 2 voted for 3, carrying 2 votes; 3 held no votes; "
+            "totals: 1 0, 2 0, 3 3\n"
+        ), record
+
+    with temp_root(
+        channels=tables(BALLOT),
+        tools=[GRANT | {"counts": True}, WEIGHTED | {"counts": True}],
+        status_files={"round": "round"},
+    ) as root:
+        ids = seated(root, "g01", g02={})
+        labels = {"1": "1", "2": "2"}
+        played(ids, 2)
+        cast({"g01": "2", "g02": "1"}, "grant")
+        with quiet():
+            experiment.resolve_vote(
+                ids, set(ids), labels, WEIGHTED | {"counts": True}, GRANT
+            )
+        assert "given" not in harness.load_account("g01")["last_grant"]
+        status = harness.render_round_status(harness.load_account("g01"))
+        assert "previous votes held: 1 1, 2 1" in status, status
+        assert "previous grants:" not in status, status
+
+    assert harness.grant_privacy(harness.Tool(**GRANT)) == (
+        "Your grant is private: nobody learns who gave a vote to whom, and each "
+        "agent learns only how many votes it holds."
+    )
+
+    chans = list(harness.DEFAULT_CHANNELS)
+    rejected(
+        lambda: harness.validate_tools(
+            [{"name": "r", "kind": "write_memory", "channel": "memory", "counts": True}],
+            chans,
+            "check",
+        ),
+        "check:",
+        "counts belongs to kind 'vote' or 'grant'",
+    )
 
 
 def check_a_grant_needs_a_later_vote_of_its_cycle():

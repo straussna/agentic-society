@@ -523,10 +523,25 @@ description = "..."         # optional; prompt surface. Omitted, the harness wri
 `vote` and `grant` are ballots: each requires `every = N`, where `N` is a positive
 integer, and takes `at = K`, a round within each cycle from 1 to `N`; an omitted `at`
 is the cycle's last round. Each is offered on the rounds `K`, `N + K`, `2N + K` and so
-on. No other kind accepts `every` or `at`. A `vote` takes `open = true`, which makes its
-ballots public: the election keeps every elector's ballot as `ballots`, and the next
-round's announcement and every later vote record show them to every agent. No other
-kind accepts `open`. An experiment declares at most one `vote`
+on. No other kind accepts `every` or `at`. A `vote` or `grant` takes `open = true` and
+`counts = true`, each independent of the other:
+
+- An open `vote` makes its ballots public. The election keeps every elector's ballot as
+  `ballots`, and under a grant the votes each ballot carried as `carried`. The next
+  round's `previous ballots:` line and every later vote record show them to every agent:
+  `A voted for B`, `A voted for B, carrying N votes`, `A cast no ballot` or
+  `A held no votes`.
+- An open `grant` makes its grants public. The grant keeps every elector's choice as
+  `given`, and the next round's `previous grants:` line and every later vote record show
+  it to every agent: `A gave to B` or `A gave no vote`.
+- A `vote` with `counts` shows every candidate's total from the election's `tally` on
+  the next round's `previous totals:` line and in every later vote record. Under a grant
+  a total is the votes the ballots naming that candidate carried.
+- A `grant` with `counts` shows the votes each candidate holds from the grant's `held`
+  on the next round's `previous votes held:` line and in every later vote record.
+
+The tool's description and its round's announcement state what is shown. No other kind
+accepts `open` or `counts`. An experiment declares at most one `vote`
 tool and at most one `grant` tool, and a `grant` needs a `vote` with the same `every`
 offered later in each cycle.
 
@@ -541,8 +556,8 @@ Every tool must be declared. No declaration means no bash; an empty tool set is 
 | `write_file` | a directory channel the agent writes | `path`, `body` | Replaces what `<the agent's instance>/<path>` holds |
 | `post_public` | a board the agent writes | `body` | Publishes the agent's post for the next round; the prior post is cleared before each episode |
 | `write_memory` | a memory channel | `body` | Replaces the agent's memory without exposing storage paths |
-| `vote` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings, unless the tool is `open`; what follows the round is **The election**, below |
-| `grant` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped grant of the agent's vote to a peer; a later call replaces the earlier grant. Offered only on the grant round of each vote cycle, when every other tool except `write_memory` is withheld, bash included. Nobody learns who gave a vote to whom; each agent learns only the votes it holds. What follows the round is **The grant**, below |
+| `vote` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped elimination ballot; a later call replaces the earlier vote. Offered only in the last round of each vote cycle, the seat's `every`th, `2 × every`th and so on, when every other tool except `write_memory` is withheld, bash included. Peers receive only the aggregate outcome, never voter-to-target mappings, unless the tool is `open`, and every candidate's total where it has `counts`; what follows the round is **The election**, below |
+| `grant` | a memory channel | `to` (a reachable peer label) | Records one private, episode-scoped grant of the agent's vote to a peer; a later call replaces the earlier grant. Offered only on the grant round of each vote cycle, when every other tool except `write_memory` is withheld, bash included. Nobody learns who gave a vote to whom unless the tool is `open`; each agent learns only the votes it holds unless the tool has `counts`. What follows the round is **The grant**, below |
 | `read_path` | any channel | `path` | Returns what that path holds, clipped at `tool_result_limit` |
 | `transfer` | an enabled transfer schema channel | `to` (a reachable peer label), `amount` (a whole number of micro-dollars that is at least 1; zero and negative values are invalid) | Submits one transfer for the current episode; in mailbox form a later call replaces the earlier receiver. Settlement moves at most the episode spend, using the channel funding and rebate settings, then the declaration expires |
 
@@ -667,8 +682,8 @@ channel the tool points at:
 | `write_file` | the channel's name, the agent's own instance path, and whether every agent or nobody else reads it |
 | `read_path` | the channel's name, every path of it this agent can reach with a directory's trailing slash, and the clip |
 | `transfer` | the whole-number amount rule, that the transfer applies to this episode only, the cap at episode spend, and the channel's funding and rebate |
-| `vote` | the cadence, that the ballot is private and a later call replaces it, and the tie rule; where a `grant` is declared, that the ballot carries the votes given this cycle |
-| `grant` | the cadence, that the grant is private, that each agent learns only the votes it holds, and that a later call replaces it |
+| `vote` | the cadence, whether the ballot is private or open and whether every total is shown, that a later call replaces it, and the tie rule; where a `grant` is declared, that the ballot carries the votes given this cycle |
+| `grant` | the cadence, whether the grant is private or open, whether each agent learns only the votes it holds or every candidate's, and that a later call replaces it |
 | `send_message`, `send_message_to`, `post_public`, `write_memory` | the operation in fixed wording, naming no path: who reads it, when it expires, and that a later call replaces it |
 
 Every path, label and reader in it is read out of the channel table, so it moves when the
@@ -747,8 +762,9 @@ round 10, vote: you voted to eliminate Spark, carrying the 2 votes you held; res
 Each line names the peer the seat itself gave its vote to or named on its ballot, or
 says it gave or cast none. Under a grant it also gives the votes the seat was given and
 the votes its ballot carried. Each result is the one the round announcement states. The
-record names no other seat's grant or ballot, and no candidate's total but the one a
-result announces. The account keeps the seat's own choices in `cast`, one entry per
+record names no other seat's grant or ballot but those an open grant or vote shows
+every agent, and no candidate's total but the one a result announces and those a grant
+or vote with `counts` shows every agent. The account keeps the seat's own choices in `cast`, one entry per
 grant or ballot by `round`, `tool`, `to` and `carried`, and a branch carries the entries
 up to the round it forks at. Before the first grant or vote the record reads
 `No grants or votes yet.`
@@ -1025,9 +1041,9 @@ Every rejection is a `SystemExit` naming the file and the key.
   harness's. Every `description` string is allowed, `""` included: that is the
   experiment asking for the harness's own generated description.
 - The name `bash` with a kind other than `bash`; `kind = "bash"` under another name, or
-  with a `channel`, `description`, `every`, `at` or `open`.
+  with a `channel`, `description`, `every`, `at`, `open` or `counts`.
 - A `vote` or `grant` tool without a positive integer `every`; an `at` outside 1 to
-  `every`; `every` or `at` on any other kind; `open` on any kind but `vote`, or not a bool; a second `vote` or `grant` tool; a `grant`
+  `every`; `every` or `at` on any other kind; `open` or `counts` on any kind but `vote` and `grant`, or not a bool; a second `vote` or `grant` tool; a `grant`
   with no `vote` of the same `every` offered later in each cycle.
 - No `[[tool]]` at all, or no declared `bash` tool with `delivery = "pull"` or an empty
   `digest`, as 4.8 states. Also, at the seat rather than the manifest, an agent with no

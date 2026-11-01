@@ -153,6 +153,8 @@ Every tool must be declared, including bash. A manifest with no tools is rejecte
 | `description` | any string, optional | Omitted for bash. What the model is told the tool is for. Omitted, the harness writes one from the channel and the seating |
 | `every` | positive integer | Required on `vote` and `grant` and rejected on every other kind. The vote cycle in rounds: a seat's `every`th round and each multiple of it offers voting and memory while withholding communication tools and the shell |
 | `at` | 1 to `every`, optional | Taken by `vote` and `grant` and rejected on every other kind. The ballot's round within each cycle; omitted, the cycle's last. A `grant` needs a `vote` of the same `every` offered later in the cycle |
+| `open` | bool, optional | Taken by `vote` and `grant` and rejected on every other kind. `true` shows every agent, at the start of the next round and in every later vote record, each elector's ballot or grant: who named whom, and under a grant the votes each ballot carried |
+| `counts` | bool, optional | Taken by `vote` and `grant` and rejected on every other kind. `true` shows every agent, at the start of the next round and in every later vote record, every candidate's total: the vote's tally, the votes carried under a grant, or the votes each candidate holds after a grant |
 
 A declared `description` is prompt surface, the same as a system prompt: it reaches the
 model in the model call, it is the experiment's to write, and it is recorded whole and by
