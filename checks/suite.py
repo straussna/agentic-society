@@ -229,6 +229,7 @@ def check_no_setting_is_given_in_two_places():
                 "experiment_id",
                 "cost",
                 "reveal",
+                "rules",
                 "agent",
                 "channel",
                 "status_files",
