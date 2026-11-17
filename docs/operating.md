@@ -14,7 +14,6 @@ harness.py               run one episode; creates the agent on first use
 experiment.py            run several agents together, in seat order or all at once
 progress.py              the progress log and the spend, lineage and outcome records
 datapath.py              data_root(): the data folder every record below is written under
-copy_docs.py             copy docs/ into the data folder's docs/
 human.py                 attach a terminal to a human seat's pending request
 interaction/             the interaction store, its request contracts, and the terminal client
 providers/               the providers and their model and rate catalogs
@@ -74,8 +73,6 @@ archive/<timestamp>/                  complete records and mirrors preserved whe
                                       agent ids start a fresh run
 interaction_store/                    the interaction store: pending and completed requests
 branches/<experiment-id>.toml         the manifest experiment.py --branch-from generates
-docs/                                 every file under the repository's docs/, copied by
-                                      copy_docs.py (CLAUDE.md and AGENTS.md excepted)
 ```
 
 Each trace stores what the agent's files *held* that episode, not just their names.

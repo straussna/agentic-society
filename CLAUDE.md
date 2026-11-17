@@ -81,7 +81,7 @@ process on this machine.
 Checks of what only a container shows — modes, ownership, the dead network, what
 the image has and lacks, and that an inbox and the transfer ledger are root's and
 deny every route into them — run in a real container and skip when Docker is
-down. `--no-docker` runs 359 of 385.
+down. `--no-docker` runs 357 of 383.
 
 `--real` runs every check in a container, which verifies that the two lanes
 agree, including how an episode is set up and torn down.
@@ -155,17 +155,6 @@ the episode wherever it lands.
 
 Nothing in the repo reaps a container left by a hard kill — `check.py`'s sweep is
 scoped to its own pid and cannot match `mtr-<agent>-<episode>`. Remove those by hand.
-
-# Copying the docs
-
-`copy_docs.py` copies every file under `docs/` into the data folder's `docs/`
-(`<DATA_ROOT>\agentic-society\docs\`, through `datapath.data_root()`), writing over
-each existing copy and skipping CLAUDE.md and AGENTS.md. Nothing builds the docs, so it
-runs on its own; `--dest DIR` copies somewhere else.
-
-```powershell
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\copy_docs.py"
-```
 
 # Editing harness.py
 
