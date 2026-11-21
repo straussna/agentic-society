@@ -4,6 +4,21 @@
 label, episode, turn, round, experiment, environment, channel, board, mailbox,
 schema, starter files, status files, digest, account, trace, data folder.
 
+# Scope
+
+The engine is a bare agent execution kernel: tools, state, channels, accounts, scheduling,
+traces and isolation. Channels are opaque transport and files opaque state; the engine never
+interprets them as memory, relationships or conversation. Memory, persona, relationship and
+society semantics, and `society` or `entity` keys, stay out of this repository; `societies/`
+stays ignored.
+
+# Records
+
+On-disk record keys (account.json, traces, progress and outcome files, raw logs,
+interaction-store files, lineage) are renamed in place, with every reader and writer in the
+same change and no `ACCOUNT_VERSION` or `TRACE_VERSION` bump. Where the read-only history
+translation covers a key, it points at the new name.
+
 # Running check.py
 
 `check.py` runs the verification suite, which lives under `checks/`, one module per
