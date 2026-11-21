@@ -15,20 +15,20 @@ Available verification commands:
 
 ```powershell
 # One behaviour, by name fragment; fragments match anywhere and several can be given
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" refusal fallback
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\check.py" refusal fallback
 # Every check that needs no container: rates, metering, refusals, traces, the declared
 # system prompt, starter files, forks, experiments, manifests, the channel table, the tool
 # table and what a tool call does, labels, receipts, status file names, simultaneous
 # rounds, experimenter channels, transfer funding, push and pull delivery, author labels,
 # transfers, the ledger, boards and mailboxes, what the digest carries, the initial
 # observation, the silence penalties, the grace, the floor
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --no-docker
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\check.py" --no-docker
 # Full verification suite
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py"
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\check.py"
 # harness.py's episode path: the sandbox, the shell, plant_trees/mirror_trees, run_once
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --real
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\check.py" --real
 # Print every check name
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\check.py" --list
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\check.py" --list
 ```
 
 Rough costs: a name filter is seconds, `--no-docker` about 25s, the full run
@@ -43,8 +43,8 @@ run one at a time in one process. Without a flag the container checks skip, as u
 `--no-docker`; `--docker` runs them and `--real` matches `check.py --real`.
 
 ```powershell
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "C:\source\repos\agentic-society\checks"
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "C:\source\repos\agentic-society\checks" --docker
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "S:\repos\agentic-society\checks"
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" -m pytest "S:\repos\agentic-society\checks" --docker
 ```
 
 ## Interpreter
@@ -55,18 +55,18 @@ has no `openai` or coverage.py, and `py -3` runs that same interpreter even insi
 activated venv. No linter is configured. From the Bash tool:
 
 ```bash
-/c/source/repos/agentic-society/.venv/Scripts/python.exe /c/source/repos/agentic-society/check.py --no-docker
-/c/source/repos/agentic-society/.venv/Scripts/python.exe -m pytest /c/source/repos/agentic-society/checks
-/c/source/repos/agentic-society/.venv/Scripts/python.exe /c/source/repos/agentic-society/harness.py --print-system
+/s/repos/agentic-society/.venv/Scripts/python.exe /s/repos/agentic-society/check.py --no-docker
+/s/repos/agentic-society/.venv/Scripts/python.exe -m pytest /s/repos/agentic-society/checks
+/s/repos/agentic-society/.venv/Scripts/python.exe /s/repos/agentic-society/harness.py --print-system
 ```
 
 The commands [docs/operating.md](docs/operating.md) lists run under the same interpreter, from
 the repo root, where their relative paths start; `--print-system` spends nothing:
 
 ```powershell
-Set-Location "C:\source\repos\agentic-society"
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --print-system
-& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r 20
+Set-Location "S:\repos\agentic-society"
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\harness.py" --print-system
+& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\experiment.py" <name> -r 20
 ```
 
 A worktree has no `.venv`: run the main checkout's interpreter on the worktree's
@@ -99,8 +99,8 @@ and `.github/actions/ci-gate/` are copies of claude-config's, and `ci/run.ps1` i
 byte-for-byte copy of its template. The same tiers run locally:
 
 ```powershell
-& "C:\source\repos\agentic-society\ci\run.ps1" -Tier quick
-& "C:\source\repos\agentic-society\ci\run.ps1" -Tier full
+& "S:\repos\agentic-society\ci\run.ps1" -Tier quick
+& "S:\repos\agentic-society\ci\run.ps1" -Tier full
 ```
 
 ## Things that will waste your time
@@ -134,9 +134,9 @@ turn loop reads where it checks whether the balance is exhausted, so the episode
 the way an exhausted balance ends it — the turn in flight finishes, its spend is settled,
 the agent's trees are mirrored back, the trace is written and the container is
 reaped. An experiment ends every remaining round, and every agent keeps its seat, so
-`& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
+`& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\experiment.py" <name> -r N --resume` continues it from where it stopped, finishing
 the round the interrupt landed in before the next begins, as
-`& "C:\source\repos\agentic-society\.venv\Scripts\python.exe" "C:\source\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
+`& "S:\repos\agentic-society\.venv\Scripts\python.exe" "S:\repos\agentic-society\harness.py" --agent <id> --manifest <path> --resume` continues one agent. The same
 command without `--resume` moves what the interrupted run left under the data folder's `archive/` and starts
 fresh. Under a simultaneous round every episode in flight ends at its next turn the same
 way, and all of them are committed before the rounds end.
